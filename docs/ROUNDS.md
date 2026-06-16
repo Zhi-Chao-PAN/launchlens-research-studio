@@ -139,3 +139,12 @@ open/close and provider flip events, persisted through the storage
 backend. /api/health returns a flipHistory field with the last 20
 events. /diagnostics adds a "State transition history" table and a
 third summary card showing total events.
+
+## Round 32 - Visual regression freeze mode
+src/lib/perf/use-freeze-mode.ts hook that reads ?freeze=1 from the URL
+and disables all CSS animations and transitions globally for
+deterministic screenshots. Home page calls useFreezeMode() at the root.
+E2E test respects E2E_FREEZE=1 env var and navigates with ?freeze=1.
+Visual regression harness enables freeze mode by default (opt out with
+VISUAL_NO_FREEZE=1). Screenshots 2 and 3 get a brief stabilization wait
+when freeze mode is on to ensure consistent frame timing.

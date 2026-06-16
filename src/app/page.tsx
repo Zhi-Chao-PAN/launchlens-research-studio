@@ -19,10 +19,12 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { ProviderPill } from "@/components/ui/ProviderPill";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import { useFreezeMode } from "@/lib/perf/use-freeze-mode";
 import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 
 export default function Home() {
+  useFreezeMode();
   const { t } = useLocale();
   const { state, startResearch, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
   const { history, addEntry } = useResearchHistory();

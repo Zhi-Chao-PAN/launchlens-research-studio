@@ -19,6 +19,7 @@ const fs = require("node:fs");
 
 const PROJECT_DIR = path.resolve(__dirname, "..");
 const PORT = process.env.E2E_PORT || "3020";
+const FREEZE = process.env.E2E_FREEZE === "1";
 const BASE_URL = `http://localhost:${PORT}`;
 const SCREENSHOT_DIR = path.join(PROJECT_DIR, "screenshots");
 
@@ -155,6 +156,9 @@ async function run() {
     if (await keywordInput.count() > 0) {
       await keywordInput.fill("AI, students, education");
     }
+    if (FREEZE) {
+      await page.waitForTimeout(300);
+    }
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
 
     await page.locator('button:has-text("Start Research")').first().click();
@@ -163,6 +167,9 @@ async function run() {
     await page.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 10000 });
     log("Studio layout appears", true);
 
+    if (FREEZE) {
+      await page.waitForTimeout(1500);
+    }
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-03-research-started.png") });
 
     // ====== Test 5: Tab switching ======
@@ -224,7 +231,7 @@ async function run() {
     await context.close();
     const mobileCtx = await browser.newContext({ viewport: { width: 375, height: 667 } });
     const mobilePage = await mobileCtx.newPage();
-    await mobilePage.goto(BASE_URL, { waitUntil: "networkidle" });
+    await mobilePage.goto(gotoUrl, { waitUntil: "networkidle" });
     await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png"), fullPage: true });
 
     // Mobile sidebar toggle should be present in studio
