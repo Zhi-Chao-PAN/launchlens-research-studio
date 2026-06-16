@@ -10,8 +10,16 @@ const validPayload = {
 };
 
 describe("createAnthropicProvider", () => {
-  it("falls back to mock on HTTP failure", async () => {
+  it("retries 5xx then falls back to mock", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500 }) as any);
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
+    expect(out.agent).toBe("market-sizer");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry on 4xx and falls back immediately", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
     const out = await p.generate("market-sizer", { query: "q", keywords: [] });
     expect(out.agent).toBe("market-sizer");

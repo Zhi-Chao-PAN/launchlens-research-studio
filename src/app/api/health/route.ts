@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { selectProvider } from "@/lib/providers/provider-registry";
+import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
 import packageJson from "../../../../package.json";
 
 const startedAt = Date.now();
@@ -16,6 +17,7 @@ export async function GET() {
       isMock: provider.isMock,
       supportsStreaming: provider.supportsStreaming,
     },
+    breakers: snapshotBreakers(),
     timestamp: new Date().toISOString(),
   });
 }

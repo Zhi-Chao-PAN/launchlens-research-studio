@@ -8,6 +8,8 @@
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { selectProvider } from "@/lib/providers/provider-registry";
 import { recordTelemetry } from "@/lib/telemetry/telemetry";
+import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
+import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -127,7 +129,12 @@ async function runAgent(
 
     // Generate final output
     const allOutputs = getCompletedAgentOutputs(session);
-    const provider = selectProvider();
+    const selected = selectProvider();
+        // If the breaker is open for the selected provider, short-circuit to mock
+        // for this attempt. We still record telemetry under the original id so
+        // operators can see the breaker engaging.
+        const breakerOpen = !selected.isMock && breakerIsOpen("provider:" + selected.id);
+        const provider = breakerOpen ? mockResearchProvider : selected;
         let output;
         const t0 = Date.now();
         let telemetryOk = true;
@@ -160,10 +167,14 @@ async function runAgent(
           telemetryErr = e instanceof Error ? e.message : String(e);
           output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
         } finally {
+          if (!selected.isMock) {
+            if (telemetryOk) breakerRecordSuccess("provider:" + selected.id);
+            else breakerRecordFailure("provider:" + selected.id);
+          }
           recordTelemetry({
             ts: Date.now(),
             agentId,
-            providerId: provider.id,
+            providerId: breakerOpen ? selected.id + "(breaker:open->mock)" : provider.id,
             durationMs: Date.now() - t0,
             ok: telemetryOk,
             error: telemetryErr,
