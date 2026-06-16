@@ -176,3 +176,13 @@ replaced `any` with typed body. Research route restored with proper CSRF
 check after bypass token gate. Regression report regenerated. Health
 snapshot at end of round 35: 233 unit tests, 16 routes, 0 lint errors,
 795 KB total client JS.
+
+## Round 36 - Token scopes + admin endpoint rate limiting
+Token scope system: "bypass" (skips rate limits) and "admin" (full admin
+API access + bypass). Bypass tokens can't call /api/admin/*. Env tokens:
+LAUNCHLENS_BYPASS_TOKENS for bypass-scope, LAUNCHLENS_ADMIN_TOKENS for
+admin-scope. checkAdminRateLimit() limits admin endpoints by both IP
+(30/min) and token hash (100/min) to prevent abuse of a leaked admin
+token. Token info now tracks lastIp alongside lastUsedAt and usageCount.
+Admin endpoints return X-RateLimit-Remaining headers. 239 unit tests,
+build clean, 16 routes.

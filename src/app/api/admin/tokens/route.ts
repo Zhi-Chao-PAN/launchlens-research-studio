@@ -1,44 +1,86 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
   listBypassTokens,
   createBypassToken,
-  isBypassToken,
+  isAdminToken,
   extractBearerToken,
+  checkAdminRateLimit,
+  getTokenInfo,
 } from "@/lib/api/bypass-tokens";
 
 // Admin endpoint for bypass token management.
-// Requires an existing bypass token in the Authorization header for auth.
+// Requires an admin-scoped bypass token in the Authorization header.
 //   GET  /api/admin/tokens     — list all tokens (hashes only)
-//   POST /api/admin/tokens     — create a new token (body: { label? })
-//   DELETE /api/admin/tokens/{hash} — revoke a token by hash
+//   POST /api/admin/tokens     — create a new token (body: { label?, scope? })
 
-function isAdminRequest(request: NextRequest): boolean {
+function getIp(request: NextRequest): string {
+  return (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+}
+
+function authAdmin(request: NextRequest): { ok: boolean; error?: string; tokenHash?: string } {
   const auth = request.headers.get("authorization");
   const tok = extractBearerToken(auth);
-  return tok ? isBypassToken(tok) : false;
+  if (!tok) return { ok: false, error: "missing-auth" };
+
+  const info = getTokenInfo(tok);
+  if (!info) return { ok: false, error: "invalid-token" };
+  if (info.scope !== "admin") return { ok: false, error: "insufficient-scope" };
+
+  // Record usage
+  isAdminToken(tok, getIp(request));
+  return { ok: true, tokenHash: info.hash };
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ip = getIp(request);
+  const auth = authAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
   }
+
+  const rate = checkAdminRateLimit(ip, auth.tokenHash);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded.", resetMs: rate.resetMs },
+      { status: 429, headers: { "X-RateLimit-Remaining": String(rate.remaining) } },
+    );
+  }
+
   const tokens = listBypassTokens();
-  return NextResponse.json({ tokens });
+  return NextResponse.json({ tokens, remaining: rate.remaining });
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ip = getIp(request);
+  const auth = authAdmin(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
   }
 
-  let body: { label?: string } = {};
+  const rate = checkAdminRateLimit(ip, auth.tokenHash);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded.", resetMs: rate.resetMs },
+      { status: 429, headers: { "X-RateLimit-Remaining": String(rate.remaining) } },
+    );
+  }
+
+  let body: { label?: string; scope?: string } = {};
   try {
     body = await request.json();
   } catch {
     // empty body is fine
   }
 
-  const token = createBypassToken(body?.label);
-  return NextResponse.json({ token, label: body?.label }, { status: 201 });
+  // Only allow "bypass" or "admin" scope
+  const scope = body.scope === "admin" ? "admin" : "bypass";
+  const token = createBypassToken(scope, body.label);
+
+  return NextResponse.json(
+    { token, scope, label: body.label, remaining: rate.remaining },
+    { status: 201 },
+  );
 }
+
+export const runtime = "nodejs";

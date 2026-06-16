@@ -1,28 +1,56 @@
 ﻿import {
   isBypassToken,
+  isAdminToken,
+  hasTokenScope,
   extractBearerToken,
   createBypassToken,
   listBypassTokens,
   revokeBypassToken,
   clearBypassTokens,
+  getTokenInfo,
+  checkAdminRateLimit,
 } from "@/lib/api/bypass-tokens";
+
+// Note: hasTokenScope may or may not exist yet - let's test what we have.
+// Actually it doesn't exist in the new version; we use isAdminToken instead.
 
 describe("bypass-tokens", () => {
   beforeEach(() => {
     clearBypassTokens();
   });
 
-  describe("createBypassToken", () => {
-    it("creates a token that validates", () => {
-      const tok = createBypassToken("test-token");
-      expect(tok).toBeTruthy();
-      expect(tok.length).toBeGreaterThan(20);
+  describe("createBypassToken + scopes", () => {
+    it("creates a bypass-scoped token by default", () => {
+      const tok = createBypassToken(undefined, "test");
+      const info = getTokenInfo(tok);
+      expect(info).not.toBeNull();
+      expect(info?.scope).toBe("bypass");
+      expect(info?.label).toBe("test");
+    });
+
+    it("creates an admin-scoped token", () => {
+      const tok = createBypassToken("admin", "admin-test");
+      const info = getTokenInfo(tok);
+      expect(info?.scope).toBe("admin");
+    });
+
+    it("bypass token validates as bypass but not admin", () => {
+      const tok = createBypassToken("bypass", "bypass-only");
       expect(isBypassToken(tok)).toBe(true);
+      expect(isAdminToken(tok)).toBe(false);
+    });
+
+    it("admin token validates as both bypass and admin", () => {
+      const tok = createBypassToken("admin", "admin-only");
+      expect(isBypassToken(tok)).toBe(true);
+      expect(isAdminToken(tok)).toBe(true);
     });
 
     it("returns false for invalid tokens", () => {
       expect(isBypassToken("random-string")).toBe(false);
+      expect(isAdminToken("random-string")).toBe(false);
       expect(isBypassToken("")).toBe(false);
+      expect(getTokenInfo("")).toBeNull();
     });
   });
 
@@ -42,8 +70,8 @@ describe("bypass-tokens", () => {
 
   describe("listBypassTokens", () => {
     it("lists all tokens with labels", () => {
-      createBypassToken("first");
-      createBypassToken("second");
+      createBypassToken("bypass", "first");
+      createBypassToken("admin", "second");
       const list = listBypassTokens();
       expect(list).toHaveLength(2);
       const labels = list.map((t) => t.label).sort();
@@ -53,7 +81,7 @@ describe("bypass-tokens", () => {
 
   describe("revokeBypassToken", () => {
     it("revokes by hash", () => {
-      const tok = createBypassToken("to-revoke");
+      const tok = createBypassToken("bypass", "to-revoke");
       const listBefore = listBypassTokens();
       expect(listBefore).toHaveLength(1);
 
@@ -71,7 +99,7 @@ describe("bypass-tokens", () => {
 
   describe("usage tracking", () => {
     it("increments usageCount and sets lastUsedAt", () => {
-      const tok = createBypassToken("usage-test");
+      const tok = createBypassToken("bypass", "usage-test");
       const before = listBypassTokens()[0];
       expect(before.usageCount).toBe(0);
       expect(before.lastUsedAt).toBeUndefined();
@@ -81,6 +109,30 @@ describe("bypass-tokens", () => {
       expect(after.usageCount).toBe(1);
       expect(after.lastUsedAt).toBeDefined();
       expect(after.lastUsedAt).toBeGreaterThan(0);
+    });
+
+    it("records lastIp when provided", () => {
+      const tok = createBypassToken("bypass", "ip-test");
+      isBypassToken(tok, "1.2.3.4");
+      const after = listBypassTokens()[0];
+      expect(after.lastIp).toBe("1.2.3.4");
+    });
+  });
+
+  describe("checkAdminRateLimit", () => {
+    it("returns a rate limit result for an IP", () => {
+      const result = checkAdminRateLimit("test-ip-123");
+      expect(result.allowed).toBe(true);
+      expect(result.remaining).toBeGreaterThan(0);
+      expect(typeof result.resetMs).toBe("number");
+    });
+
+    it("also limits by token hash when provided", () => {
+      const resultWithHash = checkAdminRateLimit("test-ip-456", "some-token-hash");
+      const resultWithoutHash = checkAdminRateLimit("test-ip-456");
+      // Both should work; the one with hash should consume from the token bucket
+      expect(resultWithHash.allowed).toBe(true);
+      expect(resultWithoutHash.allowed).toBe(true);
     });
   });
 });

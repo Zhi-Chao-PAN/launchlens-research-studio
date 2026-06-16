@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   // Bypass token check — skips rate limiting and strict CSRF
   const authHeader = request.headers.get("authorization");
   const bearerToken = extractBearerToken(authHeader);
-  const hasBypass = bearerToken ? isBypassToken(bearerToken) : false;
+  const hasBypass = bearerToken ? isBypassToken(bearerToken, ip) : false;
 
   // Rate limit check (skipped for bypass tokens)
   const rate = hasBypass
