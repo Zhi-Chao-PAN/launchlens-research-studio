@@ -1,0 +1,56 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EEF2FF"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="600" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="card-shine" x1="0" y1="0" x2="0" y2="600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="white" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- Decorative circles -->
+  <circle cx="1050" cy="120" r="180" fill="#A5B4FC" opacity="0.3"/>
+  <circle cx="150" cy="510" r="120" fill="#C4B5FD" opacity="0.3"/>
+
+  <!-- Main card -->
+  <rect x="100" y="115" width="600" height="400" rx="32" fill="url(#card)"/>
+  <rect x="100" y="115" width="600" height="400" rx="32" fill="url(#card-shine)"/>
+
+  <!-- Magnifier icon inside card -->
+  <g transform="translate(330 250)">
+    <circle cx="60" cy="60" r="48" stroke="white" stroke-width="14" fill="none"/>
+    <circle cx="40" cy="40" r="14" fill="white" opacity="0.7"/>
+    <line x1="92" y1="92" x2="135" y2="135" stroke="white" stroke-width="18" stroke-linecap="round"/>
+  </g>
+
+  <!-- Text on right -->
+  <g transform="translate(750 0)">
+    <text x="0" y="180" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="68" fill="#0F172A">
+      LaunchLens
+    </text>
+    <text x="0" y="260" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="56" fill="#6366F1">
+      Research
+    </text>
+    <text x="0" y="330" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="56" fill="#8B5CF6">
+      Studio
+    </text>
+    <text x="0" y="430" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="26" fill="#475569">
+      6 AI agents research your
+    </text>
+    <text x="0" y="468" font-family="Inter, system-ui, sans-serif" font-weight="500" font-size="26" fill="#475569">
+      product idea in minutes
+    </text>
+  </g>
+
+  <!-- Bottom badge -->
+  <rect x="100" y="555" width="280" height="40" rx="20" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="240" y="582" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="16" fill="#475569">
+    Powered by 6 specialized agents
+  </text>
+</svg>

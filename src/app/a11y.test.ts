@@ -60,6 +60,51 @@ describe("Accessibility — globals.css", () => {
   });
 });
 
+describe("SEO and metadata", () => {
+  it("layout.tsx has metadataBase and OpenGraph", () => {
+    const layout = readFile("app/layout.tsx");
+    expect(layout).toContain("metadataBase");
+    expect(layout).toContain("openGraph");
+    expect(layout).toContain("twitter");
+  });
+
+  it("layout.tsx has viewport export", () => {
+    const layout = readFile("app/layout.tsx");
+    expect(layout).toContain("Viewport");
+    expect(layout).toContain("themeColor");
+  });
+
+  it("layout.tsx has structured data (JSON-LD)", () => {
+    const layout = readFile("app/layout.tsx");
+    expect(layout).toContain("application/ld+json");
+    expect(layout).toContain("WebApplication");
+  });
+
+  it("robots.ts disallows API and references sitemap", () => {
+    const robots = readFile("app/robots.ts");
+    expect(robots).toContain("disallow");
+    expect(robots).toContain("sitemap");
+  });
+
+  it("sitemap.ts includes the home URL with high priority", () => {
+    const sitemap = readFile("app/sitemap.ts");
+    expect(sitemap).toContain("priority: 1.0");
+    expect(sitemap).toContain("research.launchlens.ai");
+  });
+
+  it("public/manifest.webmanifest is valid JSON with required fields", () => {
+    const fs = require("node:fs") as any;
+    const path = require("node:path") as any;
+    const manifestPath = path.resolve(SRC, "..", "public", "manifest.webmanifest");
+    const raw = fs.readFileSync(manifestPath, "utf-8").replace(/^\uFEFF/, "");
+    const data = JSON.parse(raw);
+    expect(data.name).toContain("LaunchLens");
+    expect(data.start_url).toBe("/");
+    expect(data.icons).toBeInstanceOf(Array);
+    expect(data.icons.length).toBeGreaterThan(0);
+  });
+});
+
 describe("Accessibility — Error and loading pages", () => {
   it("error.tsx has role and error UI", () => {
     const err = readFile("app/error.tsx");

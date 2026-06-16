@@ -113,6 +113,23 @@ async function run() {
     const focused = await page.evaluate(() => document.activeElement?.textContent);
     log("First Tab focuses skip link", (focused || "").toLowerCase().includes("skip"), "focused: " + focused);
 
+    // ====== Test 3.5: SEO and metadata ======
+    console.log('\n[3.5] SEO and metadata');
+    const pageTitle = await page.title();
+    log('Title is set', pageTitle.length > 10, 'pageTitle: ' + pageTitle);
+    const desc = await page.locator('meta[name="description"]').first().getAttribute('content');
+    log('Description meta present', !!desc && desc.length > 50, 'length: ' + (desc || '').length);
+    const og = await page.locator('meta[property="og:title"]').first().getAttribute('content');
+    log('OpenGraph title present', !!og && og.includes('LaunchLens'));
+    const tw = await page.locator('meta[name="twitter:card"]').first().getAttribute('content');
+    log('Twitter card meta present', !!tw, 'card: ' + tw);
+    const robotsResponse = await page.request.get(BASE_URL + '/robots.txt');
+    log('robots.txt served', robotsResponse.status() === 200, 'status=' + robotsResponse.status());
+    const sitemapResponse = await page.request.get(BASE_URL + '/sitemap.xml');
+    log('sitemap.xml served', sitemapResponse.status() === 200, 'status=' + sitemapResponse.status());
+    const manifestResponse = await page.request.get(BASE_URL + '/manifest.webmanifest');
+    log('manifest.webmanifest served', manifestResponse.status() === 200, 'status=' + manifestResponse.status());
+
     // ====== Test 4: Start research flow ======
     console.log("\n[4] Start research flow");
     await page.locator("textarea").first().fill("AI-powered tool for university students");
