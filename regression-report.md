@@ -1,9 +1,8 @@
 # Regression run
-Generated 2026-06-16T20:20:45.514Z
+Generated 2026-06-16T20:36:24.535Z
 
 | Step | Status | Time |
 | --- | --- | --- |
-| Lint | OK | 8.5s |
-| Unit tests | OK | 3.6s |
-| Build | OK | 16.2s |
-| Bundle stats | OK | 0.8s |
+| Lint | OK | 9.5s |
+| Unit tests | OK | 3.2s |
+| Build | FAIL | 10.3s |

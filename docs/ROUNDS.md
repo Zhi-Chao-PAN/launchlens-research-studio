@@ -396,3 +396,34 @@ Full regression sweep after the security hardening sprint:
 Cycle 09 report written to docs/cycle-09-r41-45.md summarizing
 rounds 41¨C45 (CORS hardening, auth alerts, HMAC webhook signatures,
 audit export, regression sweep).
+
+## Round 46 - Admin settings UI
+
+Browser-facing admin console at /admin for token management and
+security observability ¡ª no more need to curl the API directly.
+
+**Three tabs, all client-side (token stored in localStorage):**
+
+- **Tokens** ¡ª create tokens (bypass or admin scope), view active
+  tokens with label/scope/hash/created/last-used, revoke tokens.
+  New tokens display once with a "save this" warning.
+- **Audit Log** ¡ª 20 most recent events, with CSV/JSONL export links.
+  Auto-refreshes every 5 seconds.
+- **Alerts** ¡ª security alerts with severity coloring (critical red,
+  warning amber, info indigo), clear-all action. Auto-refreshes.
+
+**Design:**
+- Dark theme matching the diagnostics page aesthetic
+- Responsive layout (mobile-friendly)
+- Sticky header with Studio / Diagnostics / Sign out links
+- Error banner for API failures
+- Login screen with token input (unauthenticated state)
+
+**New files:**
+- src/app/admin/page.tsx ¡ª client component admin console
+- e2e/admin-ui-e2e.js ¡ª 8 e2e tests covering page render, API
+  accessibility, and CSS inclusion
+
+No new backend ¡ª all powered by the existing admin API endpoints.
+Total automated tests: 348 (266 unit + 82 e2e). Lint: 0 errors,
+25 warnings. Build: 20 routes, ~795 KB client JS.
