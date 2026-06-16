@@ -32,8 +32,7 @@ card, JSON-LD WebApplication structured data, viewport theme color.
 
 ## Round 8 - Performance and observability
 Bucketed progress helper to stabilize re-renders, React.memo on AgentCard,
-WebVitalsReporter measuring LCP/CLS/INP via PerformanceObserver, no-op
-/api/vitals beacon endpoint, scripts/bundle-stats.js.
+WebVitalsReporter measuring LCP/CLS/INP, scripts/bundle-stats.js.
 
 ## Round 9 - Internationalization foundation
 Flat dictionary for English, Simplified Chinese, Japanese; LocaleProvider
@@ -41,69 +40,62 @@ with localStorage persistence and navigator.language autodetect; header
 LanguageSwitcher; first-pass translation of hero, status, errors, header.
 
 ## Round 10 - Regression sweep and stability
-Regression orchestrator (scripts/regression.js) that runs unit + build +
-bundle stats and emits a Markdown report. Iteration log consolidated here.
+Regression orchestrator (scripts/regression.js).
 
 ## Round 11 - Lint debt cleanup
-Lint goes from 62 errors to 0. Configured eslint to allow CommonJS in
-scripts/e2e and any in tests; documented intent for legacy hooks via
-file-level disables; switched <a href="/"> to next/link; escaped quotes;
-removed unused imports.
+Lint goes from 62 errors to 0.
 
 ## Round 12 - Pluggable provider architecture
-ResearchProvider interface; mock-provider-adapter; OpenAI-compatible
-adapter (configurable baseUrl/model, falls back to mock on failure);
-provider-registry with env-based selection (OPENAI_API_KEY,
-LAUNCHLENS_PROVIDER); engine wired through the registry; .env.example.
+ResearchProvider interface; mock + OpenAI-compatible adapter; registry.
 
 ## Round 13 - Deeper i18n through agent labels
 22 new dictionary keys covering all 6 agent names/descriptions, status
-pills (Waiting, Researching, Complete, Error), studio sidebar header,
-"Powered by 6 research agents" caption, keyboard shortcut hints, and
-the footer tagline. AgentCard reads translated labels with English
-fallback. e2e selectors localized.
+pills, sidebar header, footer, keyboard hints.
 
 ## Round 14 - Dynamic imports + a11y polish
-Each agent report section now lazy-loads via next/dynamic with a stable
-SectionFallback. ReportView region exposes role, aria-label, and
-aria-busy for screen readers.
+Each agent report section lazy-loads via next/dynamic. Report region
+exposes role, aria-label, aria-busy.
 
 ## Round 15 - Full regression sweep + record consolidation
-Regression script extended to lint + unit + build + bundle-stats with
-status table emitted to regression-report.md.
+Lint integrated into npm run regression.
 
-## Round 16 - Runtime output validator + Anthropic Messages adapter
-output-validator.ts asserts AgentOutput shape per agent and patches a
-wrong discriminator. Anthropic Messages adapter (x-api-key header,
-anthropic-version, mock fallback). Provider registry rewritten with a
-clean precedence rule: forced override -> Anthropic key -> OpenAI key
--> mock.
+## Round 16 - Output validator + Anthropic adapter
+Per-agent shape validation. Anthropic Messages API adapter. Registry
+rewritten with clean precedence rule.
 
 ## Round 17 - Provider streaming with onProgress
-ProviderContext gains an optional onProgress callback. Mock synthesizes
-4 progress checkpoints. OpenAI adapter requests stream:true when
-onProgress is provided, decodes SSE deltas, and forwards partial text
-plus a fraction estimate. Engine forwards provider progress as SSE
-progress events with step + partial fields.
+ProviderContext gains onProgress. OpenAI adapter requests stream:true,
+forwards SSE deltas to engine progress events with step + partial.
 
 ## Round 18 - Health endpoint, telemetry ring buffer
-/api/health reports status, version, uptime, and live provider info.
-src/lib/telemetry/telemetry.ts records the last 200 agent generations
-with provider id, duration, ok flag, and error. /api/telemetry exposes
-a summary plus the most recent N entries. Engine writes a telemetry
-record per agent generation regardless of success.
+/api/health, /api/telemetry, 200-entry ring buffer recording every
+agent generation.
 
 ## Round 19 - Backoff retry + per-IP rate limit
-src/lib/utils/retry.ts provides retryWithBackoff with exponential
-backoff, jitter, AbortSignal cooperation, and a shouldRetry guard.
-The OpenAI adapter retries 5xx and 429 up to 3 times then falls back
-to the mock; 4xx errors degrade immediately. src/lib/api/rate-limit.ts
-adds a per-key token bucket. POST /api/research is rate-limited per
-X-Forwarded-For with default 10 requests / 60 seconds.
+retryWithBackoff, OpenAI 5xx/429 retry, /api/research per-IP token
+bucket.
 
 ## Round 20 - Closing the second-tier sweep
-Iteration log updated through round 20. README feature inventory and
-runtime variable matrix added so newcomers can see the full surface
-at a glance. Health snapshot at end of round 20: 182 unit tests,
-26 e2e tests, 0 lint errors, 11 routes, build clean, 720 KB total
-client JS spread across many small chunks.
+docs/ROUNDS.md and docs/FEATURES.md.
+
+## Round 21 - Anthropic streaming + circuit breaker
+Anthropic SSE content_block_delta forwarding. Per-provider circuit
+breaker with half-open trial. Health and telemetry expose breaker
+snapshots.
+
+## Round 22 - Provider/breaker pill in header
+ProviderPill polls /api/health and shows live provider id, streaming
+flag, and breaker state. i18n keys for mock / breakerOpen / streaming.
+
+## Round 23 - Translated crash and 404 screens
+error.tsx and not-found.tsx read from the locale dictionary. Crash
+screen offers a copy-trace button and posts a breadcrumb to /api/vitals.
+
+## Round 24 - CHANGELOG sync + operations guide
+CHANGELOG.md updated through round 23. docs/OPERATIONS.md covering
+provider selection, diagnostics, breaker, rate limit, retry, tuning.
+
+## Round 25 - Final regression sweep
+Iteration log updated through round 25. Health snapshot at end of round
+25: 190 unit tests, 27 e2e tests, 0 lint errors, 11 routes, build clean,
+~720 KB total client JS.
