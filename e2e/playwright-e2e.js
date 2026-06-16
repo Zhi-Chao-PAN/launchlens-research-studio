@@ -128,6 +128,11 @@ async function run() {
     log('robots.txt served', robotsResponse.status() === 200, 'status=' + robotsResponse.status());
     const sitemapResponse = await page.request.get(BASE_URL + '/sitemap.xml');
     log('sitemap.xml served', sitemapResponse.status() === 200, 'status=' + sitemapResponse.status());
+    const healthResponse = await page.request.get(BASE_URL + '/api/health');
+    const healthJson = await healthResponse.json();
+    log('health endpoint serves provider info', healthResponse.status() === 200 && healthJson.status === 'ok' && !!healthJson.provider, 'provider=' + (healthJson.provider && healthJson.provider.id));
+    const telemetryResponse = await page.request.get(BASE_URL + '/api/telemetry');
+    log('telemetry endpoint serves summary', telemetryResponse.status() === 200);
     const manifestResponse = await page.request.get(BASE_URL + '/manifest.webmanifest');
     log('manifest.webmanifest served', manifestResponse.status() === 200, 'status=' + manifestResponse.status());
 

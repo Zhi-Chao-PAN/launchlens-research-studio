@@ -7,6 +7,7 @@
 } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { selectProvider } from "@/lib/providers/provider-registry";
+import { recordTelemetry } from "@/lib/telemetry/telemetry";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -128,6 +129,9 @@ async function runAgent(
     const allOutputs = getCompletedAgentOutputs(session);
     const provider = selectProvider();
         let output;
+        const t0 = Date.now();
+        let telemetryOk = true;
+        let telemetryErr: string | undefined;
         try {
           output = await provider.generate(agentId, {
             query: session.query,
@@ -151,8 +155,19 @@ async function runAgent(
               });
             },
           });
-        } catch {
+        } catch (e) {
+          telemetryOk = false;
+          telemetryErr = e instanceof Error ? e.message : String(e);
           output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
+        } finally {
+          recordTelemetry({
+            ts: Date.now(),
+            agentId,
+            providerId: provider.id,
+            durationMs: Date.now() - t0,
+            ok: telemetryOk,
+            error: telemetryErr,
+          });
         }
 
     // Merge citations
