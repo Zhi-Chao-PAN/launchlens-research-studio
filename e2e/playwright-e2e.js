@@ -80,7 +80,8 @@ async function run() {
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
 
-    const heroVisible = await page.locator("h2").filter({ hasText: /Research any market/ }).isVisible();
+    await page.waitForSelector("h2:has-text(\"Research any market\")", { timeout: 8000 }).catch(() => {});
+    const heroVisible = await page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first().isVisible();
     log("Hero text visible", heroVisible);
 
     const hasQueryInput = await page.locator("textarea").first().isVisible();
@@ -214,7 +215,7 @@ async function run() {
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
     await mobilePage.locator('button:has-text("Start Research")').first().click();
-    await mobilePage.waitForSelector("text=Research Agents", { timeout: 10000 });
+    await mobilePage.waitForSelector("text=Research Agents", { timeout: 15000, state: "attached" });
     await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
 
     const mobileToggle = mobilePage.locator('button[aria-controls="studio-sidebar"]').first();

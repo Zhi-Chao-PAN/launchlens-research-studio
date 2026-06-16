@@ -2,6 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { WebVitalsReporter } from "@/components/perf/WebVitalsReporter";
+import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -147,11 +148,11 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <WebVitalsReporter />
-        <a href="#main-content" className="skip-link">
+        <LocaleProvider><a href="#main-content" className="skip-link">
           Skip to main content
         </a>
         {children}
-      </body>
+      </LocaleProvider></body>
     </html>
   );
 }

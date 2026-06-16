@@ -13,10 +13,13 @@ import { ReportView } from "@/components/report/ReportView";
 import { ExportActions } from "@/components/report/ExportActions";
 import { ShareButton } from "@/components/report/ShareButton";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 
 export default function Home() {
+  const { t } = useLocale();
   const { state, startResearch, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
   const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
@@ -146,7 +149,7 @@ export default function Home() {
                 LaunchLens Research Studio
               </h1>
               <p className="text-xs text-slate-500 truncate">
-                Multi-agent market intelligence for your product idea
+                {t("header.subtitle")}
               </p>
             </div>
           </div>
@@ -154,12 +157,13 @@ export default function Home() {
             {state.status === "completed" && (
               <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Research complete
+                {t("header.researchComplete")}
               </span>
             )}
             {hasSession && state.sessionId && state.status === "completed" && (
               <ShareButton sessionId={state.sessionId} size="sm" label="Share" />
             )}
+            <LanguageSwitcher />
             <ThemeToggle />
             {hasSession && (
               <button
@@ -179,7 +183,7 @@ export default function Home() {
           <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
             <span className="text-rose-500 text-xl flex-shrink-0" aria-hidden>⚠️</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-rose-800">Research failed to start</p>
+              <p className="text-sm font-medium text-rose-800">{t("errors.startFailed")}</p>
               <p className="text-xs text-rose-600 mt-0.5 break-words">{state.error}</p>
             </div>
             <button
@@ -194,20 +198,19 @@ export default function Home() {
 
       <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {state.status === "loading" && "Starting research session"}
-          {state.status === "running" && "Research agents are running"}
-          {state.status === "completed" && "Research complete"}
-          {state.status === "error" && (state.error || "Research failed")}
+          {state.status === "loading" && t("status.loading")}
+          {state.status === "running" && t("status.running")}
+          {state.status === "completed" && t("status.completed")}
+          {state.status === "error" && (state.error || t("status.error"))}
         </div>
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-slate-800 tracking-tight mb-3">
-                Research any market in minutes
+                {t("hero.title")}
               </h2>
               <p className="text-slate-500 text-lg">
-                6 specialized AI agents work in parallel to give you a complete market
-                intelligence report. No API keys required.
+                {t("hero.subtitle")}
               </p>
             </div>
             <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
