@@ -10,6 +10,7 @@ import { selectProvider } from "@/lib/providers/provider-registry";
 import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
+import { saveResearchRun } from "@/lib/research/storage";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -353,7 +354,43 @@ export async function runResearchSession(
   }
 
   session.status = "completed";
+
+
   session.updatedAt = new Date().toISOString();
+
+
+
+    // Persist to storage (best-effort)
+  try {
+    const synthesisRaw = session.agents.synthesis?.output;
+    const resultText = typeof synthesisRaw === "string"
+      ? synthesisRaw
+      : synthesisRaw
+        ? JSON.stringify(synthesisRaw, null, 2)
+        : "";
+
+    const createdMs = new Date(session.createdAt).getTime();
+    const durationMs = createdMs ? Date.now() - createdMs : 0;
+
+    saveResearchRun({
+      id: session.id,
+      query: session.query,
+      keywords: session.keywords,
+      result: resultText,
+      provider: "mock",
+      model: "mock-model",
+      createdAt: createdMs,
+      durationMs,
+      status: "completed",
+      sources: session.citations?.slice(0, 20)?.filter((c) => c.url)?.map((c) => ({
+        title: c.title,
+        url: c.url || "",
+        snippet: c.snippet,
+      })) || [],
+    });
+  } catch {
+    // Storage is best-effort — don't fail the run
+  }
 
   emitEvent(session.id, {
     type: "complete",

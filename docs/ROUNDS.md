@@ -534,3 +534,35 @@ audit filtering + system tab, regression sweep).
 ### 已完成 50 轮迭代
 从 R1 到 R50，十个完整的迭代周期，覆盖了从基础项目搭建到研究功能、
 安全加固、管理控制台的全维度打磨。
+
+## Round 51 - Research run persistence + history + detail pages
+
+Research runs are now saved and browsable. Completed sessions persist
+across server restarts (when LAUNCHLENS_STORAGE_DIR is configured) and
+are accessible via a history page and individual detail pages.
+
+**Storage layer:**
+- src/lib/research/storage.ts — in-memory + disk-backed storage
+- saveResearchRun(), listResearchRuns(), getResearchRun(), deleteResearchRun()
+- LAUNCHLENS_STORAGE_DIR for persistence (JSON files on disk)
+- 50-run in-memory cache when no storage dir is set
+- 14 unit tests including integration tests
+
+**API endpoints:**
+- GET /api/research/runs?limit=N — paginated list of recent runs (summary)
+- GET /api/research/runs/[id] — full run detail with result + sources
+
+**UI pages:**
+- /history — run history list with status badges, keywords, timestamps
+- /research/[id] — full run detail page with sources + result
+- Markdown export button on detail page
+- Dark theme, responsive layout, auto-refresh every 10s
+
+**Integration:**
+- Research engine auto-saves completed runs to storage
+- Best-effort — save failures don't break the research run
+- 19 new history e2e tests (pages + API + integration)
+
+Total automated tests: 426 (305 unit + 121 e2e). Lint: 0 errors,
+31 warnings. Build: 22 routes, ~809 KB client JS. All regression
+checks green.
