@@ -6,6 +6,7 @@
   AgentOutput,
 } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
+import { selectProvider } from "@/lib/providers/provider-registry";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -125,7 +126,17 @@ async function runAgent(
 
     // Generate final output
     const allOutputs = getCompletedAgentOutputs(session);
-    const output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
+    const provider = selectProvider();
+        let output;
+        try {
+          output = await provider.generate(agentId, {
+            query: session.query,
+            keywords: session.keywords,
+            upstream: allOutputs,
+          });
+        } catch {
+          output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
+        }
 
     // Merge citations
     for (const citation of output.citations) {
