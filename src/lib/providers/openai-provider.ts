@@ -2,7 +2,8 @@
 // OpenAI-compatible provider adapter.
 // Targets any chat-completions endpoint that returns JSON when prompted to.
 // Falls back to the mock provider on any remote failure so the demo path
-// always succeeds, even with a misconfigured key.
+// always succeeds, even with a misconfigured key. When ctx.onProgress is
+// defined the adapter requests stream:true and forwards partial tokens.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
@@ -36,6 +37,38 @@ function buildUserPrompt(agentId: AgentId, ctx: ProviderContext): string {
   ].filter(Boolean).join("\n");
 }
 
+async function readSSE(res: Response, onChunk: (text: string) => void): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let assembled = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const json = JSON.parse(payload);
+        const delta = json?.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta.length > 0) {
+          assembled += delta;
+          onChunk(assembled);
+        }
+      } catch {
+        // tolerate malformed SSE frames; the final JSON validator catches it.
+      }
+    }
+  }
+  return assembled;
+}
+
 export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProvider {
   const baseUrl = config.baseUrl || "https://api.openai.com/v1";
   const model = config.model || "gpt-4o-mini";
@@ -45,7 +78,9 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
     id: "openai",
     displayName: "OpenAI-compatible (" + model + ")",
     isMock: false,
+    supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
+      const wantsStream = typeof ctx.onProgress === "function";
       try {
         const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
         const res = await fetchImpl(url, {
@@ -58,6 +93,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           body: JSON.stringify({
             model,
             temperature: 0.4,
+            stream: wantsStream,
             response_format: { type: "json_object" },
             messages: [
               { role: "system", content: buildSystemPrompt(agentId) },
@@ -66,12 +102,20 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           }),
         });
         if (!res.ok) throw new Error("provider HTTP " + res.status);
-        const json: any = await res.json();
-        const text: string = json?.choices?.[0]?.message?.content || "";
+        let text: string;
+        if (wantsStream) {
+          text = await readSSE(res as unknown as Response, (assembled) => {
+            const fraction = Math.min(0.95, assembled.length / 1500);
+            ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
+          });
+          ctx.onProgress!({ fraction: 1, step: "Validating output" });
+        } else {
+          const json: any = await res.json();
+          text = json?.choices?.[0]?.message?.content || "";
+        }
         const parsed = JSON.parse(text);
         return validateAgentOutput(agentId, parsed);
       } catch {
-        // Graceful fallback: keep the demo path alive.
         return mockResearchProvider.generate(agentId, ctx);
       }
     },

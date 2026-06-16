@@ -56,6 +56,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
     id: "anthropic",
     displayName: "Anthropic Messages (" + model + ")",
     isMock: false,
+    supportsStreaming: false,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       try {
         const url = baseUrl.replace(/\/$/, "") + "/v1/messages";

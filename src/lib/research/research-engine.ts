@@ -133,6 +133,23 @@ async function runAgent(
             query: session.query,
             keywords: session.keywords,
             upstream: allOutputs,
+            onProgress: (event) => {
+              const overall = 80 + Math.round(event.fraction * 19);
+              updateAgentState(session, agentId, {
+                progress: Math.min(99, overall),
+                currentStep: event.step || session.agents[agentId].currentStep,
+              });
+              emitEvent(session.id, {
+                type: "progress",
+                agentId,
+                timestamp: new Date().toISOString(),
+                data: {
+                  step: event.step || session.agents[agentId].currentStep,
+                  progress: Math.min(99, overall),
+                  partial: event.partial,
+                },
+              });
+            },
           });
         } catch {
           output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
