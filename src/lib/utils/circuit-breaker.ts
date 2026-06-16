@@ -1,4 +1,5 @@
-import { getBackend } from "@/lib/storage/storage";
+﻿import { getBackend } from "@/lib/storage/storage";
+import { recordFlip } from "@/lib/utils/flip-history";
 // Per-key circuit breaker.
 // After N consecutive failures the breaker opens and short-circuits
 // further calls for cooldown ms. A single success closes it again.
@@ -70,6 +71,8 @@ export function isOpen(
     // Half-open: allow one trial. The next success closes; failure re-opens.
     state.openedAt = null;
     state.failures = cfg.threshold - 1;
+    // Don't record a close here — wait for an actual success.
+    persist();
     return false;
   }
   return true;
@@ -78,8 +81,12 @@ export function isOpen(
 export function recordSuccess(key: string): void {
   hydrate();
   const state = getOrCreate(key);
+  const wasOpen = state.openedAt !== null;
   state.failures = 0;
   state.openedAt = null;
+  if (wasOpen) {
+    recordFlip("breaker_close", key, { detail: "successful call closed breaker" });
+  }
   persist();
 }
 
@@ -91,9 +98,15 @@ export function recordFailure(
   const cfg = { ...DEFAULT_CONFIG, ...config };
   hydrate();
   const state = getOrCreate(key);
+  const wasOpen = state.openedAt !== null;
   state.failures++;
   if (state.failures >= cfg.threshold) {
     state.openedAt = now;
+    if (!wasOpen) {
+      recordFlip("breaker_open", key, {
+        detail: state.failures + " consecutive failures",
+      });
+    }
     persist();
     return true;
   }

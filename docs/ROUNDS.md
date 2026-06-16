@@ -128,3 +128,14 @@ Health snapshot at end of round 30: 201 unit tests, 29 e2e tests, 0 lint
 errors, 12 routes (4 static, 8 dynamic), build clean, ~720 KB total
 client JS spread across many small chunks. npm run regression emits
 lint + unit + build + bundle-stats in 32 s end-to-end.
+
+## Round 31 - SSE reconnect + provider flip history
+src/lib/utils/sse-reconnect.ts with readSseWithReconnect(), OpenAI and
+Anthropic event parsers, RetriableSseError tag, and exponential-backoff
+reconnect. Both provider adapters now use the reconnect helper for
+streaming requests so transient mid-stream drops don't silently degrade
+to mock. src/lib/utils/flip-history.ts ring buffer recording breaker
+open/close and provider flip events, persisted through the storage
+backend. /api/health returns a flipHistory field with the last 20
+events. /diagnostics adds a "State transition history" table and a
+third summary card showing total events.

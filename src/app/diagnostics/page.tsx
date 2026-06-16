@@ -1,6 +1,7 @@
-const NOW = Date.now();
+﻿const NOW = Date.now();
 import { summarizeTelemetry, getRecentTelemetry } from "@/lib/telemetry/telemetry";
 import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
+import { snapshotFlips } from "@/lib/utils/flip-history";
 import { getRecentRequests } from "@/lib/telemetry/request-log";
 import { selectProvider } from "@/lib/providers/provider-registry";
 import packageJson from "../../../package.json";
@@ -25,6 +26,24 @@ function formatTimestamp(ts: number): string {
   return d.toISOString().replace("T", " ").replace("Z", " UTC");
 }
 
+function flipTypeLabel(type: string): string {
+  switch (type) {
+    case "breaker_open": return "Breaker opened";
+    case "breaker_close": return "Breaker closed";
+    case "provider_flip": return "Provider flip";
+    default: return type;
+  }
+}
+
+function flipTypeColor(type: string): string {
+  switch (type) {
+    case "breaker_open": return "text-rose-700";
+    case "breaker_close": return "text-emerald-700";
+    case "provider_flip": return "text-amber-700";
+    default: return "text-slate-700";
+  }
+}
+
 export const dynamic = "force-dynamic";
 
 export default function DiagnosticsPage() {
@@ -32,6 +51,7 @@ export default function DiagnosticsPage() {
   const breakers = snapshotBreakers();
   const recentTelemetry = getRecentTelemetry(20);
   const recentRequests = getRecentRequests(20);
+  const flips = snapshotFlips(20);
   const provider = readProvider();
   const buildInfo = {
     name: packageJson.name,
@@ -66,10 +86,10 @@ export default function DiagnosticsPage() {
             </p>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Requests</p>
-            <p className="text-lg font-semibold text-slate-800 mt-1">{recentRequests.length} recent</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">State transitions</p>
+            <p className="text-lg font-semibold text-slate-800 mt-1">{flips.length} events</p>
             <p className="text-xs text-slate-500 mt-1">
-              {recentRequests.filter((r) => r.ok).length} ok, {recentRequests.filter((r) => !r.ok).length} non-2xx
+              breaker open/close + provider flips (last 20)
             </p>
           </div>
         </section>
@@ -98,6 +118,36 @@ export default function DiagnosticsPage() {
                 );
               })}
             </div>
+          )}
+        </section>
+
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-slate-800 mb-3">State transition history</h2>
+          {flips.length === 0 ? (
+            <p className="text-sm text-slate-500">No state transitions recorded yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-slate-500">
+                  <th className="py-1 pr-2">When</th>
+                  <th className="py-1 pr-2">Type</th>
+                  <th className="py-1 pr-2">Key</th>
+                  <th className="py-1 pr-2">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flips.slice().reverse().map((f) => (
+                  <tr key={f.id} className="border-t border-slate-100">
+                    <td className="py-1 pr-2 text-xs text-slate-500">{formatTimestamp(f.timestamp)}</td>
+                    <td className={"py-1 pr-2 font-medium " + flipTypeColor(f.type)}>{flipTypeLabel(f.type)}</td>
+                    <td className="py-1 pr-2 font-mono text-xs">{f.key}</td>
+                    <td className="py-1 pr-2 text-xs text-slate-600">
+                      {f.from && f.to ? (f.from + " → " + f.to) : (f.detail || "—")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </section>
 

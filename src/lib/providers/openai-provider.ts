@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 // OpenAI-compatible provider adapter.
 // Targets any chat-completions endpoint that returns JSON when prompted to.
 // Falls back to the mock provider on any remote failure so the demo path
@@ -6,13 +6,16 @@
 // defined the adapter requests stream:true and forwards partial tokens.
 // Transient HTTP errors (5xx, 429) are retried with exponential backoff;
 // 4xx errors are surfaced immediately so the outer fallback can degrade
-// to the mock without burning quota.
+// to the mock without burning quota. SSE streams reconnect automatically
+// on mid-stream drops so transient network failures don't silently fall
+// through to the mock fallback.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
+import { readSseWithReconnect, parseOpenAiSse } from "@/lib/utils/sse-reconnect";
 
 export interface OpenAIProviderConfig {
   apiKey: string;
@@ -39,38 +42,6 @@ function buildUserPrompt(agentId: AgentId, ctx: ProviderContext): string {
     "Keywords: " + (ctx.keywords || []).join(", "),
     upstream,
   ].filter(Boolean).join("\n");
-}
-
-async function readSSE(res: Response, onChunk: (text: string) => void): Promise<string> {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let assembled = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const json = JSON.parse(payload);
-        const delta = json?.choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta.length > 0) {
-          assembled += delta;
-          onChunk(assembled);
-        }
-      } catch {
-        // tolerate malformed SSE frames; the final JSON validator catches it.
-      }
-    }
-  }
-  return assembled;
 }
 
 export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProvider {
@@ -124,10 +95,23 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
 
         let text: string;
         if (wantsStream) {
-          text = await readSSE(res as unknown as Response, (assembled) => {
-            const fraction = Math.min(0.95, assembled.length / 1500);
-            ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
-          });
+          // We already have a Response from the first request, but the
+          // reconnect helper needs a factory so it can restart on drop.
+          // Reuse the same fetch factory for reconnects.
+          text = await readSseWithReconnect(
+            doFetch,
+            (assembled) => {
+              const fraction = Math.min(0.95, assembled.length / 1500);
+              ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
+            },
+            parseOpenAiSse,
+            {
+              maxAttempts: 3,
+              baseDelayMs: 300,
+              maxDelayMs: 2000,
+              signal: ctx.signal,
+            },
+          );
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
           const json: any = await res.json();

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 // Anthropic Messages API adapter.
 // Targets POST {baseUrl}/v1/messages with x-api-key header. Falls back
 // to mock outputs on HTTP failure or validation failure so the demo
@@ -6,13 +6,15 @@
 // When ctx.onProgress is defined the adapter requests stream:true and
 // forwards Anthropic content_block_delta events as partial text plus a
 // fraction estimate. Transient HTTP errors (5xx, 429) are retried with
-// exponential backoff; 4xx errors are surfaced immediately.
+// exponential backoff; 4xx errors are surfaced immediately. SSE streams
+// reconnect automatically on mid-stream drops.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
+import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconnect";
 
 export interface AnthropicProviderConfig {
   apiKey: string;
@@ -49,41 +51,6 @@ function extractJsonFromMessages(json: any): string {
     }
   }
   return "";
-}
-
-async function readAnthropicSSE(res: Response, onChunk: (text: string) => void): Promise<string> {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let assembled = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (!payload) continue;
-      try {
-        const event = JSON.parse(payload);
-        // Anthropic streams content via content_block_delta with text_delta blocks.
-        if (event?.type === "content_block_delta" && event?.delta?.type === "text_delta") {
-          const t = event.delta.text;
-          if (typeof t === "string" && t.length > 0) {
-            assembled += t;
-            onChunk(assembled);
-          }
-        }
-      } catch {
-        // tolerate malformed frames
-      }
-    }
-  }
-  return assembled;
 }
 
 export function createAnthropicProvider(config: AnthropicProviderConfig): ResearchProvider {
@@ -138,10 +105,20 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
 
         let text: string;
         if (wantsStream) {
-          text = await readAnthropicSSE(res as unknown as Response, (assembled) => {
-            const fraction = Math.min(0.95, assembled.length / 1500);
-            ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
-          });
+          text = await readSseWithReconnect(
+            doFetch,
+            (assembled) => {
+              const fraction = Math.min(0.95, assembled.length / 1500);
+              ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
+            },
+            parseAnthropicSse,
+            {
+              maxAttempts: 3,
+              baseDelayMs: 300,
+              maxDelayMs: 2000,
+              signal: ctx.signal,
+            },
+          );
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
           const json: any = await res.json();
