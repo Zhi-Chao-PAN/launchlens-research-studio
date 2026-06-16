@@ -154,6 +154,44 @@ export function deleteResearchRun(id: string): boolean {
   return memIdx >= 0;
 }
 
+
+/**
+ * Search and filter research runs.
+ * @param options Search options
+ */
+export function searchResearchRuns(options: {
+  query?: string;
+  status?: "completed" | "failed";
+  provider?: string;
+  limit?: number;
+  offset?: number;
+}): { runs: ResearchRun[]; total: number } {
+  const { query, status, provider, limit = 20, offset = 0 } = options;
+
+  let filtered = [...recentRuns];
+
+  if (status) {
+    filtered = filtered.filter((r) => r.status === status);
+  }
+
+  if (provider) {
+    filtered = filtered.filter((r) => r.provider === provider);
+  }
+
+  if (query && query.trim()) {
+    const q = query.toLowerCase().trim();
+    filtered = filtered.filter((r) =>
+      r.query.toLowerCase().includes(q) ||
+      r.keywords.some((k) => k.toLowerCase().includes(q)),
+    );
+  }
+
+  const total = filtered.length;
+  const runs = filtered.slice(offset, offset + limit);
+
+  return { runs, total };
+}
+
 /**
  * Get research storage info (for diagnostics / admin).
  */
@@ -165,4 +203,51 @@ export function getResearchStorageInfo() {
     maxMemoryRuns: MAX_MEMORY_RUNS,
     inMemoryCount: recentRuns.length,
   };
+}
+
+/**
+ * Delete multiple research runs by IDs.
+ * Returns count of successfully deleted runs.
+ */
+export function bulkDeleteRuns(ids: string[]): number {
+  let count = 0;
+  for (const id of ids) {
+    if (deleteResearchRun(id)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Export runs in various formats.
+ */
+export function exportRuns(format: "json" | "csv" | "jsonl", ids?: string[]): string {
+  const runs = ids
+    ? ids.map((id) => getResearchRun(id)).filter((r): r is ResearchRun => r !== null)
+    : listResearchRuns(100);
+
+  switch (format) {
+    case "json":
+      return JSON.stringify(runs, null, 2);
+    case "jsonl":
+      return runs.map((r) => JSON.stringify(r)).join("\n");
+    case "csv": {
+      const headers = ["id", "query", "keywords", "status", "provider", "model", "createdAt", "durationMs", "hasSources"];
+      const rows = runs.map((r) => [
+        r.id,
+        '"' + r.query.replace(/"/g, '""') + '"',
+        '"' + r.keywords.join(", ").replace(/"/g, '""') + '"',
+        r.status,
+        r.provider,
+        r.model,
+        r.createdAt,
+        r.durationMs,
+        r.sources ? r.sources.length : 0,
+      ].join(","));
+      return [headers.join(","), ...rows].join("\n");
+    }
+    default:
+      return "";
+  }
 }

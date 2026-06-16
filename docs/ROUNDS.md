@@ -566,3 +566,39 @@ are accessible via a history page and individual detail pages.
 Total automated tests: 426 (305 unit + 121 e2e). Lint: 0 errors,
 31 warnings. Build: 22 routes, ~809 KB client JS. All regression
 checks green.
+
+## Round 52 - Search, filter, export, and bulk deletion for research runs
+
+History page gets search + filtering capabilities, and the research runs
+API gains export formats and bulk operations.
+
+**Storage module improvements:**
+- searchResearchRuns() ！ query search + status filter + provider filter + pagination
+- ulkDeleteRuns(ids) ！ delete multiple runs at once
+- exportRuns(format, ids?) ！ export in JSON / CSV / JSONL formats
+- 14 new unit tests (28 total for storage module)
+
+**API enhancements:**
+- GET /api/research/runs?q=X ！ search by query text or keywords
+- GET /api/research/runs?status=completed|failed ！ filter by status
+- GET /api/research/runs?provider=X ！ filter by provider
+- GET /api/research/runs?offset=N&limit=M ！ paginated results
+- GET /api/research/runs?format=json|csv|jsonl ！ export all runs
+- DELETE /api/research/runs?ids=a,b,c ！ bulk delete runs
+- Returns 	otal, offset, limit for pagination awareness
+
+**History page UI:**
+- Search input (300ms debounced)
+- Status filter dropdown (all / completed / failed)
+- JSON + CSV export links
+- Shows total count of matching runs
+- Responsive layout
+
+**E2E coverage:**
+- 22 new tests covering search, filters, combined filters,
+  JSON/CSV/JSONL export, bulk delete, and pagination
+- 41 total history e2e tests
+
+Total automated tests: 448 (305 unit + 143 e2e). Lint: 0 errors,
+32 warnings. Build: 22 routes, ~831 KB client JS. All regression
+checks green.

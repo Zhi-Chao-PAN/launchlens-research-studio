@@ -116,6 +116,95 @@ async function run() {
       }
     }
 
+
+    console.log("\n[6] Search + filter API");
+    const searchRes = await fetch(`${BASE_URL}/api/research/runs?q=e2e history test`);
+    log("Search by query works", searchRes.ok);
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      log("Search returns matching results", searchData.runs.length >= 1);
+      log("Search has total count", typeof searchData.total === "number");
+    }
+
+    const filterRes = await fetch(`${BASE_URL}/api/research/runs?status=completed`);
+    log("Status filter returns 200", filterRes.ok);
+    if (filterRes.ok) {
+      const filterData = await filterRes.json();
+      const allCompleted = filterData.runs.every((r) => r.status === "completed");
+      log("Status filter only returns matching runs", allCompleted);
+    }
+
+    const emptyFilterRes = await fetch(`${BASE_URL}/api/research/runs?status=failed&q=nonexistentxyz`);
+    log("Combined filter with no matches returns 200", emptyFilterRes.ok);
+    if (emptyFilterRes.ok) {
+      const emptyData = await emptyFilterRes.json();
+      log("Empty result has total of 0", emptyData.total === 0);
+    }
+
+    console.log("\n[7] Export endpoints");
+    const jsonExportRes = await fetch(`${BASE_URL}/api/research/runs?format=json`);
+    log("JSON export returns 200", jsonExportRes.ok, `status=${jsonExportRes.status}`);
+    if (jsonExportRes.ok) {
+      const jsonData = await jsonExportRes.json();
+      log("JSON export returns array", Array.isArray(jsonData));
+      log("JSON export Content-Type is JSON", 
+        jsonExportRes.headers.get("content-type")?.includes("application/json"));
+    }
+
+    const csvExportRes = await fetch(`${BASE_URL}/api/research/runs?format=csv`);
+    log("CSV export returns 200", csvExportRes.ok, `status=${csvExportRes.status}`);
+    if (csvExportRes.ok) {
+      const csvText = await csvExportRes.text();
+      log("CSV export has header row", csvText.includes("id,query,"));
+      log("CSV export Content-Disposition attachment", 
+        csvExportRes.headers.get("content-disposition")?.includes("attachment"));
+    }
+
+    const jsonlExportRes = await fetch(`${BASE_URL}/api/research/runs?format=jsonl`);
+    log("JSONL export returns 200", jsonlExportRes.ok);
+    if (jsonlExportRes.ok) {
+      const jsonlText = await jsonlExportRes.text();
+      const lines = jsonlText.split("\n").filter(Boolean);
+      const allValid = lines.every((line) => {
+        try { JSON.parse(line); return true; } catch { return false; }
+      });
+      log("JSONL export lines are valid JSON", allValid);
+    }
+
+    console.log("\n[8] Bulk delete API");
+    // Create a run to delete
+    const createForDelete = await fetch(`${BASE_URL}/api/research`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "delete me", keywords: [] }),
+    });
+    const deleteCreated = await createForDelete.json();
+    const deleteId = deleteCreated.sessionId;
+    
+    // Wait for completion
+    await new Promise((r) => setTimeout(r, 8000));
+
+    const deleteRes = await fetch(`${BASE_URL}/api/research/runs?ids=${deleteId}`, { method: "DELETE" });
+    log("Bulk delete returns 200", deleteRes.ok, `status=${deleteRes.status}`);
+    if (deleteRes.ok) {
+      const deleteData = await deleteRes.json();
+      log("Bulk delete reports deleted count", typeof deleteData.deleted === "number");
+      log("Bulk delete deleted the run", deleteData.deleted >= 1);
+    }
+
+    // Verify it's gone
+    const deletedDetail = await fetch(`${BASE_URL}/api/research/runs/${deleteId}`);
+    log("Deleted run returns 404", deletedDetail.status === 404);
+
+    console.log("\n[9] Pagination");
+    const pageRes = await fetch(`${BASE_URL}/api/research/runs?limit=2&offset=0`);
+    log("Paginated request returns 200", pageRes.ok);
+    if (pageRes.ok) {
+      const pageData = await pageRes.json();
+      log("Paginated response has limit", pageData.limit === 2);
+      log("Paginated response has offset", pageData.offset === 0);
+    }
+
     console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     process.exitCode = fail === 0 ? 0 : 1;

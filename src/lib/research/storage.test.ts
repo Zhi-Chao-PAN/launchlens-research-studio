@@ -1,6 +1,15 @@
 import { describe, beforeEach, afterAll } from "vitest";
 import {
-  generateRunId, saveResearchRun, listResearchRuns, getResearchRun, deleteResearchRun, getResearchStorageInfo } from "@/lib/research/storage";
+  generateRunId,
+  saveResearchRun,
+  listResearchRuns,
+  getResearchRun,
+  deleteResearchRun,
+  getResearchStorageInfo,
+  searchResearchRuns,
+  bulkDeleteRuns,
+  exportRuns,
+} from "@/lib/research/storage";
 
 describe("Research storage", () => {
   beforeEach(() => {
@@ -229,5 +238,161 @@ describe("Research run persistence integration", () => {
     expect(full!.result).toBeTruthy();
     expect(typeof full!.result).toBe("string");
     expect(full!.durationMs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+
+describe("searchResearchRuns", () => {
+  beforeEach(() => {
+    const runs = listResearchRuns(100);
+    for (const run of runs) {
+      deleteResearchRun(run.id);
+    }
+    // Seed with test data
+    saveResearchRun({
+      id: "s1", query: "AI marketing tools", keywords: ["ai", "marketing"],
+      result: "", provider: "mock", model: "m1", createdAt: 1000, durationMs: 500, status: "completed",
+    });
+    saveResearchRun({
+      id: "s2", query: "Pricing strategies for SaaS", keywords: ["pricing", "saas"],
+      result: "", provider: "mock", model: "m1", createdAt: 2000, durationMs: 800, status: "completed",
+    });
+    saveResearchRun({
+      id: "s3", query: "Competitor analysis", keywords: ["competition"],
+      result: "", provider: "mock", model: "m2", createdAt: 3000, durationMs: 1200, status: "failed",
+      error: "timeout",
+    });
+  });
+
+  it("searches by query text", () => {
+    const result = searchResearchRuns({ query: "pricing" });
+    expect(result.total).toBe(1);
+    expect(result.runs[0].id).toBe("s2");
+  });
+
+  it("searches by keyword", () => {
+    const result = searchResearchRuns({ query: "marketing" });
+    expect(result.total).toBe(1);
+    expect(result.runs[0].id).toBe("s1");
+  });
+
+  it("filters by status", () => {
+    const failed = searchResearchRuns({ status: "failed" });
+    expect(failed.total).toBe(1);
+    expect(failed.runs[0].status).toBe("failed");
+    
+    const completed = searchResearchRuns({ status: "completed" });
+    expect(completed.total).toBe(2);
+  });
+
+  it("filters by provider", () => {
+    const result = searchResearchRuns({ provider: "mock" });
+    expect(result.total).toBe(3);
+  });
+
+  it("combines search and filter", () => {
+    const result = searchResearchRuns({ query: "AI", status: "completed" });
+    expect(result.total).toBe(1);
+    expect(result.runs[0].id).toBe("s1");
+  });
+
+  it("supports pagination", () => {
+    const page1 = searchResearchRuns({ limit: 2, offset: 0 });
+    expect(page1.runs.length).toBe(2);
+    expect(page1.total).toBe(3);
+    
+    const page2 = searchResearchRuns({ limit: 2, offset: 2 });
+    expect(page2.runs.length).toBe(1);
+  });
+});
+
+describe("bulkDeleteRuns", () => {
+  beforeEach(() => {
+    const runs = listResearchRuns(100);
+    for (const run of runs) {
+      deleteResearchRun(run.id);
+    }
+    for (let i = 0; i < 5; i++) {
+      saveResearchRun({
+        id: `bulk-${i}`, query: `q${i}`, keywords: [],
+        result: "", provider: "mock", model: "m",
+        createdAt: 1000 + i, durationMs: 100, status: "completed",
+      });
+    }
+  });
+
+  it("deletes multiple runs at once", () => {
+    expect(listResearchRuns(100).length).toBe(5);
+    const deleted = bulkDeleteRuns(["bulk-0", "bulk-1", "bulk-2"]);
+    expect(deleted).toBe(3);
+    expect(listResearchRuns(100).length).toBe(2);
+  });
+
+  it("returns 0 for empty list", () => {
+    expect(bulkDeleteRuns([])).toBe(0);
+  });
+
+  it("handles non-existent IDs gracefully", () => {
+    const deleted = bulkDeleteRuns(["bulk-0", "nonexistent"]);
+    expect(deleted).toBe(1);
+  });
+});
+
+describe("exportRuns", () => {
+  beforeEach(() => {
+    const runs = listResearchRuns(100);
+    for (const run of runs) {
+      deleteResearchRun(run.id);
+    }
+    saveResearchRun({
+      id: "exp-1", query: 'Test "quotes"', keywords: ["kw1", "kw2"],
+      result: "result1", provider: "mock", model: "m1",
+      createdAt: 1000, durationMs: 500, status: "completed",
+      sources: [{ title: "Src", url: "http://example.com" }],
+    });
+  });
+
+  it("exports as JSON", () => {
+    const json = exportRuns("json");
+    const parsed = JSON.parse(json);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed.length).toBeGreaterThan(0);
+    expect(parsed[0].id).toBe("exp-1");
+  });
+
+  it("exports as JSONL", () => {
+    const jsonl = exportRuns("jsonl");
+    const lines = jsonl.split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+  });
+
+  it("exports as CSV with headers", () => {
+    const csv = exportRuns("csv");
+    const lines = csv.split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    expect(lines[0]).toContain("id");
+    expect(lines[0]).toContain("query");
+    expect(lines[0]).toContain("status");
+  });
+
+  it("escapes quotes in CSV", () => {
+    const csv = exportRuns("csv");
+    expect(csv).toContain('Test ""quotes""');
+  });
+
+  it("exports specific IDs", () => {
+    saveResearchRun({
+      id: "exp-2", query: "second", keywords: [],
+      result: "", provider: "mock", model: "m2",
+      createdAt: 2000, durationMs: 100, status: "completed",
+    });
+    
+    const json = exportRuns("json", ["exp-2"]);
+    const parsed = JSON.parse(json);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].id).toBe("exp-2");
   });
 });
