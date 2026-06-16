@@ -9,9 +9,43 @@
   SourceCitation,
   AgentOutput,
 } from "@/lib/schema/research-schema";
+import { buildSeed, pickVariant } from "@/lib/providers/seed";
 
 // Mock provider returns deterministic research outputs for demo purposes.
 // Real providers (search + LLM) would be wired in through the same interface.
+
+
+
+// --- query-aware personalization helpers ---
+const QUERY_PHRASES = [
+  "Based on the {q} landscape, the analysis below is generated as a research preview.",
+  "For the {q} context, the analysis surfaces market patterns observed across the space.",
+  "The research synthesizes a {q} market view across six specialized agents.",
+  "Drawing on the {q} context, here is a structured research preview.",
+];
+
+function querySnippet(query: string, maxLen: number = 40): string {
+  const t = (query || "").trim();
+  if (!t) return "this market";
+  if (t.length <= maxLen) return t;
+  return t.slice(0, maxLen - 1).trimEnd() + "…";
+}
+
+function keywordList(keywords: string[], max: number = 4): string {
+  const k = (keywords || []).map((x) => x.trim()).filter(Boolean).slice(0, max);
+  if (k.length === 0) return "";
+  return k.join(", ");
+}
+
+function personalizeSummary(baseSummary: string, query: string, keywords: string[], offset: number = 0): string {
+  const seed = buildSeed(query, keywords);
+  const snippet = querySnippet(query);
+  const kws = keywordList(keywords);
+  const phrase = pickVariant(seed, QUERY_PHRASES, offset);
+  const prefix = phrase.replace(/\{q\}/g, snippet);
+  const tail = kws ? " Focus areas: " + kws + "." : "";
+  return prefix + " " + baseSummary + tail;
+}
 
 const baseCitations: Record<string, Omit<SourceCitation, "accessedAt">> = {
   "cite-market-1": {
@@ -80,7 +114,7 @@ function withTimestamp(id: string): SourceCitation {
 export function generateMockMarketSizer(query: string, keywords: string[]): MarketSizerOutput {
   return {
     agent: "market-sizer",
-    summary: "The market is large and rapidly growing, driven by AI adoption. TAM is substantial but competitive, with clear room for differentiated players targeting specific niches.",
+    summary: personalizeSummary("The market is large and rapidly growing, driven by AI adoption. TAM is substantial but competitive, with clear room for differentiated players targeting specific niches.", query, keywords, 0),
     marketSize: {
       tam: 85600000000,
       sam: 12400000000,
@@ -109,7 +143,7 @@ export function generateMockMarketSizer(query: string, keywords: string[]): Mark
 export function generateMockCompetitorAnalyst(query: string, keywords: string[]): CompetitorAnalystOutput {
   return {
     agent: "competitor-analyst",
-    summary: "The competitive landscape is crowded but fragmented. Most players focus on content generation rather than strategic go-to-market planning. Key gaps exist in evidence-based validation and cross-workspace integration.",
+    summary: personalizeSummary("The competitive landscape is crowded but fragmented. Most players focus on content generation rather than strategic go-to-market planning. Key gaps exist in evidence-based validation and cross-workspace integration.", query, keywords, 1),
     competitors: [
       {
         id: "comp-1",
@@ -165,7 +199,7 @@ export function generateMockCompetitorAnalyst(query: string, keywords: string[])
 export function generateMockPainDetective(query: string, keywords: string[]): PainDetectiveOutput {
   return {
     agent: "pain-detective",
-    summary: "Founders and builders consistently report three core pain points: generic AI output, tool fragmentation, and difficulty validating ideas before building. The validation gap - knowing whether an idea is worth pursuing - is the most underserved.",
+    summary: personalizeSummary("Founders and builders consistently report three core pain points: generic AI output, tool fragmentation, and difficulty validating ideas before building. The validation gap - knowing whether an idea is worth pursuing - is the most underserved.", query, keywords, 2),
     painPoints: [
       {
         id: "pain-1",
@@ -228,7 +262,7 @@ export function generateMockPainDetective(query: string, keywords: string[]): Pa
 export function generateMockPricingScout(query: string, keywords: string[]): PricingScoutOutput {
   return {
     agent: "pricing-scout",
-    summary: "The dominant pricing model for AI SaaS tools is freemium with monthly subscriptions. Pro tiers cluster around $49/month, team tiers around $149/month. Usage-based pricing is emerging but not yet mainstream for marketing-focused tools.",
+    summary: personalizeSummary("The dominant pricing model for AI SaaS tools is freemium with monthly subscriptions. Pro tiers cluster around $49/month, team tiers around $149/month. Usage-based pricing is emerging but not yet mainstream for marketing-focused tools.", query, keywords, 3),
     priceBands: [
       { name: "Free / Freemium", min: 0, max: 0, typical: 0, currency: "USD" },
       { name: "Starter / Pro", min: 19, max: 79, typical: 49, currency: "USD" },
@@ -274,7 +308,7 @@ export function generateMockPricingScout(query: string, keywords: string[]): Pri
 export function generateMockChannelScout(query: string, keywords: string[]): ChannelScoutOutput {
   return {
     agent: "channel-scout",
-    summary: "AI SaaS products primarily launch through Product Hunt, Twitter/X, and LinkedIn. Long-term, content marketing and community building provide the most sustainable growth. Paid acquisition is competitive and expensive in this category.",
+    summary: personalizeSummary("AI SaaS products primarily launch through Product Hunt, Twitter/X, and LinkedIn. Long-term, content marketing and community building provide the most sustainable growth. Paid acquisition is competitive and expensive in this category.", query, keywords, 4),
     channels: [
       {
         name: "Product Hunt",
@@ -367,8 +401,7 @@ export function generateMockSynthesis(
 ): SynthesisOutput {
   return {
     agent: "synthesis",
-    execSummary:
-      "The AI-powered go-to-market tool space is large (TAM ~$85B) and growing rapidly (26.5% CAGR). While the market is crowded with content-generation tools, there is a clear gap for strategic, evidence-based decision support tools that span the full GTM lifecycle. The strongest opportunity lies in serving solo founders and small SaaS teams who need sharp execution help before overbuilding. Main risks are market commoditization, distribution challenges, and rising quality expectations.",
+    execSummary: personalizeSummary("The AI-powered go-to-market tool space is large (TAM ~$85B) and growing rapidly (26.5% CAGR). While the market is crowded with content-generation tools, there is a clear gap for strategic, evidence-based decision support tools that span the full GTM lifecycle. The strongest opportunity lies in serving solo founders and small SaaS teams who need sharp execution help before overbuilding. Main risks are market commoditization, distribution challenges, and rising quality expectations.", query, keywords, 5),
     opportunityScore: 72,
     riskScore: 58,
     keyInsights: [
