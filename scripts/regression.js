@@ -27,14 +27,15 @@ if (results.every((r) => r.ok)) {
 }
 
 // E2E tests (skipped if PLAYWRIGHT_SKIP=1)
+// Browser E2E runs first so API e2e's rate-limit traffic doesn't starve it.
+if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
+  results.push(run("Browser E2E", "node", ["e2e/playwright-e2e.js"]));
+}
 if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
   results.push(run("Security E2E", "node", ["e2e/security-e2e.js"]));
 }
 if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
   results.push(run("Admin E2E", "node", ["e2e/admin-e2e.js"]));
-}
-if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
-  results.push(run("Browser E2E", "node", ["e2e/playwright-e2e.js"]));
 }
 
 const reportLines = [

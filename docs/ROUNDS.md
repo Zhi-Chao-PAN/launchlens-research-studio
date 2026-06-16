@@ -240,3 +240,19 @@ Fixed three sources of e2e flakiness and refreshed visual baselines:
 
 245 unit tests + 31 security/admin e2e + 29 browser e2e = 305 total
 automated tests. Build clean, 17 routes, 0 lint errors.
+
+## Round 40 - Full regression sweep + 5-round cycle report
+Full regression suite passes end-to-end: lint, unit tests, build,
+bundle stats, browser E2E, security E2E, and admin E2E — all green.
+
+Fixed e2e ordering in regression script (browser E2E before API E2E) to
+prevent rate-limit starvation of the browser test flow.
+
+Published cycle 08 summary (Rounds 36-40) at docs/cycle-08-r36-40.md
+covering the security hardening cycle: token scopes, admin rate
+limiting, audit log, 31 security e2e tests, and visual regression
+stabilization down to 0 drift in freeze mode.
+
+Stats at end of R40: 305 automated tests (245 unit + 31 security/admin
+e2e + 29 browser e2e), 17 API routes, 0 lint errors, build clean,
+8/8 visual baselines pixel-perfect in freeze mode.
