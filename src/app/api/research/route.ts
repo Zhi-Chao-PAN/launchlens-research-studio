@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/api/rate-limit";
+import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import {
   createResearchSession,
   runResearchSession,
@@ -11,9 +12,22 @@ import {
 } from "@/lib/api/validation";
 
 export async function POST(request: Request) {
+  const start = Date.now();
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const ua = (request.headers.get("user-agent") || "").slice(0, 80);
+  const logRequest = (status: number, ok: boolean) => recordRequest({
+    ts: Date.now(),
+    route: "/api/research",
+    method: "POST",
+    status,
+    durationMs: Date.now() - start,
+    ipHash: hashIp(ip),
+    uaSnippet: ua,
+    ok,
+  });
   const rate = checkRateLimit("research:" + ip);
   if (!rate.allowed) {
+    logRequest(429, false);
     return NextResponse.json(
       { error: "Rate limit exceeded. Please retry shortly.", resetMs: rate.resetMs },
       {
@@ -29,11 +43,13 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
+    logRequest(400, false);
     return jsonError("Request body must be valid JSON.", 400);
   }
 
   const validation = validateResearchRequest(body);
   if (!validation.ok) {
+    logRequest(400, false);
     return jsonValidationError(validation);
   }
 
@@ -47,6 +63,7 @@ export async function POST(request: Request) {
     console.error(`[research] session ${session.id} failed:`, err);
   });
 
+  logRequest(201, true);
   return NextResponse.json(
     {
       sessionId: session.id,

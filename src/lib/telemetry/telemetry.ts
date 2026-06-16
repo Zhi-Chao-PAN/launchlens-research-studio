@@ -1,3 +1,4 @@
+import { getBackend } from "@/lib/storage/storage";
 // Lightweight in-memory telemetry buffer.
 // Records the last N research requests with timing and provider id so
 // operators can sanity-check live behavior. This is process-local; a
@@ -14,18 +15,45 @@ export interface TelemetryRecord {
 
 const RING_CAPACITY = 200;
 const ring: TelemetryRecord[] = [];
+let hydrated = false;
+
+function hydrate(): void {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const stored = getBackend().read<TelemetryRecord[]>("telemetry-ring");
+    if (Array.isArray(stored)) {
+      for (const r of stored) ring.push(r);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+function persist(): void {
+  try {
+    getBackend().write("telemetry-ring", ring);
+  } catch {
+    // best effort
+  }
+}
 
 export function recordTelemetry(rec: TelemetryRecord): void {
+  hydrate();
   ring.push(rec);
   if (ring.length > RING_CAPACITY) ring.splice(0, ring.length - RING_CAPACITY);
+  persist();
 }
 
 export function getRecentTelemetry(limit: number = 50): TelemetryRecord[] {
+  hydrate();
   return ring.slice(-limit).reverse();
 }
 
 export function clearTelemetry(): void {
   ring.length = 0;
+  hydrated = true;
+  try { getBackend().remove("telemetry-ring"); } catch {}
 }
 
 export function summarizeTelemetry(): {
@@ -35,6 +63,7 @@ export function summarizeTelemetry(): {
   byProvider: Record<string, { count: number; ok: number }>;
   byAgent: Record<string, { count: number; ok: number }>;
 } {
+  hydrate();
   const total = ring.length;
   if (total === 0) {
     return { total: 0, successRate: 1, averageMs: 0, byProvider: {}, byAgent: {} };

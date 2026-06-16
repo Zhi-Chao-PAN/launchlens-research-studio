@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRecentTelemetry, summarizeTelemetry } from "@/lib/telemetry/telemetry";
 import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
+import { getRecentRequests } from "@/lib/telemetry/request-log";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -9,6 +10,7 @@ export async function GET(request: Request) {
     summary: summarizeTelemetry(),
     breakers: snapshotBreakers(),
     recent: getRecentTelemetry(limit),
+    requests: getRecentRequests(Math.min(limit, 100)),
   });
 }
 
