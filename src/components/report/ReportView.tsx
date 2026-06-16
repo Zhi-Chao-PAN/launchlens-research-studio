@@ -2,12 +2,23 @@
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
-import { MarketSizerReport } from "./sections/MarketSizerReport";
-import { CompetitorAnalystReport } from "./sections/CompetitorAnalystReport";
-import { PainDetectiveReport } from "./sections/PainDetectiveReport";
-import { PricingScoutReport } from "./sections/PricingScoutReport";
-import { ChannelScoutReport } from "./sections/ChannelScoutReport";
-import { SynthesisReport } from "./sections/SynthesisReport";
+import dynamic from "next/dynamic";
+
+// Each agent report is its own chunk to keep the initial JS bundle small.
+// ssr:false avoids hydration churn for surfaces only mounted after a session.
+const SectionFallback = () => (
+  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+    <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-3" />
+    <p className="text-xs">Loading report section...</p>
+  </div>
+);
+
+const MarketSizerReport = dynamic(() => import("./sections/MarketSizerReport").then((m) => m.MarketSizerReport), { ssr: false, loading: SectionFallback });
+const CompetitorAnalystReport = dynamic(() => import("./sections/CompetitorAnalystReport").then((m) => m.CompetitorAnalystReport), { ssr: false, loading: SectionFallback });
+const PainDetectiveReport = dynamic(() => import("./sections/PainDetectiveReport").then((m) => m.PainDetectiveReport), { ssr: false, loading: SectionFallback });
+const PricingScoutReport = dynamic(() => import("./sections/PricingScoutReport").then((m) => m.PricingScoutReport), { ssr: false, loading: SectionFallback });
+const ChannelScoutReport = dynamic(() => import("./sections/ChannelScoutReport").then((m) => m.ChannelScoutReport), { ssr: false, loading: SectionFallback });
+const SynthesisReport = dynamic(() => import("./sections/SynthesisReport").then((m) => m.SynthesisReport), { ssr: false, loading: SectionFallback });
 
 interface ReportViewProps {
   activeAgent: AgentId;
@@ -105,7 +116,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">{renderReport()}</div>
+      <div className="flex-1 overflow-y-auto p-6" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
 
       <div className="px-6 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex-shrink-0 flex items-center justify-between">
         <span>
