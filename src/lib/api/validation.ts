@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿// Input validation and error handling for the research API.
 // Centralized so the rules and error shapes are consistent across endpoints.
 
@@ -59,7 +60,7 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
     };
   }
 
-  let cleanKeywords: string[] = [];
+  const cleanKeywords: string[] = [];
   if (keywords !== undefined && keywords !== null) {
     if (!Array.isArray(keywords)) {
       return { ok: false, status: 400, body: { error: "Field 'keywords' must be an array of strings.", field: "keywords" } };

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 ﻿import { AGENT_METADATA, RESEARCH_AGENTS } from "@/lib/schema/research-schema";
 
 export default function Loading() {

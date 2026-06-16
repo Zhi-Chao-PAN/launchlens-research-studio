@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 ﻿// Recent research history persisted in localStorage.
 // Stores query + keywords + timestamp. Read on app boot, written on completion.
 

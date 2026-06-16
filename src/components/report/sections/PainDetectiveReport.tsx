@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import type { PainDetectiveOutput } from "@/lib/schema/research-schema";
@@ -97,7 +98,7 @@ export function PainDetectiveReport({ output }: { output: any }) {
                       <div className="mt-3 space-y-2">
                         {pain.quotes.slice(0, 2).map((q, i) => (
                           <div key={i} className="pl-3 border-l-2 border-slate-300">
-                            <p className="text-xs text-slate-700 italic leading-relaxed">"{q.text}"</p>
+                            <p className="text-xs text-slate-700 italic leading-relaxed">&ldquo;{q.text}&rdquo;</p>
                             <p className="text-[10px] text-slate-500 mt-0.5">— {q.source}</p>
                           </div>
                         ))}

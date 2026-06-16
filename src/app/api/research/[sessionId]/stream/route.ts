@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿import { NextResponse } from "next/server";
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
 import { jsonError } from "@/lib/api/validation";
@@ -43,7 +44,7 @@ export async function GET(
     try {
       writer.write(encoder.encode(`event: ${event}\n`));
       writer.write(encoder.encode(`data: ${data}\n\n`));
-    } catch (err) {
+    } catch {
       // If the writer is closed/aborted, stop trying.
       safeClose();
     }

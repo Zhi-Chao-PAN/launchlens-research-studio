@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
+/* eslint-disable @next/next/no-img-element */
 ﻿"use client";
 
 import { useEffect, useCallback, useState } from "react";

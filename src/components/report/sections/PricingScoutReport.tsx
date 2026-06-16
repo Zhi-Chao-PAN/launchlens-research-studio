@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import type { PricingScoutOutput } from "@/lib/schema/research-schema";

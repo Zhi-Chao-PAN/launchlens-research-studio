@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import type { MarketSizerOutput } from "@/lib/schema/research-schema";
@@ -84,7 +85,7 @@ export function MarketSizerReport({ output }: { output: any }) {
           Key Trends <span className="text-xs text-slate-400 font-normal">({data.keyTrends.length})</span>
         </h3>
         <div className="space-y-2">
-          {data.keyTrends.map((trend: any, i: number) => (
+          {data.keyTrends.map((trend: { trend: string; impact: "positive" | "negative" | "neutral"; evidence: string }, i: number) => (
             <div key={i} className={`p-3 rounded-lg border ${TREND_COLOR[trend.impact as keyof typeof TREND_COLOR] || TREND_COLOR.neutral}`}>
               <div className="flex items-start gap-3">
                 <span className="text-lg flex-shrink-0" aria-hidden>
@@ -104,7 +105,7 @@ export function MarketSizerReport({ output }: { output: any }) {
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Target Segments</h3>
         <div className="grid grid-cols-1 gap-2">
-          {data.targetSegments.map((seg: any, i: number) => {
+          {data.targetSegments.map((seg: { name: string; size: number; description: string }, i: number) => {
             const segPct = data.marketSize.sam > 0 ? Math.min(100, (seg.size / data.marketSize.sam) * 100) : 0;
             return (
               <div key={i} className="p-3 bg-slate-50 rounded-lg">

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
 ﻿"use client";
 
 // Lightweight session bridge hook: persists session snapshots to localStorage

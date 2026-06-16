@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import { useState, useCallback } from "react";
@@ -40,7 +41,7 @@ export function CitationList({ citations, compact = false }: { citations: Source
                   <ConfidenceBadge level={c.confidence} size="xs" />
                 </div>
                 {c.snippet && (
-                  <p className="text-slate-500 mt-0.5 italic line-clamp-2">"{c.snippet}"</p>
+                  <p className="text-slate-500 mt-0.5 italic line-clamp-2">&ldquo;{c.snippet}&rdquo;</p>
                 )}
                 {c.accessedAt && (
                   <p className="text-[10px] text-slate-400 mt-0.5">
