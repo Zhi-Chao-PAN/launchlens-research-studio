@@ -144,6 +144,50 @@ async function run() {
       const auditLimit1Body = await auditLimit1.json();
       log("Audit ?limit=5 returns <= 5 events", auditLimit1Body.events.length <= 5,
         `count=${auditLimit1Body.events.length}`);
+
+      // CSV export
+      const csvRes = await fetch(`${BASE_URL}/api/admin/audit?format=csv`, {
+        headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+      });
+      log("Audit CSV export returns 200", csvRes.ok, `status=${csvRes.status}`);
+      if (csvRes.ok) {
+        const csvText = await csvRes.text();
+        const csvLines = csvText.trim().split("\n");
+        log("CSV has header row", csvLines[0].includes("id,type,timestamp"));
+        log("CSV has data rows", csvLines.length >= 2, `lines=${csvLines.length}`);
+        log("CSV Content-Type is text/csv",
+          csvRes.headers.get("content-type")?.includes("text/csv"));
+        log("CSV Content-Disposition has filename",
+          csvRes.headers.get("content-disposition")?.includes(".csv"));
+      }
+
+      // JSONL export
+      const jsonlRes = await fetch(`${BASE_URL}/api/admin/audit?format=jsonl`, {
+        headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+      });
+      log("Audit JSONL export returns 200", jsonlRes.ok, `status=${jsonlRes.status}`);
+      if (jsonlRes.ok) {
+        const jsonlText = await jsonlRes.text();
+        const jsonlLines = jsonlText.trim().split("\n").filter(l => l.length > 0);
+        log("JSONL lines are valid JSON", jsonlLines.every(line => {
+          try { JSON.parse(line); return true; } catch { return false; }
+        }));
+        log("JSONL Content-Type is x-ndjson",
+          jsonlRes.headers.get("content-type")?.includes("x-ndjson"));
+        log("JSONL Content-Disposition has filename",
+          jsonlRes.headers.get("content-disposition")?.includes(".jsonl"));
+      }
+
+      // Export generates admin_action audit event
+      const afterExportRes = await fetch(`${BASE_URL}/api/admin/audit`, {
+        headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+      });
+      if (afterExportRes.ok) {
+        const afterExport = await afterExportRes.json();
+        log("Export action appears in audit log",
+          afterExport.events.some(e => e.type === "admin_action" && e.detail?.startsWith("audit_export")));
+      }
+
     }
 
     console.log("\n[4] Token revocation");

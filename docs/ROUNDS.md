@@ -352,3 +352,29 @@ and resist replay attacks.
 
 Total: 266 unit tests, 44 admin e2e tests. All regression checks green.
 Lint: 0 errors. Build: 17 routes, ~795 KB client JS.
+
+## Round 44 - Audit log export (CSV + JSONL)
+
+Admin audit endpoint now supports structured export formats for
+offline analysis and integration with SIEM tools.
+
+**Export formats:**
+- **GET /api/admin/audit?format=csv** ¡ª RFC-4180 compliant CSV with
+  proper escaping of commas, quotes, and newlines. Includes header
+  row and ISO-8601 timestamps. Download filename:
+  launchlens-audit-YYYY-MM-DD.csv.
+- **GET /api/admin/audit?format=jsonl** ¡ª Newline-delimited JSON,
+  one event per line, ISO-8601 timestamps. Ideal for piping into
+  jq or log ingestion pipelines.
+- **GET /api/admin/audit** (default) ¡ª JSON object format, unchanged.
+
+**Audit trail of exports:** CSV and JSONL exports themselves generate
+an dmin_action audit event (udit_export:csv /
+udit_export:jsonl) so you know who pulled the data and when.
+
+**New e2e tests:** 10 tests covering CSV header + data rows + content
+type + content-disposition, JSONL valid JSON + content type +
+content-disposition, and export action appearing in audit log.
+
+Total automated tests: 320 (266 unit + 54 admin e2e). All regression
+checks green. Build: 17 routes, ~795 KB client JS.
