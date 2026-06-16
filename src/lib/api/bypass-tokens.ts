@@ -8,7 +8,7 @@
 // comma-separated list of plaintext tokens at startup, or by editing
 // the storage file directly.
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { getBackend } from "@/lib/storage/storage";
 
 const STORAGE_KEY = "bypassTokens";
@@ -92,8 +92,7 @@ export function extractBearerToken(authHeader: string | null): string | null {
 
 export function createBypassToken(label?: string): string {
   // Generate a random 32-byte token (base64url encoded for readability)
-  const crypto = require("node:crypto");
-  const token = crypto.randomBytes(32).toString("base64url");
+  const token = randomBytes(32).toString("base64url");
   const h = hashToken(token);
   const now = Date.now();
   const tokens = load();

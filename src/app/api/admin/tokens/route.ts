@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import {
   listBypassTokens,
   createBypassToken,
-  revokeBypassToken,
   isBypassToken,
   extractBearerToken,
 } from "@/lib/api/bypass-tokens";
@@ -33,7 +32,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: any = {};
+  let body: { label?: string } = {};
   try {
     body = await request.json();
   } catch {

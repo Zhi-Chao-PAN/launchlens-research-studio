@@ -8,7 +8,7 @@
 //   2. Client includes X-CSRF-Token header with the token on POST requests
 //   3. Server compares cookie token vs header token — must match
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
 
 export const CSRF_COOKIE_NAME = "csrf_token";
@@ -45,22 +45,14 @@ export function checkCsrfToken(
     return { ok: false, reason: "csrf-mismatch-one-sided" };
   }
 
-  // Constant-time comparison using timingSafeEqual if available
-  try {
-    const a = Buffer.from(cookieToken);
-    const b = Buffer.from(headerToken);
-    if (a.length !== b.length) {
-      return { ok: false, reason: "csrf-length-mismatch" };
-    }
-    const crypto = require("node:crypto");
-    if (!crypto.timingSafeEqual(a, b)) {
-      return { ok: false, reason: "csrf-token-mismatch" };
-    }
-  } catch {
-    // Fallback: simple compare (non-constant time, but OK for soft mode)
-    if (cookieToken !== headerToken) {
-      return { ok: false, reason: "csrf-token-mismatch" };
-    }
+  // Constant-time comparison
+  const a = Buffer.from(cookieToken);
+  const b = Buffer.from(headerToken);
+  if (a.length !== b.length) {
+    return { ok: false, reason: "csrf-length-mismatch" };
+  }
+  if (!timingSafeEqual(a, b)) {
+    return { ok: false, reason: "csrf-token-mismatch" };
   }
 
   return { ok: true };

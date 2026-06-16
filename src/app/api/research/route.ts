@@ -49,6 +49,19 @@ export async function POST(request: NextRequest) {
       },
     );
   }
+
+  // CSRF check — soft enforcement by default, skipped for bypass tokens
+  const csrfResult = hasBypass
+    ? { ok: true, reason: "bypass-token" }
+    : checkCsrfToken(request);
+  if (!csrfResult.ok) {
+    logRequest(403, false);
+    return NextResponse.json(
+      { error: "CSRF validation failed: " + (csrfResult.reason || "unknown") },
+      { status: 403 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

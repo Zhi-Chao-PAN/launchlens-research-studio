@@ -167,3 +167,12 @@ revokeBypassToken(), isBypassToken(), extractBearerToken(). POST
 token is present. /api/admin/tokens REST endpoint for token management
 (GET list, POST create, DELETE by hash) — protected by bearer token auth.
 All tokens are hashed at rest so a leaked storage file is not usable.
+
+## Round 35 - Regression sweep and consolidation
+Full regression sweep (lint + unit + build + bundle-stats) all green.
+Lint fixes across csrf.ts, bypass-tokens.ts, admin tokens route — moved
+from require() to top-level node:crypto imports, removed unused imports,
+replaced `any` with typed body. Research route restored with proper CSRF
+check after bypass token gate. Regression report regenerated. Health
+snapshot at end of round 35: 233 unit tests, 16 routes, 0 lint errors,
+795 KB total client JS.
