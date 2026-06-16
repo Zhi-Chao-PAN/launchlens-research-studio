@@ -7,6 +7,8 @@ import {
   checkAdminRateLimit,
   getTokenInfo,
 } from "@/lib/api/bypass-tokens";
+import { recordAuthAudit } from "@/lib/api/auth-audit";
+import { hashIp } from "@/lib/telemetry/request-log";
 
 function getIp(request: NextRequest): string {
   return (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
@@ -32,6 +34,10 @@ export async function DELETE(
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
+    recordAuthAudit("auth_failed", {
+      ipHash: hashIp(ip),
+      detail: "admin delete: " + auth.error,
+    });
     return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
   }
 
@@ -44,11 +50,18 @@ export async function DELETE(
   }
 
   const { hash } = await params;
-  const ok = revokeBypassToken(decodeURIComponent(hash));
+  const decodedHash = decodeURIComponent(hash);
+  const ok = revokeBypassToken(decodedHash);
   if (!ok) {
     return NextResponse.json({ error: "Token not found" }, { status: 404 });
   }
-  return NextResponse.json({ revoked: hash, remaining: rate.remaining });
+  recordAuthAudit("admin_action", {
+    ipHash: hashIp(ip),
+    tokenHash: auth.tokenHash,
+    scope: "admin",
+    detail: "revoked token " + decodedHash.slice(0, 8) + "...",
+  });
+  return NextResponse.json({ revoked: decodedHash, remaining: rate.remaining });
 }
 
 export const runtime = "nodejs";

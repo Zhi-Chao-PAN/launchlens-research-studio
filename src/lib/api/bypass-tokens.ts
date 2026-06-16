@@ -16,6 +16,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getBackend } from "@/lib/storage/storage";
 import { checkRateLimit } from "@/lib/api/rate-limit";
+import { recordAuthAudit } from "@/lib/api/auth-audit";
 
 const STORAGE_KEY = "bypassTokens";
 const ENV_BYPASS_TOKENS = process.env.LAUNCHLENS_BYPASS_TOKENS || "";
@@ -107,9 +108,21 @@ export function isBypassToken(token: string, ip?: string): boolean {
   const h = hashToken(token);
   const tokens = load();
   const entry = tokens[h];
-  if (!entry) return false;
+  if (!entry) {
+    if (token && ip) {
+      recordAuthAudit("auth_failed", { ipHash: ip, detail: "invalid token" });
+    }
+    return false;
+  }
 
-  // Record usage
+  // Record usage and audit
+  recordAuthAudit("auth_success", {
+    ipHash: ip,
+    tokenHash: h,
+    scope: entry.scope,
+    detail: "bypass token",
+  });
+
   const updated: BypassTokenInfo = {
     ...entry,
     lastUsedAt: Date.now(),
@@ -157,6 +170,11 @@ export function createBypassToken(
   tokens[h] = { hash: h, scope, label, createdAt: now, usageCount: 0 };
   cached = tokens;
   persist(tokens);
+  recordAuthAudit("token_created", {
+    tokenHash: h,
+    scope,
+    detail: label ? `label: ${label}` : undefined,
+  });
   return token;
 }
 
@@ -174,6 +192,11 @@ export function listBypassTokens(): BypassTokenInfo[] {
 export function revokeBypassToken(tokenHash: string): boolean {
   const tokens = load();
   if (!tokens[tokenHash]) return false;
+  recordAuthAudit("token_revoked", {
+    tokenHash,
+    scope: tokens[tokenHash].scope,
+    detail: `label: ${tokens[tokenHash].label || "none"}`,
+  });
   delete tokens[tokenHash];
   cached = tokens;
   persist(tokens);

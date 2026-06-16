@@ -8,6 +8,8 @@ import {
   checkAdminRateLimit,
   getTokenInfo,
 } from "@/lib/api/bypass-tokens";
+import { recordAuthAudit } from "@/lib/api/auth-audit";
+import { hashIp } from "@/lib/telemetry/request-log";
 
 // Admin endpoint for bypass token management.
 // Requires an admin-scoped bypass token in the Authorization header.
@@ -36,6 +38,10 @@ export async function GET(request: NextRequest) {
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
+    recordAuthAudit("auth_failed", {
+      ipHash: hashIp(ip),
+      detail: "admin endpoint: " + auth.error,
+    });
     return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
   }
 
@@ -55,6 +61,10 @@ export async function POST(request: NextRequest) {
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
+    recordAuthAudit("auth_failed", {
+      ipHash: hashIp(ip),
+      detail: "admin endpoint: " + auth.error,
+    });
     return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
   }
 
@@ -77,6 +87,12 @@ export async function POST(request: NextRequest) {
   const scope = body.scope === "admin" ? "admin" : "bypass";
   const token = createBypassToken(scope, body.label);
 
+  recordAuthAudit("admin_action", {
+    ipHash: hashIp(ip),
+    tokenHash: auth.tokenHash,
+    scope: "admin",
+    detail: `created ${scope} token${body.label ? ' (' + body.label + ')' : ''}`,
+  });
   return NextResponse.json(
     { token, scope, label: body.label, remaining: rate.remaining },
     { status: 201 },

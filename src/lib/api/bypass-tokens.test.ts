@@ -1,7 +1,6 @@
 ﻿import {
   isBypassToken,
   isAdminToken,
-  hasTokenScope,
   extractBearerToken,
   createBypassToken,
   listBypassTokens,

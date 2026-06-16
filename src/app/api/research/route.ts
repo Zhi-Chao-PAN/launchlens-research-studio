@@ -2,6 +2,7 @@
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
+import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import {
   createResearchSession,
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest) {
     : checkRateLimit("research:" + ip);
   if (!rate.allowed) {
     logRequest(429, false);
+    recordAuthAudit("rate_limited", {
+      ipHash: hashIp(ip),
+      detail: "research endpoint",
+    });
     return NextResponse.json(
       { error: "Rate limit exceeded. Please retry shortly.", resetMs: rate.resetMs },
       {
@@ -56,6 +61,10 @@ export async function POST(request: NextRequest) {
     : checkCsrfToken(request);
   if (!csrfResult.ok) {
     logRequest(403, false);
+    recordAuthAudit("csrf_failed", {
+      ipHash: hashIp(ip),
+      detail: csrfResult.reason || "unknown",
+    });
     return NextResponse.json(
       { error: "CSRF validation failed: " + (csrfResult.reason || "unknown") },
       { status: 403 },

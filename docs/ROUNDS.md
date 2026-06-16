@@ -186,3 +186,19 @@ admin-scope. checkAdminRateLimit() limits admin endpoints by both IP
 token. Token info now tracks lastIp alongside lastUsedAt and usageCount.
 Admin endpoints return X-RateLimit-Remaining headers. 239 unit tests,
 build clean, 16 routes.
+
+## Round 37 - Authentication audit log
+src/lib/api/auth-audit.ts with 100-event ring buffer of security events:
+token_created, token_revoked, auth_success, auth_failed, csrf_failed,
+rate_limited, admin_action. Events include ipHash, tokenHash, scope,
+detail, and userAgent. Persisted via the storage backend.
+
+Wired into all security touchpoints:
+- /api/research: csrf_failed, rate_limited, auth_success (bypass)
+- bypass-tokens.ts: token_created, token_revoked, auth_success/failed
+- /api/admin/tokens: admin_action, auth_failed
+- /api/admin/tokens/[hash]: admin_action (revoke), auth_failed
+
+New /api/admin/audit endpoint (admin scope required) returns recent
+events with configurable limit (default 50, max 100).
+245 unit tests, build clean, 17 routes, 0 lint errors.
