@@ -185,8 +185,53 @@ async function run() {
       if (afterExportRes.ok) {
         const afterExport = await afterExportRes.json();
         log("Export action appears in audit log",
-          afterExport.events.some(e => e.type === "admin_action" && e.detail?.startsWith("audit_export")));
+          afterExport.events.some((e) => e.type === "admin_action" && e.detail?.startsWith("audit_export")));
       }
+
+    // Type filter
+    const typeFilterRes = await fetch(`${BASE_URL}/api/admin/audit?type=token_created`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Audit type filter returns 200", typeFilterRes.ok, `status=${typeFilterRes.status}`);
+    if (typeFilterRes.ok) {
+      const filtered = await typeFilterRes.json();
+      const allMatch = filtered.events.every((e) => e.type === "token_created");
+      log("Type filter only returns matching events", allMatch,
+        `count=${filtered.events.length}`);
+    }
+
+    // Scope filter
+    const scopeFilterRes = await fetch(`${BASE_URL}/api/admin/audit?scope=admin`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Audit scope filter returns 200", scopeFilterRes.ok, `status=${scopeFilterRes.status}`);
+    if (scopeFilterRes.ok) {
+      const filtered = await scopeFilterRes.json();
+      const allMatch = filtered.events.every((e) => e.scope === "admin" || !e.scope);
+      // Some events may have no scope, so verify no wrong scopes
+      const wrongScope = filtered.events.filter((e) => e.scope && e.scope !== "admin");
+      log("Scope filter excludes non-matching scopes", wrongScope.length === 0);
+    }
+
+    // Combined filters
+    const combinedRes = await fetch(`${BASE_URL}/api/admin/audit?type=token_created&scope=bypass`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Audit combined filters returns 200", combinedRes.ok, `status=${combinedRes.status}`);
+
+    // Multi-type filter (comma-separated)
+    const multiTypeRes = await fetch(`${BASE_URL}/api/admin/audit?type=token_created,token_revoked`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Audit multi-type filter returns 200", multiTypeRes.ok, `status=${multiTypeRes.status}`);
+    if (multiTypeRes.ok) {
+      const multi = await multiTypeRes.json();
+      const validTypes = ["token_created", "token_revoked"];
+      const allValid = multi.events.every((e) => validTypes.includes(e.type));
+      log("Multi-type filter only returns matching events", allValid,
+        `count=${multi.events.length}`);
+    }
+
 
     }
 

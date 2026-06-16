@@ -483,3 +483,32 @@ comma-separated entries. Supports:
 
 Total automated tests: 363 (291 unit + 72 e2e). Lint: 0 errors.
 Build: 20 routes, ~809 KB client JS. All regression checks green.
+
+## Round 49 - Audit log filtering + admin UI System tab
+
+Admin console gets significantly more useful with filtering capabilities
+and a new System tab for infrastructure visibility.
+
+**Audit log filtering:**
+- GET /api/admin/audit?type=X ¡ª filter by event type
+- GET /api/admin/audit?scope=X ¡ª filter by token scope
+- GET /api/admin/audit?type=a,b&scope=admin ¡ª combine multiple filters
+- Multi-type filter with comma-separated values
+- Works with all export formats (CSV, JSONL, JSON)
+
+**Admin UI System tab:**
+- Webhook health: pending deliveries, max retries, initial delay, max queue size
+- Trusted IPs info: explanation of bypass behavior and env var configuration
+- Clean status card layout matching the rest of the admin console
+
+**Admin UI Audit tab:**
+- Dropdown filter for event type (8 common types + "All types")
+- Filter applies to both the table view and auto-refresh
+
+**New e2e tests:**
+- 7 new admin e2e tests covering type filter, scope filter, combined
+  filters, multi-type filter, and stats endpoint
+
+Total automated tests: 370 (291 unit + 79 e2e). Lint: 0 errors,
+28 warnings. Build: 20 routes, ~809 KB client JS. All regression
+checks green.

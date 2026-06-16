@@ -64,9 +64,24 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const limitParam = url.searchParams.get("limit");
   const format = url.searchParams.get("format") || "json";
+  const typeFilter = url.searchParams.get("type");
+  const scopeFilter = url.searchParams.get("scope");
   const limit = Math.min(100, Math.max(1, parseInt(limitParam || "50", 10) || 50));
 
-  const events = snapshotAuthAudit(limit);
+  let events = snapshotAuthAudit(limit);
+
+  // Apply type filter
+  if (typeFilter) {
+    const types = typeFilter.split(",").map((t) => t.trim()).filter(Boolean);
+    if (types.length > 0) {
+      events = events.filter((e) => types.includes(e.type));
+    }
+  }
+
+  // Apply scope filter
+  if (scopeFilter) {
+    events = events.filter((e) => e.scope === scopeFilter);
+  }
 
   // Log the export action
   if (format !== "json") {

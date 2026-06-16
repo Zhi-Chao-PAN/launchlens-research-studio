@@ -52,7 +52,9 @@ export default function AdminPage() {
   const [tokens, setTokens] = useState<AdminToken[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<"tokens" | "audit" | "alerts">("tokens");
+  const [activeTab, setActiveTab] = useState<"tokens" | "audit" | "alerts" | "system">("tokens");
+  const [auditTypeFilter, setAuditTypeFilter] = useState<string>("");
+  const [webhookStats, setWebhookStats] = useState<{ pending: number; maxRetries: number; initialDelayMs: number; maxQueueSize: number } | null>(null);
   const [newLabel, setNewLabel] = useState("");
   const [newScope, setNewScope] = useState<"admin" | "bypass">("bypass");
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -83,10 +85,11 @@ export default function AdminPage() {
 
   async function loadAll() {
     try {
-      const [tRes, aRes, alRes] = await Promise.all([
+      const [tRes, aRes, alRes, sRes] = await Promise.all([
         apiCall("/api/admin/tokens"),
-        apiCall("/api/admin/audit?limit=20"),
+        apiCall(`/api/admin/audit?limit=20${auditTypeFilter ? "&type=" + encodeURIComponent(auditTypeFilter) : ""}`),
         apiCall("/api/admin/alerts?limit=20"),
+        apiCall("/api/admin/alerts?stats=1"),
       ]);
       if (tRes.ok) {
         const data = await tRes.json();
@@ -99,6 +102,10 @@ export default function AdminPage() {
       if (alRes.ok) {
         const data = await alRes.json();
         setAlerts(data.alerts || []);
+      }
+      if (sRes.ok) {
+        const data = await sRes.json();
+        setWebhookStats(data.webhook || null);
       }
       setError(null);
     } catch (e: unknown) {
@@ -228,6 +235,12 @@ export default function AdminPage() {
         >
           Alerts ({alerts.length})
         </button>
+        <button
+          className={activeTab === "system" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setActiveTab("system")}
+        >
+          System
+        </button>
       </nav>
 
       <main className="admin-main">
@@ -309,6 +322,24 @@ export default function AdminPage() {
             <div className="admin-section-header">
               <h2>Audit log</h2>
               <div className="admin-section-actions">
+                <select
+                  value={auditTypeFilter}
+                  onChange={(e) => {
+                    setAuditTypeFilter(e.target.value);
+                    setTimeout(loadAll, 0);
+                  }}
+                  className="admin-select"
+                  style={{ marginRight: "12px" }}
+                >
+                  <option value="">All types</option>
+                  <option value="auth_failed">auth_failed</option>
+                  <option value="auth_success">auth_success</option>
+                  <option value="token_created">token_created</option>
+                  <option value="token_revoked">token_revoked</option>
+                  <option value="rate_limited">rate_limited</option>
+                  <option value="csrf_failed">csrf_failed</option>
+                  <option value="admin_action">admin_action</option>
+                </select>
                 <a href="/api/admin/audit?format=csv" className="admin-link">Export CSV</a>
                 <a href="/api/admin/audit?format=jsonl" className="admin-link">Export JSONL</a>
               </div>
@@ -375,6 +406,49 @@ export default function AdminPage() {
             </div>
           </section>
         )}
+
+        {activeTab === "system" && (
+          <section className="admin-section">
+            <h2>Webhook status</h2>
+            <div className="admin-status-card">
+              <div className="admin-status-row">
+                <span className="admin-status-label">Pending deliveries</span>
+                <span className="admin-status-value">
+                  {webhookStats ? webhookStats.pending : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Max retries</span>
+                <span className="admin-status-value">
+                  {webhookStats ? webhookStats.maxRetries : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Initial retry delay</span>
+                <span className="admin-status-value">
+                  {webhookStats ? webhookStats.initialDelayMs + "ms" : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Max queue size</span>
+                <span className="admin-status-value">
+                  {webhookStats ? webhookStats.maxQueueSize : "—"}
+                </span>
+              </div>
+            </div>
+
+            <h2>Trusted IP ranges</h2>
+            <p className="admin-section-desc">
+              IP addresses and CIDR ranges that bypass rate limiting.
+              Configure via <code>LAUNCHLENS_TRUSTED_IPS</code> environment variable.
+            </p>
+            <div className="admin-info-note">
+              Trusted IP list is server-side only and not exposed via the API for security reasons.
+              Check your deployment environment to see the configured list.
+            </div>
+          </section>
+        )}
+
       </main>
     </div>
   );
