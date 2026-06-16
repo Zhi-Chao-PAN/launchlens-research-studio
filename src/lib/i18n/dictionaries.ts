@@ -24,7 +24,28 @@ export type DictionaryKey =
   | "status.running"
   | "status.completed"
   | "status.error"
-  | "language.label";
+  | "language.label"
+  | "agent.market-sizer.name"
+  | "agent.market-sizer.description"
+  | "agent.competitor-analyst.name"
+  | "agent.competitor-analyst.description"
+  | "agent.pain-detective.name"
+  | "agent.pain-detective.description"
+  | "agent.pricing-scout.name"
+  | "agent.pricing-scout.description"
+  | "agent.channel-scout.name"
+  | "agent.channel-scout.description"
+  | "agent.synthesis.name"
+  | "agent.synthesis.description"
+  | "agent.status.idle"
+  | "agent.status.running"
+  | "agent.status.done"
+  | "agent.status.error"
+  | "studio.researchAgents"
+  | "studio.poweredBy"
+  | "studio.tipStart"
+  | "studio.tipReset"
+  | "footer.tagline";
 
 type Dict = Record<DictionaryKey, string>;
 
@@ -42,6 +63,27 @@ const en: Dict = {
   "status.completed": "Research complete",
   "status.error": "Research failed",
   "language.label": "Language",
+  "agent.market-sizer.name": "Market Sizer",
+  "agent.market-sizer.description": "TAM/SAM/SOM estimates, growth trends, market segments",
+  "agent.competitor-analyst.name": "Competitor Analyst",
+  "agent.competitor-analyst.description": "Competitive landscape, gaps, positioning matrix",
+  "agent.pain-detective.name": "Pain Detective",
+  "agent.pain-detective.description": "User pain points, unmet needs, real voice-of-customer",
+  "agent.pricing-scout.name": "Pricing Scout",
+  "agent.pricing-scout.description": "Price bands, monetization models, willingness to pay",
+  "agent.channel-scout.name": "Channel Scout",
+  "agent.channel-scout.description": "Acquisition channels, community hubs, content topics",
+  "agent.synthesis.name": "Synthesis",
+  "agent.synthesis.description": "Cross-agent validation, executive summary, importable brief",
+  "agent.status.idle": "Waiting",
+  "agent.status.running": "Researching",
+  "agent.status.done": "Complete",
+  "agent.status.error": "Error",
+  "studio.researchAgents": "Research Agents",
+  "studio.poweredBy": "Powered by 6 research agents:",
+  "studio.tipStart": "to start",
+  "studio.tipReset": "to reset",
+  "footer.tagline": "LaunchLens Research Studio — Companion to launchlens-ai",
 };
 
 const zhCN: Dict = {
@@ -58,6 +100,27 @@ const zhCN: Dict = {
   "status.completed": "调研完成",
   "status.error": "调研失败",
   "language.label": "语言",
+  "agent.market-sizer.name": "市场规模分析师",
+  "agent.market-sizer.description": "TAM/SAM/SOM 估算、增长趋势、市场细分",
+  "agent.competitor-analyst.name": "竞争分析师",
+  "agent.competitor-analyst.description": "竞争格局、市场缺口、定位矩阵",
+  "agent.pain-detective.name": "痛点侦探",
+  "agent.pain-detective.description": "用户痛点、未满足需求、真实用户声音",
+  "agent.pricing-scout.name": "价格侦察兵",
+  "agent.pricing-scout.description": "价格区间、变现模式、付费意愿",
+  "agent.channel-scout.name": "渠道侦察兵",
+  "agent.channel-scout.description": "获客渠道、社群中心、内容选题",
+  "agent.synthesis.name": "综合分析",
+  "agent.synthesis.description": "跨智能体校验、执行摘要、可分享简报",
+  "agent.status.idle": "等待中",
+  "agent.status.running": "调研中",
+  "agent.status.done": "已完成",
+  "agent.status.error": "出错",
+  "studio.researchAgents": "调研智能体",
+  "studio.poweredBy": "由 6 个调研智能体驱动：",
+  "studio.tipStart": "开始调研",
+  "studio.tipReset": "重置",
+  "footer.tagline": "LaunchLens Research Studio — launchlens-ai 的伴侣项目",
 };
 
 const ja: Dict = {
@@ -74,6 +137,27 @@ const ja: Dict = {
   "status.completed": "リサーチ完了",
   "status.error": "リサーチに失敗しました",
   "language.label": "言語",
+  "agent.market-sizer.name": "マーケットサイザー",
+  "agent.market-sizer.description": "TAM/SAM/SOM 推計、成長トレンド、市場セグメント",
+  "agent.competitor-analyst.name": "コンペティターアナリスト",
+  "agent.competitor-analyst.description": "競合環境、ギャップ、ポジショニング",
+  "agent.pain-detective.name": "ペインディテクティブ",
+  "agent.pain-detective.description": "ユーザーペイン、満たされないニーズ、生の声",
+  "agent.pricing-scout.name": "プライシングスカウト",
+  "agent.pricing-scout.description": "価格帯、収益モデル、支払意欲",
+  "agent.channel-scout.name": "チャネルスカウト",
+  "agent.channel-scout.description": "獲得チャネル、コミュニティ、コンテンツテーマ",
+  "agent.synthesis.name": "シンセシス",
+  "agent.synthesis.description": "エージェント横断検証、エグゼクティブサマリー、共有可能なブリーフ",
+  "agent.status.idle": "待機中",
+  "agent.status.running": "リサーチ中",
+  "agent.status.done": "完了",
+  "agent.status.error": "エラー",
+  "studio.researchAgents": "リサーチエージェント",
+  "studio.poweredBy": "6 つのリサーチエージェントで動作:",
+  "studio.tipStart": "開始",
+  "studio.tipReset": "リセット",
+  "footer.tagline": "LaunchLens Research Studio — launchlens-ai のコンパニオン",
 };
 
 export const DICTIONARIES: Record<Locale, Dict> = {

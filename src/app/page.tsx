@@ -229,7 +229,7 @@ export default function Home() {
 
             <div className="mt-10">
               <p className="text-center text-sm text-slate-500 mb-4">
-                Powered by 6 research agents:
+                {t("studio.poweredBy")}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {allAgentIds.map((id) => {
@@ -237,8 +237,8 @@ export default function Home() {
                   return (
                     <div key={id} className="p-3 bg-white rounded-xl border border-slate-200 text-center">
                       <div className="text-2xl mb-1" aria-hidden>{meta.icon}</div>
-                      <p className="text-sm font-semibold text-slate-700">{meta.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+                      <p className="text-sm font-semibold text-slate-700">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".name") as any, meta.name)}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".description") as any, meta.description)}</p>
                     </div>
                   );
                 })}
@@ -250,12 +250,12 @@ export default function Home() {
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
                 <span className="mx-1">+</span>
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Enter</kbd>
-                <span className="ml-1">to start</span>
+                <span className="ml-1">{t("studio.tipStart")}</span>
               </span>
               <span className="text-slate-300">·</span>
               <span>
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Esc</kbd>
-                <span className="ml-1">to reset</span>
+                <span className="ml-1">{t("studio.tipReset")}</span>
               </span>
             </div>
           </div>
@@ -291,7 +291,7 @@ export default function Home() {
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-slate-800">Research Agents</h3>
+                  <h3 className="font-semibold text-slate-800">{t("studio.researchAgents")}</h3>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       state.status === "completed"
@@ -359,7 +359,7 @@ export default function Home() {
       <footer className="border-t border-slate-200 bg-white/50 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center">
           <p className="text-xs text-slate-400">
-            LaunchLens Research Studio — Companion to launchlens-ai
+            {t("footer.tagline")}
           </p>
         </div>
       </footer>

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { memo } from "react";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { AgentId, AgentState } from "@/lib/schema/research-schema";
 import { bucketProgress } from "@/lib/perf/perf-utils";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
@@ -28,7 +29,13 @@ const statusLabel: Record<string, string> = {
 };
 
 function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardProps) {
-  const meta = AGENT_METADATA[agentId];
+  const { t } = useLocale();
+  const baseMeta = AGENT_METADATA[agentId];
+  const meta = {
+    ...baseMeta,
+    name: t(("agent." + agentId + ".name") as any, baseMeta.name),
+    description: t(("agent." + agentId + ".description") as any, baseMeta.description),
+  };
 
   return (
     <button
@@ -50,7 +57,7 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[state.status] || statusColors.idle}`}
             >
-              {error ? "Error" : statusLabel[state.status] || state.status}
+              {error ? t("agent.status.error") : t(("agent.status." + state.status) as any, statusLabel[state.status] || state.status)}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>

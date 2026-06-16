@@ -145,7 +145,7 @@ async function run() {
     await page.locator('button:has-text("Start Research")').first().click();
 
     // Wait for the studio layout
-    await page.waitForSelector("text=Research Agents", { timeout: 10000 });
+    await page.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 10000 });
     log("Studio layout appears", true);
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-03-research-started.png") });
@@ -159,7 +159,7 @@ async function run() {
     // Tab buttons may be inside the lazy ReportView, check after wait
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-debug-tabs.png"), fullPage: true });
     const html = await page.content();
-    console.log("DEBUG: page has 'Research Agents'", html.includes("Research Agents"));
+    console.log("DEBUG: page has translated Research Agents", html.includes("Research Agents") || html.includes("调研智能体") || html.includes("リサーチ"));
     console.log("DEBUG: page has 'Market Sizer' as button", /button[^>]*>[^<]*Market Sizer/.test(html));
     const tabCount = await page.locator("button").filter({ hasText: /Market Sizer|Competitor Analyst|Pain Detective|Pricing Scout|Channel Scout/ }).count();
     log("Tab buttons present in report", tabCount >= 4, `count=${tabCount}`);
@@ -215,7 +215,7 @@ async function run() {
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
     await mobilePage.locator('button:has-text("Start Research")').first().click();
-    await mobilePage.waitForSelector("text=Research Agents", { timeout: 15000, state: "attached" });
+    await mobilePage.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 15000, state: "attached" });
     await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
 
     const mobileToggle = mobilePage.locator('button[aria-controls="studio-sidebar"]').first();
