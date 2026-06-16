@@ -2,6 +2,7 @@
 ﻿"use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 
 export interface ResearchStudioState {
@@ -276,7 +277,7 @@ export function useResearchStudio() {
       setState({ ...initialState, query, keywords, status: "loading" });
 
       try {
-        const res = await fetch("/api/research", {
+        const res = await fetchWithCsrf("/api/research", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query, keywords }),

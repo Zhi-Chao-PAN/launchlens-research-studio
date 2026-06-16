@@ -1,5 +1,6 @@
-﻿import { NextResponse } from "next/server";
+﻿import { NextResponse, NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/api/rate-limit";
+import { checkCsrfToken } from "@/lib/api/csrf";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import {
   createResearchSession,
@@ -11,7 +12,7 @@ import {
   jsonError,
 } from "@/lib/api/validation";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const start = Date.now();
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
   const ua = (request.headers.get("user-agent") || "").slice(0, 80);

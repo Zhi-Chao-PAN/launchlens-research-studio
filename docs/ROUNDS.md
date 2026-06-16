@@ -148,3 +148,12 @@ E2E test respects E2E_FREEZE=1 env var and navigates with ?freeze=1.
 Visual regression harness enables freeze mode by default (opt out with
 VISUAL_NO_FREEZE=1). Screenshots 2 and 3 get a brief stabilization wait
 when freeze mode is on to ensure consistent frame timing.
+
+## Round 33 - CSRF token on POST /api/research
+src/lib/api/csrf.ts with double-submit cookie pattern, soft enforcement
+by default (LAUNCHLENS_CSRF_STRICT=1 for hard 403s). /api/csrf endpoint
+issues tokens via httpOnly cookie + JSON body. src/lib/api/csrf-client.ts
+caches token client-side and provides fetchWithCsrf() helper.
+use-research-studio.ts uses fetchWithCsrf for the research start POST.
+All GET routes and the SSE stream are unaffected — CSRF only applies to
+state-changing POST endpoints.
