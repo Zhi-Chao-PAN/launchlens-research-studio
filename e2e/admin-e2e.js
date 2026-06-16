@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 
@@ -11,8 +11,8 @@ let pass = 0;
 let fail = 0;
 
 function log(label, ok, detail) {
-  const status = ok ? "✓" : "✗";
-  console.log(`  ${status} ${label}${detail ? ` — ${detail}` : ""}`);
+  const status = ok ? "PASS" : "FAIL";
+  console.log(`  [${status}] ${label}${detail ? " -- " + detail : ""}`);
   if (ok) pass++; else fail++;
 }
 
@@ -142,7 +142,7 @@ async function run() {
         headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
       });
       const auditLimit1Body = await auditLimit1.json();
-      log("Audit ?limit=5 returns ≤ 5 events", auditLimit1Body.events.length <= 5,
+      log("Audit ?limit=5 returns <= 5 events", auditLimit1Body.events.length <= 5,
         `count=${auditLimit1Body.events.length}`);
     }
 
@@ -173,14 +173,130 @@ async function run() {
       });
       log("Revoked token no longer works (falls back to rate limit)", true,
         `status=${afterRevokeRes.status}`);
-      // Note: after revoke, the token should be treated as invalid.
-      // But since we don't enforce auth by default, it just falls through to rate limiting.
-      // The important thing is it doesn't bypass anymore.
     }
 
-    console.log("\n[5] Admin rate limiting");
+    console.log("\n[5] Security alerts endpoint");
+
+    // Alerts config
+    const configRes = await fetch(`${BASE_URL}/api/admin/alerts?config=1`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Alerts config accessible with admin token", configRes.ok, `status=${configRes.status}`);
+
+    if (configRes.ok) {
+      const cfg = await configRes.json();
+      log("Config has windowSeconds", typeof cfg.windowSeconds === "number");
+      log("Config has authFailedThreshold", typeof cfg.authFailedThreshold === "number");
+      log("Config has maxAlerts", typeof cfg.maxAlerts === "number");
+      log("Webhook disabled by default", cfg.webhookEnabled === false);
+    }
+
+    // Empty alerts list
+    const emptyAlertsRes = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Alerts list accessible with admin token", emptyAlertsRes.ok, `status=${emptyAlertsRes.status}`);
+
+    if (emptyAlertsRes.ok) {
+      const emptyBody = await emptyAlertsRes.json();
+      log("Alerts returns array", Array.isArray(emptyBody.alerts));
+      log("Alerts has count field", typeof emptyBody.count === "number");
+    }
+
+    // Unauthorized access
+    const noAuthAlerts = await fetch(`${BASE_URL}/api/admin/alerts`);
+    log("Alerts endpoint requires auth", noAuthAlerts.status === 401, `status=${noAuthAlerts.status}`);
+
+    // Admin token creation should trigger critical alert
+    // Do this early before admin rate limits accumulate from other tests
+    const clearBeforeCreate = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Clear alerts before critical test", clearBeforeCreate.ok);
+
+    const adminCreateForAlert = await fetch(`${BASE_URL}/api/admin/tokens`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${ADMIN_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ label: "alert-test-admin-critical", scope: "admin" }),
+    });
+    log("Created admin token for critical alert test", adminCreateForAlert.status === 201,
+      `status=${adminCreateForAlert.status}`);
+
+    const criticalAlertsRes = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    if (criticalAlertsRes.ok) {
+      const criticalBody = await criticalAlertsRes.json();
+      const criticalAlert = criticalBody.alerts.find((a) => a.type === "admin_token_created");
+      log("Admin token creation generates critical alert", !!criticalAlert,
+        `alerts=${criticalBody.alerts.length}`);
+      if (criticalAlert) {
+        log("Admin token alert is critical severity", criticalAlert.severity === "critical");
+      }
+    }
+
+    // Trigger auth_failed burst to generate an alert
+    // Default threshold is 10 in 60s - we need 10 failed auth attempts
+    for (let i = 0; i < 12; i++) {
+      await fetch(`${BASE_URL}/api/admin/tokens`, {
+        headers: { "Authorization": "Bearer invalid-token-for-burst-test-" + i },
+      });
+    }
+
+    // Check if alert was generated
+    const alertsAfterBurstRes = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Alerts endpoint still accessible after burst", alertsAfterBurstRes.ok);
+
+    if (alertsAfterBurstRes.ok) {
+      const burstBody = await alertsAfterBurstRes.json();
+      log("Burst generated at least one alert", burstBody.alerts.length >= 1,
+        `alerts=${burstBody.alerts.length}`);
+      
+      if (burstBody.alerts.length > 0) {
+        const alert = burstBody.alerts[0];
+        log("Alert has type field", typeof alert.type === "string");
+        log("Alert has severity field", typeof alert.severity === "string");
+        log("Alert has message field", typeof alert.message === "string");
+        log("Alert has timestamp (ts)", typeof alert.ts === "number");
+      }
+    }
+
+    // Test limit parameter
+    const limitedAlerts = await fetch(`${BASE_URL}/api/admin/alerts?limit=3`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    if (limitedAlerts.ok) {
+      const limitedBody = await limitedAlerts.json();
+      log("Alerts ?limit=3 returns <= 3 alerts", limitedBody.alerts.length <= 3,
+        `count=${limitedBody.alerts.length}`);
+    }
+
+    // Clear alerts
+    const clearRes = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("DELETE alerts clears buffer", clearRes.ok, `status=${clearRes.status}`);
+
+    const afterClearRes = await fetch(`${BASE_URL}/api/admin/alerts`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    if (afterClearRes.ok) {
+      const afterClear = await afterClearRes.json();
+      log("Alerts buffer empty after clear", afterClear.alerts.length === 0);
+    }
+
+    console.log("\n[6] Admin rate limiting");
 
     // Rapid-fire admin requests should eventually get rate limited
+    // NOTE: this intentionally exhausts the rate limit budget, so it
+    // should stay last in the test suite.
     let adminRateLimited = false;
     for (let i = 0; i < 35; i++) {
       const r = await fetch(`${BASE_URL}/api/admin/tokens`, {

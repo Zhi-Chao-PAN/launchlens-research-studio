@@ -28,6 +28,20 @@ export interface AuthAuditEvent {
 }
 
 const MAX_EVENTS = 100;
+type AuditListener = (event: AuthAuditEvent) => void;
+const listeners: AuditListener[] = [];
+
+/**
+ * Register a listener called on every auth audit event.
+ * Returns an unsubscribe function.
+ */
+export function onAuthAuditEvent(listener: AuditListener): () => void {
+  listeners.push(listener);
+  return () => {
+    const idx = listeners.indexOf(listener);
+    if (idx >= 0) listeners.splice(idx, 1);
+  };
+}
 const STORAGE_KEY = "authAudit";
 
 let events: AuthAuditEvent[] = [];
@@ -73,6 +87,16 @@ export function recordAuthAudit(
     userAgent: meta.userAgent,
   };
   events.push(event);
+
+  // Notify all listeners (best-effort, errors are swallowed)
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch {
+      // Listener errors must not break audit logging
+    }
+  }
+
   if (events.length > MAX_EVENTS) {
     events = events.slice(-MAX_EVENTS);
   }

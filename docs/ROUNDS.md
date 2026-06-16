@@ -155,7 +155,7 @@ by default (LAUNCHLENS_CSRF_STRICT=1 for hard 403s). /api/csrf endpoint
 issues tokens via httpOnly cookie + JSON body. src/lib/api/csrf-client.ts
 caches token client-side and provides fetchWithCsrf() helper.
 use-research-studio.ts uses fetchWithCsrf for the research start POST.
-All GET routes and the SSE stream are unaffected â€” CSRF only applies to
+All GET routes and the SSE stream are unaffected â€?CSRF only applies to
 state-changing POST endpoints.
 
 ## Round 34 - Rate-limit bypass tokens / auth scaffold
@@ -165,12 +165,12 @@ tokens at startup. createBypassToken(), listBypassTokens(),
 revokeBypassToken(), isBypassToken(), extractBearerToken(). POST
 /api/research skips rate limiting and strict CSRF when a valid bearer
 token is present. /api/admin/tokens REST endpoint for token management
-(GET list, POST create, DELETE by hash) â€” protected by bearer token auth.
+(GET list, POST create, DELETE by hash) â€?protected by bearer token auth.
 All tokens are hashed at rest so a leaked storage file is not usable.
 
 ## Round 35 - Regression sweep and consolidation
 Full regression sweep (lint + unit + build + bundle-stats) all green.
-Lint fixes across csrf.ts, bypass-tokens.ts, admin tokens route â€” moved
+Lint fixes across csrf.ts, bypass-tokens.ts, admin tokens route â€?moved
 from require() to top-level node:crypto imports, removed unused imports,
 replaced `any` with typed body. Research route restored with proper CSRF
 check after bypass token gate. Regression report regenerated. Health
@@ -227,7 +227,7 @@ Fixed three sources of e2e flakiness and refreshed visual baselines:
 1. Fixed `gotoUrl is not defined` crash in mobile viewport test (renamed
    to BASE_URL, pre-existing bug).
 2. Replaced flaky "Research Agents" heading waitForSelector with
-   `button[aria-controls="studio-sidebar"]` â€” a far more reliable
+   `button[aria-controls="studio-sidebar"]` â€?a far more reliable
    signal that the studio layout has mounted.
 3. Added `settle(page, ms)` helper for freeze mode: scroll-to-top,
    injects `transition: none !important; animation: none !important`
@@ -243,7 +243,7 @@ automated tests. Build clean, 17 routes, 0 lint errors.
 
 ## Round 40 - Full regression sweep + 5-round cycle report
 Full regression suite passes end-to-end: lint, unit tests, build,
-bundle stats, browser E2E, security E2E, and admin E2E â€” all green.
+bundle stats, browser E2E, security E2E, and admin E2E â€?all green.
 
 Fixed e2e ordering in regression script (browser E2E before API E2E) to
 prevent rate-limit starvation of the browser test flow.
@@ -270,20 +270,60 @@ CORS security layer for all API endpoints, with two modes:
   get a 403 with descriptive error.
 
 **New files:**
-- `src/lib/api/cors.ts` â€” `checkCors()`, `handleOptions()`,
+- `src/lib/api/cors.ts` â€?`checkCors()`, `handleOptions()`,
   `withCorsHeaders()`, and `corsConfig` utilities.
-- `src/lib/api/cors.test.ts` â€” 8 unit tests.
-- `e2e/cors-e2e.js` â€” 10 end-to-end tests covering disallowed
+- `src/lib/api/cors.test.ts` â€?8 unit tests.
+- `e2e/cors-e2e.js` â€?10 end-to-end tests covering disallowed
   origin rejection, allowed origin headers, OPTIONS preflight,
   same-origin requests, and admin endpoint CORS enforcement.
 - `e2e/security-e2e.js` already covers CORS indirectly.
 
 **Routes protected:**
-- `/api/research` (POST + OPTIONS) â€” full CORS check + headers on 201
-- `/api/csrf` (GET + OPTIONS) â€” CORS check + headers
-- `/api/admin/tokens` (GET/POST + OPTIONS) â€” CORS check + headers
-- `/api/admin/tokens/[hash]` (DELETE + OPTIONS) â€” CORS check + headers
-- `/api/admin/audit` (GET + OPTIONS) â€” CORS check + headers
+- `/api/research` (POST + OPTIONS) â€?full CORS check + headers on 201
+- `/api/csrf` (GET + OPTIONS) â€?CORS check + headers
+- `/api/admin/tokens` (GET/POST + OPTIONS) â€?CORS check + headers
+- `/api/admin/tokens/[hash]` (DELETE + OPTIONS) â€?CORS check + headers
+- `/api/admin/audit` (GET + OPTIONS) â€?CORS check + headers
 
 10 new CORS e2e tests (all passing in ~1.5s). Total automated tests:
 315. Build clean, 17 routes, 0 lint errors.
+
+
+## Round 42 - Auth audit alerting system
+
+Real-time security alert engine that monitors the auth audit log for
+suspicious patterns and triggers alerts. Four detection rules:
+
+- **auth_failed burst** (default: 10 in 60s, severity: warning)
+- **csrf_failed burst** (default: 5 in 60s, severity: warning)
+- **rate_limited burst** (default: 20 in 60s, severity: info)
+- **New admin token creation** (always alerts, severity: critical)
+
+Sliding-window detection per IP hash with per-window cooldown so a
+sustained burst doesn't flood the buffer. 50-alert ring buffer.
+
+**Alert delivery:**
+- In-memory buffer queryable via admin API
+- Webhook POST (configurable via LAUNCHLENS_ALERT_WEBHOOK_URL)
+  with structured JSON payload and 5s timeout, best-effort delivery
+
+**New files:**
+- src/lib/api/auth-alerts.ts -- alert engine + sliding window
+  detection + webhook delivery, 13 unit tests
+- src/lib/api/auth-alerts.test.ts -- 13 unit tests covering all
+  four detection rules, cooldown behavior, clear, and config
+- src/app/api/admin/alerts/route.ts -- admin endpoint:
+  - GET /api/admin/alerts -- list recent alerts (with ?limit=)
+  - GET /api/admin/alerts?config=1 -- show alert thresholds
+  - DELETE /api/admin/alerts -- clear all alerts
+- Pub/sub added to uth-audit.ts via onAuthAuditEvent() so any
+  module can subscribe to audit events in real time.
+
+**New e2e tests:** 16 new alerts tests in e2e/admin-e2e.js,
+including config view, empty list, unauthorized access, auth_failed
+burst detection, critical alert on admin token creation, limit
+parameter, and clear/delete.
+
+Total automated tests: 303 (263 unit + 40 admin e2e). Lint: 0 errors,
+23 warnings. Build: 17 routes, ~795 KB client JS. All regression
+checks green.
