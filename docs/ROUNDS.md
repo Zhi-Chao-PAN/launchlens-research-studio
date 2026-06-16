@@ -512,3 +512,25 @@ and a new System tab for infrastructure visibility.
 Total automated tests: 370 (291 unit + 79 e2e). Lint: 0 errors,
 28 warnings. Build: 20 routes, ~809 KB client JS. All regression
 checks green.
+
+## Round 50 - Regression sweep + cycle 10 report
+
+Full regression sweep closing out cycle 10:
+
+- **Lint**: 0 errors, 28 warnings (all transitional)
+- **Unit tests**: 291/291
+- **Build**: 20 routes, ~809 KB client JS
+- **Admin e2e**: 66/66
+- **Security e2e**: 13/13
+- **CORS e2e**: 10/10
+- **Admin UI e2e**: 8/8
+- **Total automated tests: 417**
+- **Regression report**: regenerated, all sections green
+
+Cycle 10 report written to docs/cycle-10-r46-50.md summarizing
+rounds 46–50 (admin UI, webhook retry queue, trusted IP ranges,
+audit filtering + system tab, regression sweep).
+
+### 已完成 50 轮迭代
+从 R1 到 R50，十个完整的迭代周期，覆盖了从基础项目搭建到研究功能、
+安全加固、管理控制台的全维度打磨。
