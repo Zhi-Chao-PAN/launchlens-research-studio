@@ -124,6 +124,8 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     }
   }, [sessionId, query, outputs]);
 
+  const handlePrint = useCallback(() => { window.print(); }, []);
+
   const handleCopyBrief = useCallback(() => {
     const synth = outputs["synthesis"] as SynthesisOutput | null;
     if (!synth) {
@@ -180,6 +182,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
           <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Copy to clipboard</p>
         </div>
 
+        <button onClick={handlePrint} className="w-full py-2 px-3 text-sm font-medium bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg transition-colors text-left flex items-center gap-2"><span aria-hidden>🇀</span><span className="flex-1">Print / Save as PDF</span></button>
         <button onClick={handleCopyBrief} disabled={!outputs.synthesis}
           className="w-full py-2 px-3 text-sm font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50">
           <span aria-hidden>{copied === "brief" ? "✅" : "📋"}</span>

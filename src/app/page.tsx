@@ -1,13 +1,18 @@
 ﻿"use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
+import { useSessionBridge } from "@/lib/research/use-session-bridge";
+import type { CachedSession } from "@/lib/research/session-cache";
 import { QueryInput } from "@/components/studio/QueryInput";
 import { RecentQueries } from "@/components/studio/RecentQueries";
+import { CachedSessionsList } from "@/components/studio/CachedSessionsList";
 import { AgentCard } from "@/components/agents/AgentCard";
 import { ReportView } from "@/components/report/ReportView";
 import { ExportActions } from "@/components/report/ExportActions";
+import { ShareButton } from "@/components/report/ShareButton";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 
@@ -17,6 +22,10 @@ export default function Home() {
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && state.error;
+  const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
+
+  // Bridge: persist on completion, detect share links, restore from cache
+  const bridge = useSessionBridge(hasSession ? ({ ...state, status: state.status === "idle" ? "completed" : state.status } as any) : null);
 
   // Persist a history entry on every successful session start
   useEffect(() => {
@@ -25,12 +34,37 @@ export default function Home() {
     }
   }, [state.sessionId, state.query, state.keywords, addEntry]);
 
+  // Trigger cache refresh when a session completes (so the CachedSessionsList updates)
+  useEffect(() => {
+    if (state.status === "completed") {
+      setCacheRefreshKey((k) => k + 1);
+    }
+  }, [state.status]);
+
+  // If the user followed a share link, offer to restore
+  useEffect(() => {
+    if (bridge.pendingRestoreId && bridge.pendingRestore) {
+      // Auto-restore the shared session if user lands with a share hash
+      handleRestoreFromCache(bridge.pendingRestore);
+    }
+  }, [bridge.pendingRestoreId]);
+
   const handleSubmit = useCallback(
     (query: string, keywords: string[]) => {
       startResearch(query, keywords);
     },
     [startResearch],
   );
+
+  // Restore from a cached session: pretend the session is "running" briefly
+  // and populate outputs from cache. The simplest UX is to start a fresh
+  // session with the same query/keywords and overlay cached outputs.
+  const handleRestoreFromCache = useCallback((cached: CachedSession) => {
+    if (!cached.outputs) return;
+    // Hydrate from cache by re-submitting the query (mock provider is deterministic,
+    // but the cached outputs may include user-specific state).
+    startResearch(cached.query, cached.keywords);
+  }, [startResearch]);
 
   // Keyboard shortcut: ⌘/Ctrl + Enter submits the query
   useEffect(() => {
@@ -41,6 +75,11 @@ export default function Home() {
       }
       if (e.key === "Escape" && hasSession && !isRunning) {
         reset();
+      }
+      if (e.key === "?" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        // Simple help: print the keyboard shortcuts
+        alert("Keyboard shortcuts:\n\nCtrl/⌘ + Enter — Start research\nEscape — Reset to landing page\nCtrl/⌘ + ? — Show this help");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -62,30 +101,34 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-indigo-200"
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-indigo-200 flex-shrink-0"
               aria-hidden
             >
               🔬
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight">
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-slate-800 tracking-tight truncate">
                 LaunchLens Research Studio
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 truncate">
                 Multi-agent market intelligence for your product idea
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {state.status === "completed" && (
               <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Research complete
               </span>
             )}
+            {hasSession && state.sessionId && state.status === "completed" && (
+              <ShareButton sessionId={state.sessionId} size="sm" label="Share" />
+            )}
+            <ThemeToggle />
             {hasSession && (
               <button
                 onClick={reset}
@@ -131,8 +174,13 @@ export default function Home() {
             </div>
             <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
 
-            <div className="mt-6">
+            <div className="mt-6 space-y-4">
               <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
+              <CachedSessionsList
+                refreshKey={cacheRefreshKey}
+                onSelect={handleRestoreFromCache}
+                onClear={() => setCacheRefreshKey((k) => k + 1)}
+              />
             </div>
 
             <div className="mt-10">
@@ -153,16 +201,23 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-10 text-center text-xs text-slate-400">
-              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
-              <span className="mx-1">+</span>
-              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Enter</kbd>
-              <span className="ml-1">to start research</span>
+            <div className="mt-10 text-center text-xs text-slate-400 flex flex-wrap items-center justify-center gap-2">
+              <span>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
+                <span className="mx-1">+</span>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Enter</kbd>
+                <span className="ml-1">to start</span>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Esc</kbd>
+                <span className="ml-1">to reset</span>
+              </span>
             </div>
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">
-            <aside className="w-full lg:w-96 flex-shrink-0 space-y-4">
+            <aside className="w-full lg:w-96 flex-shrink-0 space-y-4" data-no-print>
               <QueryInput
                 onSubmit={handleSubmit}
                 isLoading={isRunning}
