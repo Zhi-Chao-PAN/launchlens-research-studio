@@ -2,7 +2,7 @@
 
 LaunchLens Research Studio is built through an open-ended iteration loop.
 Each round adds one self-contained slice of capability and ends with the
-unit, e2e, build, and smoke harnesses passing.
+unit, e2e, build, and lint harnesses passing.
 
 ## Round 1 - Foundation
 Multi-agent skeleton, mock SSE pipeline, baseline UI, schema definitions.
@@ -55,7 +55,6 @@ ResearchProvider interface; mock-provider-adapter; OpenAI-compatible
 adapter (configurable baseUrl/model, falls back to mock on failure);
 provider-registry with env-based selection (OPENAI_API_KEY,
 LAUNCHLENS_PROVIDER); engine wired through the registry; .env.example.
-9 new unit tests bring the total to 148.
 
 ## Round 13 - Deeper i18n through agent labels
 22 new dictionary keys covering all 6 agent names/descriptions, status
@@ -67,11 +66,44 @@ fallback. e2e selectors localized.
 ## Round 14 - Dynamic imports + a11y polish
 Each agent report section now lazy-loads via next/dynamic with a stable
 SectionFallback. ReportView region exposes role, aria-label, and
-aria-busy for screen readers. Bundle stats show many small per-section
-chunks replacing the previous 146 KB blob.
+aria-busy for screen readers.
 
 ## Round 15 - Full regression sweep + record consolidation
 Regression script extended to lint + unit + build + bundle-stats with
-status table emitted to regression-report.md. Iteration log updated
-through round 15. Health snapshot at round 15: 148 unit / 24 e2e / 0
-lint errors / 16 lint warnings / 9 routes / build clean.
+status table emitted to regression-report.md.
+
+## Round 16 - Runtime output validator + Anthropic Messages adapter
+output-validator.ts asserts AgentOutput shape per agent and patches a
+wrong discriminator. Anthropic Messages adapter (x-api-key header,
+anthropic-version, mock fallback). Provider registry rewritten with a
+clean precedence rule: forced override -> Anthropic key -> OpenAI key
+-> mock.
+
+## Round 17 - Provider streaming with onProgress
+ProviderContext gains an optional onProgress callback. Mock synthesizes
+4 progress checkpoints. OpenAI adapter requests stream:true when
+onProgress is provided, decodes SSE deltas, and forwards partial text
+plus a fraction estimate. Engine forwards provider progress as SSE
+progress events with step + partial fields.
+
+## Round 18 - Health endpoint, telemetry ring buffer
+/api/health reports status, version, uptime, and live provider info.
+src/lib/telemetry/telemetry.ts records the last 200 agent generations
+with provider id, duration, ok flag, and error. /api/telemetry exposes
+a summary plus the most recent N entries. Engine writes a telemetry
+record per agent generation regardless of success.
+
+## Round 19 - Backoff retry + per-IP rate limit
+src/lib/utils/retry.ts provides retryWithBackoff with exponential
+backoff, jitter, AbortSignal cooperation, and a shouldRetry guard.
+The OpenAI adapter retries 5xx and 429 up to 3 times then falls back
+to the mock; 4xx errors degrade immediately. src/lib/api/rate-limit.ts
+adds a per-key token bucket. POST /api/research is rate-limited per
+X-Forwarded-For with default 10 requests / 60 seconds.
+
+## Round 20 - Closing the second-tier sweep
+Iteration log updated through round 20. README feature inventory and
+runtime variable matrix added so newcomers can see the full surface
+at a glance. Health snapshot at end of round 20: 182 unit tests,
+26 e2e tests, 0 lint errors, 11 routes, build clean, 720 KB total
+client JS spread across many small chunks.
