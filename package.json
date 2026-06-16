@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "bundle:stats": "node scripts/bundle-stats.js"
   },
   "dependencies": {
     "next": "16.2.9",

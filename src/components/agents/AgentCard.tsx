@@ -1,6 +1,8 @@
 ﻿"use client";
 
+import { memo } from "react";
 import type { AgentId, AgentState } from "@/lib/schema/research-schema";
+import { bucketProgress } from "@/lib/perf/perf-utils";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
 
 interface AgentCardProps {
@@ -25,7 +27,7 @@ const statusLabel: Record<string, string> = {
   error: "Error",
 };
 
-export function AgentCard({ agentId, state, isActive, onClick, error }: AgentCardProps) {
+function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardProps) {
   const meta = AGENT_METADATA[agentId];
 
   return (
@@ -58,7 +60,7 @@ export function AgentCard({ agentId, state, isActive, onClick, error }: AgentCar
               <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300"
-                  style={{ width: `${state.progress}%` }}
+                  style={{ width: `${bucketProgress(state.progress)}%` }}
                 />
               </div>
               <p className="text-xs text-slate-500 mt-1 truncate">{state.currentStep}</p>
@@ -83,3 +85,16 @@ export function AgentCard({ agentId, state, isActive, onClick, error }: AgentCar
     </button>
   );
 }
+
+export const AgentCard = memo(AgentCardImpl, (prev, next) => {
+  return (
+    prev.agentId === next.agentId &&
+    prev.isActive === next.isActive &&
+    prev.error === next.error &&
+    prev.onClick === next.onClick &&
+    prev.state.status === next.state.status &&
+    bucketProgress(prev.state.progress) === bucketProgress(next.state.progress) &&
+    prev.state.currentStep === next.state.currentStep
+  );
+});
+AgentCard.displayName = "AgentCard";
