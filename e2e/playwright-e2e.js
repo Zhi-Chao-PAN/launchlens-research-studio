@@ -133,6 +133,10 @@ async function run() {
     log('health endpoint serves provider info', healthResponse.status() === 200 && healthJson.status === 'ok' && !!healthJson.provider, 'provider=' + (healthJson.provider && healthJson.provider.id));
     const telemetryResponse = await page.request.get(BASE_URL + '/api/telemetry');
     log('telemetry endpoint serves summary', telemetryResponse.status() === 200);
+    const diagnosticsResponse = await page.request.get(BASE_URL + '/diagnostics');
+    log('diagnostics page renders 200', diagnosticsResponse.status() === 200);
+    const diagHtml = await diagnosticsResponse.text();
+    log('diagnostics page contains provider section', diagHtml.includes('Provider') && diagHtml.includes('Diagnostics'));
     // Wait briefly for the ProviderPill to fetch /api/health and render
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.waitForTimeout(700);
