@@ -26,6 +26,17 @@ if (results.every((r) => r.ok)) {
   results.push(run("Bundle stats", "npm", ["run", "bundle:stats"]));
 }
 
+// E2E tests (skipped if PLAYWRIGHT_SKIP=1)
+if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
+  results.push(run("Security E2E", "node", ["e2e/security-e2e.js"]));
+}
+if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
+  results.push(run("Admin E2E", "node", ["e2e/admin-e2e.js"]));
+}
+if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
+  results.push(run("Browser E2E", "node", ["e2e/playwright-e2e.js"]));
+}
+
 const reportLines = [
   "# Regression run",
   "Generated " + new Date().toISOString(),

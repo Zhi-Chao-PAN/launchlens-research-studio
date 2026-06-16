@@ -249,7 +249,77 @@ async function run() {
       log("Mobile toggle has aria-expanded", expanded === "true", `expanded=${expanded}`);
     }
 
-    // ====== Summary ======
+    // ====== Security / API Tests ======
+    log("Security: starting API security tests");
+
+    // Test 1: /api/csrf returns a token and sets a cookie
+    const csrfRes = await fetch(BASE_URL + "/api/csrf");
+    const csrfBody = await csrfRes.json();
+    log("Security: /api/csrf returns csrfToken", !!csrfBody.csrfToken, `len=${csrfBody.csrfToken?.length || 0}`);
+    const csrfCookie = csrfRes.headers.get("set-cookie");
+    log("Security: /api/csrf sets csrf_token cookie", !!csrfCookie && csrfCookie.includes("csrf_token="));
+
+    // Test 2: POST /api/research without CSRF passes in soft mode (but still creates session)
+    const noCsrfRes = await fetch(BASE_URL + "/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "e2e security test", keywords: [] }),
+    });
+    log("Security: POST /api/research without CSRF (soft mode allowed)", noCsrfRes.ok, `status=${noCsrfRes.status}`);
+
+    // Test 3: POST /api/research WITH CSRF works
+    const csrfRes2 = await fetch(BASE_URL + "/api/csrf");
+    const csrfBody2 = await csrfRes2.json();
+    const cookie2 = csrfRes2.headers.get("set-cookie") || "";
+    const cookieMatch = cookie2.match(/csrf_token=([^;]+)/);
+    const csrfTokenFromCookie = cookieMatch ? cookieMatch[1] : null;
+
+    const withCsrfRes = await fetch(BASE_URL + "/api/research", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfBody2.csrfToken,
+        "Cookie": cookie2,
+      },
+      body: JSON.stringify({ query: "e2e csrf test", keywords: [] }),
+    });
+    log("Security: POST /api/research with matching CSRF works", withCsrfRes.status === 201 || withCsrfRes.status === 200,
+      `status=${withCsrfRes.status}`);
+
+    // Test 4: /api/admin/tokens without auth returns 401
+    const noAuthRes = await fetch(BASE_URL + "/api/admin/tokens");
+    log("Security: /api/admin/tokens without auth returns 401", noAuthRes.status === 401, `status=${noAuthRes.status}`);
+
+    // Test 5: bypass-scope token can't access admin
+    // We need to create a bypass token first... but we don't have an admin token yet.
+    // Use the env var approach: set LAUNCHLENS_ADMIN_TOKENS before starting the server.
+    // Since we can't set it retroactively, let's test that a random token fails.
+    const badTokenRes = await fetch(BASE_URL + "/api/admin/tokens", {
+      headers: { "Authorization": "Bearer totally-fake-token" },
+    });
+    log("Security: /api/admin/tokens with fake token returns 401", badTokenRes.status === 401,
+      `status=${badTokenRes.status}`);
+
+    // Test 6: /api/health still works (sanity)
+    const healthRes = await fetch(BASE_URL + "/api/health");
+    log("Security: /api/health sanity check", healthRes.ok, `status=${healthRes.status}`);
+
+    // Test 7: rate limiting exists on research endpoint (test rapid-fire)
+    let rateLimitedHit = false;
+    for (let i = 0; i < 15; i++) {
+      const r = await fetch(BASE_URL + "/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "rate-test-" + i, keywords: [] }),
+      });
+      if (r.status === 429) {
+        rateLimitedHit = true;
+        break;
+      }
+    }
+    log("Security: rate limiting activates after rapid requests", rateLimitedHit);
+
+        // ====== Summary ======
     console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     if (errors.length > 0) {

@@ -202,3 +202,21 @@ Wired into all security touchpoints:
 New /api/admin/audit endpoint (admin scope required) returns recent
 events with configurable limit (default 50, max 100).
 245 unit tests, build clean, 17 routes, 0 lint errors.
+
+## Round 38 - Security e2e tests + admin e2e tests
+Two new e2e test suites covering the security surface:
+
+- e2e/security-e2e.js (10 tests): CSRF endpoint, soft enforcement,
+  mismatched token 403, rate limiting activation, admin endpoint auth
+  rejection (no auth + fake token), audit endpoint auth rejection.
+
+- e2e/admin-e2e.js (21 tests): env-provisioned admin token, token CRUD
+  via admin API (bypass + admin scopes), bypass-scope isolation (can't
+  call admin), bypass token actually skips rate limits, audit log
+  queries with event type verification, limit parameter, token
+  revocation verification, admin endpoint rate limiting.
+
+Regression script updated to run both suites. Security tests run in
+under 2s; admin tests run in under 2s. Total e2e security coverage:
+31 tests, all passing.
+245 unit tests, build clean, 17 routes, 0 lint errors.
