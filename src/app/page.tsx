@@ -23,6 +23,7 @@ export default function Home() {
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && state.error;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Bridge: persist on completion, detect share links, restore from cache
   const bridge = useSessionBridge(hasSession ? ({ ...state, status: state.status === "idle" ? "completed" : state.status } as any) : null);
@@ -51,6 +52,7 @@ export default function Home() {
 
   const handleSubmit = useCallback(
     (query: string, keywords: string[]) => {
+      setSidebarOpen(false);
       startResearch(query, keywords);
     },
     [startResearch],
@@ -74,7 +76,8 @@ export default function Home() {
         form?.requestSubmit();
       }
       if (e.key === "Escape" && hasSession && !isRunning) {
-        reset();
+        if (sidebarOpen) setSidebarOpen(false);
+        else reset();
       }
       if (e.key === "?" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -131,7 +134,7 @@ export default function Home() {
             <ThemeToggle />
             {hasSession && (
               <button
-                onClick={reset}
+                onClick={() => { setSidebarOpen(false); reset(); }}
                 disabled={isRunning}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
               >
@@ -161,6 +164,12 @@ export default function Home() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {state.status === "loading" && "Starting research session"}
+          {state.status === "running" && "Research agents are running"}
+          {state.status === "completed" && "Research complete"}
+          {state.status === "error" && (state.error || "Research failed")}
+        </div>
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
             <div className="text-center mb-8">
@@ -217,7 +226,27 @@ export default function Home() {
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">
-            <aside className="w-full lg:w-96 flex-shrink-0 space-y-4" data-no-print>
+            {/* Mobile sidebar toggle */}
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="lg:hidden flex items-center justify-between w-full py-3 px-4 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 shadow-sm"
+              aria-expanded={sidebarOpen}
+              aria-controls="studio-sidebar"
+            >
+              <span className="flex items-center gap-2">
+                <span aria-hidden>🎛️</span>
+                <span>Research controls</span>
+                <span className="text-xs text-slate-500">
+                  ({Object.values(state.agents).filter((a) => a.status === "done").length}/6 agents)
+                </span>
+              </span>
+              <span aria-hidden className={"transition-transform " + (sidebarOpen ? "rotate-180" : "")}>▾</span>
+            </button>
+            <aside
+              id="studio-sidebar"
+              data-no-print
+              className={"w-full lg:w-96 flex-shrink-0 space-y-4 " + (sidebarOpen ? "block" : "hidden lg:block")}
+            >
               <QueryInput
                 onSubmit={handleSubmit}
                 isLoading={isRunning}
