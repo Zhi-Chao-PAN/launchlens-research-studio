@@ -602,3 +602,43 @@ API gains export formats and bulk operations.
 Total automated tests: 448 (305 unit + 143 e2e). Lint: 0 errors,
 32 warnings. Build: 22 routes, ~831 KB client JS. All regression
 checks green.
+
+## Round 53 - Structured research result rendering
+
+Research detail page now renders synthesis output as beautiful,
+structured sections instead of raw text. Parses the JSON-formatted
+synthesis output and presents it in a visually scannable layout.
+
+**New component & parser:**
+- src/lib/research/synthesis-parser.ts ！ shared parser utility
+- parseSynthesis() ！ parses JSON synthesis (handles markdown fences)
+- isStructuredResult() ！ detection helper
+- SynthesisOutput type + nested interfaces (Source, KeyInsight, etc.)
+- 9 unit tests
+
+**Detail page rendering:**
+- Executive Summary section
+- Opportunity / Risk score bars (animated visual indicators)
+- Key Insights with confidence badges (high/medium/low)
+- Top Opportunities cards (green accent, rationale)
+- Top Risks cards (red accent, mitigation)
+- Recommended Next Step (highlighted callout)
+- Sources section with clickable links
+- Toggle to show/hide raw JSON output
+- Graceful fallback to raw text for non-structured results
+
+**Exports:**
+- Export MD button ！ generates well-formatted Markdown report
+- Export JSON button ！ downloads full run as JSON
+- Client-side generation (no API hit needed)
+
+**Design:**
+- Dark theme with indigo accents
+- Responsive grid layout
+- Hover effects on cards
+- Consistent typography hierarchy
+- All CSS scoped to .research-* classes
+
+Total automated tests: 457 (314 unit + 143 e2e). Lint: 0 errors,
+32 warnings. Build: 22 routes, ~866 KB client JS, ~70 KB CSS.
+All regression checks green.
