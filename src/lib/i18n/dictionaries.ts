@@ -48,7 +48,16 @@ export type DictionaryKey =
   | "footer.tagline"
   | "provider.mock"
   | "provider.breakerOpen"
-  | "provider.streaming";
+  | "provider.streaming"
+  | "crash.title"
+  | "crash.body"
+  | "crash.tryAgain"
+  | "crash.goHome"
+  | "crash.copyTrace"
+  | "crash.copied"
+  | "notFound.title"
+  | "notFound.body"
+  | "notFound.backHome";
 
 type Dict = Record<DictionaryKey, string>;
 
@@ -90,6 +99,15 @@ const en: Dict = {
   "provider.mock": "Mock provider",
   "provider.breakerOpen": "Provider breaker open",
   "provider.streaming": "stream",
+  "crash.title": "Something went wrong",
+  "crash.body": "An unexpected error occurred. Your work hasn't been lost.",
+  "crash.tryAgain": "Try again",
+  "crash.goHome": "Go home",
+  "crash.copyTrace": "Copy error details",
+  "crash.copied": "Copied",
+  "notFound.title": "Page not found",
+  "notFound.body": "The page you're looking for doesn't exist or has moved.",
+  "notFound.backHome": "Back to Research Studio",
 };
 
 const zhCN: Dict = {
@@ -130,6 +148,15 @@ const zhCN: Dict = {
   "provider.mock": "模拟模型",
   "provider.breakerOpen": "提供方熔断已开启",
   "provider.streaming": "流式",
+  "crash.title": "出错了",
+  "crash.body": "发生了意外错误。你的工作并未丢失。",
+  "crash.tryAgain": "重试",
+  "crash.goHome": "返回首页",
+  "crash.copyTrace": "复制错误详情",
+  "crash.copied": "已复制",
+  "notFound.title": "页面未找到",
+  "notFound.body": "您要查找的页面不存在或已移动。",
+  "notFound.backHome": "返回调研工作台",
 };
 
 const ja: Dict = {
@@ -170,6 +197,15 @@ const ja: Dict = {
   "provider.mock": "モックプロバイダ",
   "provider.breakerOpen": "プロバイダ遮断中",
   "provider.streaming": "ストリーム",
+  "crash.title": "エラーが発生しました",
+  "crash.body": "予期しないエラーが発生しました。作業は失われていません。",
+  "crash.tryAgain": "再試行",
+  "crash.goHome": "ホームへ戻る",
+  "crash.copyTrace": "エラー詳細をコピー",
+  "crash.copied": "コピーしました",
+  "notFound.title": "ページが見つかりません",
+  "notFound.body": "お探しのページは存在しないか、移動された可能性があります。",
+  "notFound.backHome": "リサーチスタジオに戻る",
 };
 
 export const DICTIONARIES: Record<Locale, Dict> = {

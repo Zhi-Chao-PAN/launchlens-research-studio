@@ -109,7 +109,7 @@ describe("Accessibility — Error and loading pages", () => {
   it("error.tsx has role and error UI", () => {
     const err = readFile("app/error.tsx");
     expect(err).toContain("error");
-    expect(err).toContain("Try again");
+    expect(err).toContain("crash.tryAgain");
   });
 
   it("loading.tsx has skeleton UI", () => {
@@ -121,7 +121,7 @@ describe("Accessibility — Error and loading pages", () => {
 
   it("not-found.tsx has not-found copy and link home", () => {
     const nf = readFile("app/not-found.tsx");
-    expect(nf.toLowerCase()).toContain("not found");
+    expect(nf).toContain("notFound.title");
     expect(nf).toMatch(/href=["']\/["']/);
   });
 });
