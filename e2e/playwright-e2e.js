@@ -133,7 +133,13 @@ async function run() {
     log('health endpoint serves provider info', healthResponse.status() === 200 && healthJson.status === 'ok' && !!healthJson.provider, 'provider=' + (healthJson.provider && healthJson.provider.id));
     const telemetryResponse = await page.request.get(BASE_URL + '/api/telemetry');
     log('telemetry endpoint serves summary', telemetryResponse.status() === 200);
-    const manifestResponse = await page.request.get(BASE_URL + '/manifest.webmanifest');
+    // Wait briefly for the ProviderPill to fetch /api/health and render
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.waitForTimeout(700);
+    const providerPillVisible = await page.locator('[role="status"][aria-live="polite"][title*="v"]').first().isVisible().catch(() => false);
+    log('Provider pill renders provider label', providerPillVisible);
+
+        const manifestResponse = await page.request.get(BASE_URL + '/manifest.webmanifest');
     log('manifest.webmanifest served', manifestResponse.status() === 200, 'status=' + manifestResponse.status());
 
     // ====== Test 4: Start research flow ======

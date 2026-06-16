@@ -14,7 +14,7 @@ import {
 interface LocaleContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  t: (key: DictionaryKey, fallback?: string) => string;
+  t: (key: DictionaryKey | string, fallback?: string) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
@@ -53,7 +53,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: DictionaryKey, fallback?: string) => translateFn(locale, key, fallback),
+    (key: DictionaryKey | string, fallback?: string) => translateFn(locale, key, fallback),
     [locale],
   );
 
@@ -69,7 +69,7 @@ export function useLocale(): LocaleContextValue {
     return {
       locale: DEFAULT_LOCALE,
       setLocale: () => {},
-      t: (key, fallback) => translateFn(DEFAULT_LOCALE, key, fallback),
+      t: (key: DictionaryKey | string, fallback?: string) => translateFn(DEFAULT_LOCALE, key, fallback),
     };
   }
   return ctx;

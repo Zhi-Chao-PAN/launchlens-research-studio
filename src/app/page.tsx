@@ -17,6 +17,7 @@ import { ExportActions } from "@/components/report/ExportActions";
 import { ShareButton } from "@/components/report/ShareButton";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { ProviderPill } from "@/components/ui/ProviderPill";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
@@ -166,6 +167,7 @@ export default function Home() {
             {hasSession && state.sessionId && state.status === "completed" && (
               <ShareButton sessionId={state.sessionId} size="sm" label="Share" />
             )}
+            <ProviderPill />
             <LanguageSwitcher />
             <ThemeToggle />
             {hasSession && (

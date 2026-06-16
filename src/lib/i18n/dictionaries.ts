@@ -45,7 +45,10 @@ export type DictionaryKey =
   | "studio.poweredBy"
   | "studio.tipStart"
   | "studio.tipReset"
-  | "footer.tagline";
+  | "footer.tagline"
+  | "provider.mock"
+  | "provider.breakerOpen"
+  | "provider.streaming";
 
 type Dict = Record<DictionaryKey, string>;
 
@@ -84,6 +87,9 @@ const en: Dict = {
   "studio.tipStart": "to start",
   "studio.tipReset": "to reset",
   "footer.tagline": "LaunchLens Research Studio — Companion to launchlens-ai",
+  "provider.mock": "Mock provider",
+  "provider.breakerOpen": "Provider breaker open",
+  "provider.streaming": "stream",
 };
 
 const zhCN: Dict = {
@@ -121,6 +127,9 @@ const zhCN: Dict = {
   "studio.tipStart": "开始调研",
   "studio.tipReset": "重置",
   "footer.tagline": "LaunchLens Research Studio — launchlens-ai 的伴侣项目",
+  "provider.mock": "模拟模型",
+  "provider.breakerOpen": "提供方熔断已开启",
+  "provider.streaming": "流式",
 };
 
 const ja: Dict = {
@@ -158,6 +167,9 @@ const ja: Dict = {
   "studio.tipStart": "開始",
   "studio.tipReset": "リセット",
   "footer.tagline": "LaunchLens Research Studio — launchlens-ai のコンパニオン",
+  "provider.mock": "モックプロバイダ",
+  "provider.breakerOpen": "プロバイダ遮断中",
+  "provider.streaming": "ストリーム",
 };
 
 export const DICTIONARIES: Record<Locale, Dict> = {
@@ -166,7 +178,8 @@ export const DICTIONARIES: Record<Locale, Dict> = {
   "ja": ja,
 };
 
-export function translate(locale: Locale, key: DictionaryKey, fallback?: string): string {
+export function translate(locale: Locale, key: DictionaryKey | string, fallback?: string): string {
   const dict = DICTIONARIES[locale] || DICTIONARIES[DEFAULT_LOCALE];
-  return dict[key] || DICTIONARIES[DEFAULT_LOCALE][key] || fallback || key;
+  const k = key as DictionaryKey;
+  return dict[k] || DICTIONARIES[DEFAULT_LOCALE][k] || fallback || (typeof key === "string" ? key : "");
 }
