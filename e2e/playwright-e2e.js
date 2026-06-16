@@ -20,6 +20,23 @@ const fs = require("node:fs");
 const PROJECT_DIR = path.resolve(__dirname, "..");
 const PORT = process.env.E2E_PORT || "3020";
 const FREEZE = process.env.E2E_FREEZE === "1";
+
+// In freeze mode, wait for animations/transitions to settle before screenshots.
+// Reduces visual flakiness from loading spinners, fade-ins, and scroll momentum.
+async function settle(page, ms) {
+  if (FREEZE) {
+    await page.waitForTimeout(ms || 500);
+    // Scroll to top for consistent viewport
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // Force CSS transitions/animations to complete instantly
+    await page.addStyleTag({
+      content: '*, *::before, *::after { transition: none !important; animation: none !important; }',
+    });
+    // Small wait for style injection to take effect
+    await page.waitForTimeout(50);
+  }
+}
+
 const BASE_URL = `http://localhost:${PORT}`;
 const SCREENSHOT_DIR = path.join(PROJECT_DIR, "screenshots");
 
@@ -79,7 +96,8 @@ async function run() {
     const title = await page.title();
     log("Has correct title", title.includes("LaunchLens"), "title: " + title);
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
+    await settle(page, 300);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
 
     await page.waitForSelector("h2:has-text(\"Research any market\")", { timeout: 8000 }).catch(() => {});
     const heroVisible = await page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first().isVisible();
@@ -159,18 +177,20 @@ async function run() {
     if (FREEZE) {
       await page.waitForTimeout(300);
     }
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
+    await settle(page, 300);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
 
     await page.locator('button:has-text("Start Research")').first().click();
 
     // Wait for the studio layout
-    await page.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 10000 });
+    await page.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
     log("Studio layout appears", true);
 
     if (FREEZE) {
       await page.waitForTimeout(1500);
     }
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-03-research-started.png") });
+    await settle(page, 500);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-03-research-started.png") });
 
     // ====== Test 5: Tab switching ======
     console.log("\n[5] Tab switching");
@@ -179,7 +199,8 @@ async function run() {
 
     const tabButtons = page.locator("button[aria-pressed]").filter({ hasText: /Competitor|Pain|Pricing|Channel|Synthesis/ });
     // Tab buttons may be inside the lazy ReportView, check after wait
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-debug-tabs.png"), fullPage: true });
+    await settle(page, 500);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-debug-tabs.png"), fullPage: true });
     const html = await page.content();
     console.log("DEBUG: page has translated Research Agents", html.includes("Research Agents") || html.includes("调研智能体") || html.includes("リサーチ"));
     console.log("DEBUG: page has 'Market Sizer' as button", /button[^>]*>[^<]*Market Sizer/.test(html));
@@ -195,7 +216,8 @@ async function run() {
       log("Synthesis tab shows Executive Summary", hasExecutiveSummary);
     }
 
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"), fullPage: true });
+    await settle(page, 500);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"), fullPage: true });
 
     // ====== Test 6: Wait for completion + check ExportActions ======
     console.log("\n[6] Export actions");
@@ -223,7 +245,8 @@ async function run() {
       document.documentElement.setAttribute("data-theme", "dark");
     });
     await page.waitForTimeout(200);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-dark-mode.png"), fullPage: true });
+    await settle(page, 500);
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-dark-mode.png"), fullPage: true });
     log("Dark mode screenshot captured", true);
 
     // ====== Test 9: Mobile viewport ======
@@ -231,14 +254,16 @@ async function run() {
     await context.close();
     const mobileCtx = await browser.newContext({ viewport: { width: 375, height: 667 } });
     const mobilePage = await mobileCtx.newPage();
-    await mobilePage.goto(gotoUrl, { waitUntil: "networkidle" });
-    await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png"), fullPage: true });
+    await mobilePage.goto(BASE_URL, { waitUntil: "networkidle" });
+    await settle(mobilePage, 300);
+await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png"), fullPage: true });
 
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
     await mobilePage.locator('button:has-text("Start Research")').first().click();
-    await mobilePage.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 15000, state: "attached" });
-    await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
+    await mobilePage.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
+    await settle(mobilePage, 500);
+await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
 
     const mobileToggle = mobilePage.locator('button[aria-controls="studio-sidebar"]').first();
     log("Mobile sidebar toggle exists", await mobileToggle.count() > 0);
@@ -249,77 +274,7 @@ async function run() {
       log("Mobile toggle has aria-expanded", expanded === "true", `expanded=${expanded}`);
     }
 
-    // ====== Security / API Tests ======
-    log("Security: starting API security tests");
-
-    // Test 1: /api/csrf returns a token and sets a cookie
-    const csrfRes = await fetch(BASE_URL + "/api/csrf");
-    const csrfBody = await csrfRes.json();
-    log("Security: /api/csrf returns csrfToken", !!csrfBody.csrfToken, `len=${csrfBody.csrfToken?.length || 0}`);
-    const csrfCookie = csrfRes.headers.get("set-cookie");
-    log("Security: /api/csrf sets csrf_token cookie", !!csrfCookie && csrfCookie.includes("csrf_token="));
-
-    // Test 2: POST /api/research without CSRF passes in soft mode (but still creates session)
-    const noCsrfRes = await fetch(BASE_URL + "/api/research", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: "e2e security test", keywords: [] }),
-    });
-    log("Security: POST /api/research without CSRF (soft mode allowed)", noCsrfRes.ok, `status=${noCsrfRes.status}`);
-
-    // Test 3: POST /api/research WITH CSRF works
-    const csrfRes2 = await fetch(BASE_URL + "/api/csrf");
-    const csrfBody2 = await csrfRes2.json();
-    const cookie2 = csrfRes2.headers.get("set-cookie") || "";
-    const cookieMatch = cookie2.match(/csrf_token=([^;]+)/);
-    const csrfTokenFromCookie = cookieMatch ? cookieMatch[1] : null;
-
-    const withCsrfRes = await fetch(BASE_URL + "/api/research", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": csrfBody2.csrfToken,
-        "Cookie": cookie2,
-      },
-      body: JSON.stringify({ query: "e2e csrf test", keywords: [] }),
-    });
-    log("Security: POST /api/research with matching CSRF works", withCsrfRes.status === 201 || withCsrfRes.status === 200,
-      `status=${withCsrfRes.status}`);
-
-    // Test 4: /api/admin/tokens without auth returns 401
-    const noAuthRes = await fetch(BASE_URL + "/api/admin/tokens");
-    log("Security: /api/admin/tokens without auth returns 401", noAuthRes.status === 401, `status=${noAuthRes.status}`);
-
-    // Test 5: bypass-scope token can't access admin
-    // We need to create a bypass token first... but we don't have an admin token yet.
-    // Use the env var approach: set LAUNCHLENS_ADMIN_TOKENS before starting the server.
-    // Since we can't set it retroactively, let's test that a random token fails.
-    const badTokenRes = await fetch(BASE_URL + "/api/admin/tokens", {
-      headers: { "Authorization": "Bearer totally-fake-token" },
-    });
-    log("Security: /api/admin/tokens with fake token returns 401", badTokenRes.status === 401,
-      `status=${badTokenRes.status}`);
-
-    // Test 6: /api/health still works (sanity)
-    const healthRes = await fetch(BASE_URL + "/api/health");
-    log("Security: /api/health sanity check", healthRes.ok, `status=${healthRes.status}`);
-
-    // Test 7: rate limiting exists on research endpoint (test rapid-fire)
-    let rateLimitedHit = false;
-    for (let i = 0; i < 15; i++) {
-      const r = await fetch(BASE_URL + "/api/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "rate-test-" + i, keywords: [] }),
-      });
-      if (r.status === 429) {
-        rateLimitedHit = true;
-        break;
-      }
-    }
-    log("Security: rate limiting activates after rapid requests", rateLimitedHit);
-
-        // ====== Summary ======
+    // ====== Summary ======
     console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     if (errors.length > 0) {

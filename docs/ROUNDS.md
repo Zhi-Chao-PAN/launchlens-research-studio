@@ -220,3 +220,23 @@ Regression script updated to run both suites. Security tests run in
 under 2s; admin tests run in under 2s. Total e2e security coverage:
 31 tests, all passing.
 245 unit tests, build clean, 17 routes, 0 lint errors.
+
+## Round 39 - Visual regression stabilization + baseline refresh
+Fixed three sources of e2e flakiness and refreshed visual baselines:
+
+1. Fixed `gotoUrl is not defined` crash in mobile viewport test (renamed
+   to BASE_URL, pre-existing bug).
+2. Replaced flaky "Research Agents" heading waitForSelector with
+   `button[aria-controls="studio-sidebar"]` — a far more reliable
+   signal that the studio layout has mounted.
+3. Added `settle(page, ms)` helper for freeze mode: scroll-to-top,
+   injects `transition: none !important; animation: none !important`
+   style tag, and waits for visual stability. Applied to all 8
+   screenshot points with context-appropriate wait times.
+4. Removed duplicated security tests from the main browser e2e suite
+   (now covered by dedicated security-e2e.js and admin-e2e.js).
+5. Refreshed all 8 baseline screenshots under freeze mode. Verified
+   8/8 pixel-perfect match on re-run (0 drift).
+
+245 unit tests + 31 security/admin e2e + 29 browser e2e = 305 total
+automated tests. Build clean, 17 routes, 0 lint errors.
