@@ -1,5 +1,6 @@
-﻿import { NextResponse } from "next/server";
+﻿import { NextResponse, NextRequest } from "next/server";
 import { generateCsrfToken, CSRF_COOKIE_NAME, getCsrfCookieOptions } from "@/lib/api/csrf";
+import { checkCors, handleOptions } from "@/lib/api/cors";
 
 export async function GET() {
   const token = generateCsrfToken();
@@ -12,3 +13,7 @@ export async function GET() {
 }
 
 export const runtime = "nodejs";
+
+export async function OPTIONS(request: NextRequest) {
+  return handleOptions(request) || new Response(null, { status: 204 });
+}

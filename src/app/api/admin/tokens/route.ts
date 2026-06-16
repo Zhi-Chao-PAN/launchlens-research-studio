@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { hashIp } from "@/lib/telemetry/request-log";
+import { checkCors, handleOptions } from "@/lib/api/cors";
 
 // Admin endpoint for bypass token management.
 // Requires an admin-scoped bypass token in the Authorization header.
@@ -35,6 +36,8 @@ function authAdmin(request: NextRequest): { ok: boolean; error?: string; tokenHa
 }
 
 export async function GET(request: NextRequest) {
+  const cors = checkCors(request);
+  if (!cors.allowed && cors.response) return cors.response;
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
@@ -54,10 +57,12 @@ export async function GET(request: NextRequest) {
   }
 
   const tokens = listBypassTokens();
-  return NextResponse.json({ tokens, remaining: rate.remaining });
+  return NextResponse.json({ tokens, remaining: rate.remaining }, { headers: cors.headers });
 }
 
 export async function POST(request: NextRequest) {
+  const cors = checkCors(request);
+  if (!cors.allowed && cors.response) return cors.response;
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
@@ -95,8 +100,12 @@ export async function POST(request: NextRequest) {
   });
   return NextResponse.json(
     { token, scope, label: body.label, remaining: rate.remaining },
-    { status: 201 },
+    { status: 201, headers: cors.headers },
   );
 }
 
 export const runtime = "nodejs";
+
+export async function OPTIONS(request: NextRequest) {
+  return handleOptions(request) || new Response(null, { status: 204 });
+}

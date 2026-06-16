@@ -4,6 +4,7 @@ import { checkCsrfToken } from "@/lib/api/csrf";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
+import { checkCors, handleOptions } from "@/lib/api/cors";
 import {
   createResearchSession,
   runResearchSession,
@@ -14,10 +15,22 @@ import {
   jsonError,
 } from "@/lib/api/validation";
 
+export async function OPTIONS(request: NextRequest) {
+  return handleOptions(request) || new Response(null, { status: 204 });
+}
+
 export async function POST(request: NextRequest) {
   const start = Date.now();
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
   const ua = (request.headers.get("user-agent") || "").slice(0, 80);
+  const cors = checkCors(request);
+  if (!cors.allowed && cors.response) {
+    recordAuthAudit("csrf_failed", {
+      ipHash: hashIp(ip),
+      detail: "cors-blocked: " + (request.headers.get("origin") || "unknown"),
+    });
+    return cors.response;
+  }
   const logRequest = (status: number, ok: boolean) => recordRequest({
     ts: Date.now(),
     route: "/api/research",
@@ -96,7 +109,7 @@ export async function POST(request: NextRequest) {
   });
 
   logRequest(201, true);
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       sessionId: session.id,
       query: session.query,
@@ -115,6 +128,10 @@ export async function POST(request: NextRequest) {
     },
     { status: 201 },
   );
+  for (const [k, v] of Object.entries(cors.headers)) {
+    response.headers.set(k, v);
+  }
+  return response;
 }
 
 export async function GET() {

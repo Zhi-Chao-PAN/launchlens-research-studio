@@ -256,3 +256,34 @@ stabilization down to 0 drift in freeze mode.
 Stats at end of R40: 305 automated tests (245 unit + 31 security/admin
 e2e + 29 browser e2e), 17 API routes, 0 lint errors, build clean,
 8/8 visual baselines pixel-perfect in freeze mode.
+
+## Round 41 - CORS hardening + strict mode
+CORS security layer for all API endpoints, with two modes:
+
+- **Permissive mode** (default): `Access-Control-Allow-Origin: *`
+  for local development and open deployments.
+
+- **Strict mode** (enabled via `LAUNCHLENS_CORS_ORIGINS` env var):
+  comma-separated allowlist of origins. Only listed origins are
+  allowed; responses include origin-specific ACAO, `Vary: Origin`,
+  and `Access-Control-Allow-Credentials: true`. Disallowed origins
+  get a 403 with descriptive error.
+
+**New files:**
+- `src/lib/api/cors.ts` — `checkCors()`, `handleOptions()`,
+  `withCorsHeaders()`, and `corsConfig` utilities.
+- `src/lib/api/cors.test.ts` — 8 unit tests.
+- `e2e/cors-e2e.js` — 10 end-to-end tests covering disallowed
+  origin rejection, allowed origin headers, OPTIONS preflight,
+  same-origin requests, and admin endpoint CORS enforcement.
+- `e2e/security-e2e.js` already covers CORS indirectly.
+
+**Routes protected:**
+- `/api/research` (POST + OPTIONS) — full CORS check + headers on 201
+- `/api/csrf` (GET + OPTIONS) — CORS check + headers
+- `/api/admin/tokens` (GET/POST + OPTIONS) — CORS check + headers
+- `/api/admin/tokens/[hash]` (DELETE + OPTIONS) — CORS check + headers
+- `/api/admin/audit` (GET + OPTIONS) — CORS check + headers
+
+10 new CORS e2e tests (all passing in ~1.5s). Total automated tests:
+315. Build clean, 17 routes, 0 lint errors.

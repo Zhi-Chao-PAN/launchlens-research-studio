@@ -2,6 +2,7 @@
 import type { NextRequest } from "next/server";
 import { isAdminToken, extractBearerToken, getTokenInfo } from "@/lib/api/bypass-tokens";
 import { snapshotAuthAudit } from "@/lib/api/auth-audit";
+import { checkCors, handleOptions } from "@/lib/api/cors";
 
 // Auth audit log endpoint.
 // Requires an admin-scoped token.
@@ -26,6 +27,8 @@ function authAdmin(request: NextRequest): { ok: boolean; error?: string; tokenHa
 }
 
 export async function GET(request: NextRequest) {
+  const cors = checkCors(request);
+  if (!cors.allowed && cors.response) return cors.response;
   const auth = authAdmin(request);
   if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
@@ -41,7 +44,11 @@ export async function GET(request: NextRequest) {
     events,
     count: events.length,
     limit,
-  });
+  }, { headers: cors.headers });
 }
 
 export const runtime = "nodejs";
+
+export async function OPTIONS(request: NextRequest) {
+  return handleOptions(request) || new Response(null, { status: 204 });
+}

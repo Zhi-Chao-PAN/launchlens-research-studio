@@ -35,6 +35,9 @@ if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
   results.push(run("Security E2E", "node", ["e2e/security-e2e.js"]));
 }
 if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
+  results.push(run("CORS E2E", "node", ["e2e/cors-e2e.js"]));
+}
+if (!process.env.PLAYWRIGHT_SKIP && results.every((r) => r.ok)) {
   results.push(run("Admin E2E", "node", ["e2e/admin-e2e.js"]));
 }
 

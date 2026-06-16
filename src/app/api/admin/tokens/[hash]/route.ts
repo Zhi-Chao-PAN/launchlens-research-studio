@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { hashIp } from "@/lib/telemetry/request-log";
+import { checkCors, handleOptions } from "@/lib/api/cors";
 
 function getIp(request: NextRequest): string {
   return (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
@@ -31,6 +32,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ hash: string }> },
 ) {
+  const cors = checkCors(request);
+  if (!cors.allowed && cors.response) return cors.response;
   const ip = getIp(request);
   const auth = authAdmin(request);
   if (!auth.ok) {
@@ -53,7 +56,7 @@ export async function DELETE(
   const decodedHash = decodeURIComponent(hash);
   const ok = revokeBypassToken(decodedHash);
   if (!ok) {
-    return NextResponse.json({ error: "Token not found" }, { status: 404 });
+    return NextResponse.json({ error: "Token not found" }, { status: 404, headers: cors.headers });
   }
   recordAuthAudit("admin_action", {
     ipHash: hashIp(ip),
@@ -61,7 +64,11 @@ export async function DELETE(
     scope: "admin",
     detail: "revoked token " + decodedHash.slice(0, 8) + "...",
   });
-  return NextResponse.json({ revoked: decodedHash, remaining: rate.remaining });
+  return NextResponse.json({ revoked: decodedHash, remaining: rate.remaining }, { headers: cors.headers });
 }
 
 export const runtime = "nodejs";
+
+export async function OPTIONS(request: NextRequest) {
+  return handleOptions(request) || new Response(null, { status: 204 });
+}
