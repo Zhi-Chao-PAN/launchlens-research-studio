@@ -209,7 +209,118 @@ async function run() {
       console.log("    Set E2E_ADMIN_TOKEN to test admin flows end-to-end.");
     }
 
-    // ====== Summary ======
+  
+  console.log("\n[6] Trusted IP rate limit bypass");
+
+  const TRUSTED_PORT = "3025";
+  const TRUSTED_BASE_URL = `http://localhost:${TRUSTED_PORT}`;
+
+  // Helper to wait for a specific server
+  async function waitForServerOnPort(port, timeoutMs = 30000) {
+    const url = `http://localhost:${port}`;
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const res = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(1000) });
+        if (res.ok) return true;
+      } catch { /* not ready */ }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return false;
+  }
+
+  // Start a fresh server with trusted IP config
+  const trustedServer = spawn("node", ["node_modules/next/dist/bin/next", "start", "-p", TRUSTED_PORT], {
+    cwd: PROJECT_DIR,
+    stdio: "ignore",
+    env: { ...process.env, LAUNCHLENS_TRUSTED_IPS: "127.0.0.1,192.168.1.0/24" },
+  });
+
+  const trustedReady = await waitForServerOnPort(TRUSTED_PORT);
+  if (!trustedReady) {
+    console.error("Failed to start trusted-IP server.");
+    process.exit(2);
+  }
+  console.log("Trusted-IP server ready.");
+
+  try {
+    // With trusted IP (127.0.0.1), rate limit should not apply even after many requests
+    for (let i = 0; i < 25; i++) {
+      await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-forwarded-for": "127.0.0.1",
+        },
+        body: JSON.stringify({ query: "trusted-ip-test-" + i, keywords: [] }),
+      });
+    }
+
+    const after25 = await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": "127.0.0.1",
+      },
+      body: JSON.stringify({ query: "trusted-ip-final", keywords: [] }),
+    });
+    log("Trusted IP (127.0.0.1) bypasses rate limit", after25.status !== 429,
+      `status=${after25.status}`);
+
+    // CIDR range: 192.168.1.x should also be trusted
+    const cidrRes = await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": "192.168.1.50",
+      },
+      body: JSON.stringify({ query: "cidr-trusted-test", keywords: [] }),
+    });
+    // After 25+ requests from same subnet, still not rate limited
+    let cidrNotRateLimited = true;
+    for (let i = 0; i < 15; i++) {
+      const r = await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-forwarded-for": "192.168.1." + i,
+        },
+        body: JSON.stringify({ query: "cidr-test-" + i, keywords: [] }),
+      });
+      if (r.status === 429) {
+        cidrNotRateLimited = false;
+        break;
+      }
+    }
+    log("CIDR range (192.168.1.0/24) bypasses rate limit", cidrNotRateLimited);
+
+    // Non-trusted IP should still rate limit
+    for (let i = 0; i < 15; i++) {
+      await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-forwarded-for": "10.0.0.99",
+        },
+        body: JSON.stringify({ query: "untrusted-test-" + i, keywords: [] }),
+      });
+    }
+    const untrustedRes = await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": "10.0.0.99",
+      },
+      body: JSON.stringify({ query: "untrusted-final", keywords: [] }),
+    });
+    log("Untrusted IP still gets rate limited", untrustedRes.status === 429,
+      `status=${untrustedRes.status}`);
+
+  } finally {
+    trustedServer.kill();
+  }
+
+  // ====== Summary ======
     console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     process.exitCode = fail === 0 ? 0 : 1;

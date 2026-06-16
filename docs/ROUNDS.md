@@ -454,3 +454,32 @@ prevent unbounded memory growth.
 
 Total automated tests: 357 (270 unit + 87 e2e). Lint: 0 errors.
 Build: 20 routes, ~809 KB client JS. All regression checks green.
+
+## Round 48 - Trusted IP ranges for rate limit bypass
+
+Trusted IP addresses and CIDR ranges bypass rate limiting entirely,
+making the studio usable from known-safe locations (internal networks,
+monitoring systems, CI) without needing bypass tokens.
+
+**Configuration:** LAUNCHLENS_TRUSTED_IPS env var with
+comma-separated entries. Supports:
+- Individual IPv4 addresses (127.0.0.1, 10.0.0.5)
+- IPv4 CIDR ranges (10.0.0.0/8, 192.168.1.0/24)
+- Individual IPv6 addresses (::1, e80::1)
+
+**Implementation:**
+- src/lib/api/trusted-ips.ts ¡ª parser + match function with
+  numeric IPv4 CIDR matching
+- checkRateLimitForIp() in ate-limit.ts ¡ª wraps the existing
+  rate limiter with a trusted IP check first
+- Research API endpoint uses checkRateLimitForIp() instead of raw
+  checkRateLimit() so trusted IPs skip the bucket
+
+**New tests:**
+- 21 unit tests for trusted IPs (empty config, exact IPv4, CIDR
+  ranges, IPv6, mixed, invalid inputs, bad CIDR prefixes)
+- 3 new security e2e tests (trusted IP bypass, CIDR range bypass,
+  untrusted IP still rate-limited)
+
+Total automated tests: 363 (291 unit + 72 e2e). Lint: 0 errors.
+Build: 20 routes, ~809 KB client JS. All regression checks green.

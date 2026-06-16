@@ -1,3 +1,4 @@
+import { isTrustedIp } from "./trusted-ips";
 // Per-key token bucket rate limiter.
 // Default: 10 requests per 60 seconds per IP. Used by the research POST
 // endpoint to prevent runaway cost on real providers. Memory-only and
@@ -57,6 +58,21 @@ export function checkRateLimit(
     remaining: 0,
     resetMs: cfg.refillIntervalMs - (now - bucket.lastRefill),
   };
+}
+
+/**
+ * Check rate limit for an IP, with trusted IP bypass.
+ * Returns { allowed: true, bypassed: true } for trusted IPs.
+ */
+export function checkRateLimitForIp(
+  ip: string,
+  config?: Partial<RateLimitConfig>,
+  now: number = Date.now(),
+): RateLimitResult & { bypassed?: boolean } {
+  if (ip && isTrustedIp(ip)) {
+    return { allowed: true, remaining: Infinity, resetMs: 0, bypassed: true };
+  }
+  return checkRateLimit(`ip:${ip}`, config, now);
 }
 
 export function clearRateLimits(): void {

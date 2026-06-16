@@ -1,5 +1,5 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
-import { checkRateLimit } from "@/lib/api/rate-limit";
+import { checkRateLimit, checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
   const bearerToken = extractBearerToken(authHeader);
   const hasBypass = bearerToken ? isBypassToken(bearerToken, ip) : false;
 
-  // Rate limit check (skipped for bypass tokens)
+  // Rate limit check (skipped for bypass tokens and trusted IPs)
   const rate = hasBypass
     ? { allowed: true, remaining: Infinity, resetMs: 0 }
-    : checkRateLimit("research:" + ip);
+    : checkRateLimitForIp(ip);
   if (!rate.allowed) {
     logRequest(429, false);
     recordAuthAudit("rate_limited", {
