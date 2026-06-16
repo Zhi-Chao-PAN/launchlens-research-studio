@@ -43,3 +43,7 @@ next-env.d.ts
 # test artifacts
 /screenshots
 
+
+# visual-regression transient artifacts
+visual-report.md
+screenshots/

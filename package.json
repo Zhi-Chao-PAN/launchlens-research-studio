@@ -12,7 +12,10 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "bundle:stats": "node scripts/bundle-stats.js",
-    "regression": "node scripts/regression.js"
+    "regression": "node scripts/regression.js",
+    "visual:diff": "node scripts/visual-regression.js",
+    "visual:update": "node scripts/visual-regression.js update",
+    "visual:report": "node scripts/visual-regression.js report"
   },
   "dependencies": {
     "next": "16.2.9",
