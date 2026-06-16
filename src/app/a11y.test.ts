@@ -69,7 +69,8 @@ describe("Accessibility — Error and loading pages", () => {
 
   it("loading.tsx has skeleton UI", () => {
     const loading = readFile("app/loading.tsx");
-    expect(loading).toContain("animate-spin");
+    // After round 6: loading uses a logo image instead of a spinner
+    expect(loading).toMatch(/animate-(spin|pulse)|logo\.svg/);
     expect(loading).toContain("Warming up");
   });
 

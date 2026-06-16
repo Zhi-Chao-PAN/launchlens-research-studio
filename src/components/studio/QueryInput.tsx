@@ -71,7 +71,7 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-2xl" aria-hidden>🔬</span>
+        <img src="/logo.svg" alt="" width={28} height={28} className="w-7 h-7" />
         <h2 className="text-xl font-bold text-slate-800">Start a Research Session</h2>
       </div>
 

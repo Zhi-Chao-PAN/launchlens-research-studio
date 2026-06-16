@@ -100,3 +100,39 @@ jobs:
         run: SMOKE_TEST_PORT=3010 node scripts/smoke-test.js
         env:
           CI: "true"
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Start production server
+        run: |
+          E2E_PORT=3020 nohup npx next start -p 3020 > /tmp/next-e2e.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3020 > /dev/null 2>&1; then
+              echo "Server ready"
+              break
+            fi
+            sleep 1
+          done
+      - name: Run E2E tests
+        run: E2E_PORT=3020 node e2e/playwright-e2e.js
+        env:
+          CI: "true"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: screenshots/
+          retention-days: 7

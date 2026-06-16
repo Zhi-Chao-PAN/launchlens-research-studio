@@ -7,7 +7,7 @@ export default function Loading() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="inline-block w-12 h-12 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-6" />
+          <img src="/logo.svg" alt="" width={48} height={48} className="inline-block w-12 h-12 mb-6 animate-pulse-soft" />
           <h2 className="text-2xl font-bold text-slate-800 mb-2">
             LaunchLens Research Studio
           </h2>

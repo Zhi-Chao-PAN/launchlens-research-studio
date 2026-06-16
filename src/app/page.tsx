@@ -26,7 +26,35 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Bridge: persist on completion, detect share links, restore from cache
-  const bridge = useSessionBridge(hasSession ? ({ ...state, status: state.status === "idle" ? "completed" : state.status } as any) : null);
+  // Build a ResearchSession-shaped object for the bridge.
+  // Note: state doesn't have per-agent .output or session .citations, so we
+  // build those from state.agentOutputs and count from the agent outputs.
+  const bridge = useSessionBridge(
+    hasSession
+      ? {
+          id: state.sessionId || "",
+          query: state.query,
+          keywords: state.keywords,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: (state.status === "idle" ? "completed" : state.status) as any,
+          agents: Object.fromEntries(
+            allAgentIds.map((id) => [
+              id,
+              {
+                id,
+                status: state.agents[id].status as any,
+                progress: state.agents[id].progress,
+                currentStep: state.agents[id].currentStep,
+                hasOutput: !!state.agentOutputs[id],
+                output: state.agentOutputs[id] || undefined,
+              },
+            ]),
+          ) as any,
+          citations: [],
+        }
+      : null,
+  );
 
   // Persist a history entry on every successful session start
   useEffect(() => {
@@ -106,12 +134,13 @@ export default function Home() {
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-indigo-200 flex-shrink-0"
-              aria-hidden
-            >
-              🔬
-            </div>
+            <img
+              src="/logo.svg"
+              alt="LaunchLens Research Studio"
+              width={40}
+              height={40}
+              className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-200 flex-shrink-0"
+            />
             <div className="min-w-0">
               <h1 className="text-xl font-bold text-slate-800 tracking-tight truncate">
                 LaunchLens Research Studio
@@ -163,7 +192,7 @@ export default function Home() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.status === "loading" && "Starting research session"}
           {state.status === "running" && "Research agents are running"}
