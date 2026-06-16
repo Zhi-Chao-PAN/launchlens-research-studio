@@ -378,3 +378,21 @@ content-disposition, and export action appearing in audit log.
 
 Total automated tests: 320 (266 unit + 54 admin e2e). All regression
 checks green. Build: 17 routes, ~795 KB client JS.
+
+## Round 45 - Regression sweep + cycle 09 report
+
+Full regression sweep after the security hardening sprint:
+
+- **Lint**: 0 errors, 23 warnings (all transitional)
+- **Unit tests**: 266/266 across 32 files
+- **Build**: 19 routes (13 dynamic + 6 static), ~795 KB client JS
+- **Admin e2e**: 54/54
+- **Security e2e**: 31/31
+- **CORS e2e**: 10/10
+- **Browser e2e**: 29/29 (with E2E_FREEZE=1)
+- **Bundle stats**: stable at ~795 KB JS, 52.7 KB CSS
+- **Regression report**: regenerated, all sections green
+
+Cycle 09 report written to docs/cycle-09-r41-45.md summarizing
+rounds 41¨C45 (CORS hardening, auth alerts, HMAC webhook signatures,
+audit export, regression sweep).
