@@ -1,6 +1,7 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
+import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import {
   createResearchSession,
@@ -26,7 +27,15 @@ export async function POST(request: NextRequest) {
     uaSnippet: ua,
     ok,
   });
-  const rate = checkRateLimit("research:" + ip);
+  // Bypass token check — skips rate limiting and strict CSRF
+  const authHeader = request.headers.get("authorization");
+  const bearerToken = extractBearerToken(authHeader);
+  const hasBypass = bearerToken ? isBypassToken(bearerToken) : false;
+
+  // Rate limit check (skipped for bypass tokens)
+  const rate = hasBypass
+    ? { allowed: true, remaining: Infinity, resetMs: 0 }
+    : checkRateLimit("research:" + ip);
   if (!rate.allowed) {
     logRequest(429, false);
     return NextResponse.json(

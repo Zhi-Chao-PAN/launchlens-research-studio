@@ -157,3 +157,13 @@ caches token client-side and provides fetchWithCsrf() helper.
 use-research-studio.ts uses fetchWithCsrf for the research start POST.
 All GET routes and the SSE stream are unaffected — CSRF only applies to
 state-changing POST endpoints.
+
+## Round 34 - Rate-limit bypass tokens / auth scaffold
+src/lib/api/bypass-tokens.ts with SHA-256 hashed token store backed by
+the storage backend. LAUNCHLENS_BYPASS_TOKENS env var for provisioning
+tokens at startup. createBypassToken(), listBypassTokens(),
+revokeBypassToken(), isBypassToken(), extractBearerToken(). POST
+/api/research skips rate limiting and strict CSRF when a valid bearer
+token is present. /api/admin/tokens REST endpoint for token management
+(GET list, POST create, DELETE by hash) — protected by bearer token auth.
+All tokens are hashed at rest so a leaked storage file is not usable.
