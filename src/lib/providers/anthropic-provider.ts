@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// OpenAI-compatible provider adapter.
-// Targets any chat-completions endpoint that returns JSON when prompted to.
-// Falls back to the mock provider on any remote failure so the demo path
-// always succeeds, even with a misconfigured key.
+// Anthropic Messages API adapter.
+// Targets POST {baseUrl}/v1/messages with x-api-key header. Falls back
+// to mock outputs on HTTP failure or validation failure so the demo
+// path is always intact, and validates the parsed JSON before returning.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 
-export interface OpenAIProviderConfig {
+export interface AnthropicProviderConfig {
   apiKey: string;
   baseUrl?: string;
   model?: string;
@@ -20,7 +20,7 @@ function buildSystemPrompt(agentId: AgentId): string {
   return [
     "You are the " + agentId + " agent in a multi-agent market intelligence system.",
     "Respond with strict JSON that matches the LaunchLens AgentOutput schema for this agent.",
-    "Do not include explanations outside the JSON object.",
+    "Do not include explanations, prose, or fences outside the JSON object.",
   ].join(" ");
 }
 
@@ -36,42 +36,53 @@ function buildUserPrompt(agentId: AgentId, ctx: ProviderContext): string {
   ].filter(Boolean).join("\n");
 }
 
-export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProvider {
-  const baseUrl = config.baseUrl || "https://api.openai.com/v1";
-  const model = config.model || "gpt-4o-mini";
+function extractJsonFromMessages(json: any): string {
+  // Anthropic Messages API: { content: [{ type: "text", text: "..." }] }
+  const blocks = Array.isArray(json?.content) ? json.content : [];
+  for (const block of blocks) {
+    if (block && block.type === "text" && typeof block.text === "string") {
+      return block.text;
+    }
+  }
+  return "";
+}
+
+export function createAnthropicProvider(config: AnthropicProviderConfig): ResearchProvider {
+  const baseUrl = config.baseUrl || "https://api.anthropic.com";
+  const model = config.model || "claude-3-5-sonnet-latest";
   const fetchImpl = config.fetchImpl || globalThis.fetch;
 
   return {
-    id: "openai",
-    displayName: "OpenAI-compatible (" + model + ")",
+    id: "anthropic",
+    displayName: "Anthropic Messages (" + model + ")",
     isMock: false,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       try {
-        const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
+        const url = baseUrl.replace(/\/$/, "") + "/v1/messages";
         const res = await fetchImpl(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + config.apiKey,
+            "x-api-key": config.apiKey,
+            "anthropic-version": "2023-06-01",
           },
           signal: ctx.signal,
           body: JSON.stringify({
             model,
+            max_tokens: 2048,
             temperature: 0.4,
-            response_format: { type: "json_object" },
+            system: buildSystemPrompt(agentId),
             messages: [
-              { role: "system", content: buildSystemPrompt(agentId) },
               { role: "user", content: buildUserPrompt(agentId, ctx) },
             ],
           }),
         });
-        if (!res.ok) throw new Error("provider HTTP " + res.status);
+        if (!res.ok) throw new Error("anthropic HTTP " + res.status);
         const json: any = await res.json();
-        const text: string = json?.choices?.[0]?.message?.content || "";
+        const text = extractJsonFromMessages(json);
         const parsed = JSON.parse(text);
         return validateAgentOutput(agentId, parsed);
       } catch {
-        // Graceful fallback: keep the demo path alive.
         return mockResearchProvider.generate(agentId, ctx);
       }
     },

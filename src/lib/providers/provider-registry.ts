@@ -1,19 +1,41 @@
-// Selects a provider based on environment configuration. Server-only.
+// Selects a research provider based on environment configuration.
+// Server-only. The selection rules in priority order:
+//   1. LAUNCHLENS_PROVIDER=mock forces the mock even when keys are set.
+//   2. LAUNCHLENS_PROVIDER=openai forces OpenAI when OPENAI_API_KEY is set.
+//   3. LAUNCHLENS_PROVIDER=anthropic forces Anthropic when ANTHROPIC_API_KEY is set.
+//   4. With no override: prefer Anthropic if its key is set, otherwise OpenAI.
+//   5. Fall back to the deterministic mock when no key is configured.
 import type { ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { createOpenAIProvider } from "@/lib/providers/openai-provider";
+import { createAnthropicProvider } from "@/lib/providers/anthropic-provider";
+
+function makeOpenAI(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider {
+  return createOpenAIProvider({
+    apiKey,
+    baseUrl: env.OPENAI_BASE_URL,
+    model: env.OPENAI_MODEL,
+  });
+}
+
+function makeAnthropic(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider {
+  return createAnthropicProvider({
+    apiKey,
+    baseUrl: env.ANTHROPIC_BASE_URL,
+    model: env.ANTHROPIC_MODEL,
+  });
+}
 
 export function selectProvider(env: NodeJS.ProcessEnv = process.env): ResearchProvider {
   const forced = env.LAUNCHLENS_PROVIDER;
-  if (forced === "mock") return mockResearchProvider;
+  const openAIKey = env.OPENAI_API_KEY || env.LAUNCHLENS_OPENAI_KEY;
+  const anthropicKey = env.ANTHROPIC_API_KEY;
 
-  const apiKey = env.OPENAI_API_KEY || env.LAUNCHLENS_OPENAI_KEY;
-  if (apiKey) {
-    return createOpenAIProvider({
-      apiKey,
-      baseUrl: env.OPENAI_BASE_URL,
-      model: env.OPENAI_MODEL,
-    });
-  }
+  if (forced === "mock") return mockResearchProvider;
+  if (forced === "openai" && openAIKey) return makeOpenAI(env, openAIKey);
+  if (forced === "anthropic" && anthropicKey) return makeAnthropic(env, anthropicKey);
+
+  if (anthropicKey) return makeAnthropic(env, anthropicKey);
+  if (openAIKey) return makeOpenAI(env, openAIKey);
   return mockResearchProvider;
 }
