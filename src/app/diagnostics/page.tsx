@@ -1,3 +1,4 @@
+const NOW = Date.now();
 import { summarizeTelemetry, getRecentTelemetry } from "@/lib/telemetry/telemetry";
 import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
 import { getRecentRequests } from "@/lib/telemetry/request-log";
@@ -15,6 +16,10 @@ function formatMs(ms: number): string {
   return (ms / 1000).toFixed(2) + "s";
 }
 
+function readProvider() {
+  return selectProvider();
+}
+
 function formatTimestamp(ts: number): string {
   const d = new Date(ts);
   return d.toISOString().replace("T", " ").replace("Z", " UTC");
@@ -27,11 +32,11 @@ export default function DiagnosticsPage() {
   const breakers = snapshotBreakers();
   const recentTelemetry = getRecentTelemetry(20);
   const recentRequests = getRecentRequests(20);
-  const provider = selectProvider();
+  const provider = readProvider();
   const buildInfo = {
     name: packageJson.name,
     version: packageJson.version,
-    startedAt: formatTimestamp(Date.now()),
+    renderedAt: formatTimestamp(NOW),
   };
 
   return (

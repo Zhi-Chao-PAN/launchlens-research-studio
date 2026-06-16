@@ -96,6 +96,35 @@ CHANGELOG.md updated through round 23. docs/OPERATIONS.md covering
 provider selection, diagnostics, breaker, rate limit, retry, tuning.
 
 ## Round 25 - Final regression sweep
-Iteration log updated through round 25. Health snapshot at end of round
-25: 190 unit tests, 27 e2e tests, 0 lint errors, 11 routes, build clean,
-~720 KB total client JS.
+Iteration log updated through round 25.
+
+## Round 26 - Pluggable storage + structured request log
+src/lib/storage/storage.ts with in-memory and JSON file backends.
+Telemetry ring and circuit breaker hydrate and persist via storage.
+src/lib/telemetry/request-log.ts with privacy-conscious ip-hash.
+POST /api/research logs every response with status, latency, ip-hash,
+and UA snippet. /api/telemetry surfaces a new requests field.
+
+## Round 27 - Query-driven mock variability
+applyQueryVariability augments the canonical list-shaped fields with
+extras drawn deterministically from a query-keyed variant pool.
+Same query still produces the same output; distinct queries produce
+visibly different shapes and citations.
+
+## Round 28 - Visual regression harness
+scripts/visual-regression.js with diff, update, and report modes. SHA-256
+based screenshot comparison. Non-fatal by default with LAUNCHLENS_VISUAL_STRICT=1
+opt-in. e2e locked to a stable en locale via addInitScript.
+
+## Round 29 - /diagnostics dashboard
+Server-rendered observability page reading summary, breaker snapshot,
+request log, and recent telemetry. No new dependencies. Three summary
+cards, provider breakdown bars, breaker table, requests table, and
+agent generations table.
+
+## Round 30 - Final regression sweep and record
+Iteration log updated through round 30. README and docs remain current.
+Health snapshot at end of round 30: 201 unit tests, 29 e2e tests, 0 lint
+errors, 12 routes (4 static, 8 dynamic), build clean, ~720 KB total
+client JS spread across many small chunks. npm run regression emits
+lint + unit + build + bundle-stats in 32 s end-to-end.
