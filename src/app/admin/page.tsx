@@ -52,7 +52,14 @@ export default function AdminPage() {
   const [tokens, setTokens] = useState<AdminToken[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<"tokens" | "audit" | "alerts" | "system">("tokens");
+  const [researchRuns, setResearchRuns] = useState<{ id: string; query: string; keywords: string[]; status: string; provider: string; model: string; createdAt: number; durationMs: number; hasSources: boolean }[]>([]);
+  const [researchLoading, setResearchLoading] = useState(true);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [researchSearch, setResearchSearch] = useState("");
+  const [researchStatusFilter, setResearchStatusFilter] = useState("");
+  const [researchTotal, setResearchTotal] = useState(0);
+
+  const [activeTab, setActiveTab] = useState<"tokens" | "audit" | "alerts" | "system" | "research">("tokens");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string>("");
   const [webhookStats, setWebhookStats] = useState<{ pending: number; maxRetries: number; initialDelayMs: number; maxQueueSize: number } | null>(null);
   const [newLabel, setNewLabel] = useState("");
@@ -71,6 +78,47 @@ export default function AdminPage() {
     const interval = setInterval(loadAll, 5000);
     return () => clearInterval(interval);
   }, [token]);
+
+  // Research tab
+  useEffect(() => {
+    if (activeTab === "research") {
+      loadResearchRuns();
+    }
+  }, [activeTab, researchSearch, researchStatusFilter]);
+
+  async function loadResearchRuns() {
+    try {
+      setResearchLoading(true);
+      const params = new URLSearchParams();
+      params.set("limit", "20");
+      if (researchSearch) params.set("q", researchSearch);
+      if (researchStatusFilter) params.set("status", researchStatusFilter);
+      
+      const res = await fetch(`/api/research/runs?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setResearchRuns(data.runs || []);
+      setResearchTotal(data.total || 0);
+      setResearchError(null);
+    } catch (e: unknown) {
+      setResearchError(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setResearchLoading(false);
+    }
+  }
+
+  async function deleteRun(id: string) {
+    if (!confirm("Delete this research run?")) return;
+    try {
+      const res = await fetch(`/api/research/runs?ids=${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      setResearchRuns((prev) => prev.filter((r) => r.id !== id));
+      setResearchTotal((prev) => Math.max(0, prev - 1));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to delete");
+    }
+  }
+
 
   async function apiCall(path: string, options: RequestInit = {}): Promise<Response> {
     return fetch(path, {
@@ -240,6 +288,12 @@ export default function AdminPage() {
           onClick={() => setActiveTab("system")}
         >
           System
+        </button>
+        <button
+          className={activeTab === "research" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setActiveTab("research")}
+        >
+          Research
         </button>
       </nav>
 
@@ -446,6 +500,109 @@ export default function AdminPage() {
               Trusted IP list is server-side only and not exposed via the API for security reasons.
               Check your deployment environment to see the configured list.
             </div>
+          </section>
+        )}
+
+
+        {activeTab === "research" && (
+          <section className="admin-section">
+            <h2>Research runs</h2>
+            <p className="admin-section-desc">
+              Browse, search, and manage research runs.
+            </p>
+
+            <div className="admin-research-controls">
+              <input
+                type="text"
+                placeholder="Search runs..."
+                value={researchSearch}
+                onChange={(e) => setResearchSearch(e.target.value)}
+                className="admin-search-input"
+              />
+              <select
+                value={researchStatusFilter}
+                onChange={(e) => setResearchStatusFilter(e.target.value)}
+                className="admin-filter-select"
+              >
+                <option value="">All statuses</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </select>
+              <button
+                onClick={loadResearchRuns}
+                className="admin-refresh-btn"
+              >
+                Refresh
+              </button>
+              <a href="/api/research/runs?format=json" className="admin-export-link" download>
+                Export JSON
+              </a>
+              <a href="/api/research/runs?format=csv" className="admin-export-link" download>
+                Export CSV
+              </a>
+            </div>
+
+            {researchLoading && <p className="admin-loading">Loading...</p>}
+
+            {researchError && (
+              <div className="admin-error-banner">{researchError}</div>
+            )}
+
+            {!researchLoading && researchRuns.length > 0 && (
+              <p className="admin-research-count">
+                Showing {researchRuns.length} of {researchTotal} runs
+              </p>
+            )}
+
+            <div className="admin-research-list">
+              {researchRuns.map((run) => (
+                <div key={run.id} className="admin-research-item">
+                  <div className="admin-research-item-header">
+                  <span className={`admin-research-status admin-research-status-${run.status}`}>
+                    {run.status}
+                  </span>
+                  <span className="admin-research-provider">
+                    {run.provider} / {run.model}
+                  </span>
+                  <span className="admin-research-time">
+                    {new Date(run.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <a href={`/research/${run.id}`} className="admin-research-query">
+                  {run.query}
+                </a>
+                {run.keywords.length > 0 && (
+                  <div className="admin-research-keywords">
+                    {run.keywords.slice(0, 4).map((kw: string) => (
+                      <span key={kw} className="admin-research-keyword">{kw}</span>
+                    ))}
+                    {run.keywords.length > 4 && (
+                      <span className="admin-research-keyword-more">+{run.keywords.length - 4}</span>
+                    )}
+                  </div>
+                )}
+                <div className="admin-research-actions">
+                  <a href={`/research/${run.id}`} className="admin-research-action">
+                    View
+                  </a>
+                  <button
+                    onClick={() => deleteRun(run.id)}
+                    className="admin-research-action admin-research-delete"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            </div>
+
+            {!researchLoading && researchRuns.length === 0 && !researchError && (
+              <p className="admin-empty">
+                {researchSearch || researchStatusFilter
+                  ? "No matching research runs."
+                  : "No research runs yet."}
+              </p>
+            )}
           </section>
         )}
 

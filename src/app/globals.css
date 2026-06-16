@@ -1645,3 +1645,198 @@ a:focus-visible {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
 }
+
+
+/* Admin Research tab */
+.admin-research-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.admin-search-input,
+.admin-filter-select {
+  background: #0f0f17;
+  border: 1px solid #2a2a3e;
+  color: #e8e8ef;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.admin-search-input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.admin-search-input:focus,
+.admin-filter-select:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.admin-search-input::placeholder {
+  color: #555577;
+}
+
+.admin-refresh-btn {
+  background: #1a1a2a;
+  border: 1px solid #2a2a3e;
+  color: #e8e8ef;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.admin-refresh-btn:hover {
+  background: #2a2a3e;
+  border-color: #3a3a5a;
+}
+
+.admin-export-link {
+  color: #8888aa;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid #2a2a3e;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.admin-export-link:hover {
+  color: #ffffff;
+  border-color: #3a3a5a;
+  background: #1a1a2a;
+}
+
+.admin-research-count {
+  color: #666688;
+  font-size: 12px;
+  margin: 0 0 14px 0;
+}
+
+.admin-research-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-research-item {
+  background: #0f0f17;
+  border: 1px solid #1e1e2e;
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: all 0.15s;
+}
+
+.admin-research-item:hover {
+  border-color: #3a3a5a;
+}
+
+.admin-research-item-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-research-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-research-status-completed {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.admin-research-status-failed {
+  background: rgba(255, 77, 77, 0.15);
+  color: #ff8080;
+}
+
+.admin-research-provider {
+  font-family: var(--font-geist-mono), monospace;
+  color: #8888aa;
+}
+
+.admin-research-time {
+  color: #666688;
+}
+
+.admin-research-query {
+  color: #e8e8ef;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 8px;
+  transition: color 0.15s;
+}
+
+.admin-research-query:hover {
+  color: #a5b4fc;
+}
+
+.admin-research-keywords {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.admin-research-keyword {
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.admin-research-keyword-more {
+  color: #666688;
+  font-size: 11px;
+}
+
+.admin-research-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.admin-research-action {
+  color: #8888aa;
+  text-decoration: none;
+  font-size: 12px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.admin-research-action:hover {
+  color: #ffffff;
+}
+
+.admin-research-delete:hover {
+  color: #ff8080;
+}
+
+.admin-empty {
+  color: #555577;
+  font-size: 13px;
+  text-align: center;
+  padding: 30px 20px;
+}

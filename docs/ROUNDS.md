@@ -642,3 +642,34 @@ synthesis output and presents it in a visually scannable layout.
 Total automated tests: 457 (314 unit + 143 e2e). Lint: 0 errors,
 32 warnings. Build: 22 routes, ~866 KB client JS, ~70 KB CSS.
 All regression checks green.
+
+## Round 54 - Admin UI Research Management tab
+
+Research run management integrated into the admin console. Admins can
+now browse, search, filter, delete, and export research runs without
+leaving the admin dashboard.
+
+**Admin UI additions:**
+- New "Research" tab alongside Tokens / Audit / Alerts / System
+- Search input for finding runs by query or keyword
+- Status filter (all / completed / failed)
+- Refresh button for manual reload
+- JSON + CSV export links
+- Run list with status badges, provider info, timestamps, keywords
+- View link ¡ú opens full detail page in new context
+- Delete button with confirmation
+- Empty state and loading states
+
+**Design:**
+- Consistent with admin panel visual language
+- Compact card layout for dense information display
+- Dark theme, monospace accents
+- Responsive controls that wrap on narrow screens
+
+**Security:**
+- Research management inherits admin token authentication
+- All operations gated behind /admin auth same as other tabs
+
+Total automated tests: 457 (314 unit + 143 e2e). Lint: 0 errors,
+33 warnings. Build: 22 routes, ~866 KB client JS, ~73 KB CSS.
+All regression checks green.
