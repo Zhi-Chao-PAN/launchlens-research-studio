@@ -2,7 +2,9 @@
 
 import { useEffect, useCallback } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
+import { useResearchHistory } from "@/lib/research/history";
 import { QueryInput } from "@/components/studio/QueryInput";
+import { RecentQueries } from "@/components/studio/RecentQueries";
 import { AgentCard } from "@/components/agents/AgentCard";
 import { ReportView } from "@/components/report/ReportView";
 import { ExportActions } from "@/components/report/ExportActions";
@@ -11,9 +13,17 @@ import type { AgentId } from "@/lib/schema/research-schema";
 
 export default function Home() {
   const { state, startResearch, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
+  const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && state.error;
+
+  // Persist a history entry on every successful session start
+  useEffect(() => {
+    if (state.sessionId && state.query) {
+      addEntry(state.query, state.keywords);
+    }
+  }, [state.sessionId, state.query, state.keywords, addEntry]);
 
   const handleSubmit = useCallback(
     (query: string, keywords: string[]) => {
@@ -43,9 +53,7 @@ export default function Home() {
     const nextDone = allAgentIds.find(
       (id) => state.agents[id]?.status === "done" && state.activeAgentTab !== id,
     );
-    // Only auto-switch the first time a new agent completes, to avoid surprise jumps
     if (nextDone && state.activeAgentTab === "market-sizer" && nextDone !== "market-sizer") {
-      // Defer to next tick so user can see synthesis when ready
       const t = setTimeout(() => setActiveAgentTab(nextDone), 400);
       return () => clearTimeout(t);
     }
@@ -53,7 +61,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-      {/* Header */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -92,13 +99,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Error banner */}
       {hasError && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
           <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
-            <span className="text-rose-500 text-xl flex-shrink-0" aria-hidden>
-              ⚠️
-            </span>
+            <span className="text-rose-500 text-xl flex-shrink-0" aria-hidden>⚠️</span>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-rose-800">Research failed to start</p>
               <p className="text-xs text-rose-600 mt-0.5 break-words">{state.error}</p>
@@ -113,7 +117,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
@@ -128,6 +131,10 @@ export default function Home() {
             </div>
             <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
 
+            <div className="mt-6">
+              <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
+            </div>
+
             <div className="mt-10">
               <p className="text-center text-sm text-slate-500 mb-4">
                 Powered by 6 research agents:
@@ -136,13 +143,8 @@ export default function Home() {
                 {allAgentIds.map((id) => {
                   const meta = AGENT_METADATA[id];
                   return (
-                    <div
-                      key={id}
-                      className="p-3 bg-white rounded-xl border border-slate-200 text-center"
-                    >
-                      <div className="text-2xl mb-1" aria-hidden>
-                        {meta.icon}
-                      </div>
+                    <div key={id} className="p-3 bg-white rounded-xl border border-slate-200 text-center">
+                      <div className="text-2xl mb-1" aria-hidden>{meta.icon}</div>
                       <p className="text-sm font-semibold text-slate-700">{meta.name}</p>
                       <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
                     </div>
@@ -152,21 +154,21 @@ export default function Home() {
             </div>
 
             <div className="mt-10 text-center text-xs text-slate-400">
-              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">
-                Ctrl/⌘
-              </kbd>
+              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
               <span className="mx-1">+</span>
-              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">
-                Enter
-              </kbd>
+              <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Enter</kbd>
               <span className="ml-1">to start research</span>
             </div>
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left sidebar */}
             <aside className="w-full lg:w-96 flex-shrink-0 space-y-4">
-              <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
+              <QueryInput
+                onSubmit={handleSubmit}
+                isLoading={isRunning}
+                defaultQuery={state.query}
+                defaultKeywords={state.keywords}
+              />
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
@@ -217,9 +219,12 @@ export default function Home() {
                   outputs={state.agentOutputs}
                 />
               )}
+
+              {history.length > 0 && state.status !== "running" && (
+                <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
+              )}
             </aside>
 
-            {/* Right panel - report */}
             <section className="flex-1 min-h-[600px]">
               <ReportView
                 activeAgent={state.activeAgentTab}
