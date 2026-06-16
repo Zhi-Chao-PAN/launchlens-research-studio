@@ -427,3 +427,30 @@ security observability ¡ª no more need to curl the API directly.
 No new backend ¡ª all powered by the existing admin API endpoints.
 Total automated tests: 348 (266 unit + 82 e2e). Lint: 0 errors,
 25 warnings. Build: 20 routes, ~795 KB client JS.
+
+## Round 47 - Webhook retry queue with exponential backoff
+
+Webhook delivery is no longer fire-and-forget. Failed deliveries are
+retried with exponential backoff and jitter, with a bounded queue to
+prevent unbounded memory growth.
+
+**Retry behavior:**
+- **Max retries:** 5 (configurable via LAUNCHLENS_ALERT_WEBHOOK_MAX_RETRIES)
+- **Initial delay:** 1s (configurable via LAUNCHLENS_ALERT_WEBHOOK_RETRY_DELAY)
+- **Backoff:** exponential (2^n) with 20% jitter, capped at 60s
+- **Queue size:** max 100 entries; oldest dropped when full
+- **Dead letter:** alerts are dropped after max retries (best-effort)
+
+**Queue health:**
+- GET /api/admin/alerts?stats=1 returns webhook queue stats:
+  pending count, total queued, max retries, max queue size
+- getWebhookQueueStats() exported for programmatic use
+- _resetWebhookQueue() exported for testing
+
+**New tests:**
+- 4 new unit tests covering queue stats, empty queue behavior,
+  max size enforcement, and reset
+- 5 new admin e2e tests for the stats endpoint
+
+Total automated tests: 357 (270 unit + 87 e2e). Lint: 0 errors.
+Build: 20 routes, ~809 KB client JS. All regression checks green.

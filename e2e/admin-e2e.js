@@ -235,6 +235,19 @@ async function run() {
       log("Webhook disabled by default", cfg.webhookEnabled === false);
     // Webhook secret disabled by default
     log("Webhook secret disabled by default", cfg.webhookSecretEnabled === false);
+    // Webhook queue stats
+    const statsRes = await fetch(`${BASE_URL}/api/admin/alerts?stats=1`, {
+      headers: { "Authorization": `Bearer ${ADMIN_TOKEN}` },
+    });
+    log("Alerts stats endpoint accessible with admin token", statsRes.ok, `status=${statsRes.status}`);
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      log("Stats has webhook key", typeof stats.webhook === "object");
+      log("Stats has pending count", typeof stats.webhook.pending === "number");
+      log("Stats has maxRetries", stats.webhook.maxRetries > 0);
+      log("Stats has maxQueueSize", stats.webhook.maxQueueSize === 100);
+    }
+
 
     }
 

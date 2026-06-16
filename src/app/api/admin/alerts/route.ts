@@ -1,7 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isAdminToken, extractBearerToken, getTokenInfo } from "@/lib/api/bypass-tokens";
-import { getAlerts, alertConfig, clearAlerts } from "@/lib/api/auth-alerts";
+import { getAlerts, alertConfig, clearAlerts, getWebhookQueueStats } from "@/lib/api/auth-alerts";
 import { hashIp } from "@/lib/telemetry/request-log";
 
 // Admin endpoint for security alerts.
@@ -38,6 +38,13 @@ export async function GET(request: NextRequest) {
   }
 
   const url = new URL(request.url);
+
+  // Stats view (webhook queue health)
+  if (url.searchParams.get("stats") === "1") {
+    return NextResponse.json({
+      webhook: getWebhookQueueStats(),
+    });
+  }
 
   // Config view
   if (url.searchParams.get("config") === "1") {

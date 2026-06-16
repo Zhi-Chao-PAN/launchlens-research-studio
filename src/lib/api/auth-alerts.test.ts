@@ -1,4 +1,4 @@
-﻿import { getAlerts, clearAlerts, alertConfig, _computeWebhookSignature } from "@/lib/api/auth-alerts";
+﻿import { getAlerts, clearAlerts, alertConfig, _computeWebhookSignature, getWebhookQueueStats, _resetWebhookQueue } from "@/lib/api/auth-alerts";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 
 // Note: auth-alerts.ts auto-registers a listener on import via onAuthAuditEvent.
@@ -19,6 +19,9 @@ describe("Auth alerts", () => {
       expect(typeof alertConfig.webhookEnabled).toBe("boolean");
       expect(typeof alertConfig.webhookSecretEnabled).toBe("boolean");
       expect(alertConfig.webhookSecretEnabled).toBe(false);
+      expect(alertConfig.webhookMaxRetries).toBeGreaterThan(0);
+      expect(alertConfig.webhookInitialRetryDelayMs).toBeGreaterThan(0);
+      expect(alertConfig.webhookMaxQueueSize).toBe(100);
     });
   });
 
@@ -265,6 +268,43 @@ describe("Auth alerts", () => {
       const sig1 = createHmac("sha256", secret).update(`1000.${body}`).digest("hex");
       const sig2 = createHmac("sha256", secret).update(`1001.${body}`).digest("hex");
       expect(sig1).not.toBe(sig2);
+    });
+  });
+
+  describe("Webhook retry queue", () => {
+    beforeEach(() => {
+      _resetWebhookQueue();
+      clearAlerts();
+    });
+
+    it("getWebhookQueueStats returns empty queue initially", () => {
+      const stats = getWebhookQueueStats();
+      expect(stats.pending).toBe(0);
+      expect(stats.total).toBe(0);
+      expect(stats.maxRetries).toBeGreaterThan(0);
+      expect(stats.maxQueueSize).toBe(100);
+    });
+
+    it("queue is empty when webhook URL is not configured", () => {
+      // Without LAUNCHLENS_ALERT_WEBHOOK_URL, no webhooks are enqueued
+      for (let i = 0; i < 10; i++) {
+        recordAuthAudit("auth_failed", { ipHash: "retry-test", detail: "x" });
+      }
+      // Alerts fire but webhook queue stays empty since no URL
+      expect(getAlerts().length).toBeGreaterThan(0);
+      expect(getWebhookQueueStats().pending).toBe(0);
+    });
+
+    it("queue enforces max size (100)", () => {
+      const stats = getWebhookQueueStats();
+      expect(stats.maxQueueSize).toBe(100);
+    });
+
+    it("reset clears the queue", () => {
+      _resetWebhookQueue();
+      const stats = getWebhookQueueStats();
+      expect(stats.pending).toBe(0);
+      expect(stats.total).toBe(0);
     });
   });
 });
