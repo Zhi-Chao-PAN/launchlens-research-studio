@@ -189,6 +189,9 @@ async function run() {
       log("Config has authFailedThreshold", typeof cfg.authFailedThreshold === "number");
       log("Config has maxAlerts", typeof cfg.maxAlerts === "number");
       log("Webhook disabled by default", cfg.webhookEnabled === false);
+    // Webhook secret disabled by default
+    log("Webhook secret disabled by default", cfg.webhookSecretEnabled === false);
+
     }
 
     // Empty alerts list

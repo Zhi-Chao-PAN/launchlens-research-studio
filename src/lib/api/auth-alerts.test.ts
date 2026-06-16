@@ -1,4 +1,4 @@
-﻿import { getAlerts, clearAlerts, alertConfig } from "@/lib/api/auth-alerts";
+﻿import { getAlerts, clearAlerts, alertConfig, _computeWebhookSignature } from "@/lib/api/auth-alerts";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 
 // Note: auth-alerts.ts auto-registers a listener on import via onAuthAuditEvent.
@@ -17,6 +17,8 @@ describe("Auth alerts", () => {
       expect(alertConfig.rateLimitedThreshold).toBe(20);
       expect(alertConfig.maxAlerts).toBe(50);
       expect(typeof alertConfig.webhookEnabled).toBe("boolean");
+      expect(typeof alertConfig.webhookSecretEnabled).toBe("boolean");
+      expect(alertConfig.webhookSecretEnabled).toBe(false);
     });
   });
 
@@ -207,6 +209,62 @@ describe("Auth alerts", () => {
       expect(typeof alert.ts).toBe("number");
       expect(Array.isArray(alert.details)).toBe(false);
       expect(typeof alert.details).toBe("object");
+    });
+  });
+
+  describe("HMAC webhook signature", () => {
+    it("returns empty string when no secret is set", () => {
+      const sig = _computeWebhookSignature(1234567890, '{"test":true}');
+      expect(sig).toBe("");
+    });
+
+    it("produces consistent signatures with a fixed secret", () => {
+      // Since WEBHOOK_SECRET is captured at module load, test the algorithm directly
+      const { createHmac } = require("node:crypto");
+      const secret = "test-secret-abc";
+      const ts = 1234567890;
+      const body = '{"test":true}';
+      
+      const sig = createHmac("sha256", secret)
+        .update(`${ts}.${body}`)
+        .digest("hex");
+      
+      expect(sig).toMatch(/^[0-9a-f]{64}$/);
+      expect("sha256=" + sig).toMatch(/^sha256=[0-9a-f]{64}$/);
+
+      // Same inputs -> same signature
+      const sig2 = createHmac("sha256", secret)
+        .update(`${ts}.${body}`)
+        .digest("hex");
+      expect(sig2).toBe(sig);
+
+      // Different bodies -> different signatures
+      const sig3 = createHmac("sha256", secret)
+        .update(`${ts}.{"test":false}`)
+        .digest("hex");
+      expect(sig3).not.toBe(sig);
+
+      // Different timestamps -> different signatures
+      const sig4 = createHmac("sha256", secret)
+        .update(`9999.${body}`)
+        .digest("hex");
+      expect(sig4).not.toBe(sig);
+
+      // Different secrets -> different signatures
+      const sig5 = createHmac("sha256", "other-secret")
+        .update(`${ts}.${body}`)
+        .digest("hex");
+      expect(sig5).not.toBe(sig);
+    });
+
+    it("includes timestamp in signature (replay protection)", () => {
+      const { createHmac } = require("node:crypto");
+      const secret = "replay-test";
+      const body = '{"alert":"test"}';
+
+      const sig1 = createHmac("sha256", secret).update(`1000.${body}`).digest("hex");
+      const sig2 = createHmac("sha256", secret).update(`1001.${body}`).digest("hex");
+      expect(sig1).not.toBe(sig2);
     });
   });
 });

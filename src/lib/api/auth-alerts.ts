@@ -1,4 +1,4 @@
-﻿// Auth audit alerting system.
+// Auth audit alerting system.
 // Monitors the auth audit log for suspicious patterns and triggers alerts.
 //
 // Supported detection rules:
@@ -12,11 +12,13 @@
 //   - Webhook endpoint (configured via LAUNCHLENS_ALERT_WEBHOOK_URL)
 //
 // Configuration via env vars:
-//   LAUNCHLENS_ALERT_WEBHOOK_URL  — webhook URL to POST alerts to
-//   LAUNCHLENS_ALERT_AUTH_FAILED_THRESHOLD  — auth failures per window (default 10)
-//   LAUNCHLENS_ALERT_CSRF_FAILED_THRESHOLD  — CSRF failures per window (default 5)
-//   LAUNCHLENS_ALERT_WINDOW_SECONDS  — detection window in seconds (default 60)
+//   LAUNCHLENS_ALERT_WEBHOOK_URL  ? webhook URL to POST alerts to
+//   LAUNCHLENS_ALERT_WEBHOOK_SECRET ? HMAC secret for signing webhook payloads
+//   LAUNCHLENS_ALERT_AUTH_FAILED_THRESHOLD  ? auth failures per window (default 10)
+//   LAUNCHLENS_ALERT_CSRF_FAILED_THRESHOLD  ? CSRF failures per window (default 5)
+//   LAUNCHLENS_ALERT_WINDOW_SECONDS  ? detection window in seconds (default 60)
 
+import { createHmac } from "crypto";
 import { recordAuthAudit, onAuthAuditEvent, AuthAuditEvent } from "./auth-audit";
 
 export interface AlertEvent {
@@ -41,6 +43,7 @@ const AUTH_FAILED_THRESHOLD = parseInt(process.env.LAUNCHLENS_ALERT_AUTH_FAILED_
 const CSRF_FAILED_THRESHOLD = parseInt(process.env.LAUNCHLENS_ALERT_CSRF_FAILED_THRESHOLD || "5", 10) || 5;
 const RATE_LIMITED_THRESHOLD = parseInt(process.env.LAUNCHLENS_ALERT_RATE_LIMITED_THRESHOLD || "20", 10) || 20;
 const WEBHOOK_URL = process.env.LAUNCHLENS_ALERT_WEBHOOK_URL || "";
+const WEBHOOK_SECRET = process.env.LAUNCHLENS_ALERT_WEBHOOK_SECRET || "";
 
 // Per-ipHash event tracking for sliding window detection
 interface EventTracker {
@@ -107,30 +110,59 @@ function addAlert(alert: Omit<AlertEvent, "id" | "ts">) {
   }
 }
 
+/**
+ * Compute HMAC-SHA256 signature for webhook payload.
+ * Format: sha256=<hex>
+ * The signature covers the timestamp + "." + body to prevent replay attacks.
+ */
+function computeWebhookSignature(timestamp: number, body: string): string {
+  if (!WEBHOOK_SECRET) return "";
+  const hmac = createHmac("sha256", WEBHOOK_SECRET);
+  hmac.update(`${timestamp}.${body}`);
+  return `sha256=${hmac.digest("hex")}`;
+}
+
+/** Compute HMAC-SHA256 webhook signature (exported for testing). */
+export function _computeWebhookSignature(timestamp: number, body: string): string {
+  return computeWebhookSignature(timestamp, body);
+}
+
 async function sendWebhook(alert: AlertEvent) {
   if (!WEBHOOK_URL) return;
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const payload = JSON.stringify({
+    alert: {
+      type: alert.type,
+      severity: alert.severity,
+      message: alert.message,
+      count: alert.count,
+      window_seconds: alert.windowSeconds,
+      ip_hash: alert.ipHash,
+      token_hash: alert.tokenHash,
+      details: alert.details,
+      timestamp: new Date(alert.ts).toISOString(),
+    },
+    source: "launchlens-research-studio",
+    sent_at: timestamp,
+  });
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "LaunchLens-Security-Alert/1.0",
+    "X-LaunchLens-Timestamp": String(timestamp),
+  };
+
+  // Add HMAC signature if secret is configured
+  if (WEBHOOK_SECRET) {
+    headers["X-LaunchLens-Signature"] = computeWebhookSignature(timestamp, payload);
+  }
 
   try {
     await fetch(WEBHOOK_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "LaunchLens-Security-Alert/1.0",
-      },
-      body: JSON.stringify({
-        alert: {
-          type: alert.type,
-          severity: alert.severity,
-          message: alert.message,
-          count: alert.count,
-          window_seconds: alert.windowSeconds,
-          ip_hash: alert.ipHash,
-          token_hash: alert.tokenHash,
-          details: alert.details,
-          timestamp: new Date(alert.ts).toISOString(),
-        },
-        source: "launchlens-research-studio",
-      }),
+      headers,
+      body: payload,
       signal: AbortSignal.timeout(5000),
     });
   } catch {
@@ -228,5 +260,6 @@ export const alertConfig = {
   csrfFailedThreshold: CSRF_FAILED_THRESHOLD,
   rateLimitedThreshold: RATE_LIMITED_THRESHOLD,
   webhookEnabled: !!WEBHOOK_URL,
+  webhookSecretEnabled: !!WEBHOOK_SECRET,
   maxAlerts: MAX_ALERTS,
 };

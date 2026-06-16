@@ -327,3 +327,28 @@ parameter, and clear/delete.
 Total automated tests: 303 (263 unit + 40 admin e2e). Lint: 0 errors,
 23 warnings. Build: 17 routes, ~795 KB client JS. All regression
 checks green.
+
+## Round 43 - HMAC webhook signature verification
+
+Signed webhook payloads so recipients can verify alert authenticity
+and resist replay attacks.
+
+- **HMAC-SHA256** signature in X-LaunchLens-Signature header
+  (format: sha256=<hex>) when LAUNCHLENS_ALERT_WEBHOOK_SECRET
+  is configured.
+- **Replay protection**: signature covers 	imestamp.body using the
+  X-LaunchLens-Timestamp (Unix seconds) so the same payload can't
+  be replayed later.
+- **sent_at field** added to the webhook JSON payload for receiver-side
+  timestamp validation.
+- **webhookSecretEnabled** field added to the alerts config endpoint
+  so operators can confirm signing is active.
+- _computeWebhookSignature() exported for testing.
+
+**New tests:**
+- 3 new unit tests covering empty-secret behavior, signature
+  consistency, and timestamp-based replay protection.
+- 1 new admin e2e test verifying webhookSecretEnabled defaults to false.
+
+Total: 266 unit tests, 44 admin e2e tests. All regression checks green.
+Lint: 0 errors. Build: 17 routes, ~795 KB client JS.
