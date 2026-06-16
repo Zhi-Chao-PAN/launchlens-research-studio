@@ -3,6 +3,7 @@
 // the underlying provider is mock or a real streaming model.
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
+import { applyQueryVariability } from "@/lib/providers/mock-variability";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 
 const MOCK_STEPS = [
@@ -23,6 +24,7 @@ export const mockResearchProvider: ResearchProvider = {
         ctx.onProgress(event);
       }
     }
-    return generateMockAgentOutput(agentId, ctx.query, ctx.keywords, ctx.upstream);
+    const base = generateMockAgentOutput(agentId, ctx.query, ctx.keywords, ctx.upstream);
+    return applyQueryVariability(agentId, base, ctx.query, ctx.keywords);
   },
 };
