@@ -10,8 +10,17 @@ const validPayload = {
 };
 
 describe("createOpenAIProvider", () => {
-  it("falls back to mock on HTTP failure", async () => {
+  it("retries 5xx then falls back to mock", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500 }) as any);
+    const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
+    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
+    expect(out.agent).toBe("market-sizer");
+    // 5xx is retriable: retryWithBackoff makes up to 3 attempts.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry on 4xx and falls back to mock immediately", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
     const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
     const out = await p.generate("market-sizer", { query: "q", keywords: [] });
     expect(out.agent).toBe("market-sizer");

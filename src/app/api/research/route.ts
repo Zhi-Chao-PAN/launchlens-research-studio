@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/api/rate-limit";
 import {
   createResearchSession,
   runResearchSession,
@@ -10,6 +11,20 @@ import {
 } from "@/lib/api/validation";
 
 export async function POST(request: Request) {
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rate = checkRateLimit("research:" + ip);
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Please retry shortly.", resetMs: rate.resetMs },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Remaining": String(rate.remaining),
+          "X-RateLimit-Reset-Ms": String(rate.resetMs),
+        },
+      },
+    );
+  }
   let body: unknown;
   try {
     body = await request.json();

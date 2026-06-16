@@ -4,11 +4,15 @@
 // Falls back to the mock provider on any remote failure so the demo path
 // always succeeds, even with a misconfigured key. When ctx.onProgress is
 // defined the adapter requests stream:true and forwards partial tokens.
+// Transient HTTP errors (5xx, 429) are retried with exponential backoff;
+// 4xx errors are surfaced immediately so the outer fallback can degrade
+// to the mock without burning quota.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
+import { retryWithBackoff } from "@/lib/utils/retry";
 
 export interface OpenAIProviderConfig {
   apiKey: string;
@@ -83,25 +87,41 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
       const wantsStream = typeof ctx.onProgress === "function";
       try {
         const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
-        const res = await fetchImpl(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + config.apiKey,
-          },
-          signal: ctx.signal,
-          body: JSON.stringify({
-            model,
-            temperature: 0.4,
-            stream: wantsStream,
-            response_format: { type: "json_object" },
-            messages: [
-              { role: "system", content: buildSystemPrompt(agentId) },
-              { role: "user", content: buildUserPrompt(agentId, ctx) },
-            ],
-          }),
+
+        const doFetch = async () => {
+          const r = await fetchImpl(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + config.apiKey,
+            },
+            signal: ctx.signal,
+            body: JSON.stringify({
+              model,
+              temperature: 0.4,
+              stream: wantsStream,
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: buildSystemPrompt(agentId) },
+                { role: "user", content: buildUserPrompt(agentId, ctx) },
+              ],
+            }),
+          });
+          if (!r.ok && (r.status >= 500 || r.status === 429)) {
+            throw new Error("retriable HTTP " + r.status);
+          }
+          return r;
+        };
+
+        const res = await retryWithBackoff(doFetch, {
+          maxAttempts: 3,
+          baseDelayMs: 200,
+          maxDelayMs: 2000,
+          shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
         });
+
         if (!res.ok) throw new Error("provider HTTP " + res.status);
+
         let text: string;
         if (wantsStream) {
           text = await readSSE(res as unknown as Response, (assembled) => {
