@@ -1,15 +1,24 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { getResearchSession } from "@/lib/research/research-engine";
+import { jsonError } from "@/lib/api/validation";
+
+const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const { sessionId } = await params;
-  const session = getResearchSession(sessionId);
 
+  if (!sessionId || !SESSION_ID_PATTERN.test(sessionId)) {
+    return jsonError("Invalid session id format.", 400);
+  }
+
+  const session = getResearchSession(sessionId);
   if (!session) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    return jsonError("Session not found. It may have expired (sessions are in-memory and lost on server restart).", 404, {
+      sessionId,
+    });
   }
 
   return NextResponse.json({

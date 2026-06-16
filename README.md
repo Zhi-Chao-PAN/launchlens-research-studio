@@ -114,6 +114,27 @@ The mock provider (`src/lib/providers/mock-provider.ts`) generates deterministic
 
 ---
 
+
+
+---
+
+## 🧪 Testing
+
+A built-in smoke test exercises the full API:
+
+`ash
+npm run build
+SMOKE_TEST_PORT=3010 node scripts/smoke-test.js
+`
+
+The script starts the production server, then validates:
+- Input validation on POST /api/research (rejects empty/short/oversized/malformed input)
+- Session creation and retrieval
+- 404 / 400 responses for bad session ids
+- SSE event stream (state, progress, output, status, complete events)
+- End-to-end research completion
+
+
 ## 📝 License
 
 MIT License — feel free to use and build on this.

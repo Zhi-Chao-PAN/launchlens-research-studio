@@ -4,7 +4,6 @@
   ResearchSession,
   ResearchEvent,
   AgentOutput,
-  RESEARCH_AGENTS,
 } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 
@@ -66,7 +65,11 @@ export function getResearchSession(id: string): ResearchSession | undefined {
 function emitEvent(sessionId: string, event: ResearchEvent): void {
   const listener = eventListeners.get(sessionId);
   if (listener) {
-    listener(event);
+    try {
+      listener(event);
+    } catch (err) {
+      console.error(`[research] listener for ${sessionId} threw:`, err);
+    }
   }
 }
 
@@ -102,50 +105,66 @@ async function runAgent(
     message: `${agentId} started`,
   });
 
-  for (let i = 0; i < steps.length; i++) {
-    await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
+  try {
+    for (let i = 0; i < steps.length; i++) {
+      await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
 
-    const progress = Math.round(((i + 1) / steps.length) * 80);
+      const progress = Math.round(((i + 1) / steps.length) * 80);
+      updateAgentState(session, agentId, {
+        currentStep: steps[i],
+        progress,
+      });
+
+      emitEvent(session.id, {
+        type: "progress",
+        agentId,
+        timestamp: new Date().toISOString(),
+        data: { step: steps[i], progress },
+      });
+    }
+
+    // Generate final output
+    const allOutputs = getCompletedAgentOutputs(session);
+    const output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
+
+    // Merge citations
+    for (const citation of output.citations) {
+      if (!session.citations.find((c) => c.id === citation.id)) {
+        session.citations.push(citation);
+      }
+    }
+
     updateAgentState(session, agentId, {
-      currentStep: steps[i],
-      progress,
+      status: "done",
+      progress: 100,
+      currentStep: "Complete",
+      completedAt: new Date().toISOString(),
+      output,
     });
 
     emitEvent(session.id, {
-      type: "progress",
+      type: "output",
       agentId,
       timestamp: new Date().toISOString(),
-      data: { step: steps[i], progress },
+      data: output,
     });
+
+    return output;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    updateAgentState(session, agentId, {
+      status: "error",
+      currentStep: `Error: ${message}`,
+      error: message,
+    });
+    emitEvent(session.id, {
+      type: "error",
+      agentId,
+      timestamp: new Date().toISOString(),
+      message,
+    });
+    throw err;
   }
-
-  // Generate final output
-  const allOutputs = getCompletedAgentOutputs(session);
-  const output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
-
-  // Merge citations
-  for (const citation of output.citations) {
-    if (!session.citations.find((c) => c.id === citation.id)) {
-      session.citations.push(citation);
-    }
-  }
-
-  updateAgentState(session, agentId, {
-    status: "done",
-    progress: 100,
-    currentStep: "Complete",
-    completedAt: new Date().toISOString(),
-    output,
-  });
-
-  emitEvent(session.id, {
-    type: "output",
-    agentId,
-    timestamp: new Date().toISOString(),
-    data: output,
-  });
-
-  return output;
 }
 
 function getAgentSteps(agentId: AgentId): string[] {
@@ -236,7 +255,9 @@ export async function runResearchSession(
 
   const stepDelay = 300 / (options?.speedMultiplier || 1);
 
-  // Run research agents in parallel
+  // Run research agents in parallel. A single agent failure should not stop
+  // the rest; we collect all results and report the failure via the session
+  // status.
   const researchAgentIds: AgentId[] = [
     "market-sizer",
     "competitor-analyst",
@@ -245,14 +266,37 @@ export async function runResearchSession(
     "channel-scout",
   ];
 
-  const agentPromises = researchAgentIds.map((agentId) =>
-    runAgent(session, agentId, stepDelay),
+  const settled = await Promise.allSettled(
+    researchAgentIds.map((agentId) => runAgent(session, agentId, stepDelay)),
   );
 
-  await Promise.all(agentPromises);
+  const failedAgents = settled
+    .map((r, i) => ({ agentId: researchAgentIds[i], r }))
+    .filter((x) => x.r.status === "rejected");
 
-  // Run synthesis after all research agents complete
-  await runAgent(session, "synthesis", stepDelay);
+  if (failedAgents.length > 0) {
+    console.error(
+      `[research] session ${sessionId}: ${failedAgents.length} agent(s) failed`,
+      failedAgents.map((f) => f.agentId),
+    );
+  }
+
+  // Only run synthesis if at least 3 of 5 research agents completed. If
+  // synthesis itself fails, we still mark the session as completed (partial
+  // results are still useful) but the agent will be in 'error' state.
+  const completed = settled.filter((s) => s.status === "fulfilled").length;
+  if (completed >= 3) {
+    try {
+      await runAgent(session, "synthesis", stepDelay);
+    } catch (err) {
+      console.error(`[research] synthesis failed for ${sessionId}:`, err);
+    }
+  } else {
+    updateAgentState(session, "synthesis", {
+      status: "error",
+      currentStep: "Skipped: too many upstream agent failures",
+    });
+  }
 
   session.status = "completed";
   session.updatedAt = new Date().toISOString();
@@ -274,7 +318,9 @@ export function subscribeToSession(
 ): () => void {
   eventListeners.set(sessionId, listener);
   return () => {
-    eventListeners.delete(sessionId);
+    if (eventListeners.get(sessionId) === listener) {
+      eventListeners.delete(sessionId);
+    }
   };
 }
 
