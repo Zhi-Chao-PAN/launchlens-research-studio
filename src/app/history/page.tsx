@@ -21,17 +21,31 @@ interface HistoryRun {
 
 export default function HistoryPage() {
   const [runs, setRuns] = useState<HistoryRun[]>([]);
+  const [totalRuns, setTotalRuns] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderName, setFolderName] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "failed">("all");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "fastest" | "slowest">("newest");
 
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/research/runs?limit=100");
+      const params = new URLSearchParams();
+      params.set("limit", "100");
+      if (searchQuery.trim()) {
+        params.set("q", searchQuery.trim());
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+
+      const res = await fetch(`/api/research/runs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         let allRuns = data.runs || [];
+        setTotalRuns(data.total || allRuns.length);
 
         if (selectedFolder) {
           const folder = getFolder(selectedFolder);
@@ -42,7 +56,23 @@ export default function HistoryPage() {
           }
         }
 
-        setRuns(allRuns);
+        // Client-side sorting
+        const sorted = [...allRuns].sort((a, b) => {
+          switch (sortBy) {
+            case "newest":
+              return b.createdAt - a.createdAt;
+            case "oldest":
+              return a.createdAt - b.createdAt;
+            case "fastest":
+              return a.durationMs - b.durationMs;
+            case "slowest":
+              return b.durationMs - a.durationMs;
+            default:
+              return b.createdAt - a.createdAt;
+          }
+        });
+
+        setRuns(sorted);
       }
     } catch (e) {
       console.error("Failed to load runs", e);
@@ -52,8 +82,11 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    void Promise.resolve().then(loadRuns);
-  }, [selectedFolder]);
+    const timer = setTimeout(() => {
+      void loadRuns();
+    }, 200); // debounce search
+    return () => clearTimeout(timer);
+  }, [selectedFolder, searchQuery, statusFilter, sortBy]);
 
   useEffect(() => {
     if (selectedFolder) {
@@ -84,10 +117,12 @@ export default function HistoryPage() {
                 {selectedFolder
                   ? "Research in this folder"
                   : "All research records"}
-                {runs.length > 0 && (
+                {totalRuns > 0 && (
                   <>
                     {" "}
-                    <span className="history-count">{runs.length} results</span>
+                    <span className="history-count">
+                      {runs.length} of {totalRuns} results
+                    </span>
                   </>
                 )}
               </p>
@@ -96,6 +131,81 @@ export default function HistoryPage() {
               + New Research
             </Link>
           </header>
+
+          {/* Search & filter toolbar */}
+          <div className="history-toolbar">
+            <div className="history-search">
+              <span className="history-search-icon">üîç</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search research queries, keywords..."
+                className="history-search-input"
+              />
+              {searchQuery && (
+                <button
+                  className="history-search-clear"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                >
+                  ‚ú?                </button>
+              )}
+            </div>
+
+            <div className="history-filters">
+              <div className="history-filter-group">
+                <label className="history-filter-label">Status</label>
+                <div className="history-filter-buttons">
+                  {(["all", "completed", "failed"] as const).map((s) => (
+                    <button
+                      key={s}
+                      className={`history-filter-btn status-${s} ${statusFilter === s ? "active" : ""}`}
+                      onClick={() => setStatusFilter(s)}
+                    >
+                      {s === "all" ? "All" : s === "completed" ? "‚ú?Success" : "‚ú?Failed"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="history-filter-group">
+                <label className="history-filter-label">Sort</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="history-sort-select"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="fastest">Fastest first</option>
+                  <option value="slowest">Slowest first</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Results count */}
+          {(searchQuery || statusFilter !== "all") && (
+            <div className="history-results-info">
+              <span>
+                Found <strong>{runs.length}</strong> result{runs.length !== 1 ? "s" : ""}
+                {searchQuery && <> for &quot;<strong>{searchQuery}</strong>&quot;</>}
+              </span>
+              {searchQuery && (
+                <button
+                  className="history-clear-all"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setStatusFilter("all");
+                    setSortBy("newest");
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
 
           {loading ? (
             <div className="history-loading">Loading...</div>
