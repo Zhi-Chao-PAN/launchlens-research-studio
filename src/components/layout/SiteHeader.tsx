@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { MobileNav } from "./MobileNav";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 interface SiteHeaderProps {
   title?: string;
@@ -35,6 +36,7 @@ export function SiteHeader({ title, showBack, backHref = "/" }: SiteHeaderProps)
           <Link href="/compare" className="site-nav-item">�Ա�</Link>
         </nav>
         <div className="site-header-right">
+          <ThemeToggle />
           <MobileNav />
         </div>
       </div>

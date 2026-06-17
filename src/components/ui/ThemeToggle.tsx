@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
+﻿/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
 ﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -16,11 +16,7 @@ function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   const resolved = theme === "system" ? getSystemTheme() : theme;
-  if (resolved === "dark") {
-    root.setAttribute("data-theme", "dark");
-  } else {
-    root.removeAttribute("data-theme");
-  }
+  root.setAttribute("data-theme", resolved);
 }
 
 export function ThemeToggle() {
@@ -51,7 +47,7 @@ export function ThemeToggle() {
 
   const cycle = useCallback(() => {
     setTheme((prev) => {
-      const next: Theme = prev === "light" ? "dark" : prev === "dark" ? "system" : "light";
+      const next: Theme = prev === "system" ? "dark" : prev === "dark" ? "light" : "system";
       try {
         localStorage.setItem(STORAGE_KEY, next);
       } catch {
