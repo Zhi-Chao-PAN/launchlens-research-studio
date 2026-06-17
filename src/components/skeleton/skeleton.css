@@ -1,0 +1,117 @@
+﻿/* ===== Skeleton Loaders (Round 106) ===== */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 25%,
+    #f1f5f9 37%,
+    #e2e8f0 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.skeleton-text {
+  height: 1em;
+  width: 100%;
+  display: block;
+}
+
+.skeleton-line-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line-group .skeleton:last-child {
+  width: 60%;
+}
+
+.skeleton-circular {
+  border-radius: 50%;
+}
+
+.skeleton-rectangular {
+  border-radius: 8px;
+}
+
+.skeleton-card {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+/* History item skeleton */
+.skeleton-history-item {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.skeleton-history-item-title {
+  margin-bottom: 10px;
+}
+
+.skeleton-history-item-meta {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.skeleton-history-item-tags {
+  display: flex;
+  gap: 6px;
+}
+
+/* Detail header skeleton */
+.skeleton-detail-header {
+  padding: 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.skeleton-detail-meta {
+  display: flex;
+  gap: 16px;
+  margin: 12px 0 20px 0;
+  opacity: 0.6;
+}
+
+.skeleton-detail-scores {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* Dark mode */
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    #1e1e2e 25%,
+    #2a2a3e 37%,
+    #1e1e2e 63%
+  );
+}
+
+[data-theme="dark"] .skeleton-card,
+[data-theme="dark"] .skeleton-history-item,
+[data-theme="dark"] .skeleton-detail-header {
+  background: #0f0f17;
+  border-color: #1e1e2e;
+}

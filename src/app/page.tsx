@@ -20,8 +20,13 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { ProviderPill } from "@/components/ui/ProviderPill";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { useFreezeMode } from "@/lib/perf/use-freeze-mode";
+import { getStarredRunIds } from "@/lib/research/starred";
+import { listTemplates } from "@/lib/research/templates";
+import { generateSuggestions } from "@/lib/research/suggestions";
 import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
+import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
+import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 
 export default function Home() {
   useFreezeMode();
@@ -33,6 +38,14 @@ export default function Home() {
   const hasError = state.status === "error" && state.error;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [stats, setStats] = useState<{
+    totalRuns: number;
+    starredCount: number;
+    thisWeekRuns: number;
+    totalDurationMin: number;
+    templates: number;
+  } | null>(null);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
 
   // Bridge: persist on completion, detect share links, restore from cache
   // Build a ResearchSession-shaped object for the bridge.
@@ -64,6 +77,50 @@ export default function Home() {
         }
       : null,
   );
+
+  // Load dashboard stats on mount
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const res = await fetch("/api/research/runs?limit=500");
+        if (res.ok) {
+          const data = await res.json();
+          const runs = data.runs || [];
+          const now = Date.now();
+          const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+          const thisWeek = runs.filter((r: any) => r.createdAt > weekAgo);
+          const totalMs = runs.reduce((acc: number, r: any) => acc + (r.durationMs || 0), 0);
+          const starred = getStarredRunIds();
+
+          setStats({
+            totalRuns: runs.length,
+            starredCount: starred.filter((id: string) => runs.some((r: any) => r.id === id)).length,
+            thisWeekRuns: thisWeek.length,
+            totalDurationMin: Math.round(totalMs / 60000),
+            templates: listTemplates().length,
+          });
+        }
+      } catch {
+        // Silently fail ? stats are a nice-to-have
+      }
+    };
+    void loadStats();
+
+    // Generate suggestions
+    const loadSuggestions = async () => {
+      try {
+        const res = await fetch("/api/research/runs?limit=100");
+        if (res.ok) {
+          const data = await res.json();
+          const recs = generateSuggestions(data.runs || [], 4);
+          setSuggestions(recs);
+        }
+      } catch {
+        // Suggestions are optional
+      }
+    };
+    void loadSuggestions();
+  }, []);
 
   // Persist a history entry on every successful session start
   useEffect(() => {
@@ -231,6 +288,42 @@ export default function Home() {
               </p>
             </div>
             <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
+
+            {suggestions.length > 0 && (
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    <span className="mr-1">💡</span>
+                    AI Research Suggestions
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      className="suggestion-card"
+                      onClick={() => handleSubmit(s.title, s.keywords)}
+                      disabled={isRunning}
+                    >
+                      <div className="suggestion-category">
+                        <span className={`suggestion-category-tag ${s.category}`}>
+                          {s.category === "follow-up" ? "Follow-up" :
+                           s.category === "deep-dive" ? "Deep Dive" :
+                           s.category === "related" ? "Related" : "Trending"}
+                        </span>
+                      </div>
+                      <div className="suggestion-title">{s.title}</div>
+                      <div className="suggestion-desc">{s.description}</div>
+                      <div className="suggestion-keywords">
+                        {s.keywords.slice(0, 3).map((kw: string, ki: number) => (
+                          <span key={ki} className="suggestion-kw">{kw}</span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 space-y-4">
               <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />

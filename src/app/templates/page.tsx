@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -10,9 +10,11 @@ import {
   updateTemplate,
   deleteTemplate,
   getDefaultCategories,
-  incrementUseCount,
+  incrementTemplateUse,
   type ResearchTemplate,
 } from "@/lib/research/templates";
+import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
+import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 
 type TabType = "gallery" | "my-templates" | "all";
 
@@ -32,7 +34,61 @@ export default function TemplatesPage() {
     category: "Custom",
   });
 
+  const { registerCommands } = useCommandPalette();
   const categories = useMemo(() => ["All", ...getDefaultCategories()], []);
+
+  // Register template page commands
+  useEffect(() => {
+    const unregister = registerCommands([
+      {
+        id: "templates:new",
+        label: "New Template",
+        description: "Create a new research template",
+        icon: "?",
+        shortcut: "n",
+        category: "action",
+        keywords: ["new", "create", "template", "add"],
+        action: () => setShowNewForm(true),
+      },
+      {
+        id: "templates:search",
+        label: "Search Templates",
+        description: "Focus the template search input",
+        icon: "??",
+        shortcut: "/",
+        category: "action",
+        keywords: ["search", "find", "filter"],
+        action: () => {
+          const input = document.querySelector(".template-search input") as HTMLElement;
+          input?.focus();
+        },
+      },
+      {
+        id: "templates:gallery",
+        label: "Template Gallery",
+        description: "View the template gallery",
+        icon: "???",
+        shortcut: "g",
+        category: "navigation",
+        keywords: ["gallery", "browse", "community"],
+        action: () => setActiveTab("gallery"),
+      },
+    ]);
+
+    return unregister;
+  }, [registerCommands]);
+
+  // '/' to focus search
+  useHotkeys("/", () => {
+    const input = document.querySelector(".template-search input") as HTMLElement;
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }, { ignoreInputs: true, scope: "templates" });
+
+  // 'n' for new template
+  useHotkeys("n", () => setShowNewForm(true), { ignoreInputs: true, scope: "templates" });
 
   const refresh = useCallback(() => {
     let all = listTemplates();
@@ -65,7 +121,7 @@ export default function TemplatesPage() {
   }, [refresh]);
 
   function handleUseTemplate(tpl: ResearchTemplate) {
-    incrementUseCount(tpl.id);
+    incrementTemplateUse(tpl.id);
     const params = new URLSearchParams();
     if (tpl.query) params.set("q", tpl.query);
     if (tpl.keywords.length) params.set("k", tpl.keywords.join(","));
@@ -184,10 +240,10 @@ export default function TemplatesPage() {
           </div>
           <div className="templates-header-actions">
             <button className="btn btn-secondary" onClick={handleExport}>
-              📤 Export
+              馃摛 Export
             </button>
             <label className="btn btn-secondary">
-              📥 Import
+              馃摜 Import
               <input
                 type="file"
                 accept=".json"
@@ -208,12 +264,12 @@ export default function TemplatesPage() {
           </div>
         </div>
 
-        {/* Tabs */}
+                {/* Tabs */}
         <div className="templates-tabs">
           {[
-            { id: "gallery", label: "Gallery", icon: "🏛️" },
+            { id: "gallery", label: "Gallery", icon: "🖼️" },
             { id: "my-templates", label: "My Templates", icon: "📁" },
-            { id: "all", label: "All", icon: "📦" },
+            { id: "all", label: "All", icon: "📋" },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -229,7 +285,7 @@ export default function TemplatesPage() {
         {/* Search + category filter */}
         <div className="templates-toolbar">
           <div className="templates-search">
-            <span className="templates-search-icon">🔍</span>
+            <span className="templates-search-icon">馃攳</span>
             <input
               type="text"
               value={searchQuery}
@@ -258,8 +314,7 @@ export default function TemplatesPage() {
               <div className="template-editor-header">
                 <h3>{editingId ? "Edit Template" : "Create Template"}</h3>
                 <button className="template-editor-close" onClick={cancelEdit} aria-label="Close">
-                  ✕
-                </button>
+                  鉁?                </button>
               </div>
               <div className="form-grid">
                 <div className="form-group form-group-full">
@@ -341,7 +396,7 @@ export default function TemplatesPage() {
         {/* Template gallery grid */}
         {templates.length === 0 ? (
           <div className="templates-empty">
-            <div className="templates-empty-icon">📄</div>
+            <div className="templates-empty-icon">馃搫</div>
             <h2>No templates found</h2>
             <p>
               {searchQuery || selectedCategory !== "All"
@@ -407,8 +462,7 @@ export default function TemplatesPage() {
                       className="btn btn-xs btn-primary"
                       onClick={() => handleUseTemplate(tpl)}
                     >
-                      Use Template →
-                    </button>
+                      Use Template 鈫?                    </button>
                   </div>
                 </div>
               </div>

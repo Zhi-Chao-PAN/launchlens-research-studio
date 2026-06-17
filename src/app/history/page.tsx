@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { getFolder } from "@/lib/research/folders";
+import { getFolder, getFolders, bulkAddRunsToFolder } from "@/lib/research/folders";
+import { getStarredRunIds, isRunStarred } from "@/lib/research/starred";
+import { HistoryItemSkeleton } from "@/components/skeleton/Skeleton";
+import { getAllTags, getRunTags, getTagDetails, bulkAddTags, type RunTag } from "@/lib/research/tags";
+import { useToast } from "@/components/toast/ToastContext";
+import { UndoManager } from "@/lib/utils/undo-manager";
 
 interface HistoryRun {
   id: string;
@@ -24,12 +29,62 @@ export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "failed">("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "fastest" | "slowest">("newest");
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [allTags, setAllTags] = useState<RunTag[]>([]);
+  const [showTagMenu, setShowTagMenu] = useState(false);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const loadRuns = async () => {
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [showMoveFolderMenu, setShowMoveFolderMenu] = useState(false);
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const { showToast, dismissToast } = useToast();
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
+  // Undo manager for soft deletes
+  const undoManager = useMemo(() => {
+    return new UndoManager<HistoryRun>({
+      gracePeriod: 5000,
+      onDelete: async (item) => {
+        // Actually delete from API
+        try {
+          await fetch(`/api/research/${item.id}`, { method: "DELETE" });
+        } catch (e) {
+          console.error("Delete failed:", e);
+          showToast("Failed to delete research", "error");
+        }
+      },
+      onRestore: (item) => {
+        // Item was restored - remove from deletedIds set visually
+        setDeletedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        showToast("Deletion undone", "info");
+      },
+    });
+  }, [showToast]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      undoManager.destroy();
+    };
+  }, [undoManager]);
+
+  const loadRuns = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("limit", "100");
+      params.set("limit", pageSize.toString());
+    params.set("offset", ((page - 1) * pageSize).toString());
       if (searchQuery.trim()) {
         params.set("q", searchQuery.trim());
       }
@@ -42,6 +97,7 @@ export default function HistoryPage() {
         const data = await res.json();
         let allRuns = data.runs || [];
         setTotalRuns(data.total || allRuns.length);
+      setTotalPages(Math.ceil((data.total || allRuns.length) / pageSize));
 
         if (selectedFolder) {
           const folder = getFolder(selectedFolder);
@@ -50,6 +106,11 @@ export default function HistoryPage() {
               folder.runIds.includes(r.id)
             );
           }
+        }
+
+        // Starred-only filter
+        if (starredOnly) {
+          allRuns = allRuns.filter((r: HistoryRun) => starredIds.has(r.id));
         }
 
         // Client-side sorting
@@ -69,20 +130,42 @@ export default function HistoryPage() {
         });
 
         setRuns(sorted);
+
+        // Clear selected IDs that no longer exist in the list
+        const runIds = new Set(sorted.map((r: HistoryRun) => r.id));
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.forEach((id) => {
+            if (!runIds.has(id)) next.delete(id);
+          });
+          return next;
+        });
       }
     } catch (e) {
       console.error("Failed to load runs", e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedFolder, searchQuery, statusFilter, sortBy]);
+
+  // Load starred IDs on mount and refresh periodically
+  useEffect(() => {
+    const refreshStarred = () => {
+      setStarredIds(new Set(getStarredRunIds()));
+    };
+    refreshStarred();
+    // Refresh when window regains focus (in case user starred on another page)
+    const handleFocus = () => refreshStarred();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadRuns();
     }, 200); // debounce search
     return () => clearTimeout(timer);
-  }, [selectedFolder, searchQuery, statusFilter, sortBy]);
+  }, [loadRuns]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -94,8 +177,112 @@ export default function HistoryPage() {
       } else {
         setFolderName("");
       }
+      // Load folders for move-to-folder menu
+      setFolders(
+        getFolders()
+          .filter((f) => !f.isSystem)
+          .map((f) => ({ id: f.id, name: f.name }))
+      );
     });
   }, [selectedFolder]);
+
+  // Bulk selection helpers
+  const allSelected = useMemo(() => {
+    if (runs.length === 0) return false;
+    return runs.every((r) => selectedIds.has(r.id));
+  }, [runs, selectedIds]);
+
+  const someSelected = useMemo(() => {
+    return runs.some((r) => selectedIds.has(r.id));
+  }, [runs, selectedIds]);
+
+  const selectedCount = selectedIds.size;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(runs.map((r) => r.id)));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    setShowMoveFolderMenu(false);
+  };
+
+  // Bulk actions
+  const handleCompare = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length < 2) return;
+    // Take first two for comparison
+    const url = `/compare?a=${ids[0]}&b=${ids[1]}`;
+    window.location.href = url;
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} selected research run(s)? This cannot be undone.`)) return;
+
+    setBulkActionLoading(true);
+    try {
+      const ids = Array.from(selectedIds).join(",");
+      const res = await fetch(`/api/research/runs?ids=${encodeURIComponent(ids)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        clearSelection();
+        void loadRuns();
+      }
+    } catch (e) {
+      console.error("Bulk delete failed", e);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkExport = (format: "json" | "csv" | "jsonl") => {
+    if (selectedIds.size === 0) return;
+    // Use the export endpoint with a filter ? but since we have IDs on client side,
+    // we can fetch individual runs and build the export
+    // For simplicity, let's just trigger a download from the export endpoint with query matching
+    // Actually let's build the export client-side for selected runs
+    const selectedRuns = runs.filter((r) => selectedIds.has(r.id));
+    if (selectedRuns.length === 0) return;
+
+    // We only have summary data here. For full export, user should go to individual pages.
+    // Export summaries as JSON.
+    const data = JSON.stringify(selectedRuns, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `selected-runs-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkMoveToFolder = (folderId: string) => {
+    if (selectedIds.size === 0) return;
+    const added = bulkAddRunsToFolder(folderId, Array.from(selectedIds));
+    setShowMoveFolderMenu(false);
+    // Show a quick success indicator via browser notification or just close
+    console.log(`Added ${added} run(s) to folder`);
+    clearSelection();
+  };
 
   return (
     <div className="history-page">
@@ -117,9 +304,30 @@ export default function HistoryPage() {
               )}
             </p>
           </div>
-          <Link href="/" className="btn btn-primary history-new-btn">
-            + New Research
-          </Link>
+          <div className="history-header-actions">
+            {!selectMode ? (
+              <>
+                <Link href="/" className="btn btn-primary history-new-btn">
+                  + New Research
+                </Link>
+                {runs.length > 0 && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setSelectMode(true)}
+                  >
+                    Select
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                className="btn btn-secondary"
+                onClick={clearSelection}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </header>
 
         {/* Search & filter toolbar */}
@@ -139,8 +347,7 @@ export default function HistoryPage() {
                 onClick={() => setSearchQuery("")}
                 aria-label="Clear search"
               >
-                ✕
-              </button>
+                ×              </button>
             )}
           </div>
 
@@ -154,10 +361,20 @@ export default function HistoryPage() {
                     className={`history-filter-btn status-${s} ${statusFilter === s ? "active" : ""}`}
                     onClick={() => setStatusFilter(s)}
                   >
-                    {s === "all" ? "All" : s === "completed" ? "✓ Success" : "✗ Failed"}
+                    {s === "all" ? "All" : s === "completed" ? "✓ Success" : "✕ Failed"}
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="history-filter-group">
+              <label className="history-filter-label">Filter</label>
+              <button
+                className={`history-filter-btn ${starredOnly ? "active starred" : ""}`}
+                onClick={() => setStarredOnly(!starredOnly)}
+              >
+                ★ Starred
+              </button>
             </div>
 
             <div className="history-filter-group">
@@ -198,61 +415,251 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {loading ? (
-          <div className="history-loading">Loading...</div>
-        ) : runs.length === 0 ? (
-          <div className="history-empty">
-            <div className="history-empty-icon">📋</div>
-            <h3>No research yet</h3>
-            <p>
-              {searchQuery || statusFilter !== "all"
-                ? "No results match your filters. Try clearing them."
-                : "Run your first research to see it here."}
-            </p>
-            <Link href="/" className="btn btn-primary">
-              Start Research
-            </Link>
-          </div>
-        ) : (
-          <div className="history-list">
-            {runs.map((run) => (
-              <Link
-                key={run.id}
-                href={`/research/${run.id}`}
-                className="history-item"
-              >
-                <div className="history-item-main">
-                  <div className={`history-item-status status-${run.status}`}>
-                    {run.status === "completed" ? "✓" : run.status === "failed" ? "✗" : "●"}
-                  </div>
-                  <div className="history-item-content">
-                    <h3 className="history-item-query">{run.query}</h3>
-                    <div className="history-item-meta">
-                      <span>{new Date(run.createdAt).toLocaleString()}</span>
-                      <span>·</span>
-                      <span>
-                        {run.durationMs < 1000
-                          ? run.durationMs + "ms"
-                          : (run.durationMs / 1000).toFixed(1) + "s"}
-                      </span>
-                      <span>·</span>
-                      <span>{run.provider} / {run.model}</span>
+        {/* Bulk action bar */}
+        {selectMode && selectedCount > 0 && (
+          <div className="history-bulk-bar">
+            <div className="history-bulk-left">
+              <label className="history-bulk-select-all">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                  onChange={toggleSelectAll}
+                />
+                <span>
+                  {selectedCount} selected
+                  {selectedCount === runs.length && runs.length < totalRuns && " (on this page)"}
+                </span>
+              </label>
+            </div>
+            <div className="history-bulk-actions">
+              <div className="history-bulk-folder-menu">
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setShowMoveFolderMenu(!showMoveFolderMenu)}
+                  disabled={bulkActionLoading}
+                >
+                  📁 Move to folder
+                  {showMoveFolderMenu && (
+                    <div className="history-folder-dropdown">
+                      {folders.length === 0 ? (
+                        <div className="history-folder-dropdown-empty">No folders yet</div>
+                      ) : (
+                        folders.map((f) => (
+                          <button
+                            key={f.id}
+                            className="history-folder-dropdown-item"
+                            onClick={() => handleBulkMoveToFolder(f.id)}
+                          >
+                            {f.name}
+                          </button>
+                        ))
+                      )}
                     </div>
-                    {run.keywords && run.keywords.length > 0 && (
-                      <div className="history-item-keywords">
-                        {run.keywords.slice(0, 5).map((kw) => (
-                          <span key={kw} className="history-kw-tag">{kw}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="history-item-arrow">→</div>
-              </Link>
-            ))}
+                  )}
+                </button>
+              </div>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={() => handleBulkExport("json")}
+                disabled={bulkActionLoading}
+              >
+                📤 Export
+              </button>
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={handleBulkDelete}
+                disabled={bulkActionLoading}
+              >
+                🗑 Delete
+              </button>
+            </div>
           </div>
         )}
+
+        {loading ? (
+          <div className="history-list">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <HistoryItemSkeleton key={i} />
+            ))}
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="history-empty">
+            <div className="history-empty-icon">{searchQuery || statusFilter !== "all" || starredOnly ? "🔍" : "📋"}</div>
+            <h3>{searchQuery || statusFilter !== "all" || starredOnly ? "No results found" : "No research yet"}</h3>
+            <p className="history-empty-desc">
+              {searchQuery || statusFilter !== "all" || starredOnly
+                ? "Try adjusting your search terms or clearing the filters."
+                : "Run your first research to start building insights — it only takes a minute."}
+            </p>
+            <div className="history-empty-actions">
+              {(searchQuery || statusFilter !== "all" || starredOnly) ? (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => { setSearchQuery(""); setStatusFilter("all"); setStarredOnly(false); setSelectedTag(null); }}
+                  >
+                    Clear all filters
+                  </button>
+                  <Link href="/" className="btn btn-primary">
+                    New Research
+                  </Link>
+                </>
+              ) : (
+                <Link href="/" className="btn btn-primary">
+                  Start your first research
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : (<>
+          <div className="history-list">
+            {runs.map((run) => (
+              <div
+                key={run.id}
+                className={`history-item ${selectMode ? "selectable" : ""} ${selectedIds.has(run.id) ? "selected" : ""}`}
+                onClick={() => {
+                  if (selectMode) {
+                    toggleSelectOne(run.id);
+                  }
+                }}
+              >
+                {selectMode && (
+                  <div className="history-item-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(run.id)}
+                      onChange={() => toggleSelectOne(run.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                )}
+                {!selectMode ? (
+                  <Link
+                    href={`/research/${run.id}`}
+                    className="history-item-main-link"
+                  >
+                    <div className="history-item-main">
+                      <div className={`history-item-status status-${run.status}`}>
+                        {run.status === "completed" ? "[ok]" : run.status === "failed" ? "[x]" : "[...]"}
+                      </div>
+                      <div className="history-item-content">
+                        <h3 className="history-item-query">
+                      {starredIds.has(run.id) && (
+                        <span className="history-item-star" title="Starred">★</span>
+                      )}
+                      {run.query}
+                    </h3>
+                        <div className="history-item-meta">
+                          <span>{new Date(run.createdAt).toLocaleString()}</span>
+                          <span>·</span>
+                          <span>
+                            {run.durationMs < 1000
+                              ? run.durationMs + "ms"
+                              : (run.durationMs / 1000).toFixed(1) + "s"}
+                          </span>
+                          <span>·</span>
+                          <span>{run.provider} / {run.model}</span>
+                        </div>
+                        {(() => {
+                          const runTagIds = getRunTags(run.id);
+                          const runTags = getTagDetails(runTagIds);
+                          if (runTags.length === 0) return null;
+                          return (
+                            <div className="history-item-tags">
+                              {runTags.slice(0, 3).map((tag) => (
+                                <span
+                                  key={tag.id}
+                                  className="history-item-tag"
+                                  style={{
+                                    background: tag.color + "20",
+                                    color: tag.color,
+                                    borderColor: tag.color + "40",
+                                  }}
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                              {runTags.length > 3 && (
+                                <span className="history-item-tag-more">
+                                  +{runTags.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {run.keywords && run.keywords.length > 0 && (
+                          <div className="history-item-keywords">
+                            {run.keywords.slice(0, 5).map((kw) => (
+                              <span key={kw} className="history-kw-tag">{kw}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="history-item-arrow">→</div>
+                  </Link>
+                ) : (
+                  <div className="history-item-main">
+                    <div className={`history-item-status status-${run.status}`}>
+                      {run.status === "completed" ? "✓" : run.status === "failed" ? "✕" : "○"}
+                    </div>
+                    <div className="history-item-content">
+                      <h3 className="history-item-query">{run.query}</h3>
+                      <div className="history-item-meta">
+                        <span>{new Date(run.createdAt).toLocaleString()}</span>
+                        <span>·</span>
+                        <span>
+                          {run.durationMs < 1000
+                            ? run.durationMs + "ms"
+                            : (run.durationMs / 1000).toFixed(1) + "s"}
+                        </span>
+                        <span>·</span>
+                        <span>{run.provider} / {run.model}</span>
+                      </div>
+                      {run.keywords && run.keywords.length > 0 && (
+                        <div className="history-item-keywords">
+                          {run.keywords.slice(0, 5).map((kw) => (
+                            <span key={kw} className="history-kw-tag">{kw}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="history-pagination">
+              <button
+                type="button"
+                className="history-page-btn"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+              >
+                {"<"} Prev
+              </button>
+              <span className="history-page-info">
+                Page {page} of {totalPages}
+                <span className="history-page-total">({totalRuns} total)</span>
+              </span>
+              <button
+                type="button"
+                className="history-page-btn"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+              >
+                Next {">"}
+              </button>
+            </div>
+          )}
+        </>)}
       </div>
     </div>
   );
 }
+
+
+

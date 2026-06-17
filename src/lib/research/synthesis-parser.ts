@@ -41,6 +41,38 @@ export interface SynthesisOutput {
 }
 
 /**
+ * Compute which sections cite which sources.
+ * Returns a map of source index -> array of section names.
+ */
+export function computeSourceCitationMap(
+  synthesis: SynthesisOutput
+): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  const sections: { name: string; text: string }[] = [
+    { name: "Executive Summary", text: synthesis.execSummary || "" },
+    { name: "Key Insights", text: (synthesis.keyInsights || []).map((k) => k.insight).join(" ") },
+    { name: "Opportunities", text: (synthesis.topThreeOpportunities || []).map((o) => o.description + " " + o.rationale).join(" ") },
+    { name: "Risks", text: (synthesis.topThreeRisks || []).map((r) => r.description + " " + r.mitigation).join(" ") },
+    { name: "Next Step", text: synthesis.recommendedNextStep || "" },
+  ];
+
+  for (const section of sections) {
+    const cited = new Set<number>();
+    const regex = /\[(\d+)\]/g;
+    let match;
+    while ((match = regex.exec(section.text)) !== null) {
+      cited.add(parseInt(match[1], 10) - 1);
+    }
+    for (const idx of cited) {
+      if (!map.has(idx)) map.set(idx, []);
+      map.get(idx)!.push(section.name);
+    }
+  }
+
+  return map;
+}
+
+/**
  * Try to parse a JSON synthesis output.
  * Handles common edge cases like markdown-wrapped JSON.
  */

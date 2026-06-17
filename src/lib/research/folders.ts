@@ -191,6 +191,50 @@ export function getTotalFolderRuns(): number {
  * Bulk import folders. System folders preserved.
  * Returns count of imported folders.
  */
+
+/**
+ * Add multiple runs to a folder. Returns number of newly added runs.
+ */
+export function bulkAddRunsToFolder(folderId: string, runIds: string[]): number {
+  const folders = readFolders();
+  const folder = folders.find((f) => f.id === folderId);
+  if (!folder) return 0;
+
+  let added = 0;
+  for (const runId of runIds) {
+    if (!folder.runIds.includes(runId)) {
+      folder.runIds.push(runId);
+      added++;
+    }
+  }
+
+  if (added > 0) {
+    folder.updatedAt = Date.now();
+    writeFolders(folders);
+  }
+
+  return added;
+}
+
+/**
+ * Remove multiple runs from a folder. Returns number of removed runs.
+ */
+export function bulkRemoveRunsFromFolder(folderId: string, runIds: string[]): number {
+  const folders = readFolders();
+  const folder = folders.find((f) => f.id === folderId);
+  if (!folder) return 0;
+
+  const before = folder.runIds.length;
+  folder.runIds = folder.runIds.filter((id) => !runIds.includes(id));
+  const removed = before - folder.runIds.length;
+
+  if (removed > 0) {
+    folder.updatedAt = Date.now();
+    writeFolders(folders);
+  }
+
+  return removed;
+}
 export function bulkImportFolders(
   folders: ResearchFolder[],
   strategy: "merge" | "overwrite" = "merge",

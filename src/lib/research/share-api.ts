@@ -58,6 +58,30 @@ export async function copyShareUrl(
 }
 
 /**
+ * Create a share token with options. Returns the share data or null on failure.
+ */
+export async function createShareWithOptions(
+  runId: string,
+  options: { expiresInMs?: number; maxViews?: number } = {},
+): Promise<{ token: string; expiresAt?: number; maxViews?: number; createdAt: number } | null> {
+  try {
+    const res = await fetch(SHARE_API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runId,
+        ...options,
+      }),
+    });
+
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Revoke a share token.
  */
 export async function revokeShare(token: string): Promise<boolean> {

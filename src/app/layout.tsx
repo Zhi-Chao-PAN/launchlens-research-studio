@@ -3,6 +3,11 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { WebVitalsReporter } from "@/components/perf/WebVitalsReporter";
 import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
+import { CommandPaletteProvider } from "@/components/command-palette/CommandPaletteContext";
+import { CommandPalette } from "@/components/command-palette/CommandPalette";
+import { GlobalCommands } from "@/components/command-palette/GlobalCommands";
+import { ToastProvider } from "@/components/toast/ToastContext";
+import { NetworkStatus } from "@/components/ui/NetworkStatus";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
