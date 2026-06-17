@@ -1,4 +1,4 @@
-import { describe, beforeEach, it, expect } from "vitest";
+﻿import { describe, beforeEach, it, expect } from "vitest";
 import {
   createShareToken,
   getShareToken,
@@ -6,6 +6,21 @@ import {
   revokeShareToken,
   getSharesForRun,
   getShareStats,
+  createFolderShareToken,
+  getFolderShareToken,
+  getSharesForFolder,
+  revokeSharesForFolder,
+  createPasswordShareToken,
+  verifyPasswordShare,
+  getPasswordProtectedRun,
+  hashSharePassword,
+  updateShareMetadata,
+  getShareMetadata,
+  revokeSharesForRun,
+  revokeExpiredShares,
+  revokeAllShares,
+  getDetailedShareStats,
+  _resetShareTokens,
 } from "@/lib/research/share-tokens";
 import { saveResearchRun } from "@/lib/research/storage";
 
@@ -109,5 +124,251 @@ describe("share tokens", () => {
   it("expired share returns null", () => {
     const share = createShareToken("share-test-1", { expiresInMs: -1000 }); // already expired
     expect(getShareToken(share.token)).toBeNull();
+  });
+});
+
+describe("folder share tokens", () => {
+  beforeEach(() => {
+    _resetShareTokens();
+  });
+
+  it("creates a folder share token", () => {
+    const share = createFolderShareToken("folder-123");
+    expect(share.token).toBeTruthy();
+    expect(share.type).toBe("folder");
+    expect(share.folderId).toBe("folder-123");
+    expect(share.includeNotes).toBe(true);
+    expect(share.revoked).toBe(false);
+  });
+
+  it("creates folder share with options", () => {
+    const share = createFolderShareToken("folder-123", {
+      expiresInMs: 3600000,
+      maxViews: 10,
+      includeNotes: false,
+      name: "My Shared Folder",
+      description: "Research results",
+    });
+    expect(share.expiresAt).toBeGreaterThan(Date.now());
+    expect(share.maxViews).toBe(10);
+    expect(share.includeNotes).toBe(false);
+  });
+
+  it("retrieves folder share by token", () => {
+    const created = createFolderShareToken("f1");
+    const retrieved = getFolderShareToken(created.token);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved?.folderId).toBe("f1");
+    expect(retrieved?.type).toBe("folder");
+  });
+
+  it("returns null for regular run share via getFolderShareToken", () => {
+    const runShare = createShareToken("run-1");
+    expect(getFolderShareToken(runShare.token)).toBeNull();
+  });
+
+  it("gets all shares for a folder", () => {
+    createFolderShareToken("f1");
+    createFolderShareToken("f1");
+    createFolderShareToken("f2");
+    const shares = getSharesForFolder("f1");
+    expect(shares.length).toBe(2);
+    expect(shares.every((s) => (s as { folderId: string }).folderId === "f1")).toBe(true);
+  });
+
+  it("revokes all shares for a folder", () => {
+    createFolderShareToken("f1");
+    createFolderShareToken("f1");
+    createFolderShareToken("f2");
+
+    const revoked = revokeSharesForFolder("f1");
+    expect(revoked).toBe(2);
+
+    const remaining = getSharesForFolder("f1");
+    expect(remaining.every((s) => s.revoked)).toBe(true);
+
+    const f2Shares = getSharesForFolder("f2");
+    expect(f2Shares.every((s) => !s.revoked)).toBe(true);
+  });
+});
+
+describe("password-protected shares", () => {
+  beforeEach(() => {
+    _resetShareTokens();
+    saveResearchRun({
+      id: "pw-share-run",
+      query: "password test",
+      keywords: ["test"],
+      result: "secret result",
+      provider: "mock",
+      model: "test",
+      createdAt: 1000,
+      durationMs: 500,
+      status: "completed",
+    });
+  });
+
+  it("hashes passwords consistently", () => {
+    const h1 = hashSharePassword("mysecret");
+    const h2 = hashSharePassword("mysecret");
+    expect(h1).toBe(h2);
+    expect(h1.length).toBe(64);
+  });
+
+  it("different passwords have different hashes", () => {
+    expect(hashSharePassword("pass1")).not.toBe(hashSharePassword("pass2"));
+  });
+
+  it("creates a password-protected share", () => {
+    const share = createPasswordShareToken("pw-share-run", "secret123");
+    expect(share.token).toBeTruthy();
+    expect((share as any).passwordHash).toBeTruthy();
+    expect((share as any).passwordHash).toBe(hashSharePassword("secret123"));
+  });
+
+  it("verifies correct password", () => {
+    const share = createPasswordShareToken("pw-share-run", "mypassword");
+    const verified = verifyPasswordShare(share.token, "mypassword");
+    expect(verified).not.toBeNull();
+    expect(verified?.token).toBe(share.token);
+  });
+
+  it("rejects wrong password", () => {
+    const share = createPasswordShareToken("pw-share-run", "correct");
+    expect(verifyPasswordShare(share.token, "wrong")).toBeNull();
+  });
+
+  it("non-password share passes verification with any password", () => {
+    const share = createShareToken("pw-share-run");
+    const verified = verifyPasswordShare(share.token, "anything");
+    expect(verified).not.toBeNull();
+  });
+
+  it("gets shared run with correct password and increments views", () => {
+    const share = createPasswordShareToken("pw-share-run", "letmein");
+    const result = getPasswordProtectedRun(share.token, "letmein");
+    expect(result).not.toBeNull();
+    expect(result?.run.id).toBe("pw-share-run");
+    expect(result?.share.views).toBe(1);
+  });
+
+  it("rejects shared run with wrong password", () => {
+    const share = createPasswordShareToken("pw-share-run", "letmein");
+    const result = getPasswordProtectedRun(share.token, "wrongpass");
+    expect(result).toBeNull();
+  });
+});
+
+describe("share metadata", () => {
+  beforeEach(() => {
+    _resetShareTokens();
+  });
+
+  it("updates share name and description", () => {
+    const share = createShareToken("run-1");
+    const updated = updateShareMetadata(share.token, {
+      name: "Q3 Market Analysis",
+      description: "Full research report on Q3 trends",
+    });
+    expect(updated).not.toBeNull();
+
+    const meta = getShareMetadata(updated!);
+    expect(meta.name).toBe("Q3 Market Analysis");
+    expect(meta.description).toBe("Full research report on Q3 trends");
+  });
+
+  it("returns empty strings for shares without metadata", () => {
+    const share = createShareToken("run-1");
+    const meta = getShareMetadata(share);
+    expect(meta.name).toBe("");
+    expect(meta.description).toBe("");
+  });
+
+  it("returns null for updating non-existent share", () => {
+    expect(updateShareMetadata("nonexistent", { name: "x" })).toBeNull();
+  });
+});
+
+describe("bulk operations", () => {
+  beforeEach(() => {
+    _resetShareTokens();
+  });
+
+  it("revokes all shares for a run", () => {
+    createShareToken("run-a");
+    createShareToken("run-a");
+    createShareToken("run-b");
+
+    const revoked = revokeSharesForRun("run-a");
+    expect(revoked).toBe(2);
+  });
+
+  it("revokes expired shares only", () => {
+    createShareToken("run-1", { expiresInMs: 3600000 });
+    createShareToken("run-2", { expiresInMs: -1000 });
+
+    const revoked = revokeExpiredShares();
+    expect(revoked).toBe(1);
+  });
+
+  it("revokes all shares", () => {
+    createShareToken("r1");
+    createShareToken("r2");
+    createFolderShareToken("f1");
+
+    const revoked = revokeAllShares();
+    expect(revoked).toBe(3);
+  });
+});
+
+describe("detailed share stats", () => {
+  beforeEach(() => {
+    _resetShareTokens();
+  });
+
+  it("returns zeroed stats when no shares exist", () => {
+    const stats = getDetailedShareStats();
+    expect(stats.total).toBe(0);
+    expect(stats.active).toBe(0);
+    expect(stats.revoked).toBe(0);
+    expect(stats.expired).toBe(0);
+    expect(stats.runShares).toBe(0);
+    expect(stats.folderShares).toBe(0);
+    expect(stats.passwordProtected).toBe(0);
+  });
+
+  it("counts different share types correctly", () => {
+    createShareToken("run-1");
+    createShareToken("run-2");
+    createFolderShareToken("f1");
+
+    const stats = getDetailedShareStats();
+    expect(stats.total).toBe(3);
+    expect(stats.active).toBe(3);
+    expect(stats.runShares).toBe(2);
+    expect(stats.folderShares).toBe(1);
+    expect(stats.passwordProtected).toBe(0);
+  });
+
+  it("counts revoked and expired shares", () => {
+    createShareToken("run-1");
+    createShareToken("run-2", { expiresInMs: -1000 });
+    createShareToken("run-3");
+    revokeSharesForRun("run-3");
+
+    const stats = getDetailedShareStats();
+    expect(stats.total).toBe(3);
+    expect(stats.active).toBe(1);
+    expect(stats.expired).toBe(1);
+    expect(stats.revoked).toBe(1);
+  });
+
+  it("counts password-protected shares", () => {
+    createPasswordShareToken("run-1", "pass1");
+    createShareToken("run-2");
+
+    const stats = getDetailedShareStats();
+    expect(stats.passwordProtected).toBe(1);
+    expect(stats.runShares).toBe(2);
   });
 });
