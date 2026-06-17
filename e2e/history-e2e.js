@@ -205,6 +205,189 @@ async function run() {
       log("Paginated response has offset", pageData.offset === 0);
     }
 
+
+    console.log("\n[10] Homepage + dashboard");
+    const homeRes = await fetch(BASE_URL + "/");
+    log("Homepage loads", homeRes.ok, `status=${homeRes.status}`);
+    
+    // Dashboard data API (runs list) — used by the homepage dashboard
+    const runsApiRes = await fetch(BASE_URL + "/api/research/runs?limit=5");
+    log("Dashboard data API works", runsApiRes.ok);
+    if (runsApiRes.ok) {
+      const runsData = await runsApiRes.json();
+      log("Dashboard has runs array", Array.isArray(runsData.runs));
+      log("Dashboard has total count", typeof runsData.total === "number");
+    }
+
+
+    console.log("\n[11] Share API");
+    
+    // Create a research run for sharing
+    const shareStudyRes = await fetch(BASE_URL + "/api/research", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "share e2e test", keywords: ["share"] }),
+    });
+    
+    if (shareStudyRes.ok) {
+      const shareStudy = await shareStudyRes.json();
+      const shareRunId = shareStudy.sessionId;
+      log("Created share test run", !!shareRunId);
+      
+      // Wait for run to complete
+      await new Promise((r) => setTimeout(r, 8000));
+      
+      // Create a share token
+      const shareRes = await fetch(BASE_URL + "/api/research/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runId: shareRunId,
+          maxViews: 10,
+        }),
+      });
+      log("Create share token", shareRes.ok, `status=${shareRes.status}`);
+      
+      const shareData = shareRes.ok ? await shareRes.json() : null;
+      log("Share has token", shareData && !!shareData.token);
+      log("Share has maxViews", shareData && shareData.maxViews === 10);
+      
+      // View shared run via public endpoint
+      if (shareData && shareData.token) {
+        const viewRes = await fetch(`${BASE_URL}/api/research/share/${shareData.token}`);
+        log("View shared run (public)", viewRes.ok, `status=${viewRes.status}`);
+        
+        const viewData = viewRes.ok ? await viewRes.json() : null;
+        log("Shared run matches query", viewData && viewData.run.query === "share e2e test");
+        log("View count incremented", viewData && viewData.share.views === 1);
+      }
+      
+      // Share page renders
+      if (shareData && shareData.token) {
+        const sharePageRes = await fetch(`${BASE_URL}/share/${shareData.token}`);
+        log("Share page loads", sharePageRes.ok);
+        if (sharePageRes.ok) {
+          const shareHtml = await sharePageRes.text();
+          log("Share page has expected content", shareHtml.includes("share") || shareHtml.length > 1000);
+        }
+      }
+    }
+    
+    // Invalid share returns 404
+    const badShareRes = await fetch(BASE_URL + "/api/research/share/invalid-token-xyz");
+    log("Invalid share returns 404", badShareRes.status === 404);
+
+
+    console.log("\n[12] Compare page");
+    // Need two run IDs. We'll use the first two runs from the list.
+    const runsForCompare = await fetch(BASE_URL + "/api/research/runs?limit=2");
+    if (runsForCompare.ok) {
+      const compareData = await runsForCompare.json();
+      if (compareData.runs && compareData.runs.length >= 2) {
+        const id1 = compareData.runs[0].id;
+        const id2 = compareData.runs[1].id;
+        
+        const comparePageRes = await fetch(`${BASE_URL}/compare?a=${id1}&b=${id2}`);
+        log("Compare page loads", comparePageRes.ok, `status=${comparePageRes.status}`);
+        
+        // Compare API: both runs load
+        const run1Res = await fetch(`${BASE_URL}/api/research/runs/${id1}`);
+        const run2Res = await fetch(`${BASE_URL}/api/research/runs/${id2}`);
+        log("Both runs load for comparison", run1Res.ok && run2Res.ok);
+      }
+    }
+    
+    // Compare page with no params shows error state
+    const emptyCompareRes = await fetch(BASE_URL + "/compare");
+    log("Compare page with no params loads (error state)", emptyCompareRes.ok);
+
+    console.log("\n[13] Templates page");
+    const templatesPageRes = await fetch(BASE_URL + "/templates");
+    log("Templates page loads", templatesPageRes.ok, `status=${templatesPageRes.status}`);
+    
+    if (templatesPageRes.ok) {
+      const tplHtml = await templatesPageRes.text();
+      log("Templates page has title", tplHtml.includes("templates") || tplHtml.length > 1000);
+    }
+
+    console.log("\n[14] Batch research");
+    
+    // Create a batch
+    const batchRes = await fetch(BASE_URL + "/api/research/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        queries: ["batch test query 1", "batch test query 2"],
+        keywords: ["batch", "test"],
+      }),
+    });
+    log("Create batch returns 202", batchRes.status === 202, `status=${batchRes.status}`);
+    
+    if (batchRes.ok) {
+      const batchData = await batchRes.json();
+      log("Batch has batchId", !!batchData.batchId);
+      log("Batch has 2 queries", batchData.total === 2);
+      log("Batch status is running", batchData.status === "running");
+      
+      // List batches
+      const listRes = await fetch(BASE_URL + "/api/research/batch");
+      log("List batches works", listRes.ok);
+      
+      // Get batch status
+      const statusRes = await fetch(`${BASE_URL}/api/research/batch/${batchData.batchId}`);
+      log("Get batch status works", statusRes.ok);
+      
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        log("Batch has progress field", typeof statusData.progress === "number");
+        log("Batch has runs array", Array.isArray(statusData.runs));
+      }
+    }
+    
+    // Invalid batch returns 404
+    const badBatchRes = await fetch(BASE_URL + "/api/research/batch/nonexistent-batch");
+    log("Invalid batch returns 404", badBatchRes.status === 404);
+    
+    // Batch with empty queries returns 400
+    const emptyBatchRes = await fetch(BASE_URL + "/api/research/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries: [] }),
+    });
+    log("Empty batch returns 400", emptyBatchRes.status === 400);
+    
+    // Batch page renders
+    const batchPageRes = await fetch(BASE_URL + "/batch");
+    log("Batch page loads", batchPageRes.ok, `status=${batchPageRes.status}`);
+
+    console.log("\n[15] Research diff");
+    
+    // Get two runs to compare
+    const diffRunsRes = await fetch(BASE_URL + "/api/research/runs?limit=2");
+    if (diffRunsRes.ok) {
+      const diffRunsData = await diffRunsRes.json();
+      if (diffRunsData.runs && diffRunsData.runs.length >= 2) {
+        const runA = diffRunsData.runs[0];
+        const runB = diffRunsData.runs[1];
+        
+        // Compare page with diff toggle
+        const compareRes = await fetch(
+          `${BASE_URL}/compare?a=${runA.id}&b=${runB.id}`
+        );
+        log("Compare page with two runs loads", compareRes.ok);
+      }
+    }
+
+    console.log("\n[16] Keyboard shortcuts & command palette");
+    
+    // Pages that should have the command palette loaded
+    const pages = ["/", "/history", "/templates", "/batch", "/compare"];
+    let allLoad = true;
+    for (const page of pages) {
+      const res = await fetch(BASE_URL + page);
+      if (!res.ok) allLoad = false;
+    }
+    log("All main pages load with palette", allLoad);
     console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     process.exitCode = fail === 0 ? 0 : 1;

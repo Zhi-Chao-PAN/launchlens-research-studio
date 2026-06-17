@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
-import { buildShareUrl, copyShareUrl } from "@/lib/research/share";
+import { buildShareUrl, copyShareUrl } from "@/lib/research/share-api";
 
 interface ShareButtonProps {
   sessionId: string;
@@ -47,8 +47,9 @@ export function ShareButton({ sessionId, size = "md", variant = "secondary", lab
       className={`${sizeClass} ${variantClass} font-medium rounded-lg transition-colors flex items-center gap-1.5`}
       aria-label={label}
     >
-      <span aria-hidden>{copied ? "✅" : "🔗"}</span>
+      <span aria-hidden>{copied ? "?" : "??"}</span>
       <span>{copied ? "Link copied!" : label}</span>
     </button>
   );
 }
+

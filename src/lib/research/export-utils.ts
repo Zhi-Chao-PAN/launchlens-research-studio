@@ -1,0 +1,231 @@
+/**
+ * Export utilities for research results.
+ * Supports: Markdown, structured JSON, and plain text.
+ */
+
+import type { SynthesisOutput } from "./synthesis-parser";
+import type { ResearchRun } from "./storage";
+
+// Convert synthesis to Markdown
+export function synthesisToMarkdown(syn: SynthesisOutput, metadata?: {
+  query?: string;
+  keywords?: string[];
+  runId?: string;
+  agent?: string;
+  createdAt?: number;
+  sources?: Array<{ title: string; url: string; snippet?: string }>;
+}): string {
+  const lines: string[] = [];
+
+  // Title
+  lines.push("# 研究报告");
+  lines.push("");
+  lines.push("> 研究问题: " + (metadata?.query || "未知"));
+  lines.push("");
+
+  // Metadata
+  if (metadata?.keywords?.length) {
+    lines.push("**关键词:** " + metadata.keywords.join(", "));
+    lines.push("");
+  }
+  if (metadata?.agent) {
+    lines.push("**研究风格:** " + metadata.agent);
+    lines.push("");
+  }
+  if (metadata?.createdAt) {
+    const date = new Date(metadata.createdAt).toLocaleString("zh-CN");
+    lines.push("**生成时间:** " + date);
+    lines.push("");
+  }
+  if (metadata?.runId) {
+    lines.push("**报告 ID:** `" + metadata.runId + "`");
+    lines.push("");
+  }
+
+  // Executive summary
+  lines.push("## 执行摘要");
+  lines.push("");
+  lines.push(syn.execSummary);
+  lines.push("");
+
+  // Scores
+  lines.push("## 评估指数");
+  lines.push("");
+  lines.push("- **机遇指数:** " + syn.opportunityScore + "/100");
+  lines.push("- **风险指数:** " + syn.riskScore + "/100");
+  lines.push("");
+
+  // Key insights
+  lines.push("## 核心洞察");
+  lines.push("");
+  for (const insight of syn.keyInsights) {
+    const confidence = insight.confidence === "high" ? "高" : insight.confidence === "medium" ? "中" : "低";
+    lines.push("### " + insight.insight);
+    lines.push("置信度: " + confidence);
+    lines.push("");
+  }
+
+  // Opportunities
+  lines.push("## 三大机遇");
+  lines.push("");
+  for (let i = 0; i < syn.topThreeOpportunities.length; i++) {
+    const opp = syn.topThreeOpportunities[i];
+    lines.push("### " + (i + 1) + ". " + opp.title);
+    lines.push("");
+    lines.push(opp.description);
+    lines.push("");
+    lines.push("> **理由:** " + opp.rationale);
+    lines.push("");
+  }
+
+  // Risks
+  lines.push("## 三大风险");
+  lines.push("");
+  for (let i = 0; i < syn.topThreeRisks.length; i++) {
+    const risk = syn.topThreeRisks[i];
+    lines.push("### " + (i + 1) + ". " + risk.title);
+    lines.push("");
+    lines.push(risk.description);
+    lines.push("");
+    lines.push("> **缓解建议:** " + risk.mitigation);
+    lines.push("");
+  }
+
+  // Next step
+  lines.push("## 建议下一步");
+  lines.push("");
+  lines.push("> " + syn.recommendedNextStep);
+  lines.push("");
+
+  // LaunchLens brief
+  if (syn.launchlensBrief) {
+    lines.push("## LaunchLens 简报");
+    lines.push("");
+    lines.push(syn.launchlensBrief);
+    lines.push("");
+  }
+
+  // Sources
+  if (metadata?.sources?.length) {
+    lines.push("## 参考来源");
+    lines.push("");
+    for (let i = 0; i < metadata.sources.length; i++) {
+      const src = metadata.sources[i];
+      lines.push((i + 1) + ". [" + src.title + "](" + src.url + ")");
+      if (src.snippet) {
+        lines.push("   > " + src.snippet.slice(0, 150) + "...");
+      }
+    }
+    lines.push("");
+  }
+
+  // Footer
+  lines.push("---");
+  lines.push("");
+  lines.push("*由 LaunchLens Research Studio 生成*");
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+// Convert research run to structured JSON
+export function runToStructuredJSON(run: ResearchRun, pretty = true): string {
+  const structured = {
+    id: run.id,
+    query: run.query,
+    keywords: run.keywords,
+    status: run.status,
+    createdAt: new Date(run.createdAt).toISOString(),
+    durationSeconds: run.durationMs ? Math.round(run.durationMs / 1000) : null,
+    provider: run.provider || null,
+    model: run.model || null,
+    agent: run.agent || null,
+    result: run.result ? parseAndStructureResult(run.result) : null,
+    sources: (run.sources || []).map((s) => ({
+      title: s.title,
+      url: s.url,
+      snippet: s.snippet || null,
+    })),
+  };
+
+  return pretty ? JSON.stringify(structured, null, 2) : JSON.stringify(structured);
+}
+
+// Helper: parse result and structure it
+function parseAndStructureResult(result: string): unknown {
+  try {
+    const cleaned = result.trim().replace(/^```json\n?/, "").replace(/\n?```$/, "");
+    return JSON.parse(cleaned);
+  } catch {
+    return { raw: result };
+  }
+}
+
+// Generate filename
+export function generateExportFilename(query: string, format: "md" | "json" | "txt"): string {
+  const sanitized = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .slice(0, 50)
+    .replace(/^-+|-+$/g, "");
+
+  const date = new Date().toISOString().slice(0, 10);
+  return (sanitized || "research") + "-" + date + "." + format;
+}
+
+// Download helper (browser-only)
+export function downloadFile(filename: string, content: string, mimeType: string): void {
+  if (typeof window === "undefined") return;
+
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Convenience: export as Markdown
+export function exportAsMarkdown(run: ResearchRun, synthesis: SynthesisOutput): void {
+  const md = synthesisToMarkdown(synthesis, {
+    query: run.query,
+    keywords: run.keywords,
+    runId: run.id,
+    agent: run.agent,
+    createdAt: run.createdAt,
+    sources: run.sources,
+  });
+  const filename = generateExportFilename(run.query, "md");
+  downloadFile(filename, md, "text/markdown");
+}
+
+// Convenience: export as JSON
+export function exportAsJSON(run: ResearchRun): void {
+  const json = runToStructuredJSON(run, true);
+  const filename = generateExportFilename(run.query, "json");
+  downloadFile(filename, json, "application/json");
+}
+
+// Convenience: export as plain text
+export function exportAsText(run: ResearchRun, synthesis: SynthesisOutput): void {
+  const md = synthesisToMarkdown(synthesis, {
+    query: run.query,
+    keywords: run.keywords,
+    runId: run.id,
+    agent: run.agent,
+    createdAt: run.createdAt,
+    sources: run.sources,
+  });
+  // Strip markdown formatting for plain text
+  const txt = md
+    .replace(/^#+\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/^>\s/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  const filename = generateExportFilename(run.query, "txt");
+  downloadFile(filename, txt, "text/plain");
+}

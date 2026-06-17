@@ -1,178 +1,157 @@
 "use client";
 
-/* eslint-disable */
-
-
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { formatDistanceToNow } from "@/lib/utils/date-utils";
+import { FolderSidebar } from "@/components/folders/FolderSidebar";
+import { SiteHeader } from "@/components/layout/SiteHeader";
+import { getFolder } from "@/lib/research/folders";
 
-interface RunSummary {
+interface HistoryRun {
   id: string;
   query: string;
   keywords: string[];
-  status: "completed" | "failed";
-  provider: string;
-  model: string;
+  status: string;
   createdAt: number;
   durationMs: number;
-  hasSources: boolean;
-}
-
-interface StorageInfo {
-  enabled: boolean;
-  inMemoryCount: number;
-  maxMemoryRuns: number;
-}
-
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleString();
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return ms + "ms";
-  if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
-  return Math.floor(ms / 60000) + "m " + Math.floor((ms % 60000) / 1000) + "s";
+  opportunityScore?: number;
+  riskScore?: number;
 }
 
 export default function HistoryPage() {
-  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [totalCount, setTotalCount] = useState(0);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [folderName, setFolderName] = useState<string>("");
 
-  // Debounce search input
-async function loadRuns() {
+  const loadRuns = async () => {
+    setLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set("limit", "20");
-      if (debouncedQuery) params.set("q", debouncedQuery);
-      if (statusFilter) params.set("status", statusFilter);
+      const res = await fetch("/api/research/runs?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        let allRuns = data.runs || [];
 
-      const res = await fetch(`/api/research/runs?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setRuns(data.runs || []);
-      setStorageInfo(data.storage || null);
-      setTotalCount(data.total || 0);
-      setError(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+        if (selectedFolder) {
+          const folder = getFolder(selectedFolder);
+          if (folder) {
+            allRuns = allRuns.filter((r: HistoryRun) =>
+              folder.runIds.includes(r.id),
+            );
+          }
+        }
+
+        setRuns(allRuns);
+      }
+    } catch (e) {
+      console.error("Failed to load runs", e);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    void Promise.resolve().then(loadRuns);
+  }, [selectedFolder]);
 
   useEffect(() => {
-    loadRuns();
-    const interval = setInterval(loadRuns, 15000);
-    return () => clearInterval(interval);
-  }, [debouncedQuery, statusFilter]);
-
-  
+    if (selectedFolder) {
+      const folder = getFolder(selectedFolder);
+      void Promise.resolve().then(() => { setFolderName(folder?.name || ""); })
+    } else {
+      void Promise.resolve().then(() => { setFolderName(""); })
+    }
+  }, [selectedFolder, runs.length]);
 
   return (
     <div className="history-page">
-      <header className="history-header">
-        <div className="history-header-inner">
-          <h1>Research History</h1>
-          <div className="history-header-actions">
-            <Link href="/" className="history-link">Studio</Link>
-            <Link href="/admin" className="history-link">Admin</Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
+      <div className="history-layout">
+        <FolderSidebar
+          selectedFolderId={selectedFolder}
+          onSelectFolder={setSelectedFolder}
+        />
 
-      <main className="history-main">
-        {storageInfo && !storageInfo.enabled && (
-          <div className="history-notice">
-            <strong>Note:</strong> Runs are stored in memory only and will be lost when the server restarts.
-            Set <code>LAUNCHLENS_STORAGE_DIR</code> for persistent storage.
-          </div>
-        )}
-
-        {error && <div className="history-error">{error}</div>}
-
-        <div className="history-search-bar">
-          <input
-            type="text"
-            placeholder="Search runs by query or keyword..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="history-search-input"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="history-filter-select"
-          >
-            <option value="">All statuses</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Failed</option>
-          </select>
-          <a href="/api/research/runs?format=json" className="history-export-link" download>Export JSON</a>
-          <a href="/api/research/runs?format=csv" className="history-export-link" download>Export CSV</a>
-        </div>
-
-        {loading && !runs.length && (
-          <p className="history-empty">Loading...</p>
-        )}
-
-        {!loading && runs.length === 0 && (
-          <p className="history-empty">
-            {searchQuery || statusFilter ? "No matching runs." : "No research runs yet."}
-            {" "}
-            <Link href="/">Go run one!</Link>
-          </p>
-        )}
-
-        <div className="history-list">
-          {runs.map((run) => (
-            <Link
-              key={run.id}
-              href={`/research/${run.id}`}
-              className="history-card"
-            >
-              <div className="history-card-header">
-                <span className={`history-status history-status-${run.status}`}>
-                  {run.status}
-                </span>
-                <span className="history-provider">{run.provider} / {run.model}</span>
-              </div>
-              <h3 className="history-query">{run.query}</h3>
-              {run.keywords.length > 0 && (
-                <div className="history-keywords">
-                  {run.keywords.slice(0, 5).map((kw) => (
-                    <span key={kw} className="history-keyword">{kw}</span>
-                  ))}
-                  {run.keywords.length > 5 && (
-                    <span className="history-keyword-more">+{run.keywords.length - 5} more</span>
-                  )}
-                </div>
-              )}
-              <div className="history-meta">
-                <span className="history-time">{formatTime(run.createdAt)}</span>
-                <span className="history-duration">{formatDuration(run.durationMs)}</span>
-              </div>
+        <div className="history-content">
+          <header className="history-header">
+            <div>
+              <h1 className="history-title">
+                {selectedFolder ? folderName : "Research History"}
+              </h1>
+              <p className="history-subtitle">
+                {selectedFolder
+                  ? "Research in this folder"
+                  : "All research records"}
+                {runs.length > 0 && (
+                  <>
+                    {" "}
+                    <span className="history-count">{runs.length} results</span>
+                  </>
+                )}
+              </p>
+            </div>
+            <Link href="/" className="btn btn-primary">
+              + New Research
             </Link>
-          ))}
-        </div>
+          </header>
 
-        <p className="history-footer-note">
-          Showing {runs.length} of {totalCount} matching runs
-          {storageInfo ? ` (max ${storageInfo.maxMemoryRuns} in memory)` : ""}.
-        </p>
-      </main>
+          {loading ? (
+            <div className="history-loading">Loading...</div>
+          ) : runs.length === 0 ? (
+            <div className="history-empty">
+              <div className="history-empty-icon">📭</div>
+              <h3>No research yet</h3>
+              <p>
+                {selectedFolder
+                  ? "This folder is empty"
+                  : "Start your first research project"}
+              </p>
+              <Link href="/" className="btn btn-primary">
+                Start Research
+              </Link>
+            </div>
+          ) : (
+            <div className="history-list">
+              {runs.map((run) => (
+                <Link
+                  key={run.id}
+                  href={"/research/" + run.id}
+                  className={"history-item status-" + run.status}
+                >
+                  <div className="history-item-main">
+                    <h3 className="history-item-query">{run.query}</h3>
+                    {run.keywords.length > 0 && (
+                      <div className="history-item-keywords">
+                        {run.keywords.slice(0, 3).map((kw) => (
+                          <span key={kw} className="history-kw-tag">
+                            {kw}
+                          </span>
+                        ))}
+                        {run.keywords.length > 3 && (
+                          <span className="history-kw-more">
+                            +{run.keywords.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="history-item-meta">
+                    <span className="history-status">{run.status}</span>
+                    <span className="history-date">
+                      {formatDistanceToNow(run.createdAt)}
+                    </span>
+                    {run.opportunityScore !== undefined && (
+                      <span className="history-score">
+                        Opportunity {run.opportunityScore}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

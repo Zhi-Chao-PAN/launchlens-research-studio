@@ -30,7 +30,7 @@ function createInitialAgentState(id: AgentId): AgentState {
   };
 }
 
-export function createResearchSession(query: string, keywords: string[]): ResearchSession {
+export function createResearchSession(query: string, keywords: string[], agentId?: string): ResearchSession {
   const id = generateId();
   const now = new Date().toISOString();
 

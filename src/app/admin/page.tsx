@@ -1,4 +1,6 @@
 "use client";
+
+import { SiteHeader } from "@/components/layout/SiteHeader";
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useState, useEffect } from "react";
@@ -55,11 +57,20 @@ export default function AdminPage() {
   const [researchRuns, setResearchRuns] = useState<{ id: string; query: string; keywords: string[]; status: string; provider: string; model: string; createdAt: number; durationMs: number; hasSources: boolean }[]>([]);
   const [researchLoading, setResearchLoading] = useState(true);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{
+    research?: { total: number; completed: number; failed: number; running: number; avgDurationMs: number; today: number; thisWeek: number; successRate: number };
+    shares?: { total: number; active: number; totalViews: number };
+    alerts?: { active: number; critical: number; warning: number };
+    topKeywords?: Array<{ keyword: string; count: number }>;
+    hourlyActivity?: { labels: string[]; values: number[] };
+    storage?: unknown;
+  } | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [researchSearch, setResearchSearch] = useState("");
   const [researchStatusFilter, setResearchStatusFilter] = useState("");
   const [researchTotal, setResearchTotal] = useState(0);
 
-  const [activeTab, setActiveTab] = useState<"tokens" | "audit" | "alerts" | "system" | "research">("tokens");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "tokens" | "audit" | "alerts" | "system" | "research">("dashboard");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string>("");
   const [webhookStats, setWebhookStats] = useState<{ pending: number; maxRetries: number; initialDelayMs: number; maxQueueSize: number } | null>(null);
   const [newLabel, setNewLabel] = useState("");
@@ -266,6 +277,12 @@ export default function AdminPage() {
 
       <nav className="admin-tabs">
         <button
+          className={activeTab === "dashboard" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setActiveTab("dashboard")}
+        >
+          📊 仪表盘
+        </button>
+        <button
           className={activeTab === "tokens" ? "admin-tab active" : "admin-tab"}
           onClick={() => setActiveTab("tokens")}
         >
@@ -297,8 +314,101 @@ export default function AdminPage() {
         </button>
       </nav>
 
+      <SiteHeader />
       <main className="admin-main">
-        {activeTab === "tokens" && (
+        {activeTab === "dashboard" && (
+        <div className="admin-section">
+          <h2 className="admin-section-title">系统概览</h2>
+
+          {statsLoading ? (
+            <p className="admin-loading">加载中...</p>
+          ) : stats ? (
+            <>
+              {/* Stats grid */}
+              <div className="admin-stats-grid">
+                <div className="admin-stat-card">
+                  <div className="admin-stat-label">研究总数</div>
+                  <div className="admin-stat-value">{stats.research?.total ?? 0}</div>
+                  <div className="admin-stat-sub">
+                    今日 {stats.research?.today ?? 0} · 本周 {stats.research?.thisWeek ?? 0}
+                  </div>
+                </div>
+                <div className="admin-stat-card admin-stat-success">
+                  <div className="admin-stat-label">已完成</div>
+                  <div className="admin-stat-value">{stats.research?.completed ?? 0}</div>
+                  <div className="admin-stat-sub">成功率 {stats.research?.successRate ?? 0}%</div>
+                </div>
+                <div className="admin-stat-card admin-stat-danger">
+                  <div className="admin-stat-label">失败</div>
+                  <div className="admin-stat-value">{stats.research?.failed ?? 0}</div>
+                  <div className="admin-stat-sub">运行中 {stats.research?.running ?? 0}</div>
+                </div>
+                <div className="admin-stat-card admin-stat-info">
+                  <div className="admin-stat-label">分享链接</div>
+                  <div className="admin-stat-value">{stats.shares?.total ?? 0}</div>
+                  <div className="admin-stat-sub">
+                    活跃 {stats.shares?.active ?? 0} · {stats.shares?.totalViews ?? 0} 次浏览
+                  </div>
+                </div>
+                <div className="admin-stat-card admin-stat-warning">
+                  <div className="admin-stat-label">活动告警</div>
+                  <div className="admin-stat-value">{stats.alerts?.active ?? 0}</div>
+                  <div className="admin-stat-sub">
+                    严重 {stats.alerts?.critical ?? 0} · 警告 {stats.alerts?.warning ?? 0}
+                  </div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-label">平均耗时</div>
+                  <div className="admin-stat-value">
+                    {stats.research?.avgDurationMs
+                      ? (stats.research.avgDurationMs / 1000).toFixed(1) + "s"
+                      : "—"}
+                  </div>
+                  <div className="admin-stat-sub">基于已完成研究</div>
+                </div>
+              </div>
+
+              {/* Hourly activity chart (bar chart) */}
+              <div className="admin-chart-section">
+                <h3 className="admin-chart-title">24 小时活动趋势</h3>
+                <div className="admin-bar-chart">
+                  {stats.hourlyActivity?.values?.map((val: number, i: number) => (
+                    <div key={i} className="admin-bar-item">
+                      <div className="admin-bar-label">{stats.hourlyActivity?.labels?.[i]}</div>
+                      <div className="admin-bar-track">
+                        <div
+                          className="admin-bar-fill"
+                          style={{
+                            height: `${Math.max(4, (val / Math.max(1, ...(stats.hourlyActivity?.values || []))) * 100)}%`,
+                          }}
+                          title={`${val} 次研究`}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top keywords */}
+              <div className="admin-keywords-section">
+                <h3 className="admin-chart-title">热门关键词 (Top 10)</h3>
+                <div className="admin-keyword-cloud">
+                  {stats.topKeywords?.map((kw: { keyword: string; count: number }) => (
+                    <span key={kw.keyword} className="admin-keyword-tag" title={`${kw.count} 次`}>
+                      {kw.keyword}
+                      <span className="admin-keyword-count">{kw.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="admin-empty">暂无数据</p>
+          )}
+        </div>
+      )}
+
+            {activeTab === "tokens" && (
           <section className="admin-section">
             <h2>Create token</h2>
             <div className="admin-token-create">

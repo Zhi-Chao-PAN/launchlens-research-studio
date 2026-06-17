@@ -415,7 +415,35 @@ async function run() {
     log("Admin endpoint rate limit activates (IP-based)", adminRateLimited);
 
     // ====== Summary ======
-    console.log("\n" + "=".repeat(50));
+  
+  console.log("\n[9] Admin stats & dashboard");
+  
+  // Stats endpoint
+  const statsRes = await fetch(BASE_URL + "/api/admin/stats", {
+    headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+  });
+  log("Admin stats endpoint works", statsRes.ok, `status=${statsRes.status}`);
+  
+  if (statsRes.ok) {
+    const statsData = await statsRes.json();
+    log("Stats has research data", !!statsData.research);
+    log("Stats has shares data", !!statsData.shares);
+    log("Stats has alerts data", !!statsData.alerts);
+    log("Stats has topKeywords", Array.isArray(statsData.topKeywords));
+    log("Stats has hourlyActivity", !!statsData.hourlyActivity);
+    log("Stats has research.total", typeof statsData.research.total === "number");
+    log("Stats has research.successRate", typeof statsData.research.successRate === "number");
+  }
+  
+  // Stats without auth returns 401/403
+  const statsUnauthRes = await fetch(BASE_URL + "/api/admin/stats");
+  log("Stats without auth is denied", statsUnauthRes.status === 401 || statsUnauthRes.status === 403);
+  
+  // Admin page renders
+  const adminPageRes = await fetch(BASE_URL + "/admin");
+  log("Admin page loads", adminPageRes.ok);
+
+  console.log("\n" + "=".repeat(50));
     console.log(`${pass} passed, ${fail} failed`);
     process.exitCode = fail === 0 ? 0 : 1;
   } catch (err) {

@@ -29,6 +29,7 @@ export interface ResearchRun {
   createdAt: number;
   durationMs: number;
   status: "completed" | "failed";
+  agent?: string;
   error?: string;
 }
 
