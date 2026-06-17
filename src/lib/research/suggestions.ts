@@ -250,3 +250,46 @@ export function clusterHistoryByTopic(
 
   return clusters.sort((a, b) => b.size - a.size);
 }
+
+/**
+ * Find research runs similar to a given run based on keyword overlap.
+ * Returns runs sorted by Jaccard similarity (highest first).
+ */
+export function findRelatedRuns(
+  targetRun: { id: string; keywords: string[]; query?: string },
+  allRuns: Array<{ id: string; keywords: string[]; query: string }>,
+  limit = 5,
+): Array<{ run: { id: string; keywords: string[]; query: string }; similarity: number; sharedKeywords: string[] }> {
+  const targetKeywords = new Set(targetRun.keywords.map((k) => k.toLowerCase()));
+  if (targetKeywords.size === 0) return [];
+
+  const results: Array<{ run: typeof allRuns[0]; similarity: number; sharedKeywords: string[] }> = [];
+
+  for (const run of allRuns) {
+    if (run.id === targetRun.id) continue;
+
+    const runKeywords = new Set(run.keywords.map((k) => k.toLowerCase()));
+    if (runKeywords.size === 0) continue;
+
+    const shared = [...targetKeywords].filter((k) => runKeywords.has(k));
+    const union = new Set([...targetKeywords, ...runKeywords]);
+    const similarity = union.size === 0 ? 0 : shared.length / union.size;
+
+    if (similarity > 0) {
+      results.push({
+        run,
+        similarity,
+        sharedKeywords: shared.slice(0, 3),
+      });
+    }
+  }
+
+  return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+}
+
+export default {
+  extractTopics,
+  generateSuggestions,
+  clusterHistoryByTopic,
+  findRelatedRuns,
+};

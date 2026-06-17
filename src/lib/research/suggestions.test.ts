@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractTopics, generateSuggestions, clusterHistoryByTopic } from "./suggestions";
+import { extractTopics, generateSuggestions, clusterHistoryByTopic, findRelatedRuns } from "./suggestions";
 import type { ResearchSuggestion } from "./suggestions";
 
 describe("research suggestions", () => {
@@ -144,5 +144,62 @@ describe("research suggestions", () => {
       const clusters = clusterHistoryByTopic([], 3);
       expect(clusters).toEqual([]);
     });
+  });
+});
+
+describe("findRelatedRuns", () => {
+  const mockRuns = [
+    { id: "1", query: "AI in healthcare", keywords: ["AI", "healthcare", "ML", "diagnostics"] },
+    { id: "2", query: "AI in finance", keywords: ["AI", "finance", "ML", "trading"] },
+    { id: "3", query: "Healthcare tech trends", keywords: ["healthcare", "technology", "telemedicine"] },
+    { id: "4", query: "Blockchain and crypto", keywords: ["blockchain", "crypto", "bitcoin"] },
+    { id: "5", query: "ML in medicine", keywords: ["ML", "medicine", "diagnostics", "AI"] },
+  ];
+
+  it("finds runs with keyword overlap", () => {
+    const target = mockRuns[0]; // AI in healthcare
+    const results = findRelatedRuns(target, mockRuns, 3);
+    expect(results.length).toBeGreaterThan(0);
+    // Run 5 should be most similar (AI, ML, diagnostics)
+    expect(results[0].run.id).toBe("5");
+    expect(results[0].similarity).toBeGreaterThan(0.5);
+  });
+
+  it("excludes the target run from results", () => {
+    const target = mockRuns[0];
+    const results = findRelatedRuns(target, mockRuns);
+    const ids = results.map((r) => r.run.id);
+    expect(ids).not.toContain("1");
+  });
+
+  it("returns empty array for target with no keywords", () => {
+    const target = { id: "x", keywords: [], query: "test" };
+    const results = findRelatedRuns(target, mockRuns);
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty array when no matches found", () => {
+    const target = { id: "x", keywords: ["completely", "unrelated"] };
+    const results = findRelatedRuns(target, mockRuns);
+    expect(results).toEqual([]);
+  });
+
+  it("respects the limit parameter", () => {
+    const target = mockRuns[0];
+    const results = findRelatedRuns(target, mockRuns, 2);
+    expect(results.length).toBeLessThanOrEqual(2);
+  });
+
+  it("is case insensitive", () => {
+    const target = { id: "x", keywords: ["ai", "HEALTHCARE"] };
+    const results = findRelatedRuns(target, mockRuns, 1);
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("includes shared keywords in results", () => {
+    const target = mockRuns[0];
+    const results = findRelatedRuns(target, mockRuns, 1);
+    expect(results[0].sharedKeywords.length).toBeGreaterThan(0);
+    expect(results[0].sharedKeywords.length).toBeLessThanOrEqual(3);
   });
 });

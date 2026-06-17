@@ -10,6 +10,7 @@ import { parseSynthesis } from "@/lib/research/synthesis-parser";
 import { isRunStarred, toggleStar } from "@/lib/research/starred";
 import { listTemplates, createTemplate } from "@/lib/research/templates";
 import { DetailHeaderSkeleton, CardSkeleton } from "@/components/skeleton/Skeleton";
+import { RelatedRuns } from "@/components/related/RelatedRuns";
 
 interface ResearchRun {
   id: string;
@@ -1033,6 +1034,7 @@ async function loadRun() {
               </button>
             </div>
             {showToc && (
+             <>
               <nav className="research-toc-list">
                 {tocItems.map((item) => (
                   <button
@@ -1044,6 +1046,15 @@ async function loadRun() {
                   </button>
                 ))}
               </nav>
+
+             {run && (
+               <RelatedRuns
+                 runId={run.id}
+                 keywords={run.keywords || []}
+                 limit={5}
+               />
+             )}
+             </>
             )}
           </aside>
         )}
