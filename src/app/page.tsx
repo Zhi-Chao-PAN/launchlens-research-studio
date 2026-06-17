@@ -289,6 +289,27 @@ export default function Home() {
             </div>
             <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
 
+            {stats && (
+              <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div className="text-2xl font-bold text-slate-800">{stats.totalRuns}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Total Research</div>
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div className="text-2xl font-bold text-indigo-600">{stats.thisWeekRuns}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">This Week</div>
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div className="text-2xl font-bold text-amber-600">{stats.starredCount}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Starred</div>
+                </div>
+                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div className="text-2xl font-bold text-emerald-600">{stats.templates}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Templates</div>
+                </div>
+              </div>
+            )}
+
             {suggestions.length > 0 && (
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-3">
