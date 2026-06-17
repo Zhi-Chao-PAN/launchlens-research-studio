@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi, beforeAll } from "vitest";
 import {
   getFolders,
   getFolder,
@@ -12,6 +11,15 @@ import {
   getTotalFolderRuns,
   reorderFolders,
   reorderRunsInFolder,
+  getFolderStats,
+  findFoldersByName,
+  folderExists,
+  getEmptyFolders,
+  cleanupEmptyFolders,
+  duplicateFolder,
+  exportFolders,
+  resetFolders,
+  getFoldersByRunCount,
 } from "@/lib/research/folders";
 
 const storage = new Map<string, string>();
@@ -264,3 +272,125 @@ describe("research folders", () => {
     });
   });
 });
+
+
+describe("folder stats (round 136)", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
+  it("getFolderStats computes totals correctly", () => {
+    const f1 = createFolder({ name: "Research" });
+    const f2 = createFolder({ name: "Empty" });
+    addRunToFolder(f1.id, "run-1");
+    addRunToFolder(f1.id, "run-2");
+
+    const stats = getFolderStats();
+    expect(stats.totalFolders).toBeGreaterThanOrEqual(4); // 2 system + 2 custom
+    expect(stats.customFolders).toBe(2);
+    expect(stats.systemFolders).toBe(2);
+    expect(stats.totalRunsOrganized).toBe(2);
+    expect(stats.emptyFolders).toBeGreaterThanOrEqual(1);
+    expect(stats.largestFolder).not.toBeNull();
+    expect(stats.largestFolder!.name).toBe("Research");
+  });
+});
+
+describe("folder search and validation (round 136)", () => {
+  beforeEach(() => storage.clear());
+
+  it("findFoldersByName searches name and description", () => {
+    createFolder({ name: "AI Research", description: "machine learning" });
+    createFolder({ name: "Climate Reports" });
+    const results = findFoldersByName("AI");
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results.some((f) => f.name === "AI Research")).toBe(true);
+  });
+
+  it("findFoldersByName returns all when query empty", () => {
+    createFolder({ name: "A" });
+    expect(findFoldersByName("").length).toBe(getFolders().length);
+  });
+
+  it("folderExists detects duplicate names", () => {
+    createFolder({ name: "My Folder" });
+    expect(folderExists("my folder")).toBe(true);
+    expect(folderExists("Other")).toBe(false);
+  });
+
+  it("folderExists excludes given id for rename checks", () => {
+    const f = createFolder({ name: "Folder A" });
+    expect(folderExists("Folder A", f.id)).toBe(false);
+  });
+});
+
+describe("empty folder cleanup (round 136)", () => {
+  beforeEach(() => storage.clear());
+
+  it("getEmptyFolders returns custom empty folders", () => {
+    createFolder({ name: "Empty1" });
+    createFolder({ name: "NonEmpty" });
+    const f2 = getFolders().find((f) => f.name === "NonEmpty");
+    if (f2) addRunToFolder(f2.id, "r1");
+    const empty = getEmptyFolders();
+    expect(empty.some((f) => f.name === "Empty1")).toBe(true);
+  });
+
+  it("cleanupEmptyFolders removes empty custom folders", () => {
+    const f1 = createFolder({ name: "Keep" });
+    const f2 = createFolder({ name: "Remove" });
+    addRunToFolder(f1.id, "r1");
+    const before = getFolders().length;
+    const removed = cleanupEmptyFolders();
+    expect(removed).toBe(1);
+    expect(getFolders().length).toBe(before - 1);
+  });
+});
+
+describe("duplicate and export (round 136)", () => {
+  beforeEach(() => storage.clear());
+
+  it("duplicateFolder copies runIds with new name", () => {
+    const f = createFolder({ name: "Original", color: "#ff0000" });
+    addRunToFolder(f.id, "r1");
+    addRunToFolder(f.id, "r2");
+    const copy = duplicateFolder(f.id, "Copy Name");
+    expect(copy).not.toBeNull();
+    expect(copy!.name).toBe("Copy Name");
+    expect(copy!.id).not.toBe(f.id);
+    expect(copy!.runIds).toEqual(["r1", "r2"]);
+    expect(copy!.isSystem).toBe(false);
+  });
+
+  it("duplicateFolder returns null for non-existent", () => {
+    expect(duplicateFolder("missing")).toBeNull();
+  });
+
+  it("exportFolders returns valid JSON", () => {
+    createFolder({ name: "Test Export" });
+    const json = exportFolders();
+    const parsed = JSON.parse(json);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed.length).toBeGreaterThan(0);
+  });
+
+  it("resetFolders clears custom folders", () => {
+    createFolder({ name: "Custom" });
+    resetFolders();
+    const folders = getFolders();
+    expect(folders.every((f) => f.isSystem)).toBe(true);
+  });
+
+  it("getFoldersByRunCount sorts by run count desc", () => {
+    const f1 = createFolder({ name: "Big" });
+    addRunToFolder(f1.id, "r1");
+    addRunToFolder(f1.id, "r2");
+    const f2 = createFolder({ name: "Small" });
+    addRunToFolder(f2.id, "r1");
+    const sorted = getFoldersByRunCount();
+    const big = sorted.findIndex((f) => f.name === "Big");
+    const small = sorted.findIndex((f) => f.name === "Small");
+    expect(big).toBeLessThan(small);
+  });
+});
+

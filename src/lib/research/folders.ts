@@ -24,7 +24,7 @@ const DEFAULT_FOLDERS: ResearchFolder[] = [
   {
     id: "folder-starred",
     name: "�ղؼ�",
-    icon: "?",
+    icon: "★",
     color: "#fbbf24",
     runIds: [],
     createdAt: Date.now(),
@@ -34,7 +34,7 @@ const DEFAULT_FOLDERS: ResearchFolder[] = [
   {
     id: "folder-archived",
     name: "�鵵",
-    icon: "??",
+    icon: "★",
     color: "#666688",
     runIds: [],
     createdAt: Date.now(),
@@ -312,4 +312,107 @@ export function bulkImportFolders(
   }
   saveStore(Array.from(byId.values()));
   return imported;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Folder statistics                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface FolderStats {
+  totalFolders: number;
+  customFolders: number;
+  systemFolders: number;
+  totalRunsOrganized: number;
+  emptyFolders: number;
+  largestFolder: { id: string; name: string; count: number } | null;
+}
+
+export function getFolderStats(): FolderStats {
+  const folders = getStore();
+  const custom = folders.filter((f) => !f.isSystem);
+  const system = folders.filter((f) => f.isSystem);
+  const totalRuns = folders.reduce((sum, f) => sum + f.runIds.length, 0);
+  const emptyCount = folders.filter((f) => f.runIds.length === 0).length;
+  let largest: { id: string; name: string; count: number } | null = null;
+  for (const f of folders) {
+    if (!largest || f.runIds.length > largest.count) {
+      largest = { id: f.id, name: f.name, count: f.runIds.length };
+    }
+  }
+  return {
+    totalFolders: folders.length,
+    customFolders: custom.length,
+    systemFolders: system.length,
+    totalRunsOrganized: totalRuns,
+    emptyFolders: emptyCount,
+    largestFolder: largest?.count ? largest : null,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Search, rename validation, duplicate detection                      */
+/* ------------------------------------------------------------------ */
+
+export function findFoldersByName(query: string): ResearchFolder[] {
+  if (!query.trim()) return getFolders();
+  const q = query.toLowerCase();
+  return getFolders().filter((f) => {
+    if (f.name.toLowerCase().includes(q)) return true;
+    if (f.description?.toLowerCase().includes(q)) return true;
+    return false;
+  });
+}
+
+export function folderExists(name: string, excludeId?: string): boolean {
+  const folders = getStore();
+  return folders.some((f) => f.name.toLowerCase() === name.toLowerCase() && f.id !== excludeId);
+}
+
+export function getEmptyFolders(): ResearchFolder[] {
+  return getStore().filter((f) => !f.isSystem && f.runIds.length === 0);
+}
+
+export function cleanupEmptyFolders(): number {
+  const folders = getStore();
+  const kept = folders.filter((f) => f.isSystem || f.runIds.length > 0);
+  const removed = folders.length - kept.length;
+  if (removed > 0) saveStore(kept);
+  return removed;
+}
+
+export function duplicateFolder(id: string, newName?: string): ResearchFolder | null {
+  const folders = getStore();
+  const src = folders.find((f) => f.id === id);
+  if (!src) return null;
+  const name = newName || (src.name + " (copy)");
+  const copy: ResearchFolder = {
+    ...src,
+    id: "folder-" + Math.random().toString(36).slice(2, 10),
+    name,
+    isSystem: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    runIds: [...src.runIds],
+  };
+  folders.push(copy);
+  saveStore(folders);
+  return copy;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Export / reset                                                     */
+/* ------------------------------------------------------------------ */
+
+export function exportFolders(): string {
+  return JSON.stringify(getFolders(), null, 2);
+}
+
+export function resetFolders(): void {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
+
+export function getFoldersByRunCount(): ResearchFolder[] {
+  return [...getStore()].sort((a, b) => b.runIds.length - a.runIds.length);
 }
