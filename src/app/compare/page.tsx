@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseSynthesis, type SynthesisOutput } from "@/lib/research/synthesis-parser";
 import { diffResearch, formatDelta, type ResearchDiff } from "@/lib/research/research-diff";
+import { computeSourceOverlap, type SourceOverlapResult } from "@/lib/research/source-overlap";
 import { VennDiagram } from "@/components/venn/VennDiagram";
 import { CardSkeleton } from "@/components/skeleton/Skeleton";
 
@@ -60,6 +61,7 @@ export default function ComparePage() {
   const [loading, setLoading] = useState(true);
   const [showDiff, setShowDiff] = useState(false);
   const [diff, setDiff] = useState<ResearchDiff | null>(null);
+  const [sourceOverlap, setSourceOverlap] = useState<SourceOverlapResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -610,7 +612,7 @@ export default function ComparePage() {
               <div className="source-domain-group">
                 <p className="source-domain-label">共有域名 ({sourceOverlap.sharedDomains.length})</p>
                 <div className="source-domain-list">
-                  {sourceOverlap.sharedDomains.map((d) => (
+                  {sourceOverlap.sharedDomains.map((d: string) => (
                     <span key={d} className="source-domain-tag shared">{d}</span>
                   ))}
                 </div>
@@ -624,7 +626,7 @@ export default function ComparePage() {
                     <div className="source-domain-group">
                       <p className="source-domain-label">仅 A 域名</p>
                       <div className="source-domain-list">
-                        {sourceOverlap.domainsOnlyA.map((d) => (
+                        {sourceOverlap.domainsOnlyA.map((d: string) => (
                           <span key={d} className="source-domain-tag only-a">{d}</span>
                         ))}
                       </div>
@@ -637,7 +639,7 @@ export default function ComparePage() {
                     <div className="source-domain-group">
                       <p className="source-domain-label">仅 B 域名</p>
                       <div className="source-domain-list">
-                        {sourceOverlap.domainsOnlyB.map((d) => (
+                        {sourceOverlap.domainsOnlyB.map((d: string) => (
                           <span key={d} className="source-domain-tag only-b">{d}</span>
                         ))}
                       </div>

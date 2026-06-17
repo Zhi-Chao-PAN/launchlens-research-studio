@@ -37,7 +37,7 @@ export function ShareButton({ sessionId, size = "md", variant = "secondary", lab
     let ok = false;
     try {
       if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
-        await navigator.share({ title: "Research report", url });
+        await navigator.share({ title: "Research report", url: window.location.href });
         ok = true;
       } else {
         ok = await copyShareUrl(sessionId);

@@ -20,12 +20,12 @@ interface TagListProps {
 export function TagList({ runId, onTagsChange }: TagListProps) {
   const [revision, setRevision] = useState(0);
   const [showAdd, setShowAdd] = useState(false);
-  const [newTagName, setNewTagName] = useState("");
+    const [newTagName, setNewTagName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Derive tag state synchronously from runId + revision counter
   const tagIds = useMemo(() => getRunTags(runId), [runId, revision]);
-  const allTags = useMemo(() => getAllTags(), [revision]);
+  const allTags = useMemo(() => getAllTags(), [revision]) as Array<{ id: string; name: string; color?: string }>;
 
   const refresh = () => setRevision((r) => r + 1);
 
@@ -50,7 +50,7 @@ export function TagList({ runId, onTagsChange }: TagListProps) {
     if (!name) return;
     const tag = createTag(name);
     handleAddTag(tag.id);
-    setAllTags(getAllTags());
+    setRevision(r => r + 1);
   };
 
   const handleRemoveTag = (tagId: string) => {

@@ -79,7 +79,7 @@ export function getFolders(): ResearchFolder[] {
 
 // Get a single folder
 export function getFolder(id: string): ResearchFolder | undefined {
-  return getStore().find((f) => f.id === id);
+  return getStore().find((f: ResearchFolder) => f.id === id);
 }
 
 // Create a new folder
@@ -126,7 +126,7 @@ export function updateFolder(
 // Delete a folder
 export function deleteFolder(id: string): boolean {
   const folders = getStore();
-  const folder = folders.find((f) => f.id === id);
+  const folder = folders.find((f: ResearchFolder) => f.id === id);
   if (!folder || folder.isSystem) return false;
   const filtered = folders.filter((f) => f.id !== id);
   saveStore(filtered);
@@ -136,7 +136,7 @@ export function deleteFolder(id: string): boolean {
 // Add run to folder
 export function addRunToFolder(folderId: string, runId: string): boolean {
   const folders = getStore();
-  const folder = folders.find((f) => f.id === folderId);
+  const folder = folders.find((f: ResearchFolder) => f.id === folderId);
   if (!folder) return false;
   if (!folder.runIds.includes(runId)) {
     folder.runIds.push(runId);
@@ -149,7 +149,7 @@ export function addRunToFolder(folderId: string, runId: string): boolean {
 // Remove run from folder
 export function removeRunFromFolder(folderId: string, runId: string): boolean {
   const folders = getStore();
-  const folder = folders.find((f) => f.id === folderId);
+  const folder = folders.find((f: ResearchFolder) => f.id === folderId);
   if (!folder) return false;
   if (folder.runIds.includes(runId)) {
     folder.runIds = folder.runIds.filter((id) => id !== runId);
@@ -167,8 +167,8 @@ export function getFoldersForRun(runId: string): ResearchFolder[] {
 // Move run from one folder to another
 export function moveRun(runId: string, fromFolderId: string, toFolderId: string): boolean {
   const folders = getStore();
-  const from = folders.find((f) => f.id === fromFolderId);
-  const to = folders.find((f) => f.id === toFolderId);
+  const from = folders.find((f: ResearchFolder) => f.id === fromFolderId);
+  const to = folders.find((f: ResearchFolder) => f.id === toFolderId);
   if (!from || !to) return false;
 
   from.runIds = from.runIds.filter((id) => id !== runId);
@@ -196,8 +196,8 @@ export function getTotalFolderRuns(): number {
  * Add multiple runs to a folder. Returns number of newly added runs.
  */
 export function bulkAddRunsToFolder(folderId: string, runIds: string[]): number {
-  const folders = readFolders();
-  const folder = folders.find((f) => f.id === folderId);
+  const folders = getStore();
+  const folder = folders.find((f: ResearchFolder) => f.id === folderId);
   if (!folder) return 0;
 
   let added = 0;
@@ -210,7 +210,7 @@ export function bulkAddRunsToFolder(folderId: string, runIds: string[]): number 
 
   if (added > 0) {
     folder.updatedAt = Date.now();
-    writeFolders(folders);
+    saveStore(folders);
   }
 
   return added;
@@ -220,17 +220,17 @@ export function bulkAddRunsToFolder(folderId: string, runIds: string[]): number 
  * Remove multiple runs from a folder. Returns number of removed runs.
  */
 export function bulkRemoveRunsFromFolder(folderId: string, runIds: string[]): number {
-  const folders = readFolders();
-  const folder = folders.find((f) => f.id === folderId);
+  const folders = getStore();
+  const folder = folders.find((f: ResearchFolder) => f.id === folderId);
   if (!folder) return 0;
 
   const before = folder.runIds.length;
-  folder.runIds = folder.runIds.filter((id) => !runIds.includes(id));
+  folder.runIds = folder.runIds.filter((id: string) => !runIds.includes(id));
   const removed = before - folder.runIds.length;
 
   if (removed > 0) {
     folder.updatedAt = Date.now();
-    writeFolders(folders);
+    saveStore(folders);
   }
 
   return removed;

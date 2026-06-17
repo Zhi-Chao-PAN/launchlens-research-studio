@@ -3,6 +3,7 @@
 /* eslint-disable */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { SynthesisOutput, Source, KeyInsight, Opportunity, Risk } from "@/lib/research/synthesis-parser";
@@ -11,6 +12,9 @@ import { isRunStarred, toggleStar } from "@/lib/research/starred";
 import { listTemplates, createTemplate } from "@/lib/research/templates";
 import { DetailHeaderSkeleton, CardSkeleton } from "@/components/skeleton/Skeleton";
 import { RelatedRuns } from "@/components/related/RelatedRuns";
+import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
+import { useHotkeys } from "@/lib/hooks/use-hotkeys";
+import { TagList } from "@/components/tags/TagList";
 
 interface ResearchRun {
   id: string;
@@ -62,7 +66,7 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
  */
 function CitationText({ text, onCitationClick }: { text: string; onCitationClick: (index: number) => void }) {
   // Split by [n] patterns
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
   const regex = /\[(\d+)\]/g;
   let match;
@@ -287,6 +291,25 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const router = useRouter();
+  const [isRunning, setIsRunning] = useState(false);
+  const queryId = params.id;
+
+  // Handle add to compare
+  const handleAddToCompare = useCallback(() => {
+    if (!run) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem("launchlens:compare") || "[]");
+      const updated = [...existing.filter((id: string) => id !== run.id), run.id].slice(-2);
+      localStorage.setItem("launchlens:compare", JSON.stringify(updated));
+      if (updated.length === 2) {
+        router.push(`/compare?a=${updated[0]}&b=${updated[1]}`);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [run, router]);
+
   const { registerCommands } = useCommandPalette();
 
 async function loadRun() {
@@ -365,7 +388,7 @@ async function loadRun() {
         break;
       case "json":
         const exportData = synthesis
-          ? { query: run.query, keywords: run.keywords, synthesis, sources: run.sources, provider: run.provider, model: run.model, createdAt: run.createdAt, durationMs: run.durationMs }
+          ? { query: run.query, keywords: run?.keywords ?? [], synthesis, sources: run.sources, provider: run.provider, model: run.model, createdAt: run.createdAt, durationMs: run.durationMs }
           : run;
         content = JSON.stringify(exportData, null, 2);
         mimeType = "application/json";
@@ -686,7 +709,7 @@ async function loadRun() {
       name: templateName.trim(),
       description: `Generated from research: ${run.query}`,
       query: run.query,
-      keywords: run.keywords || [],
+      keywords: (run?.keywords ?? []) || [],
       category: "Custom",
     });
     setTemplateSaved(true);
@@ -1081,10 +1104,10 @@ async function loadRun() {
               {!collapsedSections.has("exec-summary") && (
                 <>
                   <p className="research-exec-summary"><CitationText text={synthesis.execSummary} onCitationClick={handleCitationClick} /></p>
-                  {run?.keywords?.length > 0 && (
+                  {(run?.keywords?.length ?? 0) > 0 && (
                     <div className="research-kw-cloud-section">
                       <h4 className="research-subsection-title">Keyword Analysis</h4>
-                      <KeywordCloud keywords={run.keywords} />
+                      <KeywordCloud keywords={run?.keywords ?? []} />
                     </div>
                   )}
                 </>

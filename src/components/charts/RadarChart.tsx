@@ -133,7 +133,7 @@ export function RadarChart({
             key={i}
             x={l.x}
             y={l.y}
-            textAnchor={l.textAnchor}
+            textAnchor={l.textAnchor as "start" | "middle" | "end"}
             dominantBaseline="middle"
             className="radar-label"
             fontSize={11}

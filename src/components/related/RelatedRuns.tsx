@@ -20,7 +20,7 @@ interface RelatedRunsProps {
 
 export function RelatedRuns({ runId, keywords, limit = 5 }: RelatedRunsProps) {
   const [related, setRelated] = useState<Array<{
-    run: RelatedRun;
+    run: { id: string; keywords: string[]; query: string; status?: string; createdAt?: number };
     similarity: number;
     sharedKeywords: string[];
   }>>([]);

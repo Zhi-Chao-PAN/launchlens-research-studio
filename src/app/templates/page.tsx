@@ -59,7 +59,7 @@ export default function TemplatesPage() {
         category: "action",
         keywords: ["search", "find", "filter"],
         action: () => {
-          const input = document.querySelector(".template-search input") as HTMLElement;
+          const input = document.querySelector(".template-search input") as HTMLInputElement;
           input?.focus();
         },
       },
@@ -80,7 +80,7 @@ export default function TemplatesPage() {
 
   // '/' to focus search
   useHotkeys("/", () => {
-    const input = document.querySelector(".template-search input") as HTMLElement;
+    const input = document.querySelector(".template-search input") as HTMLInputElement;
     if (input) {
       input.focus();
       input.select();

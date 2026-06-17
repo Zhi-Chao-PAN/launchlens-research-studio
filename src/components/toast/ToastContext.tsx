@@ -27,7 +27,7 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 let idCounter = 0;
 function generateId(): string {
   idCounter++;
-  return 	oast--;
+  return "toast-" + idCounter;
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
