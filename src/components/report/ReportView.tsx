@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
 import dynamic from "next/dynamic";
@@ -39,6 +39,7 @@ const AGENT_ORDER: AgentId[] = [
 ];
 
 export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: ReportViewProps) {
+  const [isPrintMode, setIsPrintMode] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const meta = AGENT_METADATA[activeAgent];
   const output = outputs[activeAgent];
@@ -82,7 +83,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden report-view-container" data-report-view>
       <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 flex-shrink-0">
         <span className="text-2xl" aria-hidden>
           {meta.icon}
@@ -93,6 +94,19 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
         </div>
       </div>
 
+      <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50/50">
+        <span className="text-xs text-slate-500">
+          {completedCount}/6 agents completed
+        </span>
+        <button
+          onClick={() => window.print()}
+          className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          title="Print / Save as PDF"
+        >
+          <span aria-hidden>🖨️</span>
+          <span>Print / PDF</span>
+        </button>
+      </div>
       <div className="border-b border-slate-100 px-2 flex-shrink-0 overflow-x-auto">
         <div className="flex gap-1">
           {AGENT_ORDER.map((id) => {
@@ -120,7 +134,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
       </div>
 
       <ReportSearchBar containerRef={contentRef} />
-      <div ref={contentRef} className="flex-1 overflow-y-auto p-6" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
+      <div ref={contentRef} className="flex-1 overflow-y-auto p-6 report-content-area" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
 
       <div className="px-6 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex-shrink-0 flex items-center justify-between">
         <span>

@@ -10863,3 +10863,356 @@ select.form-input {
 .folder-item[draggable="true"]:active {
   cursor: grabbing;
 }
+
+
+/* ===== Print / PDF Enhancements (Round 117) ===== */
+
+@media print {
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 1.5cm;
+  }
+
+  @page :first {
+    margin-top: 2cm;
+  }
+
+  /* Hide all chrome on the main studio page */
+  .studio-header,
+  .studio-sidebar,
+  .studio-footer,
+  .query-input-wrapper,
+  .recent-queries,
+  .cached-sessions-list,
+  .agent-tabs-wrapper,
+  .report-view-header,
+  .report-view-footer,
+  .report-search-bar,
+  .export-actions-panel,
+  .share-button-wrapper,
+  .folder-sidebar,
+  .history-toolbar,
+  .tag-filter-bar,
+  .command-palette,
+  .toast-container,
+  .modal-overlay,
+  .search-in-report-bar {
+    display: none !important;
+  }
+
+  /* Report view: full width, no card styling */
+  .report-view-container,
+  .bg-white.rounded-2xl.border.shadow-sm {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Report content fills page */
+  .report-content-area,
+  .flex-1.overflow-y-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* Section headers: force page break before major sections */
+  .report-section h2,
+  .agent-section-title {
+    page-break-before: always;
+  }
+
+  /* First section shouldn't have a page break before it */
+  .report-section:first-of-type h2,
+  .agent-section:first-of-type .agent-section-title {
+    page-break-before: avoid;
+  }
+
+  /* Keep tables intact */
+  table {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    width: 100% !important;
+    font-size: 9pt !important;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+    text-align: left !important;
+  }
+
+  th {
+    background: #f1f5f9 !important;
+    font-weight: 600 !important;
+  }
+
+  /* Lists keep together with their heading */
+  h3 + ul,
+  h3 + ol,
+  h4 + ul,
+  h4 + ol {
+    page-break-before: avoid;
+  }
+
+  /* Prevent orphaned list items */
+  li {
+    page-break-inside: avoid;
+  }
+
+  /* Citation blocks */
+  .citation-item {
+    page-break-inside: avoid;
+    border-left: 2px solid #94a3b8 !important;
+    padding-left: 12px !important;
+    margin: 8px 0 !important;
+  }
+
+  .citation-title {
+    font-weight: 600 !important;
+    color: #0f172a !important;
+  }
+
+  .citation-snippet {
+    color: #475569 !important;
+    font-size: 9pt !important;
+  }
+
+  /* Confidence badges in print */
+  .confidence-badge {
+    display: inline-block !important;
+    padding: 2px 8px !important;
+    border-radius: 9999px !important;
+    font-size: 8pt !important;
+    font-weight: 600 !important;
+    border: 1px solid currentColor !important;
+  }
+
+  .confidence-badge.high {
+    color: #047857 !important;
+    background: #d1fae5 !important;
+  }
+
+  .confidence-badge.medium {
+    color: #b45309 !important;
+    background: #fef3c7 !important;
+  }
+
+  .confidence-badge.low {
+    color: #b91c1c !important;
+    background: #fee2e2 !important;
+  }
+
+  /* Ensure score bars are visible */
+  .score-bar,
+  .progress-bar {
+    background: #e2e8f0 !important;
+    position: relative !important;
+    height: 10px !important;
+    border-radius: 9999px !important;
+    overflow: hidden !important;
+  }
+
+  .score-bar-fill,
+  .progress-bar-fill {
+    background: #6366f1 !important;
+    height: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Personal notes section in print */
+  .personal-notes-section {
+    page-break-inside: avoid;
+    border: 1px solid #cbd5e1 !important;
+    background: #f8fafc !important;
+    padding: 16px !important;
+    border-radius: 8px !important;
+    margin: 16px 0 !important;
+  }
+
+  .personal-notes-section h3 {
+    color: #0f172a !important;
+    margin-top: 0 !important;
+  }
+
+  /* Tags in print */
+  .tag-pill,
+  .tag-chip {
+    display: inline-block !important;
+    padding: 2px 10px !important;
+    border-radius: 9999px !important;
+    font-size: 8pt !important;
+    background: #e0e7ff !important;
+    color: #4338ca !important;
+    margin: 2px 4px 2px 0 !important;
+    border: 1px solid #c7d2fe !important;
+  }
+
+  /* Starred indicator */
+  .starred-icon {
+    color: #f59e0b !important;
+  }
+
+  /* Make links visible but not overwhelming */
+  a {
+    color: #1d4ed8 !important;
+    text-decoration: underline !important;
+  }
+
+  /* External links show URL */
+  a[href^="http"]::after {
+    content: " [" attr(href) "]";
+    font-size: 8pt !important;
+    color: #64748b !important;
+    font-style: normal !important;
+    text-decoration: none !important;
+  }
+
+  /* But with a max-width so very long URLs don't break layout */
+  a[href^="http"] {
+    word-break: break-all;
+  }
+
+  /* Code blocks in print */
+  pre, code {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 1px solid #e2e8f0 !important;
+    font-size: 9pt !important;
+  }
+
+  pre {
+    padding: 12px !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    page-break-inside: avoid;
+  }
+
+  code {
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+  }
+
+  /* Blockquotes */
+  blockquote {
+    border-left: 4px solid #94a3b8 !important;
+    padding-left: 16px !important;
+    margin: 12px 0 !important;
+    color: #475569 !important;
+    font-style: italic !important;
+  }
+
+  /* Persona cards */
+  .persona-card,
+  .competitor-card {
+    page-break-inside: avoid;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+    margin: 12px 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Summary / callout boxes */
+  .callout-box,
+  .summary-box,
+  .exec-summary {
+    page-break-inside: avoid;
+    background: #eff6ff !important;
+    border-left: 4px solid #3b82f6 !important;
+    padding: 12px 16px !important;
+    margin: 16px 0 !important;
+  }
+
+  /* Meter / gauge visualizations */
+  .meter-container {
+    page-break-inside: avoid;
+  }
+
+  /* Radar charts - show as table fallback */
+  .radar-chart-container {
+    page-break-inside: avoid;
+  }
+
+  .radar-chart-container svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Hide empty states */
+  .empty-state {
+    display: none !important;
+  }
+
+  /* Loading states */
+  .loading-spinner,
+  .skeleton {
+    display: none !important;
+  }
+
+  /* Print-friendly font sizing */
+  body {
+    font-size: 10.5pt !important;
+    line-height: 1.5 !important;
+  }
+
+  h1 { font-size: 22pt !important; }
+  h2 { font-size: 16pt !important; }
+  h3 { font-size: 13pt !important; }
+  h4 { font-size: 11pt !important; }
+
+  /* Tighten spacing for print */
+  p {
+    margin: 6px 0 !important;
+  }
+
+  ul, ol {
+    margin: 6px 0 !important;
+    padding-left: 24px !important;
+  }
+
+  li {
+    margin: 2px 0 !important;
+  }
+
+  /* Report cover / header area */
+  .report-cover {
+    text-align: center;
+    padding: 40px 0;
+    border-bottom: 2px solid #0f172a;
+    margin-bottom: 30px;
+    page-break-after: avoid;
+  }
+
+  .report-cover h1 {
+    font-size: 28pt !important;
+    margin-bottom: 8px !important;
+  }
+
+  .report-cover .report-meta {
+    color: #64748b !important;
+    font-size: 10pt !important;
+  }
+
+  /* Ensure dark mode content prints correctly */
+  [data-theme="dark"] * {
+    background: transparent !important;
+    color: #0f172a !important;
+  }
+
+  [data-theme="dark"] body {
+    background: #ffffff !important;
+  }
+
+  /* No scrollbars in print */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+}
