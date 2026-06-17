@@ -160,3 +160,43 @@ export function saveAsTemplate(
     keywords,
   });
 }
+
+/**
+ * Bulk import templates.
+ * Returns count of imported templates.
+ */
+export function bulkImportTemplates(
+  templates: ResearchTemplate[],
+  strategy: "merge" | "overwrite" | "skip" = "merge",
+): number {
+  const existing = readTemplates();
+  if (strategy === "overwrite") {
+    writeTemplates(templates);
+    return templates.length;
+  }
+  if (strategy === "skip") {
+    const existingIds = new Set(existing.map((t) => t.id));
+    const newOnes = templates.filter((t) => !existingIds.has(t.id));
+    writeTemplates([...existing, ...newOnes]);
+    return newOnes.length;
+  }
+  const byId = new Map(existing.map((t) => [t.id, t]));
+  let imported = 0;
+  for (const t of templates) {
+    if (!t?.id) continue;
+    if (!byId.has(t.id)) {
+      byId.set(t.id, t);
+      imported++;
+    } else {
+      const ex = byId.get(t.id)!;
+      const exTime = ex.updatedAt ?? ex.createdAt ?? 0;
+      const inTime = t.updatedAt ?? t.createdAt ?? 0;
+      if (inTime > exTime) {
+        byId.set(t.id, t);
+        imported++;
+      }
+    }
+  }
+  writeTemplates(Array.from(byId.values()));
+  return imported;
+}

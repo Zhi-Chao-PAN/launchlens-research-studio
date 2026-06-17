@@ -6,7 +6,7 @@
 // Storage structure:
 //   LAUNCHLENS_STORAGE_DIR/research/
 //     runs/
-//       <runId>.json   — full run metadata + result
+//       <runId>.json   鈥?full run metadata + result
 //
 // If LAUNCHLENS_STORAGE_DIR is not set, runs are stored in-memory only
 // (best-effort, doesn't survive restarts).
@@ -87,7 +87,7 @@ export function saveResearchRun(run: ResearchRun): void {
     const filePath = path.join(runsDir, `${run.id}.json`);
     fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf8");
   } catch {
-    // Best-effort persistence — don't fail the research run if storage fails
+    // Best-effort persistence 鈥?don't fail the research run if storage fails
   }
 }
 
@@ -191,6 +191,35 @@ export function searchResearchRuns(options: {
   const runs = filtered.slice(offset, offset + limit);
 
   return { runs, total };
+}
+
+/**
+ * Bulk import research runs.
+ * Replaces the in-memory list and persists all runs to disk.
+ * Returns count of imported runs.
+ */
+export function bulkImportRuns(runs: ResearchRun[]): number {
+  // Replace in-memory list (newest first)
+  recentRuns.length = 0;
+  const sorted = [...runs].sort((a, b) => b.createdAt - a.createdAt);
+  for (const run of sorted.slice(0, MAX_MEMORY_RUNS)) {
+    recentRuns.push(run);
+  }
+
+  // Persist all to disk if storage configured
+  const runsDir = getRunsDir();
+  if (runsDir) {
+    try {
+      for (const run of runs) {
+        const filePath = path.join(runsDir, `${run.id}.json`);
+        fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf8");
+      }
+    } catch {
+      // Best-effort
+    }
+  }
+
+  return Math.min(runs.length, MAX_MEMORY_RUNS);
 }
 
 /**

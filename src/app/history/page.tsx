@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "@/lib/utils/date-utils";
 import { FolderSidebar } from "@/components/folders/FolderSidebar";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { getFolder } from "@/lib/research/folders";
+import { DataManager } from "@/components/data/DataManager";
 
 interface HistoryRun {
   id: string;
@@ -73,6 +74,7 @@ export default function HistoryPage() {
         />
 
         <div className="history-content">
+          <DataManager />
           <header className="history-header">
             <div>
               <h1 className="history-title">
@@ -99,7 +101,7 @@ export default function HistoryPage() {
             <div className="history-loading">Loading...</div>
           ) : runs.length === 0 ? (
             <div className="history-empty">
-              <div className="history-empty-icon">📭</div>
+              <div className="history-empty-icon">馃摥</div>
               <h3>No research yet</h3>
               <p>
                 {selectedFolder

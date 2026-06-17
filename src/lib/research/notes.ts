@@ -208,3 +208,18 @@ export function migrateOldStarred(): void {
     // ignore migration errors
   }
 }
+
+/**
+ * Bulk import notes. Replaces all existing notes.
+ * Returns count of imported notes.
+ */
+export function bulkImportNotes(notes: ResearchNotes[]): number {
+  const store = new Map<string, ResearchNotes>();
+  for (const n of notes) {
+    if (n?.runId) {
+      store.set(n.runId, n);
+    }
+  }
+  saveStore(store);
+  return store.size;
+}

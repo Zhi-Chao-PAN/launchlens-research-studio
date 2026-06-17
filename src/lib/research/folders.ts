@@ -187,3 +187,38 @@ export function moveRun(runId: string, fromFolderId: string, toFolderId: string)
 export function getTotalFolderRuns(): number {
   return getStore().reduce((sum, f) => sum + f.runIds.length, 0);
 }
+/**
+ * Bulk import folders. System folders preserved.
+ * Returns count of imported folders.
+ */
+export function bulkImportFolders(
+  folders: ResearchFolder[],
+  strategy: "merge" | "overwrite" = "merge",
+): number {
+  const existing = getFolders();
+  if (strategy === "overwrite") {
+    const systemFolders = existing.filter((f) => f.isSystem);
+    const customFolders = folders.filter((f) => !f.isSystem);
+    saveStore([...systemFolders, ...customFolders]);
+    return customFolders.length;
+  }
+  const byId = new Map(existing.map((f) => [f.id, f]));
+  let imported = 0;
+  for (const f of folders) {
+    if (!f?.id || f.isSystem) continue;
+    if (!byId.has(f.id)) {
+      byId.set(f.id, f);
+      imported++;
+    } else {
+      const ex = byId.get(f.id)!;
+      const exTime = ex.updatedAt ?? ex.createdAt ?? 0;
+      const inTime = f.updatedAt ?? f.createdAt ?? 0;
+      if (inTime > exTime) {
+        byId.set(f.id, f);
+        imported++;
+      }
+    }
+  }
+  saveStore(Array.from(byId.values()));
+  return imported;
+}
