@@ -9408,6 +9408,261 @@ select.form-input {
 }
 
 
+/* ===== Keyboard Cheatsheet Modal (Round 122) ===== */
+
+.cheatsheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  animation: cmdpal-fade-in 0.15s ease-out;
+}
+
+.cheatsheet-modal {
+  width: 100%;
+  max-width: 680px;
+  max-height: 75vh;
+  background: #0f0f17;
+  border: 1px solid #1e1e32;
+  border-radius: 16px;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: cmdpal-slide-in 0.2s ease-out;
+}
+
+.cheatsheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0 20px;
+}
+
+.cheatsheet-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.cheatsheet-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.cheatsheet-close:hover {
+  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.cheatsheet-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #1e1e32;
+}
+
+.cheatsheet-search-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.cheatsheet-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-size: 14px;
+  outline: none;
+  font-family: inherit;
+}
+.cheatsheet-search-input::placeholder {
+  color: #475569;
+}
+
+.cheatsheet-kbd {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #1a1a2e;
+  border: 1px solid #2a2a3e;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.cheatsheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 4px 8px 8px;
+}
+
+.cheatsheet-group {
+  margin-bottom: 16px;
+}
+
+.cheatsheet-category {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6366f1;
+  margin: 0 12px 8px 12px;
+}
+
+.cheatsheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cheatsheet-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin: 0 4px;
+  transition: background 0.15s;
+}
+
+.cheatsheet-item:hover,
+.cheatsheet-item.selected {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.cheatsheet-desc {
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.cheatsheet-keys {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #1a1a2e;
+  border: 1px solid #2a2a3e;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.cheatsheet-empty {
+  padding: 40px 20px;
+  text-align: center;
+}
+.cheatsheet-empty p {
+  font-size: 14px;
+  color: #94a3b8;
+  margin: 0 0 4px 0;
+}
+.cheatsheet-empty span {
+  font-size: 12px;
+  color: #475569;
+}
+
+.cheatsheet-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  border-top: 1px solid #1e1e32;
+  font-size: 11px;
+  color: #64748b;
+}
+.cheatsheet-footer kbd {
+  padding: 1px 5px;
+  background: #1a1a2e;
+  border: 1px solid #2a2a3e;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-family: monospace;
+  font-size: 10px;
+}
+
+/* Light theme */
+[data-theme="light"] .cheatsheet-modal {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] .cheatsheet-header h2 {
+  color: #0f172a;
+}
+[data-theme="light"] .cheatsheet-close {
+  color: #94a3b8;
+}
+[data-theme="light"] .cheatsheet-close:hover {
+  color: #0f172a;
+  background: #f5f3ff;
+}
+[data-theme="light"] .cheatsheet-search {
+  border-bottom-color: #f1f5f9;
+}
+[data-theme="light"] .cheatsheet-search-input {
+  color: #0f172a;
+}
+[data-theme="light"] .cheatsheet-kbd {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+[data-theme="light"] .cheatsheet-category {
+  color: #4f46e5;
+}
+[data-theme="light"] .cheatsheet-desc {
+  color: #334155;
+}
+[data-theme="light"] .cheatsheet-keys {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+[data-theme="light"] .cheatsheet-item:hover,
+[data-theme="light"] .cheatsheet-item.selected {
+  background: #f5f3ff;
+}
+[data-theme="light"] .cheatsheet-footer {
+  border-top-color: #f1f5f9;
+  color: #94a3b8;
+}
+[data-theme="light"] .cheatsheet-footer kbd {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+[data-theme="light"] .cheatsheet-empty p {
+  color: #64748b;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .cheatsheet-overlay {
+    padding-top: 5vh;
+  }
+  .cheatsheet-modal {
+    max-height: 85vh;
+    border-radius: 12px;
+    margin: 0 16px;
+  }
+}
+
 /* ===== Keyboard Shortcuts Help Modal (Round 95) ===== */
 
 .kb-help-overlay {

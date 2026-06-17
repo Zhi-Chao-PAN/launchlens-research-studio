@@ -1,5 +1,4 @@
-锘縤mport type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { WebVitalsReporter } from "@/components/perf/WebVitalsReporter";
 import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
@@ -8,18 +7,10 @@ import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { GlobalCommands } from "@/components/command-palette/GlobalCommands";
 import { ToastProvider } from "@/components/toast/ToastContext";
 import { NetworkStatus } from "@/components/ui/NetworkStatus";
+import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatsheetGlobal";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
+// Use system fonts instead of Google Fonts for better compatibility in China
+const fontClasses = "font-sans";
 
 export const viewport: Viewport = {
   themeColor: [
@@ -34,56 +25,45 @@ export const viewport: Viewport = {
 
 const SITE_URL = "https://research.launchlens.ai";
 const SITE_DESCRIPTION =
-  "6 specialized AI agents work in parallel to deliver complete market intelligence for your product idea. Market sizing, competitor analysis, pain points, pricing, channels, and synthesis \u2014 all in minutes.";
+  "AI 辅助的大模型评估工作台 — 输入任务，上传看板和产物，AI 帮你生成专业评估报告。";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "LaunchLens Research Studio \u2014 Multi-Agent Market Intelligence",
-    template: "%s | LaunchLens Research Studio",
+    default: "ModelEval Studio · AI 模型评估工作台",
+    template: "%s | ModelEval Studio",
   },
   description: SITE_DESCRIPTION,
-  applicationName: "LaunchLens Research Studio",
+  applicationName: "ModelEval Studio",
   keywords: [
-    "market research",
-    "AI agents",
-    "multi-agent",
-    "product launch",
-    "GTM",
-    "go-to-market",
-    "competitive analysis",
-    "TAM SAM SOM",
-    "LaunchLens",
+    "模型评估",
+    "大模型测试",
+    "AI 评估",
+    "多模型对比",
+    "模型测试",
+    "评估助手",
   ],
-  authors: [{ name: "Zhi-Chao PAN", url: "https://github.com/Zhi-Chao-PAN" }],
-  creator: "LaunchLens",
-  publisher: "LaunchLens",
+  authors: [{ name: "ModelEval Team" }],
+  creator: "ModelEval Studio",
+  publisher: "ModelEval Studio",
   category: "productivity",
-  classification: "Business Software",
+  classification: "Developer Tools",
   openGraph: {
     type: "website",
-    locale: "en_US",
+    locale: "zh_CN",
     url: SITE_URL,
-    title: "LaunchLens Research Studio",
+    title: "ModelEval Studio · AI 模型评估工作台",
     description: SITE_DESCRIPTION,
-    siteName: "LaunchLens Research Studio",
+    siteName: "ModelEval Studio",
     images: [
       {
         url: "/og.svg",
         width: 1200,
         height: 630,
-        alt: "LaunchLens Research Studio \u2014 Multi-Agent Market Intelligence",
+        alt: "ModelEval Studio",
         type: "image/svg+xml",
       },
     ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "LaunchLens Research Studio",
-    description: SITE_DESCRIPTION,
-    creator: "@launchlens",
-    site: "@launchlens",
-    images: ["/og.svg"],
   },
   icons: {
     icon: [
@@ -92,52 +72,10 @@ export const metadata: Metadata = {
     apple: [{ url: "/logo.svg", type: "image/svg+xml" }],
     shortcut: "/logo.svg",
   },
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    title: "LaunchLens Research Studio",
-    statusBarStyle: "default",
-  },
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
-  },
-  robots: {
-    index: true,
-    follow: true,
-    nocache: false,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
-  },
-  alternates: {
-    canonical: SITE_URL,
-  },
-  other: {
-    "application/ld+json": JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      name: "LaunchLens Research Studio",
-      url: SITE_URL,
-      description: SITE_DESCRIPTION,
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Any (Web)",
-      offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "USD",
-        description: "Free demo with mock data; works without API keys.",
-      },
-      author: {
-        "@type": "Person",
-        name: "Zhi-Chao PAN",
-        url: "https://github.com/Zhi-Chao-PAN",
-      },
-    }),
   },
 };
 
@@ -147,17 +85,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
+    <html lang="zh-CN" className={`${fontClasses} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-slate-50">
         <WebVitalsReporter />
-        <LocaleProvider><a href="#main-content" className="skip-link">
-          Skip to main content
-        </a>
-        {children}
-      </LocaleProvider></body>
+        <LocaleProvider>
+          <ToastProvider>
+            <CommandPaletteProvider>
+              <a href="#main-content" className="skip-link">
+                跳转到主要内容
+              </a>
+              {children}
+              <CommandPalette />
+              <GlobalCommands />
+              <NetworkStatus />
+              <KeyboardCheatsheetGlobal />
+            </CommandPaletteProvider>
+          </ToastProvider>
+        </LocaleProvider>
+      </body>
     </html>
   );
 }
