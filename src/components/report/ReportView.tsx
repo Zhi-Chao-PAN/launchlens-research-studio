@@ -1,8 +1,10 @@
 ﻿"use client";
 
+import { useRef } from "react";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
 import dynamic from "next/dynamic";
+import { ReportSearchBar } from "./ReportSearchBar";
 
 // Each agent report is its own chunk to keep the initial JS bundle small.
 // ssr:false avoids hydration churn for surfaces only mounted after a session.
@@ -37,6 +39,7 @@ const AGENT_ORDER: AgentId[] = [
 ];
 
 export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: ReportViewProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
   const meta = AGENT_METADATA[activeAgent];
   const output = outputs[activeAgent];
   const completedCount = Object.values(outputs).filter(Boolean).length;
@@ -116,7 +119,8 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
+      <ReportSearchBar containerRef={contentRef} />
+      <div ref={contentRef} className="flex-1 overflow-y-auto p-6" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
 
       <div className="px-6 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex-shrink-0 flex items-center justify-between">
         <span>
