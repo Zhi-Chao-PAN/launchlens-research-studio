@@ -57,6 +57,7 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
             <h3 className="font-semibold text-slate-800 text-sm truncate">{meta.name}</h3>
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[state.status] || statusColors.idle}`}
+              style={state.status === "running" && !error ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
             >
               {error ? t("agent.status.error") : t(("agent.status." + state.status) as any, statusLabel[state.status] || state.status)}
             </span>
@@ -64,27 +65,42 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>
 
           {state.status === "running" && (
-            <div className="mt-2">
+            <div className="mt-2" style={{ animation: 'step-fade-in 0.25s ease-out' }}>
               <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-300"
-                  style={{ width: `${bucketProgress(state.progress)}%` }}
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{
+                    width: `${bucketProgress(state.progress)}%`,
+                    background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa, #8b5cf6, #6366f1)',
+                    backgroundSize: '200% 100%',
+                    animation: 'progress-shimmer 1.8s ease-in-out infinite',
+                  }}
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1 truncate">{state.currentStep}</p>
+              <p
+                key={state.currentStep}
+                className="text-xs text-slate-500 mt-1 truncate"
+                style={{ animation: 'step-fade-in 0.3s ease-out' }}
+              >
+                {state.currentStep}
+              </p>
             </div>
           )}
 
           {state.status === "done" && !error && (
-            <div className="mt-2">
+            <div className="mt-2" style={{ animation: 'agent-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
               <div className="h-1.5 bg-emerald-200 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 w-full" />
+                <div className="h-full bg-emerald-500 w-full rounded-full" />
               </div>
             </div>
           )}
 
           {error && (
-            <p className="text-xs text-rose-600 mt-1.5 truncate" title={error}>
+            <p
+              className="text-xs text-rose-600 mt-1.5 truncate"
+              title={error}
+              style={{ animation: 'agent-shake 0.4s ease-in-out' }}
+            >
               {error}
             </p>
           )}
