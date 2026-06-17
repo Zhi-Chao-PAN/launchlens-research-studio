@@ -694,3 +694,62 @@ export function importNotesPackage(
   saveStore(store);
   return { imported, skipped, errors };
 }
+
+// ============================================================
+// Word count and activity tracking (round 138)
+// ============================================================
+
+export function getNoteWordCount(runId: string): number {
+  const notes = getNotes(runId);
+  if (!notes) return 0;
+  let words = 0;
+  if (notes.personalNote) {
+    words += notes.personalNote.trim().split(/\s+/).filter(Boolean).length;
+  }
+  for (const a of notes.annotations) {
+    if (a.content) words += a.content.trim().split(/\s+/).filter(Boolean).length;
+  }
+  return words;
+}
+
+export interface RecentActivity {
+  runId: string;
+  action: "edited-note" | "annotated" | "starred" | "rated" | "tagged";
+  at: number;
+}
+
+export function getRecentlyUpdatedNotes(limit: number = 10): ResearchNotes[] {
+  return getAllNotes()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit);
+}
+
+export function getRecentlyOpenedNotes(limit: number = 10): ResearchNotes[] {
+  return getAllNotes()
+    .filter((n) => n.lastOpenedAt > 0)
+    .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+    .slice(0, limit);
+}
+
+export function hasUnsavedNotes(runId: string): boolean {
+  const notes = getNotes(runId);
+  if (!notes) return false;
+  return !!(notes.personalNote?.trim() || notes.annotations.length > 0 || notes.tags.length > 0 || notes.rating > 0);
+}
+
+export function getEmptyNotesCount(): number {
+  return getAllNotes().filter((n) => !hasUnsavedNotes(n.runId)).length;
+}
+
+export function cleanupEmptyNotes(): number {
+  const store = getStore();
+  let removed = 0;
+  for (const [runId, notes] of store) {
+    if (!notes.personalNote?.trim() && notes.annotations.length === 0 && notes.tags.length === 0 && notes.rating === 0 && !notes.isStarred && !notes.isArchived) {
+      store.delete(runId);
+      removed++;
+    }
+  }
+  if (removed > 0) saveStore(store);
+  return removed;
+}

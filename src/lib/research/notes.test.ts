@@ -29,6 +29,12 @@ import {
   getAllAnnotations,
   exportNotesPackage,
   importNotesPackage,
+  getNoteWordCount,
+  getRecentlyUpdatedNotes,
+  getRecentlyOpenedNotes,
+  hasUnsavedNotes,
+  getEmptyNotesCount,
+  cleanupEmptyNotes,
 } from "@/lib/research/notes";
 
 // Mock localStorage
@@ -592,3 +598,74 @@ describe("notes export / import", () => {
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });
+
+
+describe("word count and activity (round 138)", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("getNoteWordCount counts words in note and annotations", () => {
+    savePersonalNote("r1", "hello world foo bar");
+    addAnnotation("r1", { type: "note", content: "one two three" });
+    expect(getNoteWordCount("r1")).toBe(7);
+  });
+
+  it("getNoteWordCount returns 0 for missing run", () => {
+    expect(getNoteWordCount("nonexistent")).toBe(0);
+  });
+
+  it("getRecentlyUpdatedNotes returns most recently updated first", async () => {
+    savePersonalNote("old", "old note");
+    await new Promise((r) => setTimeout(r, 10));
+    savePersonalNote("new", "new note");
+    const recent = getRecentlyUpdatedNotes(5);
+    expect(recent[0].runId).toBe("new");
+  });
+
+  it("getRecentlyOpenedNotes returns by lastOpenedAt", async () => {
+    markOpened("old-run");
+    await new Promise((r) => setTimeout(r, 10));
+    markOpened("new-run");
+    const opened = getRecentlyOpenedNotes(5);
+    expect(opened[0].runId).toBe("new-run");
+  });
+
+  it("hasUnsavedNotes detects notes with content", () => {
+    expect(hasUnsavedNotes("empty")).toBe(false);
+    savePersonalNote("has-note", "some content");
+    expect(hasUnsavedNotes("has-note")).toBe(true);
+  });
+
+  it("hasUnsavedNotes detects tags", () => {
+    addTag("tagged", "important");
+    expect(hasUnsavedNotes("tagged")).toBe(true);
+  });
+
+  it("hasUnsavedNotes detects ratings", () => {
+    setRating("rated", 5);
+    expect(hasUnsavedNotes("rated")).toBe(true);
+  });
+
+  it("hasUnsavedNotes detects rating", () => {
+    setRating("rated-run-x", 4);
+    expect(hasUnsavedNotes("rated-run-x")).toBe(true);
+  });
+
+  it("cleanupEmptyNotes removes blank entries", () => {
+    // Create an empty entry by just calling ensureRun indirectly
+    getNotesStats();
+    savePersonalNote("real", "I have content");
+    // ensureRun creates empty; simulate
+    const store = new Map();
+    store.set("blank", { runId: "blank", annotations: [], personalNote: "", rating: 0, tags: [], isStarred: false, isArchived: false, lastOpenedAt: 0, updatedAt: Date.now() });
+    localStorage.setItem("launchlens:notes", JSON.stringify(Object.fromEntries(store)));
+    const removed = cleanupEmptyNotes();
+    expect(removed).toBe(1);
+  });
+
+  it("getEmptyNotesCount counts empty notes", () => {
+    // Start fresh
+    localStorage.clear();
+    expect(getEmptyNotesCount()).toBe(0);
+  });
+});
+
