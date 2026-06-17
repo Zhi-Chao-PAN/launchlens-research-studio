@@ -8109,10 +8109,55 @@ select.form-input {
 }
 
 .research-toc-item.active {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(99, 102, 241, 0.12);
   color: #a5b4fc;
   border-left-color: #6366f1;
-  font-weight: 500;
+  font-weight: 600;
+  transform: translateX(2px);
+}
+
+.research-toc-progress {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-top: 1px solid #1e293b;
+}
+
+.research-toc-progress-bar {
+  height: 3px;
+  background: #1e293b;
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.research-toc-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  border-radius: 2px;
+  transition: width 0.2s ease-out;
+}
+
+.research-toc-kbd-hint {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-top: 1px solid #1e293b;
+  font-size: 10px;
+  color: #475569;
+}
+
+.research-toc-kbd-hint kbd {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: #94a3b8;
+  font-family: monospace;
 }
 
 /* Collapsible section titles */
@@ -8175,6 +8220,26 @@ select.form-input {
   background: rgba(79, 70, 229, 0.08);
   color: #4f46e5;
   border-left-color: #6366f1;
+}
+
+[data-theme="light"] .research-toc-progress {
+  color: #94a3b8;
+  border-top-color: #e2e8f0;
+}
+
+[data-theme="light"] .research-toc-progress-bar {
+  background: #e2e8f0;
+}
+
+[data-theme="light"] .research-toc-kbd-hint {
+  color: #94a3b8;
+  border-top-color: #e2e8f0;
+}
+
+[data-theme="light"] .research-toc-kbd-hint kbd {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
 }
 
 [data-theme="light"] .research-section-title.collapsible:hover {

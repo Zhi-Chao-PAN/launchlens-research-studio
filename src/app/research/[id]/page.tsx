@@ -278,6 +278,7 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [activeSection, setActiveSection] = useState<string>("");
+  const [readingProgress, setReadingProgress] = useState(0);
   const [showToc, setShowToc] = useState(true);
   const [highlightedSource, setHighlightedSource] = useState<number | null>(null);
   const sourceRefs = useRef<(HTMLLIElement | null)[]>([]);
@@ -758,6 +759,10 @@ async function loadRun() {
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    // Update URL hash without scroll jump
+    if (typeof window !== "undefined" && history.replaceState) {
+      history.replaceState(null, "", "#" + id);
+    }
   }, []);
 
   // Handle citation click ? scroll to source and highlight
@@ -901,6 +906,74 @@ async function loadRun() {
 
     return () => observer.disconnect();
   }, [synthesis, run, tocItems]);
+
+  // Scroll to hash section on initial load
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: "auto", block: "start" });
+          setActiveSection(hash);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [synthesis, run]);
+
+  // Calculate reading progress
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleScroll = () => {
+      const main = document.querySelector(".research-detail-main") as HTMLElement | null;
+      if (!main) return;
+      const rect = main.getBoundingClientRect();
+      const viewportH = window.innerHeight;
+      const total = rect.height - viewportH;
+      const scrolled = Math.min(Math.max(0, -rect.top), total);
+      const progress = total > 0 ? (scrolled / total) * 100 : 0;
+      setReadingProgress(Math.round(progress));
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true } as AddEventListenerOptions);
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [synthesis, run]);
+
+  // Keyboard navigation: j/k to jump between sections, t/b for top/bottom
+  useEffect(() => {
+    if (typeof window === "undefined" || !tocItems.length) return;
+
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
+
+      const currentIdx = tocItems.findIndex((item) => item.id === activeSection);
+      if (e.key === "j") {
+        e.preventDefault();
+        const nextIdx = Math.min(currentIdx + 1, tocItems.length - 1);
+        if (nextIdx !== currentIdx && nextIdx >= 0) scrollToSection(tocItems[nextIdx].id);
+      } else if (e.key === "k") {
+        e.preventDefault();
+        const prevIdx = Math.max(currentIdx - 1, 0);
+        if (prevIdx !== currentIdx) scrollToSection(tocItems[prevIdx].id);
+      } else if (e.key === "t") {
+        e.preventDefault();
+        scrollToSection(tocItems[0].id);
+      } else if (e.key === "b") {
+        e.preventDefault();
+        scrollToSection(tocItems[tocItems.length - 1].id);
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [tocItems, activeSection, scrollToSection]);
 
   if (loading) {
     return (
@@ -1069,6 +1142,17 @@ async function loadRun() {
                   </button>
                 ))}
               </nav>
+
+              <div className="research-toc-progress">
+                <span>{readingProgress}% read</span>
+                <div className="research-toc-progress-bar">
+                  <div className="research-toc-progress-fill" style={{ width: `${readingProgress}%` }} />
+                </div>
+              </div>
+
+              <div className="research-toc-kbd-hint">
+                <kbd>j</kbd><kbd>k</kbd> nav &middot; <kbd>t</kbd> top &middot; <kbd>b</kbd> bottom
+              </div>
 
              {run && (
                <RelatedRuns
