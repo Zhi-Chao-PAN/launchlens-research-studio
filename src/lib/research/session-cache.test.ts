@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 class MockStorage {
   private data = new Map<string, string>();
@@ -20,9 +20,27 @@ import {
   listCachedSessions,
   deleteCachedSession,
   clearAllCachedSessions,
-  type CachedSession,
+  recordSessionAccess,
+  getSessionWithLruTouch,
+  getLeastRecentlyUsedSessions,
+  getSessionAccessStats,
+  recordCacheHit,
+  recordCacheMiss,
+  recordCacheEviction,
+  resetCacheStats,
+  getCacheStats,
+  estimateSessionSize,
+  estimateTotalCacheSize,
+  getAverageSessionSize,
+  getCachedSessionsBatch,
+  deleteCachedSessionsBatch,
+  deleteSessionsOlderThan,
+  evictLru,
+  evictOldest,
+  getTopAccessedSessions,
+  warmCache,
 } from "@/lib/research/session-cache";
-import type { ResearchSession, AgentOutput, AgentId } from "@/lib/schema/research-schema";
+import type { ResearchSession, AgentOutput } from "@/lib/schema/research-schema";
 
 function makeSession(id: string, query: string, withOutput = true): ResearchSession {
   const output: AgentOutput | null = withOutput
@@ -131,3 +149,282 @@ describe("clearAllCachedSessions", () => {
     expect(listCachedSessions()).toHaveLength(0);
   });
 });
+
+
+
+describe("session access tracking (round 131)", () => {
+  beforeEach(() => {
+    clearAllCachedSessions();
+    // clear access records
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("launchlens:sessions-accessed");
+      localStorage.removeItem("launchlens:sessions-stats");
+    }
+  });
+
+  it("recordSessionAccess increments access count", () => {
+    saveSessionSnapshot(makeSession("s1", "q1"));
+    recordSessionAccess("s1");
+    recordSessionAccess("s1");
+    recordSessionAccess("s1");
+
+    const stats = getSessionAccessStats("s1");
+    expect(stats.accessCount).toBe(3);
+    expect(stats.accessedAt).toBeTruthy();
+  });
+
+  it("getSessionAccessStats returns zeros for unknown session", () => {
+    const stats = getSessionAccessStats("unknown");
+    expect(stats.accessCount).toBe(0);
+    expect(stats.accessedAt).toBeUndefined();
+  });
+
+  it("getSessionWithLruTouch records access and moves to front", () => {
+    saveSessionSnapshot(makeSession("s1", "first"));
+    saveSessionSnapshot(makeSession("s2", "second"));
+    saveSessionSnapshot(makeSession("s3", "third"));
+
+    // access s1 (oldest, at position 2)
+    const s = getSessionWithLruTouch("s1");
+    expect(s).toBeDefined();
+    expect(s?.query).toBe("first");
+
+    // s1 should now be at front
+    const all = listCachedSessions();
+    expect(all[0].id).toBe("s1");
+
+    const stats = getSessionAccessStats("s1");
+    expect(stats.accessCount).toBe(1);
+  });
+
+  it("getSessionWithLruTouch returns undefined for missing", () => {
+    expect(getSessionWithLruTouch("missing")).toBeUndefined();
+  });
+
+  it("getLeastRecentlyUsedSessions sorts by last access", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    recordSessionAccess("s3");
+    recordSessionAccess("s1");
+    // s2 was never accessed -> should be LRU
+    const lru = getLeastRecentlyUsedSessions();
+    expect(lru[0].id).toBe("s2");
+  });
+});
+
+describe("cache statistics (round 131)", () => {
+  beforeEach(() => {
+    clearAllCachedSessions();
+    resetCacheStats();
+  });
+
+  it("starts with zero stats", () => {
+    const stats = getCacheStats();
+    expect(stats.hits).toBe(0);
+    expect(stats.misses).toBe(0);
+    expect(stats.evictions).toBe(0);
+    expect(stats.totalRequests).toBe(0);
+    expect(stats.hitRate).toBe(0);
+    expect(stats.totalSessions).toBe(0);
+  });
+
+  it("records hits and calculates hit rate", () => {
+    recordCacheHit();
+    recordCacheHit();
+    recordCacheMiss();
+    recordCacheHit();
+
+    const stats = getCacheStats();
+    expect(stats.hits).toBe(3);
+    expect(stats.misses).toBe(1);
+    expect(stats.totalRequests).toBe(4);
+    expect(stats.hitRate).toBe(75);
+  });
+
+  it("records evictions", () => {
+    recordCacheEviction();
+    recordCacheEviction();
+    expect(getCacheStats().evictions).toBe(2);
+  });
+
+  it("resetCacheStats clears counters", () => {
+    recordCacheHit();
+    recordCacheMiss();
+    recordCacheEviction();
+    resetCacheStats();
+
+    const stats = getCacheStats();
+    expect(stats.hits).toBe(0);
+    expect(stats.misses).toBe(0);
+    expect(stats.evictions).toBe(0);
+  });
+});
+
+describe("size estimation (round 131)", () => {
+  beforeEach(() => clearAllCachedSessions());
+
+  it("estimateSessionSize returns JSON byte size", () => {
+    saveSessionSnapshot(makeSession("s1", "hello"));
+    const size = estimateSessionSize("s1");
+    expect(size).toBeGreaterThan(0);
+    expect(typeof size).toBe("number");
+  });
+
+  it("estimateSessionSize returns 0 for missing session", () => {
+    expect(estimateSessionSize("missing")).toBe(0);
+  });
+
+  it("estimateTotalCacheSize aggregates all sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    const total = estimateTotalCacheSize();
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeGreaterThanOrEqual(estimateSessionSize("s1"));
+  });
+
+  it("getAverageSessionSize divides total by count", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    const avg = getAverageSessionSize();
+    expect(avg).toBeGreaterThan(0);
+    expect(avg).toBe(Math.round(estimateTotalCacheSize() / 2));
+  });
+
+  it("returns 0 when cache empty", () => {
+    expect(estimateTotalCacheSize()).toBe(0);
+    expect(getAverageSessionSize()).toBe(0);
+  });
+});
+
+describe("batch operations (round 131)", () => {
+  beforeEach(() => clearAllCachedSessions());
+
+  it("getCachedSessionsBatch returns matching sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    const batch = getCachedSessionsBatch(["s1", "s3", "missing"]);
+    expect(batch).toHaveLength(2);
+    expect(batch.map((s) => s.id)).toContain("s1");
+    expect(batch.map((s) => s.id)).toContain("s3");
+  });
+
+  it("deleteCachedSessionsBatch removes multiple sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    const deleted = deleteCachedSessionsBatch(["s1", "s3"]);
+    expect(deleted).toBe(2);
+    expect(listCachedSessions()).toHaveLength(1);
+    expect(listCachedSessions()[0].id).toBe("s2");
+  });
+
+  it("deleteCachedSessionsBatch returns 0 for empty input", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    expect(deleteCachedSessionsBatch([])).toBe(0);
+    expect(listCachedSessions()).toHaveLength(1);
+  });
+
+  it("deleteSessionsOlderThan removes old sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+
+    const cutoff = new Date("2030-01-01").getTime();
+    const deleted = deleteSessionsOlderThan(cutoff);
+    expect(deleted).toBe(2);
+    expect(listCachedSessions()).toHaveLength(0);
+  });
+});
+
+describe("eviction (round 131)", () => {
+  beforeEach(() => {
+    clearAllCachedSessions();
+    resetCacheStats();
+  });
+
+  it("evictOldest removes oldest sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    const evicted = evictOldest(2);
+    expect(evicted).toBe(1);
+    expect(listCachedSessions().length).toBe(2);
+    expect(getCacheStats().evictions).toBe(1);
+  });
+
+  it("evictLru removes least recently accessed", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    recordSessionAccess("s1");
+    recordSessionAccess("s2");
+    // s3 never accessed = LRU
+
+    const evicted = evictLru(2);
+    expect(evicted).toBe(1);
+    const remaining = listCachedSessions();
+    expect(remaining).toHaveLength(2);
+    const remainingIds = remaining.map((s) => s.id);
+    expect(remainingIds).toContain("s1");
+    expect(remainingIds).toContain("s2");
+    expect(remainingIds).not.toContain("s3");
+  });
+
+  it("eviction does nothing when already under target", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    expect(evictOldest(8)).toBe(0);
+    expect(evictLru(8)).toBe(0);
+    expect(listCachedSessions().length).toBe(1);
+  });
+});
+
+describe("warmup / preload (round 131)", () => {
+  beforeEach(() => {
+    clearAllCachedSessions();
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("launchlens:sessions-accessed");
+    }
+  });
+
+  it("getTopAccessedSessions returns most-accessed sessions", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    recordSessionAccess("s1");
+    recordSessionAccess("s1");
+    recordSessionAccess("s1");
+    recordSessionAccess("s2");
+
+    const top = getTopAccessedSessions(2);
+    expect(top).toHaveLength(2);
+    expect(top[0].id).toBe("s1");
+    expect(top[1].id).toBe("s2");
+  });
+
+  it("warmCache reorders top sessions to front", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    saveSessionSnapshot(makeSession("s2", "b"));
+    saveSessionSnapshot(makeSession("s3", "c"));
+
+    recordSessionAccess("s3");
+
+    const warmed = warmCache(2);
+    expect(warmed).toBe(1);
+
+    const all = listCachedSessions();
+    expect(all[0].id).toBe("s3"); // most accessed first
+  });
+
+  it("warmCache returns 0 when no access records", () => {
+    saveSessionSnapshot(makeSession("s1", "a"));
+    expect(warmCache()).toBe(0);
+  });
+});
+
