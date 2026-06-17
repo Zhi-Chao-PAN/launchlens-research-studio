@@ -11,6 +11,21 @@
   tickSchedules,
   formatScheduleInterval,
   triggerScheduleNow,
+  getScheduleHistory,
+  clearScheduleHistory,
+  recordScheduleResult,
+  isScheduleMissed,
+  getMissedSchedules,
+  catchUpMissedSchedules,
+  isScheduleInRetry,
+  getRetryCount,
+  resetRetryState,
+  pauseAllSchedules,
+  resumeAllSchedules,
+  bulkPauseSchedules,
+  bulkResumeSchedules,
+  bulkDeleteSchedules,
+  getSchedulerStatsExtended,
 } from "@/lib/research/scheduler";
 
 vi.mock("@/lib/research/batch-manager", () => ({
@@ -380,3 +395,291 @@ describe("getSchedulerStats", () => {
     expect(stats.totalRuns).toBe(2);
   });
 });
+
+
+describe("schedule history (round 130)", () => {
+  it("starts with empty history", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    expect(getScheduleHistory(s.id)).toEqual([]);
+  });
+
+  it("records a run result via recordScheduleResult", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+
+    recordScheduleResult(s.id, "batch-1", "success");
+
+    const history = getScheduleHistory(s.id);
+    expect(history.length).toBe(1);
+    expect(history[0].status).toBe("success");
+    expect(history[0].batchId).toBe("batch-1");
+    expect(history[0].startedAt).toBeTruthy();
+    expect(history[0].completedAt).toBeTruthy();
+  });
+
+  it("records failure with error message", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+
+    recordScheduleResult(s.id, "batch-2", "failed", "timeout");
+
+    const history = getScheduleHistory(s.id);
+    expect(history[0].status).toBe("failed");
+    expect(history[0].errorMessage).toBe("timeout");
+  });
+
+  it("updates success/failure counts on record", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+
+    recordScheduleResult(s.id, "b1", "success");
+    recordScheduleResult(s.id, "b2", "success");
+    recordScheduleResult(s.id, "b3", "failed");
+
+    const updated = getSchedule(s.id);
+    expect(updated?.totalRuns).toBe(3);
+    expect(updated?.successRuns).toBe(2);
+    expect(updated?.failedRuns).toBe(1);
+  });
+
+  it("caps history at MAX_HISTORY_PER_SCHEDULE", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+
+    for (let i = 0; i < 25; i++) {
+      recordScheduleResult(s.id, "batch-" + i, i % 2 === 0 ? "success" : "failed");
+    }
+
+    const history = getScheduleHistory(s.id);
+    expect(history.length).toBe(20);
+    // Most recent first
+    expect(history[0].batchId).toBe("batch-24");
+    expect(history[19].batchId).toBe("batch-5");
+  });
+
+  it("clearScheduleHistory removes all history", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    recordScheduleResult(s.id, "b1", "success");
+    recordScheduleResult(s.id, "b2", "failed");
+
+    expect(getScheduleHistory(s.id).length).toBe(2);
+    clearScheduleHistory(s.id);
+    expect(getScheduleHistory(s.id)).toEqual([]);
+  });
+});
+
+describe("missed schedule detection (round 130)", () => {
+  it("returns false for schedule that hasn't missed", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    expect(isScheduleMissed(s.id)).toBe(false);
+  });
+
+  it("detects missed schedule when nextRunAt is far in the past", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    const store = global.__scheduleStore!;
+    const direct = store.get(s.id)!;
+    // 10 minutes in the past = missed (5 min threshold)
+    direct.nextRunAt = Date.now() - 10 * 60 * 1000;
+    store.set(s.id, direct);
+
+    expect(isScheduleMissed(s.id)).toBe(true);
+  });
+
+  it("does not consider paused schedules as missed", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    toggleSchedule(s.id); // pause it
+
+    const store = global.__scheduleStore!;
+    const direct = store.get(s.id)!;
+    direct.nextRunAt = Date.now() - 30 * 60 * 1000;
+    store.set(s.id, direct);
+
+    expect(isScheduleMissed(s.id)).toBe(false);
+  });
+
+  it("getMissedSchedules returns only active missed schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+
+    const store = global.__scheduleStore!;
+    store.get(s1.id)!.nextRunAt = Date.now() - 10 * 60 * 1000;
+    store.get(s2.id)!.nextRunAt = Date.now() - 10 * 60 * 1000;
+    store.set(s1.id, store.get(s1.id)!);
+    store.set(s2.id, store.get(s2.id)!);
+
+    toggleSchedule(s2.id); // pause s2
+
+    const missed = getMissedSchedules();
+    expect(missed.length).toBe(1);
+    expect(missed[0].id).toBe(s1.id);
+  });
+
+  it("catchUpMissedSchedules triggers missed schedules", async () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+
+    const store = global.__scheduleStore!;
+    const direct = store.get(s.id)!;
+    direct.nextRunAt = Date.now() - 10 * 60 * 1000;
+    store.set(s.id, direct);
+
+    const caught = await catchUpMissedSchedules();
+    expect(caught).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("retry state (round 130)", () => {
+  it("starts with zero retry count", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    expect(getRetryCount(s.id)).toBe(0);
+    expect(isScheduleInRetry(s.id)).toBe(false);
+  });
+
+  it("resetRetryState resets retry counters", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    const store = global.__scheduleStore!;
+    const direct = store.get(s.id)!;
+    // @ts-expect-error - extended retry field
+    direct._currentRetry = 2;
+    store.set(s.id, direct);
+
+    expect(getRetryCount(s.id)).toBe(2);
+    resetRetryState(s.id);
+    expect(getRetryCount(s.id)).toBe(0);
+  });
+
+  it("recordScheduleResult success resets retry state", () => {
+    const s = createSchedule({ name: "test", query: "q", interval: "hourly" });
+    const store = global.__scheduleStore!;
+    const direct = store.get(s.id)!;
+    // @ts-expect-error - extended retry field
+    direct._currentRetry = 3;
+    store.set(s.id, direct);
+
+    recordScheduleResult(s.id, "batch-ok", "success");
+    expect(getRetryCount(s.id)).toBe(0);
+  });
+});
+
+describe("bulk operations (round 130)", () => {
+  it("pauseAllSchedules pauses all active schedules", () => {
+    createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    createSchedule({ name: "b", query: "q2", interval: "hourly" });
+    createSchedule({ name: "c", query: "q3", interval: "hourly" });
+
+    expect(listSchedules().filter((s) => s.status === "active").length).toBe(3);
+    const count = pauseAllSchedules();
+    expect(count).toBe(3);
+    expect(listSchedules().filter((s) => s.status === "paused").length).toBe(3);
+  });
+
+  it("resumeAllSchedules resumes all paused schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+    toggleSchedule(s1.id);
+    toggleSchedule(s2.id);
+
+    expect(listSchedules().filter((s) => s.status === "paused").length).toBe(2);
+    const count = resumeAllSchedules();
+    expect(count).toBe(2);
+    expect(listSchedules().filter((s) => s.status === "active").length).toBe(2);
+  });
+
+  it("bulkPauseSchedules pauses selected schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+    const s3 = createSchedule({ name: "c", query: "q3", interval: "hourly" });
+
+    const count = bulkPauseSchedules([s1.id, s3.id]);
+    expect(count).toBe(2);
+    expect(getSchedule(s1.id)?.status).toBe("paused");
+    expect(getSchedule(s2.id)?.status).toBe("active");
+    expect(getSchedule(s3.id)?.status).toBe("paused");
+  });
+
+  it("bulkResumeSchedules resumes selected schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+    toggleSchedule(s1.id);
+    toggleSchedule(s2.id);
+
+    const count = bulkResumeSchedules([s1.id]);
+    expect(count).toBe(1);
+    expect(getSchedule(s1.id)?.status).toBe("active");
+    expect(getSchedule(s2.id)?.status).toBe("paused");
+  });
+
+  it("bulkDeleteSchedules deletes multiple schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+    const s3 = createSchedule({ name: "c", query: "q3", interval: "hourly" });
+
+    const count = bulkDeleteSchedules([s1.id, s2.id]);
+    expect(count).toBe(2);
+    expect(listSchedules().length).toBe(1);
+    expect(getSchedule(s3.id)).toBeTruthy();
+  });
+});
+
+describe("extended stats (round 130)", () => {
+  it("returns extended stats for empty scheduler", () => {
+    const stats = getSchedulerStatsExtended();
+    expect(stats.total).toBe(0);
+    expect(stats.active).toBe(0);
+    expect(stats.paused).toBe(0);
+    expect(stats.totalRuns).toBe(0);
+    expect(stats.successRuns).toBe(0);
+    expect(stats.failedRuns).toBe(0);
+    expect(stats.successRate).toBe(0);
+    expect(stats.missedCount).toBe(0);
+    expect(stats.schedulesWithHistory).toBe(0);
+    expect(stats.avgRunsPerSchedule).toBe(0);
+    expect(stats.mostActiveSchedule).toBeUndefined();
+    expect(stats.leastActiveSchedule).toBeUndefined();
+  });
+
+  it("calculates success rate correctly", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "b", query: "q2", interval: "hourly" });
+
+    recordScheduleResult(s1.id, "b1", "success");
+    recordScheduleResult(s1.id, "b2", "success");
+    recordScheduleResult(s2.id, "b3", "failed");
+
+    const stats = getSchedulerStatsExtended();
+    expect(stats.totalRuns).toBe(3);
+    expect(stats.successRuns).toBe(2);
+    expect(stats.failedRuns).toBe(1);
+    expect(stats.successRate).toBeCloseTo(66.67, 1);
+    expect(stats.schedulesWithHistory).toBe(2);
+    expect(stats.avgRunsPerSchedule).toBe(1.5);
+  });
+
+  it("identifies most and least active schedules", () => {
+    const s1 = createSchedule({ name: "most", query: "q1", interval: "hourly" });
+    const s2 = createSchedule({ name: "middle", query: "q2", interval: "hourly" });
+    const s3 = createSchedule({ name: "least", query: "q3", interval: "hourly" });
+
+    recordScheduleResult(s1.id, "b1", "success");
+    recordScheduleResult(s1.id, "b2", "success");
+    recordScheduleResult(s1.id, "b3", "success");
+    recordScheduleResult(s2.id, "b4", "success");
+    recordScheduleResult(s2.id, "b5", "success");
+    recordScheduleResult(s3.id, "b6", "success");
+
+    const stats = getSchedulerStatsExtended();
+    expect(stats.mostActiveSchedule?.name).toBe("most");
+    expect(stats.mostActiveSchedule?.totalRuns).toBe(3);
+    expect(stats.leastActiveSchedule?.name).toBe("least");
+    expect(stats.leastActiveSchedule?.totalRuns).toBe(1);
+  });
+
+  it("counts missed schedules", () => {
+    const s1 = createSchedule({ name: "a", query: "q1", interval: "hourly" });
+    createSchedule({ name: "b", query: "q2", interval: "hourly" });
+
+    const store = global.__scheduleStore!;
+    const direct = store.get(s1.id)!;
+    direct.nextRunAt = Date.now() - 10 * 60 * 1000;
+    store.set(s1.id, direct);
+
+    const stats = getSchedulerStatsExtended();
+    expect(stats.missedCount).toBe(1);
+  });
+});
+

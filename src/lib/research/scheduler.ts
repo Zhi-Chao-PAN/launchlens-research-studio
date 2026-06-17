@@ -145,6 +145,7 @@ export function _resetScheduler(): void {
     clearInterval(global.__schedulePoller);
   }
   global.__scheduleStore = undefined;
+  global.__scheduleHistory = undefined;
   global.__schedulePoller = undefined;
   global.__schedulePollerRunning = false;
 }
@@ -453,3 +454,315 @@ export function getSchedulerStats(): {
     totalRuns,
   };
 }
+
+
+/* ------------------------------------------------------------------ */
+/*  Schedule history & failure tracking                                */
+/* ------------------------------------------------------------------ */
+
+export interface ScheduleRunRecord {
+  id: string;
+  scheduleId: string;
+  batchId?: string;
+  status: "success" | "failed" | "skipped" | "missed";
+  startedAt: number;
+  completedAt?: number;
+  errorMessage?: string;
+  retryCount?: number;
+}
+
+const MAX_HISTORY_PER_SCHEDULE = 20;
+const MAX_MISSED_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes = "missed"
+
+declare global {
+  var __scheduleHistory: Map<string, ScheduleRunRecord[]> | undefined;
+}
+
+function getHistoryStore(): Map<string, ScheduleRunRecord[]> {
+  if (!global.__scheduleHistory) {
+    global.__scheduleHistory = new Map();
+  }
+  return global.__scheduleHistory;
+}
+
+export function getScheduleHistory(scheduleId: string): ScheduleRunRecord[] {
+  const store = getHistoryStore();
+  return store.get(scheduleId) ?? [];
+}
+
+function saveScheduleHistory(scheduleId: string, history: ScheduleRunRecord[]): void {
+  const store = getHistoryStore();
+  const trimmed = history.slice(0, MAX_HISTORY_PER_SCHEDULE);
+  store.set(scheduleId, trimmed);
+}
+
+function addHistoryRecord(
+  scheduleId: string,
+  record: Omit<ScheduleRunRecord, "id" | "startedAt"> & { startedAt?: number }
+): ScheduleRunRecord {
+  const history = getScheduleHistory(scheduleId);
+  const newRecord: ScheduleRunRecord = {
+    id: "sh_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+    scheduleId,
+    batchId: record.batchId,
+    status: record.status,
+    startedAt: record.startedAt ?? Date.now(),
+    completedAt: record.completedAt,
+    errorMessage: record.errorMessage,
+    retryCount: record.retryCount ?? 0,
+  };
+  history.unshift(newRecord);
+  saveScheduleHistory(scheduleId, history);
+  return newRecord;
+}
+
+export function clearScheduleHistory(scheduleId: string): void {
+  const store = getHistoryStore();
+  store.delete(scheduleId);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Retry state tracking                                               */
+/* ------------------------------------------------------------------ */
+
+export function isScheduleInRetry(scheduleId: string): boolean {
+  const s = getSchedule(scheduleId);
+  if (!s) return false;
+  // @ts-expect-error - extended field
+  return s._retryScheduledAt !== undefined && s._retryScheduledAt > Date.now();
+}
+
+export function getRetryCount(scheduleId: string): number {
+  const s = getSchedule(scheduleId);
+  if (!s) return 0;
+  // @ts-expect-error - extended field
+  return s._currentRetry ?? 0;
+}
+
+export function resetRetryState(scheduleId: string): void {
+  const store = getStore();
+  const s = store.get(scheduleId);
+  if (!s) return;
+  // @ts-expect-error - extended retry field
+    s._currentRetry = 0;
+  // @ts-expect-error - extended retry field
+    s._retryScheduledAt = undefined;
+  store.set(scheduleId, s);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Missed schedule detection                                          */
+/* ------------------------------------------------------------------ */
+
+export function isScheduleMissed(scheduleId: string): boolean {
+  const s = getSchedule(scheduleId);
+  if (!s) return false;
+  if (s.status !== "active") return false;
+  return Date.now() - s.nextRunAt > MAX_MISSED_THRESHOLD_MS;
+}
+
+export function getMissedSchedules(): ResearchSchedule[] {
+  return listSchedules().filter((s) => isScheduleMissed(s.id));
+}
+
+export async function catchUpMissedSchedules(): Promise<number> {
+  const missed = getMissedSchedules();
+  let caughtUp = 0;
+
+  for (const schedule of missed) {
+    try {
+      const result = await triggerScheduleNow(schedule.id);
+      if (result) {
+        addHistoryRecord(schedule.id, {
+          batchId: result.batchId,
+          status: "success",
+          completedAt: Date.now(),
+        });
+        caughtUp++;
+      }
+    } catch {
+      // skip failed catch-ups
+    }
+  }
+
+  return caughtUp;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bulk operations                                                    */
+/* ------------------------------------------------------------------ */
+
+export function pauseAllSchedules(): number {
+  const schedules = listSchedules();
+  let count = 0;
+  for (const s of schedules) {
+    if (s.status === "active") {
+      updateSchedule(s.id, { status: "paused" });
+      count++;
+    }
+  }
+  return count;
+}
+
+export function resumeAllSchedules(): number {
+  const schedules = listSchedules();
+  let count = 0;
+  for (const s of schedules) {
+    if (s.status === "paused") {
+      updateSchedule(s.id, { status: "active" });
+      count++;
+    }
+  }
+  return count;
+}
+
+export function bulkPauseSchedules(scheduleIds: string[]): number {
+  let count = 0;
+  for (const id of scheduleIds) {
+    const s = getSchedule(id);
+    if (s && s.status === "active") {
+      updateSchedule(id, { status: "paused" });
+      count++;
+    }
+  }
+  return count;
+}
+
+export function bulkResumeSchedules(scheduleIds: string[]): number {
+  let count = 0;
+  for (const id of scheduleIds) {
+    const s = getSchedule(id);
+    if (s && s.status === "paused") {
+      updateSchedule(id, { status: "active" });
+      count++;
+    }
+  }
+  return count;
+}
+
+export function bulkDeleteSchedules(scheduleIds: string[]): number {
+  let count = 0;
+  for (const id of scheduleIds) {
+    if (deleteSchedule(id)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Extended statistics                                                */
+/* ------------------------------------------------------------------ */
+
+export interface SchedulerStatsExtended {
+  total: number;
+  active: number;
+  paused: number;
+  nextRunAt?: number;
+  totalRuns: number;
+  successRuns: number;
+  failedRuns: number;
+  successRate: number;
+  missedCount: number;
+  schedulesWithHistory: number;
+  avgRunsPerSchedule: number;
+  mostActiveSchedule?: { id: string; name: string; totalRuns: number };
+  leastActiveSchedule?: { id: string; name: string; totalRuns: number };
+}
+
+export function getSchedulerStatsExtended(): SchedulerStatsExtended {
+  const schedules = listSchedules();
+  const active = schedules.filter((s) => s.status === "active");
+
+  const totalRuns = schedules.reduce((sum, s) => sum + s.totalRuns, 0);
+  const successRuns = schedules.reduce((sum, s) => sum + s.successRuns, 0);
+  const failedRuns = schedules.reduce((sum, s) => sum + s.failedRuns, 0);
+
+  const successRate = totalRuns > 0 ? Math.round((successRuns / totalRuns) * 10000) / 100 : 0;
+
+  const missedCount = schedules.filter((s) => isScheduleMissed(s.id)).length;
+
+  const schedulesWithHistory = schedules.filter(
+    (s) => getScheduleHistory(s.id).length > 0
+  ).length;
+
+  const avgRunsPerSchedule = schedules.length > 0
+    ? Math.round((totalRuns / schedules.length) * 100) / 100
+    : 0;
+
+  const sortedByRuns = [...schedules].sort((a, b) => b.totalRuns - a.totalRuns);
+  const activeWithRuns = sortedByRuns.filter((s) => s.totalRuns > 0);
+
+  const nextRun = active.reduce<number | undefined>((earliest, s) => {
+    if (earliest === undefined) return s.nextRunAt;
+    return Math.min(earliest, s.nextRunAt);
+  }, undefined);
+
+  return {
+    total: schedules.length,
+    active: active.length,
+    paused: schedules.length - active.length,
+    nextRunAt: nextRun,
+    totalRuns,
+    successRuns,
+    failedRuns,
+    successRate,
+    missedCount,
+    schedulesWithHistory,
+    avgRunsPerSchedule,
+    mostActiveSchedule: activeWithRuns.length > 0
+      ? {
+          id: activeWithRuns[0].id,
+          name: activeWithRuns[0].name,
+          totalRuns: activeWithRuns[0].totalRuns,
+        }
+      : undefined,
+    leastActiveSchedule: activeWithRuns.length > 0
+      ? {
+          id: activeWithRuns[activeWithRuns.length - 1].id,
+          name: activeWithRuns[activeWithRuns.length - 1].name,
+          totalRuns: activeWithRuns[activeWithRuns.length - 1].totalRuns,
+        }
+      : undefined,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Result recording                                                   */
+/* ------------------------------------------------------------------ */
+
+export function recordScheduleResult(
+  scheduleId: string,
+  batchId: string,
+  status: "success" | "failed",
+  errorMessage?: string
+): void {
+  const store = getStore();
+  const s = store.get(scheduleId);
+  if (!s) return;
+
+  const updated: ResearchSchedule = {
+    ...s,
+    totalRuns: s.totalRuns + 1,
+    successRuns: s.successRuns + (status === "success" ? 1 : 0),
+    failedRuns: s.failedRuns + (status === "failed" ? 1 : 0),
+    updatedAt: Date.now(),
+    lastRunAt: Date.now(),
+    lastRunId: batchId,
+  };
+
+  store.set(scheduleId, updated);
+  persistSchedule(updated);
+
+  addHistoryRecord(scheduleId, {
+    batchId,
+    status,
+    completedAt: Date.now(),
+    errorMessage,
+  });
+
+  if (status === "success") {
+    resetRetryState(scheduleId);
+  }
+}
+
