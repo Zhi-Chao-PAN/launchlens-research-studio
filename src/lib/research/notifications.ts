@@ -1,3 +1,4 @@
+import { addNotification } from "./notification-store";
 /**
  * Browser notification system.
  * Shows desktop notifications when long-running research completes.
@@ -96,12 +97,34 @@ export function clearPendingNotification(runId: string): void {
 /**
  * Show a notification for a completed research.
  */
-export function showResearchCompleteNotification(runId: string, query: string): void {
+/**
+ * Show a notification for a completed research.
+ * Also dispatches an in-app notification event.
+ */
+export function showResearchCompleteNotification(runId: string, query: string, status: "completed" | "failed" = "completed"): void {
+  // Dispatch in-app notification event first
+  if (typeof window !== "undefined") {
+    try {
+      // addNotification is imported at the top of the file
+      addNotification({
+        type: status === "completed" ? "research-complete" : "research-failed",
+        title: status === "completed" ? "Research complete" : "Research failed",
+        body: query.length > 120 ? query.slice(0, 120) + "..." : query,
+        link: "/research/" + runId,
+        metadata: { runId },
+      });
+      window.dispatchEvent(new CustomEvent("launchlens-notification"));
+    } catch {
+      // ignore if store module not available
+    }
+  }
+
+  // Desktop notification
   if (!areNotificationsSupported()) return;
   if (getNotificationPermission() !== "granted") return;
   
   try {
-    const notification = new Notification("研究完成", {
+    const notification = new Notification(status === "completed" ? "Research complete" : "Research failed", {
       body: query.length > 100 ? query.slice(0, 100) + "..." : query,
       icon: "/favicon.ico",
       badge: "/favicon.ico",
@@ -129,22 +152,21 @@ export function showResearchCompleteNotification(runId: string, query: string): 
  * Check pending notifications against actual run status.
  * Call this periodically or when the page loads.
  */
+/**
+ * Check pending notifications against actual run status.
+ * Call this periodically or when the page loads.
+ */
 export async function checkPendingNotifications(): Promise<void> {
   const pending = getPendingNotifications();
   if (pending.length === 0) return;
   
   for (const notif of pending) {
     try {
-      const res = await fetch("/api/research/runs?limit=1");
-      if (!res.ok) continue;
-      
-      // Just check if we have this run completed
-      // We can check the SSE or fetch individually
       const runRes = await fetch("/api/research/" + notif.runId);
       if (runRes.ok) {
         const runData = await runRes.json();
         if (runData.status === "completed" || runData.status === "failed") {
-          showResearchCompleteNotification(notif.runId, notif.query);
+          showResearchCompleteNotification(notif.runId, notif.query, runData.status);
           clearPendingNotification(notif.runId);
         }
       }
