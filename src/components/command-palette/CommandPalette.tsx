@@ -38,7 +38,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
     const ranges = getMatchRanges(label, query);
     if (ranges.length === 0) return label;
 
-    const parts: (string | JSX.Element)[] = [];
+    const parts: (string | React.ReactNode)[] = [];
     let lastEnd = 0;
     for (let i = 0; i < ranges.length; i++) {
       const { start, end } = ranges[i];
@@ -139,7 +139,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
           >
             All
           </button>
-          {Array.from(new Set(commands.map((c) => c.category || "other")).filter(Boolean).map((cat) => (
+          {Array.from(new Set(commands.map((c) => c.category || "other"))).filter(Boolean).map((cat) => (
             <button
               key={cat}
               className={`cmdpal-cat-btn ${activeCategory === cat ? "active" : ""}`}

@@ -470,7 +470,8 @@ comma-separated entries. Supports:
 **Implementation:**
 - src/lib/api/trusted-ips.ts 锟斤拷 parser + match function with
   numeric IPv4 CIDR matching
-- checkRateLimitForIp() in ate-limit.ts 锟斤拷 wraps the existing
+- checkRateLimitForIp() in 
+ate-limit.ts 锟斤拷 wraps the existing
   rate limiter with a trusted IP check first
 - Research API endpoint uses checkRateLimitForIp() instead of raw
   checkRateLimit() so trusted IPs skip the bucket
@@ -990,7 +991,8 @@ when running large batches.
 - createBatch(queries, keywords, options) — create a batch with priority, concurrency, retries
 - getBatch(id) — get batch with computed progress + ETA
 - listBatches(limit) — list batches newest-first
-- pauseBatch(id) / esumeBatch(id) / cancelBatch(id) — lifecycle control
+- pauseBatch(id) / 
+esumeBatch(id) / cancelBatch(id) — lifecycle control
 - setGlobalConcurrency(limit) — tune global capacity
 - getConcurrencyStats() — real-time queue depth + active counts
 - _resetBatchManager() — test helper
@@ -1021,3 +1023,127 @@ when running large batches.
 - Visual regression harness exists but not run in CI
 - Homepage uses Tailwind light theme, inner pages use CSS dark theme (design mismatch)
 - CommandPalette has memoization compilation warning
+## Round 77 - Unified data import/export system
+GET /api/data/export and POST /api/data/import endpoints with three
+merge strategies (merge, overwrite, skip). DataManager component on
+/history with Export/Import tabs, per-type selection, size estimate,
+and import result summary. Covers runs, notes, folders, templates.
+
+## Round 78 - Data import/export UI polish
+File picker for JSON backups, estimated size calculator, per-type
+imported/skipped/total counts in the result table. Dark theme CSS
+matching the inner-page aesthetic. Integrated into /history page.
+
+## Round 79 - Side-by-side diff view for modified insights
+Unified diff rendering for insight text changes. Added/deleted lines
+color-coded. Integrated into the research detail view when an insight
+has been edited vs. the original generated version.
+
+## Round 80 - Scheduled recurring research system
+Cron-style scheduling for research runs. Recurrence rules: hourly,
+daily, weekly, custom interval. Schedules persist in localStorage.
+Next-run indicator on dashboard.
+
+## Round 81 - Global theme toggle with light/dark mode
+Theme switcher in the header. System preference detection with
+localStorage override. All pages, components, and modals styled for
+both themes. CSS custom properties drive the palette.
+
+## Round 82 - History page search, filter, and sort toolbar
+Full-text search over run titles and queries. Filters by date range,
+agent, status, tags, starred. Sort by date, title, quality score.
+Persistent sort preference.
+
+## Round 83 - Share page polish
+Branded header on share/[token] pages. Info banner explaining the
+shared view. Copy-link button. Print styles tuned for the shared
+report layout.
+
+## Round 84 - In-app notification center
+Bell icon in header with unread badge. Notification list with
+read/unread states. LocalStorage persistence. Mark-all-read action.
+Five notification types: research-complete, research-failed,
+scheduler-missed, export-ready, import-complete.
+
+## Round 85 - Templates gallery
+Templates page with category tabs, search, grid cards. 10 curated
+templates across market research, competitive analysis, product
+research, etc. One-click start from any template.
+
+## Rounds 86 - 106 - Mega batch
+Retry-fetch helper, error boundary, network state indicator, command
+palette with fuzzy search, undo-delete + toast notifications,
+pagination + share config, tags system with autocomplete, skeleton
+loaders across all data views, empty state illustrations, source
+analysis panel, research suggestions, starred runs, quality score
+charts, keyboard shortcut system.
+
+## Round 107 - Compare page enhancements
+Venn diagram visualization of source overlap. Keyword overlap analysis
+table. Skeleton loaders for compare results. Better responsive layout
+for side-by-side comparison.
+
+## Round 108 - Source overlap analysis for compare page
+Jaccard similarity calculation between two research run source sets.
+Overlap percentage badge. Shared-source list with confidence
+comparison.
+
+## Round 109 - Related research recommendations
+Sidebar on the research detail page showing related runs by keyword
+overlap and source similarity. Click to open in compare view. Up to
+5 recommendations with confidence scores.
+
+## Round 110 - Query autocomplete
+Autocomplete dropdown on the query input with three suggestion types:
+history recents, keyword completions, template suggestions. Keyboard
+navigation (up/down/enter/esc). Debounced 150ms.
+
+## Round 111 - TypeScript error sweep
+21 non-test TypeScript errors fixed. Stricter type narrowing. Removed
+unnecessary any casts. 0 type errors after the sweep.
+
+## Round 112 - Bulk tag actions on history page
+Multi-select toolbar for tag operations (add / remove / replace).
+Selected-count badge. Select-all / clear-selection. Shift+click
+range selection.
+
+## Round 113 - Dashboard stats cards on home page
+Four summary cards: total runs, this week, avg. quality score, agents
+active. Live-updating counters with transition easing. Responsive
+2x2 grid.
+
+## Round 114 - Export includes personal notes
+Markdown export adds ## Personal Notes section. JSON export includes
+personalNotes / tags / rating / starred. ExportActions reads from
+localStorage and passes through.
+
+## Round 115 - In-report search with highlight and jump
+ReportSearchBar component. DOM TreeWalker character-level highlight.
+Previous/next match navigation. Ctrl/Cmd+F, Enter/Shift+Enter/Esc
+shortcuts. Smooth scroll-into-view.
+
+## Round 116 - Folder drag-and-drop reordering
+reorderFolders() and reorderRunsInFolder() data functions. HTML5
+drag & drop on FolderSidebar. Visual drop indicators. Drag handle +
+dragover feedback. Persists to localStorage.
+
+## Round 117 - Enhanced print / PDF styles
+A4 paper sizing with 2cm margins. Optimized table layout. Citation
+block styling. Confidence badges in print colors. Tags retain shape.
+External links show URL. Typography tuned for 12pt. Dark mode falls
+back to light for print.
+
+## Round 118 - Command palette search enhancements
+getMatchRanges() for character-level match highlighting. Four match
+modes: prefix, substring, initialism, subsequence. Category tabs.
+Fuzzy-matched characters highlighted in labels.
+
+## Round 119 - Research progress animation polish
+Shimmer sweep on running progress bars. Pop-bounce on agent
+completion. Horizontal shake on error. Step text fade-in. Pulse-ring
+on running status badge. All respect prefers-reduced-motion.
+
+## Round 120 - Regression sweep + Cycle 12 report
+Full regression (lint, typecheck, unit, build, e2e) — all green.
+Unit tests: 689/689. E2E: 29/29. Cycle 12 report at
+docs/cycle-12-r111-120.md. ROUNDS.md updated through round 120.
