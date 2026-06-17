@@ -43,11 +43,14 @@ export interface Batch {
   progress: number;
   /** Internal sequence number for stable sort ordering. */
   _seq: number;
+  /** Agent persona to use for runs (internal). */
+  _agent?: string;
 }
 
 export interface CreateBatchOptions {
   provider?: string;
   model?: string;
+  agent?: string;
   priority?: BatchPriority;
   concurrency?: number;
   retriesPerRun?: number;
@@ -158,6 +161,7 @@ export function createBatch(
   const id = generateId();
   const now = Date.now();
   const priority = options.priority || "normal";
+  const agent = options.agent || undefined;
   const concurrency = Math.min(
     options.concurrency || DEFAULT_BATCH_CONCURRENCY,
     queries.length,
@@ -385,7 +389,8 @@ async function executeRun(batchId: string, runIndex: number): Promise<void> {
         await new Promise((res) => setTimeout(res, 100 * Math.pow(2, attempt - 1)));
       }
 
-      const session = createResearchSession(query, [], batch.priority === "high" ? "analyst" : undefined);
+      const agentId = batch._agent || (batch.priority === "high" ? "analyst" : undefined);
+      const session = createResearchSession(query, [], agentId);
       run.id = session.id;
 
       // Poll for completion

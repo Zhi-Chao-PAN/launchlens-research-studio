@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
 
 interface BatchRun {
   id: string;
@@ -262,6 +263,7 @@ export default function BatchPage() {
             </div>
           </div>
         )}
+      <ScheduleManager />
       </main>
     </div>
   );

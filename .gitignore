@@ -47,3 +47,5 @@ next-env.d.ts
 # visual-regression transient artifacts
 visual-report.md
 screenshots/
+
+test-results/
