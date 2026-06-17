@@ -254,6 +254,76 @@ export function rankCommands<T extends { id: string; label: string; description?
   return scored;
 }
 
+/**
+ * Compute character-level match ranges for highlighting.
+ * Returns an array of {start, end} ranges in the label where the query matches.
+ */
+export function getMatchRanges(label: string, query: string): { start: number; end: number }[] {
+  if (!query.trim()) return [];
+  
+  const q = query.toLowerCase();
+  const text = label.toLowerCase();
+  const ranges: { start: number; end: number }[] = [];
+
+  // Try exact prefix match first
+  if (text.startsWith(q)) {
+    ranges.push({ start: 0, end: q.length });
+    return ranges;
+  }
+
+  // Try substring match (first occurrence)
+  const idx = text.indexOf(q);
+  if (idx !== -1) {
+    ranges.push({ start: idx, end: idx + q.length });
+    return ranges;
+  }
+
+  // Try word-start matches
+  const wordStartRegex = /[^a-zA-Z0-9]([a-zA-Z0-9])/g;
+  const wordStarts: number[] = [0];
+  let match;
+  while ((match = wordStartRegex.exec(label)) !== null) {
+    wordStarts.push(match.index + 1);
+  }
+
+  // Try initialism: collect all first chars of words
+  const initials = wordStarts.map((i) => text[i]).join('');
+  const initMatch = initials.indexOf(q);
+  if (initMatch !== -1) {
+    // Return ranges for each matched initial
+    for (let i = 0; i < q.length; i++) {
+      const pos = wordStarts[initMatch + i];
+      ranges.push({ start: pos, end: pos + 1 });
+    }
+    return ranges;
+  }
+
+  // Fallback: subsequence match
+  const sub = subsequenceMatch(label, query);
+  if (sub) {
+    // Group consecutive indices into ranges
+    const indices = sub.indices;
+    if (indices.length === 0) return [];
+    
+    let rangeStart = indices[0];
+    let rangeEnd = indices[0] + 1;
+    
+    for (let i = 1; i < indices.length; i++) {
+      if (indices[i] === indices[i - 1] + 1) {
+        rangeEnd = indices[i] + 1;
+      } else {
+        ranges.push({ start: rangeStart, end: rangeEnd });
+        rangeStart = indices[i];
+        rangeEnd = indices[i] + 1;
+      }
+    }
+    ranges.push({ start: rangeStart, end: rangeEnd });
+    return ranges;
+  }
+
+  return [];
+}
+
 // ---- History Management ----
 
 const HISTORY_KEY = "cmd_history";

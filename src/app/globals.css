@@ -9101,6 +9101,46 @@ select.form-input {
   font-family: monospace;
 }
 
+.cmdpal-categories {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #1e1e32;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+.cmdpal-categories::-webkit-scrollbar { display: none; }
+
+.cmdpal-cat-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cmdpal-cat-btn:hover {
+  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.1);
+}
+.cmdpal-cat-btn.active {
+  color: #e2e8f0;
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.cmdpal-highlight {
+  background: rgba(99, 102, 241, 0.35);
+  color: #e0e7ff;
+  font-weight: 600;
+  padding: 0 1px;
+  border-radius: 2px;
+}
 .cmdpal-results {
   max-height: 400px;
   overflow-y: auto;

@@ -4,6 +4,7 @@ import {
   wordStartMatch,
   scoreCommand,
   rankCommands,
+  getMatchRanges,
 } from "./fuzzy-search";
 
 describe("fuzzy-search", () => {
@@ -122,6 +123,64 @@ describe("fuzzy-search", () => {
     it("filters out non-matching commands", () => {
       const ranked = rankCommands(commands, "zzzz");
       expect(ranked.length).toBe(0);
+    });
+  });
+
+  describe("getMatchRanges", () => {
+    it("returns empty ranges for empty query", () => {
+      expect(getMatchRanges("hello world", "")).toEqual([]);
+      expect(getMatchRanges("hello world", "   ")).toEqual([]);
+    });
+
+    it("returns empty ranges for no match", () => {
+      expect(getMatchRanges("hello world", "xyz")).toEqual([]);
+    });
+
+    it("matches prefix", () => {
+      expect(getMatchRanges("Export Markdown", "export")).toEqual([
+        { start: 0, end: 6 },
+      ]);
+    });
+
+    it("matches substring", () => {
+      expect(getMatchRanges("Export Markdown", "mark")).toEqual([
+        { start: 7, end: 11 },
+      ]);
+    });
+
+    it("matches initialism and returns per-char ranges", () => {
+      const ranges = getMatchRanges("Command Palette", "cp");
+      expect(ranges.length).toBe(2);
+      expect(ranges[0]).toEqual({ start: 0, end: 1 });
+      expect(ranges[1]).toEqual({ start: 8, end: 9 });
+    });
+
+    it("falls back to subsequence match", () => {
+      const ranges = getMatchRanges("hello world", "hlo");
+      expect(ranges.length).toBeGreaterThan(0);
+      // h at 0, l at 2, o at 4 ¡ª three separate ranges
+      expect(ranges).toContainEqual({ start: 0, end: 1 });
+      expect(ranges).toContainEqual({ start: 2, end: 3 });
+      expect(ranges).toContainEqual({ start: 4, end: 5 });
+    });
+
+    it("is case-insensitive", () => {
+      expect(getMatchRanges("Hello World", "hello")).toEqual([
+        { start: 0, end: 5 },
+      ]);
+      expect(getMatchRanges("HELLO WORLD", "hello")).toEqual([
+        { start: 0, end: 5 },
+      ]);
+    });
+
+    it("ranges are valid (start < end, within bounds)", () => {
+      const label = "Open Recent Research File";
+      const ranges = getMatchRanges(label, "orf");
+      for (const r of ranges) {
+        expect(r.start).toBeGreaterThanOrEqual(0);
+        expect(r.end).toBeLessThanOrEqual(label.length);
+        expect(r.start).toBeLessThan(r.end);
+      }
     });
   });
 });

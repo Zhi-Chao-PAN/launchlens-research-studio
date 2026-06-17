@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCommandPalette } from "./CommandPaletteContext";
-import { rankCommands, loadCommandHistory, recordCommandUse, historyToMap } from "@/lib/utils/fuzzy-search";
+import { rankCommands, loadCommandHistory, recordCommandUse, historyToMap, getMatchRanges } from "@/lib/utils/fuzzy-search";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 
 interface CommandPaletteProps {
@@ -14,6 +14,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [historyMap, setHistoryMap] = useState<Map<string, { id: string; count: number; lastUsed: number }>>(new Map());
+  const [activeCategory, setActiveCategory] = useState<string>("all");
   const inputRef = useRef<HTMLInputElement>(null);
 
   // All hooks BEFORE any early return
@@ -30,11 +31,41 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
     }
   }, [isOpen]);
 
+
+  // Highlight matched characters in label
+  const highlightLabel = (label: string, query: string) => {
+    if (!query.trim()) return label;
+    const ranges = getMatchRanges(label, query);
+    if (ranges.length === 0) return label;
+
+    const parts: (string | JSX.Element)[] = [];
+    let lastEnd = 0;
+    for (let i = 0; i < ranges.length; i++) {
+      const { start, end } = ranges[i];
+      if (start > lastEnd) {
+        parts.push(label.slice(lastEnd, start));
+      }
+      parts.push(
+        <mark key={i} className="cmdpal-highlight">
+          {label.slice(start, end)}
+        </mark>
+      );
+      lastEnd = end;
+    }
+    if (lastEnd < label.length) {
+      parts.push(label.slice(lastEnd));
+    }
+    return parts;
+  };
+
   // Filter and rank commands
   const filtered = useMemo(() => {
-    const ranked = rankCommands(commands, query, historyMap);
+    let source = activeCategory === "all" 
+      ? commands 
+      : commands.filter((c) => c.category === activeCategory);
+    const ranked = rankCommands(source, query, historyMap);
     return ranked.slice(0, 12);
-  }, [query, commands, historyMap]);
+  }, [query, commands, historyMap, activeCategory]);
 
   // Reset selection when filtered list changes
   useEffect(() => {
@@ -101,6 +132,24 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
           <kbd className="cmdpal-kbd">esc</kbd>
         </div>
 
+        <div className="cmdpal-categories">
+          <button
+            className={`cmdpal-cat-btn ${activeCategory === "all" ? "active" : ""}`}
+            onClick={() => { setActiveCategory("all"); setSelectedIndex(0); }}
+          >
+            All
+          </button>
+          {Array.from(new Set(commands.map((c) => c.category || "other")).filter(Boolean).map((cat) => (
+            <button
+              key={cat}
+              className={`cmdpal-cat-btn ${activeCategory === cat ? "active" : ""}`}
+              onClick={() => { setActiveCategory(cat); setSelectedIndex(0); }}
+            >
+              {categoryLabels[cat] || cat}
+            </button>
+          ))}
+        </div>
+
         <div className="cmdpal-results">
           {filtered.length === 0 ? (
             <div className="cmdpal-empty">
@@ -123,7 +172,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
                     >
                       {cmd.icon && <span className="cmdpal-item-icon">{cmd.icon}</span>}
                       <div className="cmdpal-item-body">
-                        <div className="cmdpal-item-label">{cmd.label}</div>
+                        <div className="cmdpal-item-label">{highlightLabel(cmd.label, query)}</div>
                         {cmd.description && (
                           <div className="cmdpal-item-desc">{cmd.description}</div>
                         )}
