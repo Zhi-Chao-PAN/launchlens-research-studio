@@ -20,7 +20,7 @@ interface HistoryRun {
   createdAt: number;
 }
 
-// Follow-up question templates ? generated based on past topics
+// Follow-up question templates generated based on past topics
 const followUpTemplates = [
   { template: "What are the latest developments in {topic}?", category: "follow-up" as const },
   { template: "How will {topic} evolve in the next 3-5 years?", category: "follow-up" as const },
@@ -35,62 +35,95 @@ const followUpTemplates = [
 // General trending/evergreen suggestions (fallback)
 const trendingSuggestions: ResearchSuggestion[] = [
   {
-    title: "AI Agent ??????",
-    description: "Explore the current state of AI agents, frameworks, and real-world applications.",
-    keywords: ["AI agents", "autonomous agents", "agent frameworks"],
-    reason: "Trending topic in AI research",
-    category: "trending",
+    "title": "AI Agent Latest Developments",
+    "description": "Explore the current state of AI agents, frameworks, and real-world applications.",
+    "keywords": [
+      "AI agents",
+      "autonomous agents",
+      "agent frameworks"
+    ],
+    "reason": "Trending topic in AI research",
+    "category": "trending"
   },
   {
-    title: "Web3 ??????????",
-    description: "Analyze the current state of dApps, DeFi, and blockchain technology adoption.",
-    keywords: ["Web3", "dApps", "DeFi", "blockchain"],
-    reason: "High-interest technology sector",
-    category: "trending",
+    "title": "Web3 Application Ecosystem",
+    "description": "Analyze the current state of dApps, DeFi, and blockchain technology adoption.",
+    "keywords": [
+      "Web3",
+      "dApps",
+      "DeFi",
+      "blockchain"
+    ],
+    "reason": "High-interest technology sector",
+    "category": "trending"
   },
   {
-    title: "???????????????",
-    description: "Research the lasting effects of remote work on productivity, culture, and real estate.",
-    keywords: ["remote work", "productivity", "hybrid work"],
-    reason: "Evergreen business topic",
-    category: "trending",
+    "title": "Long-term Effects of Remote Work",
+    "description": "Research the lasting effects of remote work on productivity, culture, and real estate.",
+    "keywords": [
+      "remote work",
+      "productivity",
+      "hybrid work"
+    ],
+    "reason": "Evergreen business topic",
+    "category": "trending"
   },
   {
-    title: "???????????",
-    description: "Explore emerging clean energy technologies and investment opportunities.",
-    keywords: ["sustainable energy", "clean tech", "renewable energy"],
-    reason: "Growing market sector",
-    category: "trending",
+    "title": "Sustainable Energy Investment",
+    "description": "Explore emerging clean energy technologies and investment opportunities.",
+    "keywords": [
+      "sustainable energy",
+      "clean tech",
+      "renewable energy"
+    ],
+    "reason": "Growing market sector",
+    "category": "trending"
   },
   {
-    title: "SaaS ????????",
-    description: "Analyze SaaS business models, unit economics, and growth strategies.",
-    keywords: ["SaaS", "business model", "unit economics"],
-    reason: "Popular business topic",
-    category: "trending",
+    "title": "SaaS Business Model Analysis",
+    "description": "Analyze SaaS business models, unit economics, and growth strategies.",
+    "keywords": [
+      "SaaS",
+      "business model",
+      "unit economics"
+    ],
+    "reason": "Popular business topic",
+    "category": "trending"
   },
   {
-    title: "?????????",
-    description: "Explore the current state of quantum computing and its commercial applications.",
-    keywords: ["quantum computing", "quantum technology"],
-    reason: "Emerging technology frontier",
-    category: "trending",
+    "title": "Quantum Computing Commercialization",
+    "description": "Explore the current state of quantum computing and its commercial applications.",
+    "keywords": [
+      "quantum computing",
+      "quantum technology"
+    ],
+    "reason": "Emerging technology frontier",
+    "category": "trending"
   },
   {
-    title: "??????????",
-    description: "Review the latest cybersecurity threats, defenses, and market trends.",
-    keywords: ["cybersecurity", "security", "threats"],
-    reason: "Critical enterprise concern",
-    category: "trending",
+    "title": "Cybersecurity Threat Defense",
+    "description": "Review the latest cybersecurity threats, defenses, and market trends.",
+    "keywords": [
+      "cybersecurity",
+      "security",
+      "threats"
+    ],
+    "reason": "Critical enterprise concern",
+    "category": "trending"
   },
   {
-    title: "??????????",
-    description: "Explore metaverse technologies, spatial computing, and virtual worlds.",
-    keywords: ["metaverse", "spatial computing", "VR", "AR"],
-    reason: "Next-gen computing platform",
-    category: "trending",
-  },
-];
+    "title": "Metaverse and Spatial Computing",
+    "description": "Explore metaverse technologies, spatial computing, and virtual worlds.",
+    "keywords": [
+      "metaverse",
+      "spatial computing",
+      "VR",
+      "AR"
+    ],
+    "reason": "Next-gen computing platform",
+    "category": "trending"
+  }
+];;
 
 /**
  * Extract core topics from a history of research runs.
@@ -123,7 +156,7 @@ export function extractTopics(runs: HistoryRun[]): { topic: string; score: numbe
 
     // Extract significant words from query (3+ chars)
     const words = run.query
-      .split(/[^a-zA-Z0-9一-龥]+/)
+      .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
       .filter((w) => w.length >= 3)
       .slice(0, 5);
 
@@ -189,9 +222,9 @@ export function generateSuggestions(runs: HistoryRun[], count = 4): ResearchSugg
     const title = tpl.template.replace("{topic}", topic.topic);
     const suggestion: ResearchSuggestion = {
       title,
-      description: `???????${topic.topic}?????????????????`,
+      description: `Deep dive into ${topic.topic} based on your research history.`,
       keywords: topic.keywords.length > 0 ? topic.keywords : [topic.topic],
-      reason: `???? ${topic.topic} ?????`,
+      reason: `Based on your interest in ${topic.topic}`,
       category: tpl.category,
     };
     suggestions.push(suggestion);
@@ -293,3 +326,132 @@ export default {
   clusterHistoryByTopic,
   findRelatedRuns,
 };
+
+/* ------------------------------------------------------------------ */
+/*  Suggestion scoring, filtering, deduplication                       */
+/* ------------------------------------------------------------------ */
+
+export interface ScoredSuggestion extends ResearchSuggestion {
+  relevanceScore: number;
+  topicSource?: string;
+}
+
+export function scoreSuggestions(suggestions: ResearchSuggestion[], runs: HistoryRun[]): ScoredSuggestion[] {
+  const topicScores = new Map<string, number>();
+  const topics = extractTopics(runs);
+  for (const t of topics) topicScores.set(t.topic, t.score);
+  return suggestions.map((s) => {
+    let relevanceScore = 0;
+    let topicSource: string | undefined;
+    for (const kw of s.keywords) {
+      const sc = topicScores.get(kw.toLowerCase());
+      if (sc !== undefined) {
+        relevanceScore += sc;
+        if (!topicSource) topicSource = kw;
+      }
+    }
+    if (s.category === "trending") relevanceScore = Math.max(relevanceScore, 0.1);
+    return { ...s, relevanceScore: Math.round(relevanceScore * 100) / 100, topicSource };
+  }).sort((a, b) => b.relevanceScore - a.relevanceScore);
+}
+
+export function filterSuggestionsByCategory(
+  suggestions: ResearchSuggestion[],
+  categories: Array<ResearchSuggestion["category"]>
+): ResearchSuggestion[] {
+  return suggestions.filter((s) => categories.includes(s.category));
+}
+
+export function deduplicateSuggestions(suggestions: ResearchSuggestion[]): ResearchSuggestion[] {
+  const seen = new Set<string>();
+  return suggestions.filter((s) => {
+    const key = s.title.toLowerCase().slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Keyword co-occurrence analysis                                     */
+/* ------------------------------------------------------------------ */
+
+export interface KeywordPair {
+  keyword1: string;
+  keyword2: string;
+  cooccurrences: number;
+  lift: number;
+}
+
+export function findKeywordCooccurrences(runs: HistoryRun[], minCount: number = 2): KeywordPair[] {
+  const pairCounts = new Map<string, number>();
+  const wordCounts = new Map<string, number>();
+  const total = runs.length;
+  for (const run of runs) {
+    const kws = Array.from(new Set(run.keywords.map((k) => k.toLowerCase().trim())));
+    for (let i = 0; i < kws.length; i++) {
+      wordCounts.set(kws[i], (wordCounts.get(kws[i]) || 0) + 1);
+      for (let j = i + 1; j < kws.length; j++) {
+        const pair = [kws[i], kws[j]].sort().join("|");
+        pairCounts.set(pair, (pairCounts.get(pair) || 0) + 1);
+      }
+    }
+  }
+  const results: KeywordPair[] = [];
+  for (const [pair, count] of pairCounts) {
+    if (count < minCount) continue;
+    const [k1, k2] = pair.split("|");
+    const c1 = wordCounts.get(k1) || 1;
+    const c2 = wordCounts.get(k2) || 1;
+    const expected = (c1 / total) * (c2 / total) * total;
+    const lift = expected > 0 ? count / expected : 0;
+    results.push({ keyword1: k1, keyword2: k2, cooccurrences: count, lift: Math.round(lift * 100) / 100 });
+  }
+  return results.sort((a, b) => b.cooccurrences - a.cooccurrences);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Suggestion diversity / research gaps                               */
+/* ------------------------------------------------------------------ */
+
+export function diversifySuggestions(suggestions: ResearchSuggestion[], maxPerCategory: number = 2): ResearchSuggestion[] {
+  const categoryCounts = new Map<string, number>();
+  const result: ResearchSuggestion[] = [];
+  for (const s of suggestions) {
+    const count = categoryCounts.get(s.category) || 0;
+    if (count < maxPerCategory) {
+      result.push(s);
+      categoryCounts.set(s.category, count + 1);
+    }
+  }
+  return result;
+}
+
+export function getResearchGaps(runs: HistoryRun[]): string[] {
+  const suggestions = generateSuggestions(runs, 10);
+  const present = new Set(suggestions.map((s) => s.category));
+  const allCats: ResearchSuggestion["category"][] = ["follow-up", "related", "deep-dive", "trending"];
+  const gaps: string[] = [];
+  for (const cat of allCats) {
+    if (!present.has(cat)) gaps.push("Missing " + cat + " suggestions in current set");
+  }
+  return gaps;
+}
+
+export function getSuggestionStats(runs: HistoryRun[]): {
+  totalTopics: number;
+  categories: Record<string, number>;
+  topKeywords: string[];
+} {
+  const suggestions = generateSuggestions(runs, 20);
+  const categories: Record<string, number> = {};
+  const kwCount = new Map<string, number>();
+  for (const s of suggestions) {
+    categories[s.category] = (categories[s.category] || 0) + 1;
+    for (const kw of s.keywords) {
+      kwCount.set(kw.toLowerCase(), (kwCount.get(kw.toLowerCase()) || 0) + 1);
+    }
+  }
+  const topKeywords = Array.from(kwCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k]) => k);
+  return { totalTopics: suggestions.length, categories, topKeywords };
+}

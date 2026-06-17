@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { extractTopics, generateSuggestions, clusterHistoryByTopic, findRelatedRuns } from "./suggestions";
+import {
+  extractTopics,
+  generateSuggestions,
+  clusterHistoryByTopic,
+  findRelatedRuns,
+  scoreSuggestions,
+  filterSuggestionsByCategory,
+  deduplicateSuggestions,
+  findKeywordCooccurrences,
+  diversifySuggestions,
+  getResearchGaps,
+  getSuggestionStats,
+} from "./suggestions";
 import type { ResearchSuggestion } from "./suggestions";
 
 describe("research suggestions", () => {
@@ -203,3 +215,117 @@ describe("findRelatedRuns", () => {
     expect(results[0].sharedKeywords.length).toBeLessThanOrEqual(3);
   });
 });
+
+
+describe("suggestion scoring and filtering (round 133)", () => {
+  const makeRun = (id: string, query: string, keywords: string[], daysAgo = 7) => ({
+    id, query, keywords,
+    createdAt: Date.now() - daysAgo * 24 * 60 * 60 * 1000,
+  });
+
+  it("scoreSuggestions assigns relevance scores", () => {
+    const runs = [makeRun("1", "AI research", ["AI", "ML"])];
+    const suggestions = generateSuggestions(runs, 5);
+    const scored = scoreSuggestions(suggestions, runs);
+    expect(scored.length).toBe(5);
+    for (const s of scored) {
+      expect(typeof s.relevanceScore).toBe("number");
+    }
+  });
+
+  it("scoreSuggestions sorts by relevance descending", () => {
+    const runs = [makeRun("1", "AI research", ["AI", "ML"])];
+    const suggestions = generateSuggestions(runs, 8);
+    const scored = scoreSuggestions(suggestions, runs);
+    for (let i = 1; i < scored.length; i++) {
+      expect(scored[i - 1].relevanceScore).toBeGreaterThanOrEqual(scored[i].relevanceScore);
+    }
+  });
+
+  it("filterSuggestionsByCategory filters by category", () => {
+    const all = generateSuggestions([], 8);
+    const trending = filterSuggestionsByCategory(all, ["trending"]);
+    expect(trending.every((s) => s.category === "trending")).toBe(true);
+  });
+
+  it("deduplicateSuggestions removes duplicate titles", () => {
+    const s1 = { title: "AI research", description: "d", keywords: ["AI"], reason: "r", category: "follow-up" as const };
+    const s2 = { title: "AI Research", description: "d2", keywords: ["ai"], reason: "r2", category: "related" as const };
+    const s3 = { title: "Blockchain future", description: "d3", keywords: ["crypto"], reason: "r3", category: "trending" as const };
+    const result = deduplicateSuggestions([s1, s2, s3]);
+    expect(result).toHaveLength(2);
+  });
+});
+
+describe("keyword co-occurrence (round 133)", () => {
+  const makeRun = (id: string, keywords: string[]) => ({
+    id, query: "q", keywords, createdAt: Date.now(),
+  });
+
+  it("finds frequently co-occurring keyword pairs", () => {
+    const runs = [
+      makeRun("1", ["AI", "healthcare"]),
+      makeRun("2", ["AI", "healthcare", "ML"]),
+      makeRun("3", ["AI", "finance"]),
+    ];
+    const pairs = findKeywordCooccurrences(runs, 2);
+    expect(pairs.length).toBeGreaterThan(0);
+    const aiHealth = pairs.find((p) =>
+      (p.keyword1 === "ai" && p.keyword2 === "healthcare") ||
+      (p.keyword1 === "healthcare" && p.keyword2 === "ai")
+    );
+    expect(aiHealth).toBeDefined();
+    expect(aiHealth!.cooccurrences).toBe(2);
+  });
+
+  it("returns empty for no co-occurrences above threshold", () => {
+    const runs = [
+      makeRun("1", ["A"]),
+      makeRun("2", ["B"]),
+      makeRun("3", ["C"]),
+    ];
+    expect(findKeywordCooccurrences(runs, 2)).toHaveLength(0);
+  });
+
+  it("computes lift scores", () => {
+    const runs = [
+      makeRun("1", ["X", "Y"]),
+      makeRun("2", ["X", "Y"]),
+      makeRun("3", ["X"]),
+    ];
+    const pairs = findKeywordCooccurrences(runs, 2);
+    expect(pairs[0].lift).toBeGreaterThan(0);
+  });
+});
+
+describe("diversity and gaps (round 133)", () => {
+  it("diversifySuggestions limits per category", () => {
+    const suggestions = [
+      { title: "A", description: "d", keywords: ["a"], reason: "r", category: "trending" as const },
+      { title: "B", description: "d", keywords: ["b"], reason: "r", category: "trending" as const },
+      { title: "C", description: "d", keywords: ["c"], reason: "r", category: "trending" as const },
+      { title: "D", description: "d", keywords: ["d"], reason: "r", category: "follow-up" as const },
+    ];
+    const result = diversifySuggestions(suggestions, 2);
+    const trending = result.filter((s) => s.category === "trending");
+    expect(trending.length).toBeLessThanOrEqual(2);
+    expect(result.length).toBe(3);
+  });
+
+  it("getResearchGaps identifies missing categories", () => {
+    const gaps = getResearchGaps([]);
+    // Empty history returns all trending, so follow-up/related/deep-dive should be gaps
+    expect(gaps.length).toBeGreaterThan(0);
+  });
+
+  it("getSuggestionStats returns stats object", () => {
+    const runs = [
+      { id: "1", query: "AI test", keywords: ["AI", "ML"], createdAt: Date.now() },
+    ];
+    const stats = getSuggestionStats(runs);
+    expect(stats.totalTopics).toBeGreaterThan(0);
+    expect(stats.categories).toBeDefined();
+    expect(stats.topKeywords.length).toBeGreaterThan(0);
+  });
+});
+
