@@ -7,6 +7,7 @@ import {
   deleteFolder,
   addRunToFolder,
   removeRunFromFolder,
+  reorderFolders,
   type ResearchFolder,
 } from "@/lib/research/folders";
 
@@ -24,6 +25,8 @@ export function FolderSidebar({
   const [folders, setFolders] = useState<ResearchFolder[]>([]);
   const [showNewInput, setShowNewInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const refresh = () => setFolders(getFolders());
 
@@ -51,6 +54,61 @@ export function FolderSidebar({
       }
       refresh();
     }
+  };
+
+  // Drag and drop reordering for folders
+  const handleDragStart = (e: React.DragEvent, folderId: string) => {
+    setDraggedFolderId(folderId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", folderId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (folderId !== draggedFolderId) {
+      setDragOverFolderId(folderId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverFolderId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetFolderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sourceId = draggedFolderId || e.dataTransfer.getData("text/plain");
+    if (!sourceId || sourceId === targetFolderId) {
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      return;
+    }
+
+    const customFolders = folders.filter((f) => !f.isSystem);
+    const fromIdx = customFolders.findIndex((f) => f.id === sourceId);
+    const toIdx = customFolders.findIndex((f) => f.id === targetFolderId);
+
+    if (fromIdx >= 0 && toIdx >= 0) {
+      // Don't allow dragging onto system folders
+      const targetFolder = folders.find((f) => f.id === targetFolderId);
+      if (targetFolder?.isSystem) {
+        setDraggedFolderId(null);
+        setDragOverFolderId(null);
+        return;
+      }
+      reorderFolders(sourceId, toIdx);
+      refresh();
+    }
+
+    setDraggedFolderId(null);
+    setDragOverFolderId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFolderId(null);
+    setDragOverFolderId(null);
   };
 
   // For run-specific view: show which folders this run is in
@@ -137,9 +195,17 @@ export function FolderSidebar({
             <button
               className={
                 "folder-item " +
-                (selectedFolderId === folder.id ? "active" : "")
+                (selectedFolderId === folder.id ? "active" : "") +
+                (dragOverFolderId === folder.id ? " drag-over" : "") +
+                (draggedFolderId === folder.id ? " dragging" : "")
               }
               onClick={() => onSelectFolder(folder.id)}
+              draggable={!folder.isSystem}
+              onDragStart={(e) => handleDragStart(e, folder.id)}
+              onDragOver={(e) => handleDragOver(e, folder.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, folder.id)}
+              onDragEnd={handleDragEnd}
             >
               <span className="folder-icon">{folder.icon}</span>
               <span className="folder-name">{folder.name}</span>

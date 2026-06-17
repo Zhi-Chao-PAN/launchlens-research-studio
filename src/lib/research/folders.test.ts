@@ -10,6 +10,8 @@ import {
   getFoldersForRun,
   moveRun,
   getTotalFolderRuns,
+  reorderFolders,
+  reorderRunsInFolder,
 } from "@/lib/research/folders";
 
 const storage = new Map<string, string>();
@@ -38,16 +40,16 @@ describe("research folders", () => {
     it("has starred and archived system folders", () => {
       const folders = getFolders();
       const names = folders.map((f) => f.name);
-      expect(names).toContain("ÊÕ²Ø¼Ð");
-      expect(names).toContain("¹éµµ");
+      expect(names).toContain("ï¿½Õ²Ø¼ï¿½");
+      expect(names).toContain("ï¿½éµµ");
     });
   });
 
   describe("createFolder", () => {
     it("creates a new folder", () => {
-      const folder = createFolder({ name: "AI ÑÐ¾¿" });
+      const folder = createFolder({ name: "AI ï¿½Ð¾ï¿½" });
       expect(folder.id).toBeTruthy();
-      expect(folder.name).toBe("AI ÑÐ¾¿");
+      expect(folder.name).toBe("AI ï¿½Ð¾ï¿½");
       expect(folder.runIds).toEqual([]);
       expect(folder.isSystem).toBeUndefined();
 
@@ -56,21 +58,21 @@ describe("research folders", () => {
     });
 
     it("creates folder with initial runs", () => {
-      const folder = createFolder({ name: "²âÊÔ", runIds: ["run-1", "run-2"] });
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½", runIds: ["run-1", "run-2"] });
       expect(folder.runIds).toEqual(["run-1", "run-2"]);
     });
 
     it("sets default icon", () => {
-      const folder = createFolder({ name: "²âÊÔ" });
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½" });
       expect(folder.icon).toBe("??");
     });
   });
 
   describe("getFolder", () => {
     it("finds a folder by id", () => {
-      const created = createFolder({ name: "²éÕÒ²âÊÔ" });
+      const created = createFolder({ name: "ï¿½ï¿½ï¿½Ò²ï¿½ï¿½ï¿½" });
       const found = getFolder(created.id);
-      expect(found?.name).toBe("²éÕÒ²âÊÔ");
+      expect(found?.name).toBe("ï¿½ï¿½ï¿½Ò²ï¿½ï¿½ï¿½");
     });
 
     it("returns undefined for non-existent", () => {
@@ -80,9 +82,9 @@ describe("research folders", () => {
 
   describe("updateFolder", () => {
     it("updates folder name", () => {
-      const folder = createFolder({ name: "¾ÉÃû×Ö" });
-      const updated = updateFolder(folder.id, { name: "ÐÂÃû×Ö" });
-      expect(updated?.name).toBe("ÐÂÃû×Ö");
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" });
+      const updated = updateFolder(folder.id, { name: "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" });
+      expect(updated?.name).toBe("ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
     });
 
     it("returns null for non-existent folder", () => {
@@ -91,7 +93,7 @@ describe("research folders", () => {
 
     it("can't rename system folders", () => {
       const starred = getFolders().find((f) => f.isSystem)!;
-      const updated = updateFolder(starred.id, { name: "ÐÂÃû×Ö" });
+      const updated = updateFolder(starred.id, { name: "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" });
       expect(updated?.name).toBe(starred.name); // unchanged
     });
 
@@ -104,7 +106,7 @@ describe("research folders", () => {
 
   describe("deleteFolder", () => {
     it("deletes a custom folder", () => {
-      const folder = createFolder({ name: "ÒªÉ¾³ý" });
+      const folder = createFolder({ name: "ÒªÉ¾ï¿½ï¿½" });
       const result = deleteFolder(folder.id);
       expect(result).toBe(true);
       expect(getFolders()).toHaveLength(2); // back to defaults
@@ -118,7 +120,7 @@ describe("research folders", () => {
 
   describe("addRunToFolder", () => {
     it("adds a run to a folder", () => {
-      const folder = createFolder({ name: "²âÊÔ" });
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½" });
       const result = addRunToFolder(folder.id, "run-1");
       expect(result).toBe(true);
 
@@ -127,7 +129,7 @@ describe("research folders", () => {
     });
 
     it("doesn't duplicate runs", () => {
-      const folder = createFolder({ name: "²âÊÔ", runIds: ["run-1"] });
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½", runIds: ["run-1"] });
       addRunToFolder(folder.id, "run-1");
       const updated = getFolder(folder.id)!;
       expect(updated.runIds).toHaveLength(1);
@@ -140,7 +142,7 @@ describe("research folders", () => {
 
   describe("removeRunFromFolder", () => {
     it("removes a run from a folder", () => {
-      const folder = createFolder({ name: "²âÊÔ", runIds: ["run-1", "run-2"] });
+      const folder = createFolder({ name: "ï¿½ï¿½ï¿½ï¿½", runIds: ["run-1", "run-2"] });
       removeRunFromFolder(folder.id, "run-1");
 
       const updated = getFolder(folder.id)!;
@@ -166,7 +168,7 @@ describe("research folders", () => {
   describe("moveRun", () => {
     it("moves a run between folders", () => {
       const from = createFolder({ name: "Ô´", runIds: ["run-1", "run-2"] });
-      const to = createFolder({ name: "Ä¿±ê", runIds: ["run-3"] });
+      const to = createFolder({ name: "Ä¿ï¿½ï¿½", runIds: ["run-3"] });
 
       const result = moveRun("run-1", from.id, to.id);
       expect(result).toBe(true);
@@ -176,6 +178,75 @@ describe("research folders", () => {
 
       expect(fromUpdated.runIds).not.toContain("run-1");
       expect(toUpdated.runIds).toContain("run-1");
+    });
+  });
+
+  describe("reorderFolders", () => {
+    it("reorders custom folders while keeping system folders fixed", () => {
+      const f1 = createFolder({ name: "A" });
+      const f2 = createFolder({ name: "B" });
+      const f3 = createFolder({ name: "C" });
+
+      let folders = getFolders().filter((f) => !f.isSystem);
+      expect(folders).toHaveLength(3);
+      const initialIds = folders.map((f) => f.id);
+
+      const movedId = initialIds[initialIds.length - 1];
+      const result = reorderFolders(movedId, 0);
+      expect(result).toBe(true);
+
+      folders = getFolders().filter((f) => !f.isSystem);
+      expect(folders[0].id).toBe(movedId);
+
+      const all = getFolders();
+      expect(all[0].isSystem).toBe(true);
+      expect(all[1].isSystem).toBe(true);
+    });
+
+    it("returns false for non-existent folder", () => {
+      expect(reorderFolders("fake", 0)).toBe(false);
+    });
+
+    it("clamps target index to valid range", () => {
+      const f1 = createFolder({ name: "A" });
+      createFolder({ name: "B" });
+      const result = reorderFolders(f1.id, 100);
+      expect(result).toBe(true);
+      const folders = getFolders().filter((f) => !f.isSystem);
+      expect(folders[folders.length - 1].id).toBe(f1.id);
+    });
+  });
+
+  describe("reorderRunsInFolder", () => {
+    it("reorders runs within a folder", () => {
+      const folder = createFolder({ name: "Test", runIds: ["run-1", "run-2", "run-3", "run-4"] });
+      const result = reorderRunsInFolder(folder.id, "run-3", 0);
+      expect(result).toBe(true);
+      const updated = getFolder(folder.id)!;
+      expect(updated.runIds).toEqual(["run-3", "run-1", "run-2", "run-4"]);
+    });
+
+    it("moves a run from start to end", () => {
+      const folder = createFolder({ name: "Test", runIds: ["run-1", "run-2", "run-3"] });
+      reorderRunsInFolder(folder.id, "run-1", 2);
+      const updated = getFolder(folder.id)!;
+      expect(updated.runIds).toEqual(["run-2", "run-3", "run-1"]);
+    });
+
+    it("returns false for non-existent folder", () => {
+      expect(reorderRunsInFolder("fake", "run-1", 0)).toBe(false);
+    });
+
+    it("returns false if run not in folder", () => {
+      const folder = createFolder({ name: "Test", runIds: ["run-1"] });
+      expect(reorderRunsInFolder(folder.id, "run-missing", 0)).toBe(false);
+    });
+
+    it("clamps target index to valid range", () => {
+      const folder = createFolder({ name: "Test", runIds: ["a", "b", "c"] });
+      reorderRunsInFolder(folder.id, "a", 999);
+      const updated = getFolder(folder.id)!;
+      expect(updated.runIds[updated.runIds.length - 1]).toBe("a");
     });
   });
 

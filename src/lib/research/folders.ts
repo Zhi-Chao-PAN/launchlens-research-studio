@@ -193,6 +193,53 @@ export function getTotalFolderRuns(): number {
  */
 
 /**
+ * Reorder folders by moving a folder to a new index.
+ * Only reorders custom folders; system folders stay fixed at the top.
+ * Returns true if the reorder was applied.
+ */
+export function reorderFolders(folderId: string, toIndex: number): boolean {
+  const folders = getStore();
+  const customFolders = folders.filter((f) => !f.isSystem);
+  const systemFolders = folders.filter((f) => f.isSystem);
+
+  const fromIdx = customFolders.findIndex((f) => f.id === folderId);
+  if (fromIdx < 0) return false;
+
+  const clampedTo = Math.max(0, Math.min(customFolders.length - 1, toIndex));
+  if (fromIdx === clampedTo) return true;
+
+  const [moved] = customFolders.splice(fromIdx, 1);
+  customFolders.splice(clampedTo, 0, moved);
+  moved.updatedAt = Date.now();
+
+  saveStore([...systemFolders, ...customFolders]);
+  return true;
+}
+
+/**
+ * Reorder runs within a folder by moving a run to a new index.
+ * Returns true if the reorder was applied.
+ */
+export function reorderRunsInFolder(folderId: string, runId: string, toIndex: number): boolean {
+  const folders = getStore();
+  const folder = folders.find((f) => f.id === folderId);
+  if (!folder) return false;
+
+  const fromIdx = folder.runIds.indexOf(runId);
+  if (fromIdx < 0) return false;
+
+  const clampedTo = Math.max(0, Math.min(folder.runIds.length - 1, toIndex));
+  if (fromIdx === clampedTo) return true;
+
+  const [moved] = folder.runIds.splice(fromIdx, 1);
+  folder.runIds.splice(clampedTo, 0, moved);
+  folder.updatedAt = Date.now();
+
+  saveStore(folders);
+  return true;
+}
+
+/**
  * Add multiple runs to a folder. Returns number of newly added runs.
  */
 export function bulkAddRunsToFolder(folderId: string, runIds: string[]): number {

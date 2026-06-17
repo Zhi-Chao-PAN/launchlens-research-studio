@@ -10844,3 +10844,22 @@ select.form-input {
   background: rgba(99, 102, 241, 0.15);
   color: #a5b4fc;
 }
+
+
+/* Folder drag and drop */
+.folder-item.dragging {
+  opacity: 0.4;
+}
+
+.folder-item.drag-over {
+  border-top: 2px solid #6366f1 !important;
+  background: rgba(99, 102, 241, 0.05) !important;
+}
+
+.folder-item[draggable="true"] {
+  cursor: grab;
+}
+
+.folder-item[draggable="true"]:active {
+  cursor: grabbing;
+}
