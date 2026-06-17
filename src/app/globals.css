@@ -4620,3 +4620,106 @@ a:focus-visible {
   color: #fbbf24;
   font-size: 12px;
 }
+
+/* Diff side-by-side modified items */
+.diff-modified-title {
+  color: #fbbf24 !important;
+}
+
+.diff-modified-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.diff-modified-item {
+  display: grid;
+  grid-template-columns: 1fr 60px 1fr;
+  align-items: stretch;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diff-modified-side {
+  padding: 14px;
+}
+
+.diff-modified-old {
+  background: rgba(248, 113, 113, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.diff-modified-new {
+  background: rgba(74, 222, 128, 0.05);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.diff-modified-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.diff-modified-text {
+  color: #ddd;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.diff-modified-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.diff-modified-similarity {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+
+.diff-modified-arrow {
+  font-size: 20px;
+  color: #666;
+}
+
+.diff-card-modified {
+  box-shadow: none !important;
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 768px) {
+  .diff-modified-item {
+    grid-template-columns: 1fr;
+  }
+
+  .diff-modified-old {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .diff-modified-new {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .diff-modified-divider {
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .diff-modified-arrow {
+    transform: rotate(90deg);
+  }
+}

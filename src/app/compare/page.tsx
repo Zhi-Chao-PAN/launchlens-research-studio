@@ -250,6 +250,33 @@ export default function ComparePage() {
               </div>
             )}
 
+            {diff.insights.modified.length > 0 && (
+              <div className="diff-group">
+                <h3 className="diff-group-title diff-modified-title">
+                  修改洞察 ({diff.insights.modified.length})
+                </h3>
+                <div className="diff-modified-list">
+                  {diff.insights.modified.map((pair, i) => (
+                    <div key={i} className="diff-modified-item">
+                      <div className="diff-modified-side diff-modified-old">
+                        <div className="diff-modified-label">之前</div>
+                        <p className="diff-modified-text">{pair.old}</p>
+                      </div>
+                      <div className="diff-modified-divider">
+                        <span className="diff-modified-similarity">
+                          {Math.round(pair.similarity * 100)}%
+                        </span>
+                      </div>
+                      <div className="diff-modified-side diff-modified-new">
+                        <div className="diff-modified-label">现在</div>
+                        <p className="diff-modified-text">{pair.new}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Opportunities diff */}
             {diff.opportunities.added.length > 0 && (
               <div className="diff-group">
@@ -289,6 +316,43 @@ export default function ComparePage() {
               </div>
             )}
 
+            {diff.opportunities.modified.length > 0 && (
+              <div className="diff-group">
+                <h3 className="diff-group-title diff-modified-title">
+                  修改机遇 ({diff.opportunities.modified.length})
+                </h3>
+                <div className="diff-modified-list">
+                  {diff.opportunities.modified.map((pair, i) => (
+                    <div key={i} className="diff-modified-item">
+                      <div className="diff-modified-side diff-modified-old">
+                        <div className="diff-modified-label">之前</div>
+                        <div className="research-card research-card-opportunity diff-card-modified">
+                          <div className="research-card-header">
+                            <span className="research-card-number">~</span>
+                            <h3 className="research-card-title">{pair.old.title}</h3>
+                          </div>
+                          <p className="research-card-desc">{pair.old.description}</p>
+                        </div>
+                      </div>
+                      <div className="diff-modified-divider">
+                        <span className="diff-modified-arrow">→</span>
+                      </div>
+                      <div className="diff-modified-side diff-modified-new">
+                        <div className="diff-modified-label">现在</div>
+                        <div className="research-card research-card-opportunity diff-card-modified">
+                          <div className="research-card-header">
+                            <span className="research-card-number">~</span>
+                            <h3 className="research-card-title">{pair.new.title}</h3>
+                          </div>
+                          <p className="research-card-desc">{pair.new.description}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Risks diff */}
             {diff.risks.added.length > 0 && (
               <div className="diff-group">
@@ -322,6 +386,43 @@ export default function ComparePage() {
                         <h3 className="research-card-title">{risk.title}</h3>
                       </div>
                       <p className="research-card-desc">{risk.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {diff.risks.modified.length > 0 && (
+              <div className="diff-group">
+                <h3 className="diff-group-title diff-modified-title">
+                  修改风险 ({diff.risks.modified.length})
+                </h3>
+                <div className="diff-modified-list">
+                  {diff.risks.modified.map((pair, i) => (
+                    <div key={i} className="diff-modified-item">
+                      <div className="diff-modified-side diff-modified-old">
+                        <div className="diff-modified-label">之前</div>
+                        <div className="research-card research-card-risk diff-card-modified">
+                          <div className="research-card-header">
+                            <span className="research-card-number">~</span>
+                            <h3 className="research-card-title">{pair.old.title}</h3>
+                          </div>
+                          <p className="research-card-desc">{pair.old.description}</p>
+                        </div>
+                      </div>
+                      <div className="diff-modified-divider">
+                        <span className="diff-modified-arrow">→</span>
+                      </div>
+                      <div className="diff-modified-side diff-modified-new">
+                        <div className="diff-modified-label">现在</div>
+                        <div className="research-card research-card-risk diff-card-modified">
+                          <div className="research-card-header">
+                            <span className="research-card-number">~</span>
+                            <h3 className="research-card-title">{pair.new.title}</h3>
+                          </div>
+                          <p className="research-card-desc">{pair.new.description}</p>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
