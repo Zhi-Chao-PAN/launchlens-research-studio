@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-﻿// Recent research history persisted in localStorage.
+// Recent research history persisted in localStorage.
 // Stores query + keywords + timestamp. Read on app boot, written on completion.
 
 import { useEffect, useState, useCallback } from "react";
@@ -38,7 +38,7 @@ function safeWrite(entries: HistoryEntry[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   } catch {
-    // localStorage may be full or disabled — fail silently
+    // localStorage may be full or disabled - fail silently
   }
 }
 
@@ -99,4 +99,124 @@ export function formatRelativeTime(iso: string): string {
   const days = Math.floor(hr / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Non-hook utilities for history (round 139)                         */
+/* ------------------------------------------------------------------ */
+
+export function searchHistory(entries: HistoryEntry[], query: string): HistoryEntry[] {
+  if (!query.trim()) return entries;
+  const q = query.toLowerCase();
+  return entries.filter((e) =>
+    e.query.toLowerCase().includes(q) ||
+    e.keywords.some((k) => k.toLowerCase().includes(q))
+  );
+}
+
+export function filterHistoryByKeyword(entries: HistoryEntry[], keyword: string): HistoryEntry[] {
+  const k = keyword.toLowerCase();
+  return entries.filter((e) => e.keywords.some((kw) => kw.toLowerCase() === k));
+}
+
+export interface HistoryStats {
+  totalEntries: number;
+  uniqueQueries: number;
+  topKeywords: Array<{ keyword: string; count: number }>;
+  entriesLast7Days: number;
+  oldestEntry?: string;
+  newestEntry?: string;
+}
+
+export function getHistoryStats(entries: HistoryEntry[]): HistoryStats {
+  const kwCount = new Map<string, number>();
+  let last7Days = 0;
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const queries = new Set<string>();
+
+  for (const e of entries) {
+    queries.add(e.query.toLowerCase());
+    for (const kw of e.keywords) {
+      kwCount.set(kw.toLowerCase(), (kwCount.get(kw.toLowerCase()) || 0) + 1);
+    }
+    const t = new Date(e.createdAt).getTime();
+    if (t > weekAgo) last7Days++;
+  }
+
+  const topKeywords = Array.from(kwCount.entries())
+    .map(([keyword, count]) => ({ keyword, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const sorted = [...entries].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return {
+    totalEntries: entries.length,
+    uniqueQueries: queries.size,
+    topKeywords,
+    entriesLast7Days: last7Days,
+    oldestEntry: sorted[0]?.createdAt,
+    newestEntry: sorted[sorted.length - 1]?.createdAt,
+  };
+}
+
+export interface HistoryGroup {
+  date: string;
+  label: string;
+  entries: HistoryEntry[];
+}
+
+export function groupHistoryByDate(entries: HistoryEntry[]): HistoryGroup[] {
+  const groups = new Map<string, HistoryEntry[]>();
+  for (const e of entries) {
+    const date = e.createdAt.slice(0, 10);
+    if (!groups.has(date)) groups.set(date, []);
+    groups.get(date)!.push(e);
+  }
+  const result: HistoryGroup[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  for (const [date, items] of groups) {
+    let label = date;
+    if (date === today) label = "Today";
+    else if (date === yesterday) label = "Yesterday";
+    result.push({ date, label, entries: items });
+  }
+  return result.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function exportHistoryJson(entries: HistoryEntry[]): string {
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), entries }, null, 2);
+}
+
+export function deduplicateHistoryEntries(entries: HistoryEntry[]): HistoryEntry[] {
+  const seen = new Set<string>();
+  const result: HistoryEntry[] = [];
+  for (const e of entries) {
+    const key = e.query.toLowerCase().trim();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(e);
+    }
+  }
+  return result;
+}
+
+export function getRecentQueries(entries: HistoryEntry[], limit: number = 5): string[] {
+  return entries.slice(0, limit).map((e) => e.query);
+}
+
+export function historyToMarkdown(entries: HistoryEntry[]): string {
+  const lines = ["# Research History", ""];
+  const groups = groupHistoryByDate(entries);
+  for (const g of groups) {
+    lines.push("## " + g.label);
+    lines.push("");
+    for (const e of g.entries) {
+      const kw = e.keywords.length ? " (" + e.keywords.join(", ") + ")" : "";
+      lines.push("- **" + e.query + "**" + kw);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
 }

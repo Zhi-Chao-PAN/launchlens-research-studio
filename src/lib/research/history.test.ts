@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // Mock localStorage for tests
 class MockStorage {
@@ -15,7 +15,18 @@ const storage = new MockStorage();
 (globalThis as any).window = { localStorage: storage };
 (globalThis as any).localStorage = storage;
 
-import { formatRelativeTime } from "@/lib/research/history";
+import {
+  formatRelativeTime,
+  searchHistory,
+  filterHistoryByKeyword,
+  getHistoryStats,
+  groupHistoryByDate,
+  exportHistoryJson,
+  deduplicateHistoryEntries,
+  getRecentQueries,
+  historyToMarkdown,
+} from "@/lib/research/history";
+import type { HistoryEntry } from "@/lib/research/history";
 
 describe("formatRelativeTime", () => {
   it("returns 'just now' for very recent times", () => {
@@ -52,3 +63,82 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime("not a date")).toBe("");
   });
 });
+
+
+describe("history utilities (round 139)", () => {
+  const makeEntry = (id: string, query: string, keywords: string[], daysAgo: number): HistoryEntry => ({
+    id, query, keywords,
+    createdAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+  });
+
+  const entries = [
+    makeEntry("1", "AI in healthcare", ["AI", "healthcare"], 0),
+    makeEntry("2", "Climate trends", ["climate", "environment"], 1),
+    makeEntry("3", "AI market size", ["AI", "market"], 3),
+    makeEntry("4", "Distributed ledger adoption", ["ledger", "crypto"], 10),
+  ];
+
+  it("searchHistory filters by query", () => {
+    const r = searchHistory(entries, "AI");
+    expect(r).toHaveLength(2);
+  });
+
+  it("searchHistory filters by keyword", () => {
+    const r = searchHistory(entries, "climate");
+    expect(r).toHaveLength(1);
+  });
+
+  it("searchHistory returns all when query empty", () => {
+    expect(searchHistory(entries, "")).toHaveLength(4);
+  });
+
+  it("filterHistoryByKeyword matches exact keywords", () => {
+    const r = filterHistoryByKeyword(entries, "AI");
+    expect(r).toHaveLength(2);
+  });
+
+  it("getHistoryStats computes totals and top keywords", () => {
+    const s = getHistoryStats(entries);
+    expect(s.totalEntries).toBe(4);
+    expect(s.uniqueQueries).toBe(4);
+    expect(s.entriesLast7Days).toBe(3);
+    expect(s.topKeywords[0].keyword).toBe("ai");
+    expect(s.topKeywords[0].count).toBe(2);
+  });
+
+  it("groupHistoryByDate groups entries", () => {
+    const groups = groupHistoryByDate(entries);
+    expect(groups.length).toBeGreaterThanOrEqual(3);
+    const today = groups.find((g) => g.label === "Today");
+    expect(today).toBeDefined();
+    expect(today!.entries.length).toBe(1);
+  });
+
+  it("exportHistoryJson produces valid JSON", () => {
+    const json = exportHistoryJson(entries);
+    const parsed = JSON.parse(json);
+    expect(parsed.version).toBe(1);
+    expect(parsed.entries).toHaveLength(4);
+  });
+
+  it("deduplicateHistoryEntries removes duplicate queries", () => {
+    const dupes = [
+      makeEntry("1", "AI trends", [], 0),
+      makeEntry("2", "AI Trends", [], 1),
+      makeEntry("3", "Blockchain", [], 0),
+    ];
+    expect(deduplicateHistoryEntries(dupes)).toHaveLength(2);
+  });
+
+  it("getRecentQueries returns last N queries", () => {
+    const q = getRecentQueries(entries, 2);
+    expect(q).toEqual(["AI in healthcare", "Climate trends"]);
+  });
+
+  it("historyToMarkdown generates markdown", () => {
+    const md = historyToMarkdown(entries);
+    expect(md).toContain("# Research History");
+    expect(md).toContain("AI in healthcare");
+  });
+});
+
