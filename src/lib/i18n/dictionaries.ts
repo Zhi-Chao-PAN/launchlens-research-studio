@@ -1,63 +1,122 @@
 // Locale dictionaries. Keep keys flat and stable so future translation
 // passes can diff against this canonical English source.
-export type Locale = "en" | "zh-CN" | "ja";
+export type Locale = "en" | "zh-CN" | "ja" | "ko";
 
-export const SUPPORTED_LOCALES: readonly Locale[] = ["en", "zh-CN", "ja"] as const;
+export const SUPPORTED_LOCALES: readonly Locale[] = ["en", "zh-CN", "ja", "ko"] as const;
 export const DEFAULT_LOCALE: Locale = "en";
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   "en": "English",
   "zh-CN": "中文",
   "ja": "日本語",
+  "ko": "한국어",
 };
 
 export type DictionaryKey =
-  | "header.subtitle"
-  | "header.researchComplete"
-  | "header.share"
-  | "header.newResearch"
-  | "hero.title"
-  | "hero.subtitle"
-  | "errors.startFailed"
-  | "errors.dismiss"
-  | "status.loading"
-  | "status.running"
-  | "status.completed"
-  | "status.error"
-  | "language.label"
-  | "agent.market-sizer.name"
-  | "agent.market-sizer.description"
-  | "agent.competitor-analyst.name"
-  | "agent.competitor-analyst.description"
-  | "agent.pain-detective.name"
-  | "agent.pain-detective.description"
-  | "agent.pricing-scout.name"
-  | "agent.pricing-scout.description"
-  | "agent.channel-scout.name"
   | "agent.channel-scout.description"
-  | "agent.synthesis.name"
-  | "agent.synthesis.description"
-  | "agent.status.idle"
-  | "agent.status.running"
+  | "agent.channel-scout.name"
+  | "agent.competitor-analyst.description"
+  | "agent.competitor-analyst.name"
+  | "agent.market-sizer.description"
+  | "agent.market-sizer.name"
+  | "agent.pain-detective.description"
+  | "agent.pain-detective.name"
+  | "agent.pricing-scout.description"
+  | "agent.pricing-scout.name"
   | "agent.status.done"
   | "agent.status.error"
-  | "studio.researchAgents"
-  | "studio.poweredBy"
-  | "studio.tipStart"
-  | "studio.tipReset"
-  | "footer.tagline"
-  | "provider.mock"
-  | "provider.breakerOpen"
-  | "provider.streaming"
-  | "crash.title"
+  | "agent.status.idle"
+  | "agent.status.running"
+  | "agent.synthesis.description"
+  | "agent.synthesis.name"
+  | "commandPalette.all"
+  | "commandPalette.category.action"
+  | "commandPalette.category.navigation"
+  | "commandPalette.category.setting"
+  | "commandPalette.category.template"
+  | "commandPalette.noResults"
+  | "commandPalette.placeholder"
+  | "commandPalette.tryDifferent"
+  | "common.back"
+  | "common.cancel"
+  | "common.close"
+  | "common.confirm"
+  | "common.copied"
+  | "common.copy"
+  | "common.delete"
+  | "common.edit"
+  | "common.error"
+  | "common.history"
+  | "common.home"
+  | "common.loading"
+  | "common.retry"
+  | "common.save"
+  | "common.search"
+  | "common.settings"
+  | "common.share"
+  | "common.templates"
   | "crash.body"
-  | "crash.tryAgain"
-  | "crash.goHome"
-  | "crash.copyTrace"
   | "crash.copied"
-  | "notFound.title"
-  | "notFound.body"
-  | "notFound.backHome";
+  | "crash.title"
+  | "errors.dismiss"
+  | "export.copied"
+  | "export.copy"
+  | "export.download"
+  | "export.json"
+  | "export.markdown"
+  | "export.pdf"
+  | "export.title"
+  | "folder.delete"
+  | "folder.dragToReorder"
+  | "folder.empty"
+  | "folder.new"
+  | "folder.rename"
+  | "footer.tagline"
+  | "header.share"
+  | "header.subtitle"
+  | "hero.subtitle"
+  | "hero.title"
+  | "history.clearSelection"
+  | "history.confirmDelete"
+  | "history.deleteSelected"
+  | "history.empty"
+  | "history.emptyDesc"
+  | "history.exportSelected"
+  | "history.filterAll"
+  | "history.filterCompleted"
+  | "history.filterFailed"
+  | "history.searchPlaceholder"
+  | "history.selectAll"
+  | "history.selected"
+  | "history.sortNewest"
+  | "history.sortOldest"
+  | "history.sortQuery"
+  | "history.title"
+  | "language.label"
+  | "provider.mock"
+  | "provider.streaming"
+  | "search.matchCount"
+  | "search.next"
+  | "search.noMatches"
+  | "search.placeholder"
+  | "search.prev"
+  | "settings.dark"
+  | "settings.language"
+  | "settings.light"
+  | "settings.system"
+  | "settings.theme"
+  | "settings.title"
+  | "shortcuts.noResults"
+  | "shortcuts.searchPlaceholder"
+  | "shortcuts.title"
+  | "shortcuts.total"
+  | "status.completed"
+  | "status.error"
+  | "status.loading"
+  | "status.running"
+  | "toc.readingProgress"
+  | "toc.title"
+;
 
 type Dict = Record<DictionaryKey, string>;
 
@@ -108,6 +167,77 @@ const en: Dict = {
   "notFound.title": "Page not found",
   "notFound.body": "The page you're looking for doesn't exist or has moved.",
   "notFound.backHome": "Back to Research Studio",
+  "commandPalette.placeholder": "Type a command or search...",
+  "commandPalette.noResults": "No commands found",
+  "commandPalette.tryDifferent": "Try a different search term",
+  "commandPalette.category.navigation": "Navigation",
+  "commandPalette.category.action": "Actions",
+  "commandPalette.category.setting": "Settings",
+  "commandPalette.category.template": "Templates",
+  "commandPalette.all": "All",
+  "history.title": "Research History",
+  "history.empty": "No research yet",
+  "history.emptyDesc": "Start your first research to see it here",
+  "history.searchPlaceholder": "Search research...",
+  "history.filterAll": "All",
+  "history.filterCompleted": "Completed",
+  "history.filterFailed": "Failed",
+  "history.sortNewest": "Newest first",
+  "history.sortOldest": "Oldest first",
+  "history.sortQuery": "Query A-Z",
+  "history.selected": "selected",
+  "history.selectAll": "Select all",
+  "history.clearSelection": "Clear selection",
+  "history.exportSelected": "Export selected",
+  "history.deleteSelected": "Delete selected",
+  "history.confirmDelete": "Are you sure you want to delete these runs?",
+  "export.title": "Export Report",
+  "export.markdown": "Markdown",
+  "export.json": "JSON",
+  "export.pdf": "PDF / Print",
+  "export.copy": "Copy",
+  "export.copied": "Copied!",
+  "export.download": "Download",
+  "search.placeholder": "Search in report...",
+  "search.noMatches": "No matches",
+  "search.prev": "Previous",
+  "search.next": "Next",
+  "search.matchCount": "of",
+  "shortcuts.title": "Keyboard Shortcuts",
+  "shortcuts.searchPlaceholder": "Search shortcuts...",
+  "shortcuts.noResults": "No shortcuts found",
+  "shortcuts.total": "shortcuts",
+  "folder.new": "New Folder",
+  "folder.rename": "Rename",
+  "folder.delete": "Delete Folder",
+  "folder.empty": "No folders yet",
+  "folder.dragToReorder": "Drag to reorder",
+  "settings.title": "Settings",
+  "settings.theme": "Theme",
+  "settings.light": "Light",
+  "settings.dark": "Dark",
+  "settings.system": "System",
+  "settings.language": "Language",
+  "toc.title": "Table of Contents",
+  "toc.readingProgress": "read",
+  "common.loading": "Loading...",
+  "common.error": "Error",
+  "common.retry": "Retry",
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "common.close": "Close",
+  "common.back": "Back",
+  "common.share": "Share",
+  "common.copy": "Copy",
+  "common.copied": "Copied!",
+  "common.delete": "Delete",
+  "common.edit": "Edit",
+  "common.search": "Search",
+  "common.settings": "Settings",
+  "common.home": "Home",
+  "common.history": "History",
+  "common.templates": "Templates",
+  "common.confirm": "Confirm",
 };
 
 const zhCN: Dict = {
@@ -157,6 +287,77 @@ const zhCN: Dict = {
   "notFound.title": "页面未找到",
   "notFound.body": "您要查找的页面不存在或已移动。",
   "notFound.backHome": "返回调研工作台",
+  "commandPalette.placeholder": "输入命令或搜索...",
+  "commandPalette.noResults": "未找到命令",
+  "commandPalette.tryDifferent": "试试其他关键词",
+  "commandPalette.category.navigation": "导航",
+  "commandPalette.category.action": "操作",
+  "commandPalette.category.setting": "设置",
+  "commandPalette.category.template": "模板",
+  "commandPalette.all": "全部",
+  "history.title": "调研历史",
+  "history.empty": "暂无调研记录",
+  "history.emptyDesc": "开始你的第一次调研吧",
+  "history.searchPlaceholder": "搜索调研...",
+  "history.filterAll": "全部",
+  "history.filterCompleted": "已完成",
+  "history.filterFailed": "失败",
+  "history.sortNewest": "最新优先",
+  "history.sortOldest": "最早优先",
+  "history.sortQuery": "按查询排序",
+  "history.selected": "项已选",
+  "history.selectAll": "全选",
+  "history.clearSelection": "取消选择",
+  "history.exportSelected": "导出所选",
+  "history.deleteSelected": "删除所选",
+  "history.confirmDelete": "确定要删除这些调研记录吗？",
+  "export.title": "导出报告",
+  "export.markdown": "Markdown",
+  "export.json": "JSON",
+  "export.pdf": "PDF / 打印",
+  "export.copy": "复制",
+  "export.copied": "已复制！",
+  "export.download": "下载",
+  "search.placeholder": "在报告中搜索...",
+  "search.noMatches": "无匹配",
+  "search.prev": "上一个",
+  "search.next": "下一个",
+  "search.matchCount": "/",
+  "shortcuts.title": "快捷键",
+  "shortcuts.searchPlaceholder": "搜索快捷键...",
+  "shortcuts.noResults": "未找到快捷键",
+  "shortcuts.total": "个快捷键",
+  "folder.new": "新建文件夹",
+  "folder.rename": "重命名",
+  "folder.delete": "删除文件夹",
+  "folder.empty": "暂无文件夹",
+  "folder.dragToReorder": "拖拽排序",
+  "settings.title": "设置",
+  "settings.theme": "主题",
+  "settings.light": "浅色",
+  "settings.dark": "深色",
+  "settings.system": "跟随系统",
+  "settings.language": "语言",
+  "toc.title": "目录",
+  "toc.readingProgress": "已读",
+  "common.loading": "加载中...",
+  "common.error": "错误",
+  "common.retry": "重试",
+  "common.cancel": "取消",
+  "common.save": "保存",
+  "common.close": "关闭",
+  "common.back": "返回",
+  "common.share": "分享",
+  "common.copy": "复制",
+  "common.copied": "已复制！",
+  "common.delete": "删除",
+  "common.edit": "编辑",
+  "common.search": "搜索",
+  "common.settings": "设置",
+  "common.home": "首页",
+  "common.history": "历史",
+  "common.templates": "模板",
+  "common.confirm": "确认",
 };
 
 const ja: Dict = {
@@ -206,12 +407,204 @@ const ja: Dict = {
   "notFound.title": "ページが見つかりません",
   "notFound.body": "お探しのページは存在しないか、移動された可能性があります。",
   "notFound.backHome": "リサーチスタジオに戻る",
+  "commandPalette.placeholder": "コマンドまたは検索...",
+  "commandPalette.noResults": "コマンドが見つかりません",
+  "commandPalette.tryDifferent": "別のキーワードを試してください",
+  "commandPalette.category.navigation": "ナビゲーション",
+  "commandPalette.category.action": "アクション",
+  "commandPalette.category.setting": "設定",
+  "commandPalette.category.template": "テンプレート",
+  "commandPalette.all": "すべて",
+  "history.title": "調査履歴",
+  "history.empty": "調査がありません",
+  "history.emptyDesc": "最初の調査を開始してください",
+  "history.searchPlaceholder": "調査を検索...",
+  "history.filterAll": "すべて",
+  "history.filterCompleted": "完了",
+  "history.filterFailed": "失敗",
+  "history.sortNewest": "新しい順",
+  "history.sortOldest": "古い順",
+  "history.sortQuery": "クエリ順",
+  "history.selected": "件選択中",
+  "history.selectAll": "すべて選択",
+  "history.clearSelection": "選択解除",
+  "history.exportSelected": "選択したものをエクスポート",
+  "history.deleteSelected": "選択したものを削除",
+  "history.confirmDelete": "これらの調査を削除してもよろしいですか？",
+  "export.title": "レポートをエクスポート",
+  "export.markdown": "Markdown",
+  "export.json": "JSON",
+  "export.pdf": "PDF / 印刷",
+  "export.copy": "コピー",
+  "export.copied": "コピーしました！",
+  "export.download": "ダウンロード",
+  "search.placeholder": "レポート内を検索...",
+  "search.noMatches": "一致なし",
+  "search.prev": "前へ",
+  "search.next": "次へ",
+  "search.matchCount": "/",
+  "shortcuts.title": "キーボードショートカット",
+  "shortcuts.searchPlaceholder": "ショートカットを検索...",
+  "shortcuts.noResults": "ショートカットが見つかりません",
+  "shortcuts.total": "個のショートカット",
+  "folder.new": "新規フォルダ",
+  "folder.rename": "名前を変更",
+  "folder.delete": "フォルダを削除",
+  "folder.empty": "フォルダがありません",
+  "folder.dragToReorder": "ドラッグで並べ替え",
+  "settings.title": "設定",
+  "settings.theme": "テーマ",
+  "settings.light": "ライト",
+  "settings.dark": "ダーク",
+  "settings.system": "システムに合わせる",
+  "settings.language": "言語",
+  "toc.title": "目次",
+  "toc.readingProgress": "読了",
+  "common.loading": "読み込み中...",
+  "common.error": "エラー",
+  "common.retry": "再試行",
+  "common.cancel": "キャンセル",
+  "common.save": "保存",
+  "common.close": "閉じる",
+  "common.back": "戻る",
+  "common.share": "共有",
+  "common.copy": "コピー",
+  "common.copied": "コピーしました！",
+  "common.delete": "削除",
+  "common.edit": "編集",
+  "common.search": "検索",
+  "common.settings": "設定",
+  "common.home": "ホーム",
+  "common.history": "履歴",
+  "common.templates": "テンプレート",
+  "common.confirm": "確認",
 };
 
+
+const ko: Dict = {
+  "agent.channel-scout.description": "고객 확보 채널, 커뮤니티 허브, 콘텐츠 주제",
+  "agent.channel-scout.name": "채널 탐색정",
+  "agent.competitor-analyst.description": "경쟁 구도, 시장 공백, 포지셔닝 매트릭스",
+  "agent.competitor-analyst.name": "경쟁사 분석가",
+  "agent.market-sizer.description": "TAM/SAM/SOM 추정, 성장 트렌드, 시장 세그먼트",
+  "agent.market-sizer.name": "시장 규모 분석가",
+  "agent.pain-detective.description": "사용자 페인 포인트, 미충족 요구, 실제 사용자 목소리",
+  "agent.pain-detective.name": "페인 포인트 탐정",
+  "agent.pricing-scout.description": "가격 범위, 수익 모델, 지불 의향",
+  "agent.pricing-scout.name": "가격 탐색정",
+  "agent.status.done": "완료",
+  "agent.status.error": "오류",
+  "agent.status.idle": "대기 중",
+  "agent.status.running": "리서치 중",
+  "agent.synthesis.description": "에이전트 간 검증, 실행 가능한 요약, 공유 가능한 브리프",
+  "agent.synthesis.name": "종합 분석",
+  "commandPalette.all": "All",
+  "commandPalette.category.action": "Actions",
+  "commandPalette.category.navigation": "Navigation",
+  "commandPalette.category.setting": "Settings",
+  "commandPalette.category.template": "Templates",
+  "commandPalette.noResults": "No commands found",
+  "commandPalette.placeholder": "Type a command or search...",
+  "commandPalette.tryDifferent": "Try a different search term",
+  "common.back": "뒤로",
+  "common.cancel": "취소",
+  "common.close": "닫기",
+  "common.confirm": "확인",
+  "common.copied": "복사됨!",
+  "common.copy": "복사",
+  "common.delete": "삭제",
+  "common.edit": "편집",
+  "common.error": "오류",
+  "common.history": "기록",
+  "common.home": "홈",
+  "common.loading": "로딩 중...",
+  "common.retry": "다시 시도",
+  "common.save": "저장",
+  "common.search": "검색",
+  "common.settings": "설정",
+  "common.share": "공유",
+  "common.templates": "템플릿",
+  "crash.body": "예기치 않은 오류가 발생했습니다. 작업 내용은 손실되지 않았습니다.",
+  "crash.copied": "복사됨",
+  "crash.copyTrace": "Copy error details",
+  "crash.goHome": "Go home",
+  "crash.title": "문제가 발생했습니다",
+  "crash.tryAgain": "Try again",
+  "errors.dismiss": "닫기",
+  "errors.startFailed": "Research failed to start",
+  "export.copied": "복사됨!",
+  "export.copy": "복사",
+  "export.download": "다운로드",
+  "export.json": "JSON",
+  "export.markdown": "Markdown",
+  "export.pdf": "PDF / 인쇄",
+  "export.title": "보고서 내보내기",
+  "folder.delete": "폴더 삭제",
+  "folder.dragToReorder": "Drag to reorder",
+  "folder.empty": "폴더가 없습니다",
+  "folder.new": "새 폴더",
+  "folder.rename": "이름 변경",
+  "footer.tagline": "LaunchLens Research Studio - launchlens-ai 오픈소스 프로젝트",
+  "header.newResearch": "New Research",
+  "header.researchComplete": "Research complete",
+  "header.share": "공유",
+  "header.subtitle": "제품 아이디어를 위한 멀티 에이전트 시장 인사이트",
+  "hero.subtitle": "6개의 전문 AI 에이전트가 병렬로 작업하여 완전한 시장 인텔리전스 보고서를 제공합니다. API 키가 필요 없습니다.",
+  "hero.title": "몇 분 만에 모든 시장을 리서치하세요",
+  "history.clearSelection": "Clear selection",
+  "history.confirmDelete": "Are you sure you want to delete these runs?",
+  "history.deleteSelected": "Delete selected",
+  "history.empty": "리서치가 없습니다",
+  "history.emptyDesc": "Start your first research to see it here",
+  "history.exportSelected": "Export selected",
+  "history.filterAll": "All",
+  "history.filterCompleted": "Completed",
+  "history.filterFailed": "Failed",
+  "history.searchPlaceholder": "Search research...",
+  "history.selectAll": "Select all",
+  "history.selected": "개 선택됨",
+  "history.sortNewest": "Newest first",
+  "history.sortOldest": "Oldest first",
+  "history.sortQuery": "Query A-Z",
+  "history.title": "리서치 기록",
+  "language.label": "언어",
+  "notFound.backHome": "Back to Research Studio",
+  "notFound.body": "The page you're looking for doesn't exist or has moved.",
+  "notFound.title": "Page not found",
+  "provider.breakerOpen": "Provider breaker open",
+  "provider.mock": "목업 모델",
+  "provider.streaming": "스트리밍",
+  "search.matchCount": "of",
+  "search.next": "다음",
+  "search.noMatches": "No matches",
+  "search.placeholder": "보고서에서 검색...",
+  "search.prev": "이전",
+  "settings.dark": "다크",
+  "settings.language": "언어",
+  "settings.light": "라이트",
+  "settings.system": "시스템 따름",
+  "settings.theme": "테마",
+  "settings.title": "설정",
+  "shortcuts.noResults": "No shortcuts found",
+  "shortcuts.searchPlaceholder": "Search shortcuts...",
+  "shortcuts.title": "키보드 단축키",
+  "shortcuts.total": "개의 단축키",
+  "status.completed": "리서치 완료",
+  "status.error": "리서치 실패",
+  "status.loading": "리서치 세션 시작 중",
+  "status.running": "리서치 에이전트 실행 중",
+  "studio.poweredBy": "Powered by 6 research agents:",
+  "studio.researchAgents": "Research Agents",
+  "studio.tipReset": "to reset",
+  "studio.tipStart": "to start",
+  "toc.readingProgress": "read",
+  "toc.title": "목차",
+};
 export const DICTIONARIES: Record<Locale, Dict> = {
   "en": en,
   "zh-CN": zhCN,
   "ja": ja,
+  "ko": ko,
 };
 
 export function translate(locale: Locale, key: DictionaryKey | string, fallback?: string): string {
