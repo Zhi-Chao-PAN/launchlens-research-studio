@@ -354,3 +354,103 @@ export function getExportFilename(): string {
     String(now.getDate()).padStart(2, "0");
   return `launchlens-backup-${dateStr}.json`;
 }
+/**
+ * Build a data package containing runs (and their notes) for a single folder.
+ *
+ * Pure function — does not read from or write to storage. Caller provides
+ * the source collections (typically loaded from storage) and the target folder.
+ * The folder itself is included so the import restores the folder structure.
+ */
+export function createFolderPackage(options: {
+  folder: ResearchFolder;
+  allRuns: ResearchRun[];
+  allNotes?: ResearchNotes[];
+  includeNotes?: boolean;
+}): DataPackage {
+  const { folder, allRuns, allNotes = [], includeNotes = true } = options;
+  const runIds = new Set(folder.runIds);
+  const runs = allRuns.filter((r) => runIds.has(r.id));
+
+  const notes = includeNotes
+    ? allNotes.filter((n) => runIds.has(n.runId))
+    : [];
+
+  return createDataPackage({
+    runs,
+    notes,
+    folders: [folder],
+  });
+}
+
+/**
+ * Build a data package containing runs and notes for multiple folders.
+ *
+ * Deduplicates runs across folders (a run in two folders appears once in the
+ * exported runs array, but both folder records preserve their runIds lists).
+ * All referenced folders are included in the package so import reconstructs
+ * the full folder structure.
+ */
+export function createFoldersBundle(options: {
+  folderIds: string[];
+  allFolders: ResearchFolder[];
+  allRuns: ResearchRun[];
+  allNotes?: ResearchNotes[];
+  includeNotes?: boolean;
+}): DataPackage {
+  const { folderIds, allFolders, allRuns, allNotes = [], includeNotes = true } = options;
+
+  const idSet = new Set(folderIds);
+  const folders = allFolders.filter((f) => idSet.has(f.id));
+
+  // Collect all unique run IDs referenced by any of the folders
+  const runIds = new Set<string>();
+  for (const f of folders) {
+    for (const rid of f.runIds) {
+      runIds.add(rid);
+    }
+  }
+
+  const runs = allRuns.filter((r) => runIds.has(r.id));
+  const notes = includeNotes
+    ? allNotes.filter((n) => runIds.has(n.runId))
+    : [];
+
+  return createDataPackage({
+    runs,
+    notes,
+    folders,
+  });
+}
+
+/**
+ * Generate a filename for a folder export.
+ * Includes folder name (sanitized) and date.
+ */
+export function getFolderExportFilename(folderName: string): string {
+  const sanitized = folderName
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, "");
+
+  const now = new Date();
+  const dateStr =
+    now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+
+  return `launchlens-folder-${sanitized || "export"}-${dateStr}.json`;
+}
+
+/**
+ * Generate a filename for a multi-folder bundle export.
+ */
+export function getFoldersBundleFilename(folderCount: number): string {
+  const now = new Date();
+  const dateStr =
+    now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+
+  return `launchlens-folders-${folderCount}-${dateStr}.json`;
+}

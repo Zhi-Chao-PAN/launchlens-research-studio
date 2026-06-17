@@ -1,10 +1,14 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import {
   createDataPackage,
   validateDataPackage,
   importDataPackage,
   getExportFilename,
   estimatePackageSize,
+  createFolderPackage,
+  createFoldersBundle,
+  getFolderExportFilename,
+  getFoldersBundleFilename,
   DATA_PACKAGE_VERSION,
   DATA_PACKAGE_SOURCE,
 } from "@/lib/research/data-import-export";
@@ -268,5 +272,193 @@ describe("data-import-export", () => {
       const big = createDataPackage({ runs: [makeRun("r1"), makeRun("r2"), makeRun("r3")] });
       expect(estimatePackageSize(big)).toBeGreaterThan(estimatePackageSize(small));
     });
+  });
+});
+describe("createFolderPackage", () => {
+  it("exports a single folder with its runs and notes", () => {
+    const folder: ResearchFolder = {
+      id: "f1",
+      name: "My Folder",
+      runIds: ["r1", "r2"],
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const allRuns = [
+      makeRun("r1", "query 1"),
+      makeRun("r2", "query 2"),
+      makeRun("r3", "query 3"),
+    ];
+    const allNotes = [makeNotes("r1"), makeNotes("r3")];
+
+    const pkg = createFolderPackage({ folder, allRuns, allNotes });
+
+    expect(pkg.data.folders?.length).toBe(1);
+    expect(pkg.data.folders?.[0].id).toBe("f1");
+    expect(pkg.data.runs?.length).toBe(2);
+    expect(pkg.data.runs?.map((r) => r.id).sort()).toEqual(["r1", "r2"]);
+    // Only r1 has notes in this folder
+    expect(pkg.data.notes?.length).toBe(1);
+    expect(pkg.data.notes?.[0].runId).toBe("r1");
+  });
+
+  it("returns empty runs/notes when folder has no runs", () => {
+    const folder: ResearchFolder = {
+      id: "empty",
+      name: "Empty",
+      runIds: [],
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const allRuns = [makeRun("r1")];
+
+    const pkg = createFolderPackage({ folder, allRuns });
+    expect(pkg.data.runs?.length).toBe(0);
+    expect(pkg.data.notes?.length).toBe(0);
+    expect(pkg.data.folders?.length).toBe(1);
+  });
+
+  it("respects includeNotes=false", () => {
+    const folder: ResearchFolder = {
+      id: "f1",
+      name: "F",
+      runIds: ["r1"],
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const allRuns = [makeRun("r1")];
+    const allNotes = [makeNotes("r1")];
+
+    const pkg = createFolderPackage({ folder, allRuns, allNotes, includeNotes: false });
+    expect(pkg.data.notes?.length).toBe(0);
+    expect(pkg.data.runs?.length).toBe(1);
+  });
+
+  it("produces a valid data package", () => {
+    const folder: ResearchFolder = {
+      id: "f1",
+      name: "F",
+      runIds: ["r1"],
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    const pkg = createFolderPackage({ folder, allRuns: [makeRun("r1")] });
+    const errors = validateDataPackage(pkg);
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe("createFoldersBundle", () => {
+  it("exports multiple folders and deduplicates shared runs", () => {
+    const f1: ResearchFolder = {
+      id: "f1", name: "F1", runIds: ["r1", "r2"],
+      createdAt: 1000, updatedAt: 2000,
+    };
+    const f2: ResearchFolder = {
+      id: "f2", name: "F2", runIds: ["r2", "r3"],
+      createdAt: 1000, updatedAt: 2000,
+    };
+    const allFolders = [f1, f2];
+    const allRuns = [makeRun("r1"), makeRun("r2"), makeRun("r3"), makeRun("r4")];
+    const allNotes = [makeNotes("r1"), makeNotes("r2"), makeNotes("r4")];
+
+    const pkg = createFoldersBundle({
+      folderIds: ["f1", "f2"],
+      allFolders,
+      allRuns,
+      allNotes,
+    });
+
+    // Both folders included
+    expect(pkg.data.folders?.length).toBe(2);
+    const fIds = pkg.data.folders?.map((f) => f.id).sort();
+    expect(fIds).toEqual(["f1", "f2"]);
+
+    // r1, r2, r3 all present (deduplicated 鈥?r2 only once)
+    const rIds = pkg.data.runs?.map((r) => r.id).sort();
+    expect(rIds).toEqual(["r1", "r2", "r3"]);
+    expect(pkg.data.runs?.length).toBe(3);
+
+    // r4 not in any folder -> excluded
+    expect(rIds).not.toContain("r4");
+
+    // Notes for r1 and r2 only
+    const nIds = pkg.data.notes?.map((n) => n.runId).sort();
+    expect(nIds).toEqual(["r1", "r2"]);
+  });
+
+  it("silently ignores folderIds that don't exist in allFolders", () => {
+    const f1: ResearchFolder = {
+      id: "f1", name: "F1", runIds: ["r1"],
+      createdAt: 1000, updatedAt: 2000,
+    };
+
+    const pkg = createFoldersBundle({
+      folderIds: ["f1", "nonexistent"],
+      allFolders: [f1],
+      allRuns: [makeRun("r1")],
+    });
+
+    expect(pkg.data.folders?.length).toBe(1);
+    expect(pkg.data.folders?.[0].id).toBe("f1");
+  });
+
+  it("empty folderIds produces empty package", () => {
+    const pkg = createFoldersBundle({
+      folderIds: [],
+      allFolders: [makeFolder("f1", "F1")],
+      allRuns: [makeRun("r1")],
+    });
+
+    expect(pkg.data.folders?.length).toBe(0);
+    expect(pkg.data.runs?.length).toBe(0);
+    expect(pkg.data.notes?.length).toBe(0);
+  });
+
+  it("produces a valid data package", () => {
+    const f1: ResearchFolder = {
+      id: "f1", name: "F1", runIds: ["r1"],
+      createdAt: 1000, updatedAt: 2000,
+    };
+    const f2: ResearchFolder = {
+      id: "f2", name: "F2", runIds: ["r2"],
+      createdAt: 1000, updatedAt: 2000,
+    };
+    const pkg = createFoldersBundle({
+      folderIds: ["f1", "f2"],
+      allFolders: [f1, f2],
+      allRuns: [makeRun("r1"), makeRun("r2")],
+    });
+    const errors = validateDataPackage(pkg);
+    expect(errors.length).toBe(0);
+  });
+});
+
+describe("getFolderExportFilename", () => {
+  it("includes sanitized folder name and date", () => {
+    const name = getFolderExportFilename("My Research Folder");
+    expect(name).toMatch(/^launchlens-folder-my-research-folder-\d{8}\.json$/);
+  });
+
+  it("handles Chinese characters", () => {
+    const name = getFolderExportFilename("甯傚満璋冪爺");
+    expect(name).toMatch(/^launchlens-folder-甯傚満璋冪爺-\d{8}\.json$/);
+  });
+
+  it("falls back to 'export' for empty folder names", () => {
+    const name = getFolderExportFilename("");
+    expect(name).toMatch(/^launchlens-folder-export-\d{8}\.json$/);
+  });
+
+  it("truncates very long folder names", () => {
+    const long = "a".repeat(100);
+    const name = getFolderExportFilename(long);
+    expect(name.length).toBeLessThan(80);
+  });
+});
+
+describe("getFoldersBundleFilename", () => {
+  it("includes count and date", () => {
+    const name = getFoldersBundleFilename(5);
+    expect(name).toMatch(/^launchlens-folders-5-\d{8}\.json$/);
   });
 });
