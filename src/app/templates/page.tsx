@@ -1,8 +1,7 @@
 "use client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
-
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -10,12 +9,19 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  getDefaultCategories,
+  incrementUseCount,
   type ResearchTemplate,
 } from "@/lib/research/templates";
+
+type TabType = "gallery" | "my-templates" | "all";
 
 export default function TemplatesPage() {
   const router = useRouter();
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>("gallery");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -23,19 +29,43 @@ export default function TemplatesPage() {
     description: "",
     query: "",
     keywords: "",
+    category: "Custom",
   });
 
+  const categories = useMemo(() => ["All", ...getDefaultCategories()], []);
+
   const refresh = useCallback(() => {
-    setTemplates(listTemplates());
-  }, []);
+    let all = listTemplates();
+    
+    if (activeTab === "gallery") {
+      all = all.filter((t) => t.isDefault);
+    } else if (activeTab === "my-templates") {
+      all = all.filter((t) => !t.isDefault);
+    }
+    
+    if (selectedCategory !== "All") {
+      all = all.filter((t) => t.category === selectedCategory);
+    }
+    
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      all = all.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          (t.description || "").toLowerCase().includes(q) ||
+          t.keywords.some((k) => k.toLowerCase().includes(q))
+      );
+    }
+    
+    setTemplates(all);
+  }, [activeTab, selectedCategory, searchQuery]);
 
   useEffect(() => {
-    // Queue as microtask to avoid synchronous setState in effect
     void Promise.resolve().then(refresh);
   }, [refresh]);
 
   function handleUseTemplate(tpl: ResearchTemplate) {
-    // Build a URL to prefill the home page
+    incrementUseCount(tpl.id);
     const params = new URLSearchParams();
     if (tpl.query) params.set("q", tpl.query);
     if (tpl.keywords.length) params.set("k", tpl.keywords.join(","));
@@ -44,25 +74,27 @@ export default function TemplatesPage() {
 
   function startEdit(tpl: ResearchTemplate) {
     setEditingId(tpl.id);
+    setShowNewForm(false);
     setFormData({
       name: tpl.name,
       description: tpl.description || "",
       query: tpl.query,
       keywords: tpl.keywords.join(", "),
+      category: tpl.category || "Custom",
     });
   }
 
   function cancelEdit() {
     setEditingId(null);
     setShowNewForm(false);
-    setFormData({ name: "", description: "", query: "", keywords: "" });
+    setFormData({ name: "", description: "", query: "", keywords: "", category: "Custom" });
   }
 
   function handleSave() {
     if (!formData.name.trim()) return;
 
     const keywords = formData.keywords
-      .split(/[,，]/)
+      .split(/[,?]/)
       .map((k) => k.trim())
       .filter(Boolean);
 
@@ -72,6 +104,7 @@ export default function TemplatesPage() {
         description: formData.description,
         query: formData.query,
         keywords,
+        category: formData.category,
       });
     } else {
       createTemplate({
@@ -79,6 +112,7 @@ export default function TemplatesPage() {
         description: formData.description,
         query: formData.query,
         keywords,
+        category: formData.category,
       });
     }
 
@@ -87,13 +121,14 @@ export default function TemplatesPage() {
   }
 
   function handleDelete(id: string) {
-    if (!confirm("确定要删除这个模板吗？")) return;
+    if (!confirm("Are you sure you want to delete this template?")) return;
     deleteTemplate(id);
     refresh();
   }
 
   function handleExport() {
-    const data = JSON.stringify(templates, null, 2);
+    const all = listTemplates();
+    const data = JSON.stringify(all, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -110,7 +145,7 @@ export default function TemplatesPage() {
       try {
         const imported = JSON.parse(e.target?.result as string);
         if (!Array.isArray(imported)) {
-          alert("导入的文件格式不正确");
+          alert("Invalid template file format");
           return;
         }
         let count = 0;
@@ -121,178 +156,260 @@ export default function TemplatesPage() {
               description: tpl.description || "",
               query: tpl.query || "",
               keywords: tpl.keywords,
+              category: tpl.category || "Custom",
             });
             count++;
           }
         }
-        alert(`成功导入 ${count} 个模板`);
+        alert(`Successfully imported ${count} template${count !== 1 ? "s" : ""}`);
         refresh();
       } catch {
-        alert("导入失败：文件解析错误");
+        alert("Import failed: invalid JSON");
       }
     };
     reader.readAsText(file);
   }
 
-  function formatDate(ts: number): string {
-    return new Date(ts).toLocaleString("zh-CN", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
   return (
     <div className="templates-page">
-      <header className="templates-header">
-        <div className="templates-header-inner">
-          <Link href="/" className="research-back-link">← 返回首页</Link>
-          <h1 className="templates-title">研究模板</h1>
-          <p className="templates-subtitle">保存常用研究配置，一键启动</p>
+      <SiteHeader title="Templates" />
 
-          <div className="templates-toolbar">
+      <main className="templates-main">
+        <div className="templates-header-bar">
+          <div>
+            <h1 className="templates-title">Research Templates</h1>
+            <p className="templates-subtitle">
+              Jumpstart your research with curated templates or create your own
+            </p>
+          </div>
+          <div className="templates-header-actions">
+            <button className="btn btn-secondary" onClick={handleExport}>
+              📤 Export
+            </button>
+            <label className="btn btn-secondary">
+              📥 Import
+              <input
+                type="file"
+                accept=".json"
+                style={{ display: "none" }}
+                onChange={(e) => handleImport(e.target.files?.[0] || null)}
+              />
+            </label>
             <button
               className="btn btn-primary"
               onClick={() => {
                 setShowNewForm(true);
-                setFormData({ name: "", description: "", query: "", keywords: "" });
+                setEditingId(null);
+                setFormData({ name: "", description: "", query: "", keywords: "", category: "Custom" });
               }}
             >
-              + 新建模板
+              + New Template
             </button>
-            <div className="templates-toolbar-right">
-              <button className="btn btn-secondary" onClick={handleExport}>
-                📤 导出
-              </button>
-              <label className="btn btn-secondary">
-                📥 导入
-                <input
-                  type="file"
-                  accept=".json"
-                  style={{ display: "none" }}
-                  onChange={(e) => handleImport(e.target.files?.[0] || null)}
-                />
-              </label>
-            </div>
           </div>
         </div>
-      </header>
 
-      <SiteHeader />
-      <main className="templates-main">
-        {(showNewForm || editingId) && (
-          <div className="template-editor">
-            <h3>{editingId ? "编辑模板" : "新建模板"}</h3>
-            <div className="form-grid">
-              <div className="form-group">
-                <label>模板名称</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="例如：市场进入分析"
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group form-group-full">
-                <label>描述</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="简短描述这个模板的用途"
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group form-group-full">
-                <label>默认研究问题（可选）</label>
-                <input
-                  type="text"
-                  value={formData.query}
-                  onChange={(e) => setFormData({ ...formData, query: e.target.value })}
-                  placeholder="默认的研究查询问题"
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group form-group-full">
-                <label>关键词（用逗号分隔）</label>
-                <input
-                  type="text"
-                  value={formData.keywords}
-                  onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
-                  placeholder="例如：市场规模, 竞争格局, 用户画像"
-                  className="form-input"
-                />
-              </div>
-            </div>
-            <div className="form-actions">
-              <button className="btn btn-cancel" onClick={cancelEdit}>取消</button>
+        {/* Tabs */}
+        <div className="templates-tabs">
+          {[
+            { id: "gallery", label: "Gallery", icon: "🏛️" },
+            { id: "my-templates", label: "My Templates", icon: "📁" },
+            { id: "all", label: "All", icon: "📦" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              className={`templates-tab ${activeTab === tab.id ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.id as TabType)}
+            >
+              <span className="templates-tab-icon">{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search + category filter */}
+        <div className="templates-toolbar">
+          <div className="templates-search">
+            <span className="templates-search-icon">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search templates..."
+              className="templates-search-input"
+            />
+          </div>
+          <div className="templates-categories">
+            {categories.map((cat) => (
               <button
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={!formData.name.trim()}
+                key={cat}
+                className={`templates-category-chip ${selectedCategory === cat ? "active" : ""}`}
+                onClick={() => setSelectedCategory(cat)}
               >
-                保存
+                {cat}
               </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Editor modal */}
+        {(showNewForm || editingId) && (
+          <div className="template-editor-modal">
+            <div className="template-editor-card">
+              <div className="template-editor-header">
+                <h3>{editingId ? "Edit Template" : "Create Template"}</h3>
+                <button className="template-editor-close" onClick={cancelEdit} aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              <div className="form-grid">
+                <div className="form-group form-group-full">
+                  <label>Template Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g. Market Entry Analysis"
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group form-group-full">
+                  <label>Description</label>
+                  <input
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Short description of what this template is for"
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group form-group-full">
+                  <label>Default Research Query (optional)</label>
+                  <input
+                    type="text"
+                    value={formData.query}
+                    onChange={(e) => setFormData({ ...formData, query: e.target.value })}
+                    placeholder="Pre-filled research question"
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group form-group-full">
+                  <label>Keywords (comma-separated)</label>
+                  <input
+                    type="text"
+                    value={formData.keywords}
+                    onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
+                    placeholder="e.g. market size, competitors, user persona"
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="form-input"
+                  >
+                    {getDefaultCategories().map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="form-actions">
+                <button className="btn btn-cancel" onClick={cancelEdit}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSave}
+                  disabled={!formData.name.trim()}
+                >
+                  {editingId ? "Save Changes" : "Create Template"}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {templates.length === 0 && !showNewForm ? (
+        {/* Results count */}
+        <div className="templates-results-info">
+          <span>
+            {templates.length} template{templates.length !== 1 ? "s" : ""}
+            {selectedCategory !== "All" && <> in <strong>{selectedCategory}</strong></>}
+            {searchQuery && <> matching &quot;<strong>{searchQuery}</strong>&quot;</>}
+          </span>
+        </div>
+
+        {/* Template gallery grid */}
+        {templates.length === 0 ? (
           <div className="templates-empty">
-            <div className="templates-empty-icon">📋</div>
-            <h2>还没有模板</h2>
-            <p>创建第一个模板，下次研究就能一键启动了</p>
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowNewForm(true)}
-            >
-              创建第一个模板
-            </button>
+            <div className="templates-empty-icon">📄</div>
+            <h2>No templates found</h2>
+            <p>
+              {searchQuery || selectedCategory !== "All"
+                ? "Try clearing your filters or search for something else."
+                : activeTab === "my-templates"
+                ? "Create your first custom template to save time on repeat research."
+                : "No templates available."}
+            </p>
+            {activeTab === "my-templates" && (
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setShowNewForm(true);
+                  setFormData({ name: "", description: "", query: "", keywords: "", category: "Custom" });
+                }}
+              >
+                Create Template
+              </button>
+            )}
           </div>
         ) : (
-          <div className="templates-list">
+          <div className="templates-grid">
             {templates.map((tpl) => (
-              <div key={tpl.id} className="template-list-item">
-                <div className="template-list-main">
-                  <h3 className="template-list-title">{tpl.name}</h3>
-                  {tpl.description && (
-                    <p className="template-list-desc">{tpl.description}</p>
-                  )}
-                  <div className="template-list-keywords">
-                    {tpl.keywords.length > 0 ? (
-                      tpl.keywords.map((kw) => (
-                        <span key={kw} className="template-keyword-pill">{kw}</span>
-                      ))
-                    ) : (
-                      <span className="template-no-keywords">无关键词</span>
-                    )}
-                  </div>
-                  <div className="template-list-meta">
-                    <span>使用 {tpl.useCount} 次</span>
-                    <span>更新于 {formatDate(tpl.updatedAt)}</span>
-                  </div>
+              <div key={tpl.id} className={`template-card ${tpl.isDefault ? "is-default" : "is-custom"}`}>
+                <div className="template-card-header">
+                  <span className="template-card-category">{tpl.category || "Custom"}</span>
+                  {tpl.isDefault && <span className="template-card-badge">Curated</span>}
                 </div>
-                <div className="template-list-actions">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    onClick={() => handleUseTemplate(tpl)}
-                  >
-                    使用
-                  </button>
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => startEdit(tpl)}
-                  >
-                    编辑
-                  </button>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => handleDelete(tpl.id)}
-                  >
-                    删除
-                  </button>
+                <h3 className="template-card-title">{tpl.name}</h3>
+                <p className="template-card-desc">{tpl.description || "No description"}</p>
+                <div className="template-card-keywords">
+                  {tpl.keywords.slice(0, 4).map((kw) => (
+                    <span key={kw} className="template-kw-chip">{kw}</span>
+                  ))}
+                  {tpl.keywords.length > 4 && (
+                    <span className="template-kw-more">+{tpl.keywords.length - 4} more</span>
+                  )}
+                </div>
+                <div className="template-card-footer">
+                  <span className="template-card-uses">
+                    {tpl.useCount} use{tpl.useCount !== 1 ? "s" : ""}
+                  </span>
+                  <div className="template-card-actions">
+                    {!tpl.isDefault && (
+                      <button
+                        className="btn btn-xs btn-secondary"
+                        onClick={() => startEdit(tpl)}
+                        aria-label="Edit template"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {!tpl.isDefault && (
+                      <button
+                        className="btn btn-xs btn-danger"
+                        onClick={() => handleDelete(tpl.id)}
+                        aria-label="Delete template"
+                      >
+                        Delete
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-xs btn-primary"
+                      onClick={() => handleUseTemplate(tpl)}
+                    >
+                      Use Template →
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

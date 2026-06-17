@@ -1,5 +1,5 @@
 /**
- * Research templates — saved query configurations for reuse.
+ * Research templates ? saved query configurations for reuse.
  * Stored in localStorage (browser) for persistence across sessions.
  */
 
@@ -11,12 +11,22 @@ export interface ResearchTemplate {
   keywords: string[];
   agents?: string[];
   model?: string;
+  category?: string;
+  isDefault?: boolean;
   createdAt: number;
   updatedAt: number;
   useCount: number;
 }
 
 const STORAGE_KEY = "launchlens:templates";
+const DEFAULT_CATEGORIES = [
+  "Market Analysis",
+  "Competitive Intel",
+  "Product Strategy",
+  "Growth & Marketing",
+  "Startup & Investing",
+  "Custom",
+];
 
 function readTemplates(): ResearchTemplate[] {
   if (typeof localStorage === "undefined") return [];
@@ -24,10 +34,15 @@ function readTemplates(): ResearchTemplate[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return getDefaultTemplates();
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return getDefaultTemplates();
-    return parsed;
+    if (!Array.isArray(parsed) || parsed.length === 0) return getDefaultTemplates();
+    // Backfill category for old templates
+    return parsed.map((t) => ({
+      ...t,
+      category: t.category || "Custom",
+      isDefault: t.isDefault ?? false,
+    }));
   } catch {
-    return [];
+    return getDefaultTemplates();
   }
 }
 
@@ -45,40 +60,120 @@ function getDefaultTemplates(): ResearchTemplate[] {
   return [
     {
       id: "tpl-market-entry",
-      name: "市场进入分析",
-      description: "快速评估一个新产品或服务进入市场的可行性",
+      name: "Market Entry Analysis",
+      description: "Quickly assess the feasibility of a new product or service entering a market.",
       query: "",
-      keywords: ["市场规模", "竞争格局", "进入壁垒"],
+      keywords: ["market size", "competitive landscape", "entry barriers", "regulatory"],
+      category: "Market Analysis",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-market-size",
+      name: "Market Sizing & TAM",
+      description: "Calculate total addressable market, serviceable market, and obtainable market.",
+      query: "",
+      keywords: ["TAM", "SAM", "SOM", "market size", "growth rate"],
+      category: "Market Analysis",
+      isDefault: true,
       createdAt: now,
       updatedAt: now,
       useCount: 0,
     },
     {
       id: "tpl-competitive-intel",
-      name: "竞品深度侦察",
-      description: "全面分析竞争对手的优劣势和战略动向",
+      name: "Deep Competitive Intelligence",
+      description: "Comprehensive analysis of competitor strengths, weaknesses, and strategic moves.",
       query: "",
-      keywords: ["竞争对手", "产品对比", "定价策略", "用户评价"],
+      keywords: ["competitors", "product comparison", "pricing", "user reviews", "market share"],
+      category: "Competitive Intel",
+      isDefault: true,
       createdAt: now,
       updatedAt: now,
       useCount: 0,
     },
     {
-      id: "tpl-startup-due-diligence",
-      name: "创业项目尽调",
-      description: "对早期创业项目进行市场层面的尽职调查",
+      id: "tpl-competitive-landscape",
+      name: "Competitive Landscape Map",
+      description: "Map the full competitive ecosystem including direct, indirect, and substitute players.",
       query: "",
-      keywords: ["市场空间", "增长趋势", "团队背景", "融资情况"],
+      keywords: ["competitive landscape", "market players", "positioning", "disruption"],
+      category: "Competitive Intel",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-product-market-fit",
+      name: "Product-Market Fit Assessment",
+      description: "Evaluate whether a product has achieved product-market fit and identify gaps.",
+      query: "",
+      keywords: ["product-market fit", "user satisfaction", "retention", "value proposition"],
+      category: "Product Strategy",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-feature-prioritization",
+      name: "Feature Prioritization Research",
+      description: "Research-backed framework for deciding which features to build next.",
+      query: "",
+      keywords: ["feature prioritization", "user needs", "RICE", "opportunity scoring"],
+      category: "Product Strategy",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-gtm-strategy",
+      name: "Go-To-Market Strategy",
+      description: "Plan go-to-market approach including channels, messaging, and customer acquisition.",
+      query: "",
+      keywords: ["go-to-market", "channels", "customer acquisition", "messaging", "ICP"],
+      category: "Growth & Marketing",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-pricing-research",
+      name: "Pricing Strategy Research",
+      description: "Research competitive pricing, willingness to pay, and optimal price points.",
+      query: "",
+      keywords: ["pricing strategy", "competitive pricing", "willingness to pay", "price sensitivity"],
+      category: "Growth & Marketing",
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+    },
+    {
+      id: "tpl-startup-dd",
+      name: "Startup Due Diligence",
+      description: "Market-level due diligence on early-stage startup opportunities.",
+      query: "",
+      keywords: ["market opportunity", "growth trends", "team background", "funding", "traction"],
+      category: "Startup & Investing",
+      isDefault: true,
       createdAt: now,
       updatedAt: now,
       useCount: 0,
     },
     {
       id: "tpl-trend-spotter",
-      name: "趋势雷达",
-      description: "扫描行业前沿动态和新兴机会信号",
+      name: "Trend Spotter",
+      description: "Scan for emerging industry trends, signals, and opportunity patterns.",
       query: "",
-      keywords: ["新兴趋势", "技术动向", "投资热点"],
+      keywords: ["trends", "emerging", "signals", "industry shifts", "innovation"],
+      category: "Market Analysis",
+      isDefault: true,
       createdAt: now,
       updatedAt: now,
       useCount: 0,
@@ -86,49 +181,100 @@ function getDefaultTemplates(): ResearchTemplate[] {
   ];
 }
 
-export function listTemplates(): ResearchTemplate[] {
-  return readTemplates().sort((a, b) => b.updatedAt - a.updatedAt);
+/**
+ * List all templates, optionally filtered.
+ */
+export function listTemplates(options?: {
+  category?: string;
+  search?: string;
+}): ResearchTemplate[] {
+  let templates = readTemplates();
+
+  if (options?.category && options.category !== "All") {
+    templates = templates.filter((t) => t.category === options.category);
+  }
+
+  if (options?.search) {
+    const q = options.search.toLowerCase();
+    templates = templates.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q) ||
+        t.keywords.some((k) => k.toLowerCase().includes(q))
+    );
+  }
+
+  // Sort: default first (by name), then custom (by useCount desc, then updatedAt desc)
+  return templates.sort((a, b) => {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    if (a.isDefault) return a.name.localeCompare(b.name);
+    if (b.useCount !== a.useCount) return b.useCount - a.useCount;
+    return b.updatedAt - a.updatedAt;
+  });
 }
 
+/**
+ * Get a single template by ID.
+ */
 export function getTemplate(id: string): ResearchTemplate | null {
-  const templates = readTemplates();
-  return templates.find((t) => t.id === id) || null;
+  return readTemplates().find((t) => t.id === id) || null;
 }
 
+/**
+ * Create a new custom template.
+ */
 export function createTemplate(
-  data: Omit<ResearchTemplate, "id" | "createdAt" | "updatedAt" | "useCount">,
+  template: Omit<ResearchTemplate, "id" | "createdAt" | "updatedAt" | "useCount" | "isDefault"> & {
+    id?: string;
+  }
 ): ResearchTemplate {
   const templates = readTemplates();
   const now = Date.now();
-  const template: ResearchTemplate = {
-    ...data,
-    id: "tpl-" + Math.random().toString(36).slice(2, 10),
+  const newTpl: ResearchTemplate = {
+    id: template.id || "tpl-" + now.toString(36) + "-" + Math.random().toString(36).slice(2, 6),
+    name: template.name,
+    description: template.description || "",
+    query: template.query || "",
+    keywords: template.keywords || [],
+    agents: template.agents,
+    model: template.model,
+    category: template.category || "Custom",
+    isDefault: false,
     createdAt: now,
     updatedAt: now,
     useCount: 0,
   };
-  templates.push(template);
+
+  templates.push(newTpl);
   writeTemplates(templates);
-  return template;
+  return newTpl;
 }
 
+/**
+ * Update an existing template.
+ */
 export function updateTemplate(
   id: string,
-  updates: Partial<Omit<ResearchTemplate, "id" | "createdAt">>,
+  updates: Partial<Omit<ResearchTemplate, "id" | "createdAt" | "isDefault">>
 ): ResearchTemplate | null {
   const templates = readTemplates();
   const idx = templates.findIndex((t) => t.id === id);
   if (idx === -1) return null;
 
-  templates[idx] = {
+  const updated: ResearchTemplate = {
     ...templates[idx],
     ...updates,
     updatedAt: Date.now(),
   };
+
+  templates[idx] = updated;
   writeTemplates(templates);
-  return templates[idx];
+  return updated;
 }
 
+/**
+ * Delete a template.
+ */
 export function deleteTemplate(id: string): boolean {
   const templates = readTemplates();
   const filtered = templates.filter((t) => t.id !== id);
@@ -137,66 +283,124 @@ export function deleteTemplate(id: string): boolean {
   return true;
 }
 
+/**
+ * Increment use count for a template.
+ */
 export function incrementTemplateUse(id: string): void {
   const templates = readTemplates();
-  const t = templates.find((t) => t.id === id);
-  if (t) {
-    t.useCount++;
-    t.updatedAt = Date.now();
+  const tpl = templates.find((t) => t.id === id);
+  if (tpl) {
+    tpl.useCount += 1;
+    tpl.updatedAt = Date.now();
     writeTemplates(templates);
   }
 }
 
+/**
+ * Get all unique categories from templates.
+ */
+export function getTemplateCategories(): string[] {
+  const templates = readTemplates();
+  const cats = new Set<string>();
+  templates.forEach((t) => {
+    if (t.category) cats.add(t.category);
+  });
+  return DEFAULT_CATEGORIES.filter((c) => cats.has(c)).concat(
+    Array.from(cats).filter((c) => !DEFAULT_CATEGORIES.includes(c))
+  );
+}
+
+/**
+ * Get default category list (for filter UI).
+ */
+export function getDefaultCategories(): string[] {
+  return [...DEFAULT_CATEGORIES];
+}
+
+/**
+ * Reset templates to defaults.
+ */
+export function resetTemplatesToDefault(): ResearchTemplate[] {
+  const defaults = getDefaultTemplates();
+  writeTemplates(defaults);
+  return defaults;
+}
+
+/**
+ * Bulk import templates (merges by name, skips duplicates).
+ * Returns number of templates imported.
+ */
+export function bulkImportTemplates(
+  imported: ResearchTemplate[],
+  strategy: "merge" | "overwrite" | "skip" = "merge"
+): number {
+  const existing = readTemplates();
+  const existingByName = new Map(existing.map((t) => [t.name.toLowerCase(), t]));
+
+  let countImported = 0;
+
+  for (const tpl of imported) {
+    if (!tpl.name || !Array.isArray(tpl.keywords)) {
+      continue;
+    }
+
+    const key = tpl.name.toLowerCase();
+
+    if (existingByName.has(key)) {
+      if (strategy === "skip") {
+        continue;
+      }
+      if (strategy === "overwrite") {
+        const existingTpl = existingByName.get(key)!;
+        existingTpl.description = tpl.description || existingTpl.description;
+        existingTpl.query = tpl.query || existingTpl.query;
+        existingTpl.keywords = tpl.keywords;
+        existingTpl.category = tpl.category || existingTpl.category;
+        existingTpl.updatedAt = Date.now();
+        countImported++;
+        continue;
+      }
+      // merge: take newer fields
+      const existingTpl = existingByName.get(key)!;
+      if ((tpl.updatedAt || 0) > (existingTpl.updatedAt || 0)) {
+        existingTpl.description = tpl.description || existingTpl.description;
+        existingTpl.query = tpl.query || existingTpl.query;
+        existingTpl.keywords = tpl.keywords;
+        existingTpl.category = tpl.category || existingTpl.category;
+        existingTpl.updatedAt = Date.now();
+      }
+      countImported++;
+    } else {
+      createTemplate({
+        name: tpl.name,
+        description: tpl.description,
+        query: tpl.query,
+        keywords: tpl.keywords,
+        category: tpl.category,
+        agents: tpl.agents,
+        model: tpl.model,
+      });
+      countImported++;
+    }
+  }
+
+  return countImported;
+}
+
+/**
+ * Save a research run as a custom template.
+ */
 export function saveAsTemplate(
   name: string,
   query: string,
   keywords: string[],
-  description?: string,
+  description?: string
 ): ResearchTemplate {
   return createTemplate({
-    name,
-    description,
+    name: name || (query ? query.slice(0, 60) + (query.length > 60 ? "..." : "") : "Untitled template"),
+    description: description || "Created from research run",
     query,
     keywords,
+    category: "Custom",
   });
-}
-
-/**
- * Bulk import templates.
- * Returns count of imported templates.
- */
-export function bulkImportTemplates(
-  templates: ResearchTemplate[],
-  strategy: "merge" | "overwrite" | "skip" = "merge",
-): number {
-  const existing = readTemplates();
-  if (strategy === "overwrite") {
-    writeTemplates(templates);
-    return templates.length;
-  }
-  if (strategy === "skip") {
-    const existingIds = new Set(existing.map((t) => t.id));
-    const newOnes = templates.filter((t) => !existingIds.has(t.id));
-    writeTemplates([...existing, ...newOnes]);
-    return newOnes.length;
-  }
-  const byId = new Map(existing.map((t) => [t.id, t]));
-  let imported = 0;
-  for (const t of templates) {
-    if (!t?.id) continue;
-    if (!byId.has(t.id)) {
-      byId.set(t.id, t);
-      imported++;
-    } else {
-      const ex = byId.get(t.id)!;
-      const exTime = ex.updatedAt ?? ex.createdAt ?? 0;
-      const inTime = t.updatedAt ?? t.createdAt ?? 0;
-      if (inTime > exTime) {
-        byId.set(t.id, t);
-        imported++;
-      }
-    }
-  }
-  writeTemplates(Array.from(byId.values()));
-  return imported;
 }
