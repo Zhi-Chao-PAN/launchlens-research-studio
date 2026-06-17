@@ -114,6 +114,32 @@ describe("buildResearchExport", () => {
     expect(r.session.agentStatuses["synthesis"].hasOutput).toBe(false);
   });
 
+  it("includes notes when provided", () => {
+    const notes = {
+      personalNote: "Great research, worth revisiting.",
+      tags: ["priority", "b2b"],
+      rating: 5,
+      isStarred: true,
+      isArchived: false,
+      updatedAt: 1234567890,
+      lastOpenedAt: 1234567900,
+    };
+    const r = buildResearchExport(mockSession, mockOutputs, notes);
+    expect(r.notes).toBeDefined();
+    expect(r.notes!.personalNote).toBe("Great research, worth revisiting.");
+    expect(r.notes!.tags).toEqual(["priority", "b2b"]);
+    expect(r.notes!.rating).toBe(5);
+    expect(r.notes!.isStarred).toBe(true);
+    expect(r.notes!.isArchived).toBe(false);
+    expect(r.notes!.updatedAt).toBe(1234567890);
+    expect(r.notes!.lastOpenedAt).toBe(1234567900);
+  });
+
+  it("omits notes when not provided", () => {
+    const r = buildResearchExport(mockSession, mockOutputs);
+    expect(r.notes).toBeUndefined();
+  });
+
   it("emits exportedAt timestamp", () => {
     const r = buildResearchExport(mockSession, mockOutputs);
     expect(r.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);

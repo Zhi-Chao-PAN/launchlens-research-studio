@@ -31,6 +31,15 @@ export interface ResearchExport {
     mediumConfidenceCitations: number;
     lowConfidenceCitations: number;
   };
+  notes?: {
+    personalNote: string;
+    tags: string[];
+    rating: number;
+    isStarred: boolean;
+    isArchived: boolean;
+    updatedAt?: number;
+    lastOpenedAt?: number;
+  };
   outputs: Record<AgentId, AgentOutput | null>;
   citations: SourceCitation[];
 }
@@ -38,6 +47,15 @@ export interface ResearchExport {
 export function buildResearchExport(
   session: Pick<ResearchSession, "id" | "query" | "keywords" | "createdAt" | "updatedAt" | "status" | "agents" | "citations">,
   outputs: Record<AgentId, AgentOutput | null>,
+  notes?: {
+    personalNote: string;
+    tags: string[];
+    rating: number;
+    isStarred: boolean;
+    isArchived: boolean;
+    updatedAt?: number;
+    lastOpenedAt?: number;
+  },
 ): ResearchExport {
   const completedAgents: AgentId[] = [];
   const agentStatuses: ResearchExport["session"]["agentStatuses"] = {} as ResearchExport["session"]["agentStatuses"];
@@ -95,6 +113,7 @@ export function buildResearchExport(
       mediumConfidenceCitations: medium,
       lowConfidenceCitations: low,
     },
+    notes,
     outputs,
     citations: uniqueCitations,
   };

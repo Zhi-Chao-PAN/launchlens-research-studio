@@ -247,6 +247,79 @@ describe("generateMarkdownReport", () => {
     expect(md).toContain("Opportunity Score:** 75");
     expect(md).toContain("Risk Score:** 40");
   });
+
+  it("includes personal notes section when personalNotes is provided", () => {
+    const md = generateMarkdownReport({
+      sessionId: "x",
+      query: "Q",
+      keywords: [],
+      outputs: mockOutputs,
+      personalNotes: {
+        personalNote: "This is my personal note about the research.",
+        tags: ["important", "follow-up"],
+        rating: 4,
+        isStarred: true,
+      },
+    });
+    expect(md).toContain("## Personal Notes");
+    expect(md).toContain("This is my personal note about the research.");
+    expect(md).toContain("`important`");
+    expect(md).toContain("`follow-up`");
+    expect(md).toContain("★★★★☆ (4/5)");
+    expect(md).toContain("⭐ Yes");
+  });
+
+  it("shows empty state when personalNote is empty", () => {
+    const md = generateMarkdownReport({
+      sessionId: "x",
+      query: "Q",
+      keywords: [],
+      outputs: mockOutputs,
+      personalNotes: {
+        personalNote: "",
+        tags: [],
+        rating: 0,
+        isStarred: false,
+      },
+    });
+    expect(md).toContain("## Personal Notes");
+    expect(md).toContain("_No personal notes yet._");
+    expect(md).not.toContain("**Tags:**");
+    expect(md).not.toContain("**Rating:**");
+    expect(md).not.toContain("**Starred:**");
+  });
+
+  it("omits personal notes section when personalNotes is not provided", () => {
+    const md = generateMarkdownReport({
+      sessionId: "x",
+      query: "Q",
+      keywords: [],
+      outputs: mockOutputs,
+    });
+    expect(md).not.toContain("## Personal Notes");
+  });
+
+  it("places personal notes after TOC and before agent sections", () => {
+    const md = generateMarkdownReport({
+      sessionId: "x",
+      query: "Q",
+      keywords: [],
+      outputs: mockOutputs,
+      includeTableOfContents: true,
+      personalNotes: {
+        personalNote: "My note",
+        tags: ["tag1"],
+        rating: 3,
+        isStarred: false,
+      },
+    });
+    const tocIdx = md.indexOf("## Table of Contents");
+    const notesIdx = md.indexOf("## Personal Notes");
+    const firstAgentIdx = md.indexOf("## Market Sizer");
+    expect(tocIdx).toBeGreaterThan(-1);
+    expect(notesIdx).toBeGreaterThan(tocIdx);
+    expect(firstAgentIdx).toBeGreaterThan(notesIdx);
+  });
 });
 
 describe("generateBriefOnly", () => {

@@ -6,6 +6,7 @@ import type { AgentId, AgentOutput, SynthesisOutput } from "@/lib/schema/researc
 import { generateMarkdownReport, generateBriefOnly } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
 import { generateCSVBundle } from "@/lib/export/csv-formatter";
+import { getNotes } from "@/lib/research/notes";
 
 interface ExportActionsProps {
   sessionId: string;
@@ -75,7 +76,15 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
   const handleExportMarkdown = useCallback(() => {
     setIsExporting(true);
     try {
-      const md = generateMarkdownReport({ sessionId, query, keywords, outputs });
+      const notes = getNotes(sessionId);
+      const personalNotes = notes ? {
+        personalNote: notes.personalNote,
+        tags: notes.tags,
+        rating: notes.rating,
+        isStarred: notes.isStarred,
+        updatedAt: notes.updatedAt,
+      } : undefined;
+      const md = generateMarkdownReport({ sessionId, query, keywords, outputs, personalNotes });
       downloadFile(md, `research-report-${sessionId.slice(0, 8)}.md`, "text/markdown;charset=utf-8");
     } catch (err) {
       console.error("Markdown export failed:", err);
@@ -88,9 +97,20 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
   const handleExportJSON = useCallback(() => {
     setIsExporting(true);
     try {
+      const notes = getNotes(sessionId);
+      const exportNotes = notes ? {
+        personalNote: notes.personalNote,
+        tags: notes.tags,
+        rating: notes.rating,
+        isStarred: notes.isStarred,
+        isArchived: notes.isArchived,
+        updatedAt: notes.updatedAt,
+        lastOpenedAt: notes.lastOpenedAt,
+      } : undefined;
       const exportData = buildResearchExport(
         { id: sessionId, query, keywords, createdAt: "", updatedAt: "", status: "completed", agents: {} as any, citations: [] },
-        outputs
+        outputs,
+        exportNotes
       );
       const json = serializeJSON(exportData, true);
       downloadFile(json, `research-report-${sessionId.slice(0, 8)}.json`, "application/json;charset=utf-8");
@@ -138,14 +158,33 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
   }, [outputs, copyToClipboard]);
 
   const handleCopyFullMarkdown = useCallback(() => {
-    const md = generateMarkdownReport({ sessionId, query, keywords, outputs });
+    const notes = getNotes(sessionId);
+    const personalNotes = notes ? {
+      personalNote: notes.personalNote,
+      tags: notes.tags,
+      rating: notes.rating,
+      isStarred: notes.isStarred,
+      updatedAt: notes.updatedAt,
+    } : undefined;
+    const md = generateMarkdownReport({ sessionId, query, keywords, outputs, personalNotes });
     copyToClipboard(md, "full-md");
   }, [sessionId, query, keywords, outputs, copyToClipboard]);
 
   const handleCopyJSON = useCallback(() => {
+    const notes = getNotes(sessionId);
+    const exportNotes = notes ? {
+      personalNote: notes.personalNote,
+      tags: notes.tags,
+      rating: notes.rating,
+      isStarred: notes.isStarred,
+      isArchived: notes.isArchived,
+      updatedAt: notes.updatedAt,
+      lastOpenedAt: notes.lastOpenedAt,
+    } : undefined;
     const exportData = buildResearchExport(
       { id: sessionId, query, keywords, createdAt: "", updatedAt: "", status: "completed", agents: {} as any, citations: [] },
-      outputs
+      outputs,
+      exportNotes
     );
     const json = serializeJSON(exportData, false);
     copyToClipboard(json, "json");

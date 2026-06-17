@@ -252,10 +252,17 @@ export interface MarkdownExportOptions {
   outputs: Record<AgentId, AgentOutput | null>;
   generatedAt?: Date;
   includeTableOfContents?: boolean;
+  personalNotes?: {
+    personalNote: string;
+    tags: string[];
+    rating: number;
+    isStarred: boolean;
+    updatedAt?: number;
+  };
 }
 
 export function generateMarkdownReport(opts: MarkdownExportOptions): string {
-  const { sessionId, query, keywords, outputs, includeTableOfContents = true } = opts;
+  const { sessionId, query, keywords, outputs, includeTableOfContents = true, personalNotes } = opts;
   const generatedAt = (opts.generatedAt ?? new Date()).toISOString();
   const completedAgents = AGENT_ORDER.filter((id) => outputs[id] !== null);
 
@@ -285,6 +292,33 @@ export function generateMarkdownReport(opts: MarkdownExportOptions): string {
       lines.push(`- [${AGENT_TITLE[id]}](#${AGENT_TITLE[id].toLowerCase().replace(/\s+/g, "-")})`);
     }
     lines.push(``);
+    lines.push(`---`);
+    lines.push(``);
+  }
+
+  if (personalNotes) {
+    lines.push(`## Personal Notes`);
+    lines.push(``);
+    if (personalNotes.tags && personalNotes.tags.length > 0) {
+      lines.push(`**Tags:** ${personalNotes.tags.map((t) => `\`${t}\``).join(', ')}`);
+      lines.push(``);
+    }
+    if (personalNotes.rating > 0) {
+      const stars = '★'.repeat(personalNotes.rating) + '☆'.repeat(5 - personalNotes.rating);
+      lines.push(`**Rating:** ${stars} (${personalNotes.rating}/5)`);
+      lines.push(``);
+    }
+    if (personalNotes.isStarred) {
+      lines.push(`**Starred:** ⭐ Yes`);
+      lines.push(``);
+    }
+    if (personalNotes.personalNote && personalNotes.personalNote.trim()) {
+      lines.push(personalNotes.personalNote);
+      lines.push(``);
+    } else {
+      lines.push(`_No personal notes yet._`);
+      lines.push(``);
+    }
     lines.push(`---`);
     lines.push(``);
   }
