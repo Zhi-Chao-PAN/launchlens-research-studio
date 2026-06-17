@@ -155,7 +155,7 @@ by default (LAUNCHLENS_CSRF_STRICT=1 for hard 403s). /api/csrf endpoint
 issues tokens via httpOnly cookie + JSON body. src/lib/api/csrf-client.ts
 caches token client-side and provides fetchWithCsrf() helper.
 use-research-studio.ts uses fetchWithCsrf for the research start POST.
-All GET routes and the SSE stream are unaffected �?CSRF only applies to
+All GET routes and the SSE stream are unaffected 锟?CSRF only applies to
 state-changing POST endpoints.
 
 ## Round 34 - Rate-limit bypass tokens / auth scaffold
@@ -165,12 +165,12 @@ tokens at startup. createBypassToken(), listBypassTokens(),
 revokeBypassToken(), isBypassToken(), extractBearerToken(). POST
 /api/research skips rate limiting and strict CSRF when a valid bearer
 token is present. /api/admin/tokens REST endpoint for token management
-(GET list, POST create, DELETE by hash) �?protected by bearer token auth.
+(GET list, POST create, DELETE by hash) 锟?protected by bearer token auth.
 All tokens are hashed at rest so a leaked storage file is not usable.
 
 ## Round 35 - Regression sweep and consolidation
 Full regression sweep (lint + unit + build + bundle-stats) all green.
-Lint fixes across csrf.ts, bypass-tokens.ts, admin tokens route �?moved
+Lint fixes across csrf.ts, bypass-tokens.ts, admin tokens route 锟?moved
 from require() to top-level node:crypto imports, removed unused imports,
 replaced `any` with typed body. Research route restored with proper CSRF
 check after bypass token gate. Regression report regenerated. Health
@@ -227,7 +227,7 @@ Fixed three sources of e2e flakiness and refreshed visual baselines:
 1. Fixed `gotoUrl is not defined` crash in mobile viewport test (renamed
    to BASE_URL, pre-existing bug).
 2. Replaced flaky "Research Agents" heading waitForSelector with
-   `button[aria-controls="studio-sidebar"]` �?a far more reliable
+   `button[aria-controls="studio-sidebar"]` 锟?a far more reliable
    signal that the studio layout has mounted.
 3. Added `settle(page, ms)` helper for freeze mode: scroll-to-top,
    injects `transition: none !important; animation: none !important`
@@ -243,7 +243,7 @@ automated tests. Build clean, 17 routes, 0 lint errors.
 
 ## Round 40 - Full regression sweep + 5-round cycle report
 Full regression suite passes end-to-end: lint, unit tests, build,
-bundle stats, browser E2E, security E2E, and admin E2E �?all green.
+bundle stats, browser E2E, security E2E, and admin E2E 锟?all green.
 
 Fixed e2e ordering in regression script (browser E2E before API E2E) to
 prevent rate-limit starvation of the browser test flow.
@@ -270,20 +270,20 @@ CORS security layer for all API endpoints, with two modes:
   get a 403 with descriptive error.
 
 **New files:**
-- `src/lib/api/cors.ts` �?`checkCors()`, `handleOptions()`,
+- `src/lib/api/cors.ts` 锟?`checkCors()`, `handleOptions()`,
   `withCorsHeaders()`, and `corsConfig` utilities.
-- `src/lib/api/cors.test.ts` �?8 unit tests.
-- `e2e/cors-e2e.js` �?10 end-to-end tests covering disallowed
+- `src/lib/api/cors.test.ts` 锟?8 unit tests.
+- `e2e/cors-e2e.js` 锟?10 end-to-end tests covering disallowed
   origin rejection, allowed origin headers, OPTIONS preflight,
   same-origin requests, and admin endpoint CORS enforcement.
 - `e2e/security-e2e.js` already covers CORS indirectly.
 
 **Routes protected:**
-- `/api/research` (POST + OPTIONS) �?full CORS check + headers on 201
-- `/api/csrf` (GET + OPTIONS) �?CORS check + headers
-- `/api/admin/tokens` (GET/POST + OPTIONS) �?CORS check + headers
-- `/api/admin/tokens/[hash]` (DELETE + OPTIONS) �?CORS check + headers
-- `/api/admin/audit` (GET + OPTIONS) �?CORS check + headers
+- `/api/research` (POST + OPTIONS) 锟?full CORS check + headers on 201
+- `/api/csrf` (GET + OPTIONS) 锟?CORS check + headers
+- `/api/admin/tokens` (GET/POST + OPTIONS) 锟?CORS check + headers
+- `/api/admin/tokens/[hash]` (DELETE + OPTIONS) 锟?CORS check + headers
+- `/api/admin/audit` (GET + OPTIONS) 锟?CORS check + headers
 
 10 new CORS e2e tests (all passing in ~1.5s). Total automated tests:
 315. Build clean, 17 routes, 0 lint errors.
@@ -359,14 +359,14 @@ Admin audit endpoint now supports structured export formats for
 offline analysis and integration with SIEM tools.
 
 **Export formats:**
-- **GET /api/admin/audit?format=csv** �� RFC-4180 compliant CSV with
+- **GET /api/admin/audit?format=csv** 锟斤拷 RFC-4180 compliant CSV with
   proper escaping of commas, quotes, and newlines. Includes header
   row and ISO-8601 timestamps. Download filename:
   launchlens-audit-YYYY-MM-DD.csv.
-- **GET /api/admin/audit?format=jsonl** �� Newline-delimited JSON,
+- **GET /api/admin/audit?format=jsonl** 锟斤拷 Newline-delimited JSON,
   one event per line, ISO-8601 timestamps. Ideal for piping into
   jq or log ingestion pipelines.
-- **GET /api/admin/audit** (default) �� JSON object format, unchanged.
+- **GET /api/admin/audit** (default) 锟斤拷 JSON object format, unchanged.
 
 **Audit trail of exports:** CSV and JSONL exports themselves generate
 an dmin_action audit event (udit_export:csv /
@@ -394,22 +394,22 @@ Full regression sweep after the security hardening sprint:
 - **Regression report**: regenerated, all sections green
 
 Cycle 09 report written to docs/cycle-09-r41-45.md summarizing
-rounds 41�C45 (CORS hardening, auth alerts, HMAC webhook signatures,
+rounds 41锟紺45 (CORS hardening, auth alerts, HMAC webhook signatures,
 audit export, regression sweep).
 
 ## Round 46 - Admin settings UI
 
 Browser-facing admin console at /admin for token management and
-security observability �� no more need to curl the API directly.
+security observability 锟斤拷 no more need to curl the API directly.
 
 **Three tabs, all client-side (token stored in localStorage):**
 
-- **Tokens** �� create tokens (bypass or admin scope), view active
+- **Tokens** 锟斤拷 create tokens (bypass or admin scope), view active
   tokens with label/scope/hash/created/last-used, revoke tokens.
   New tokens display once with a "save this" warning.
-- **Audit Log** �� 20 most recent events, with CSV/JSONL export links.
+- **Audit Log** 锟斤拷 20 most recent events, with CSV/JSONL export links.
   Auto-refreshes every 5 seconds.
-- **Alerts** �� security alerts with severity coloring (critical red,
+- **Alerts** 锟斤拷 security alerts with severity coloring (critical red,
   warning amber, info indigo), clear-all action. Auto-refreshes.
 
 **Design:**
@@ -420,11 +420,11 @@ security observability �� no more need to curl the API directly.
 - Login screen with token input (unauthenticated state)
 
 **New files:**
-- src/app/admin/page.tsx �� client component admin console
-- e2e/admin-ui-e2e.js �� 8 e2e tests covering page render, API
+- src/app/admin/page.tsx 锟斤拷 client component admin console
+- e2e/admin-ui-e2e.js 锟斤拷 8 e2e tests covering page render, API
   accessibility, and CSS inclusion
 
-No new backend �� all powered by the existing admin API endpoints.
+No new backend 锟斤拷 all powered by the existing admin API endpoints.
 Total automated tests: 348 (266 unit + 82 e2e). Lint: 0 errors,
 25 warnings. Build: 20 routes, ~795 KB client JS.
 
@@ -468,9 +468,9 @@ comma-separated entries. Supports:
 - Individual IPv6 addresses (::1, e80::1)
 
 **Implementation:**
-- src/lib/api/trusted-ips.ts �� parser + match function with
+- src/lib/api/trusted-ips.ts 锟斤拷 parser + match function with
   numeric IPv4 CIDR matching
-- checkRateLimitForIp() in ate-limit.ts �� wraps the existing
+- checkRateLimitForIp() in ate-limit.ts 锟斤拷 wraps the existing
   rate limiter with a trusted IP check first
 - Research API endpoint uses checkRateLimitForIp() instead of raw
   checkRateLimit() so trusted IPs skip the bucket
@@ -490,9 +490,9 @@ Admin console gets significantly more useful with filtering capabilities
 and a new System tab for infrastructure visibility.
 
 **Audit log filtering:**
-- GET /api/admin/audit?type=X �� filter by event type
-- GET /api/admin/audit?scope=X �� filter by token scope
-- GET /api/admin/audit?type=a,b&scope=admin �� combine multiple filters
+- GET /api/admin/audit?type=X 锟斤拷 filter by event type
+- GET /api/admin/audit?scope=X 锟斤拷 filter by token scope
+- GET /api/admin/audit?type=a,b&scope=admin 锟斤拷 combine multiple filters
 - Multi-type filter with comma-separated values
 - Works with all export formats (CSV, JSONL, JSON)
 
@@ -528,12 +528,12 @@ Full regression sweep closing out cycle 10:
 - **Regression report**: regenerated, all sections green
 
 Cycle 10 report written to docs/cycle-10-r46-50.md summarizing
-rounds 46�C50 (admin UI, webhook retry queue, trusted IP ranges,
+rounds 46锟紺50 (admin UI, webhook retry queue, trusted IP ranges,
 audit filtering + system tab, regression sweep).
 
-### ����� 50 �ֵ���
-�� R1 �� R50��ʮ�������ĵ������ڣ������˴ӻ�����Ŀ����о����ܡ�
-��ȫ�ӹ̡���������̨��ȫά�ȴ�ĥ��
+### 锟斤拷锟斤拷锟?50 锟街碉拷锟斤拷
+锟斤拷 R1 锟斤拷 R50锟斤拷十锟斤拷锟斤拷锟斤拷锟侥碉拷锟斤拷锟斤拷锟节ｏ拷锟斤拷锟斤拷锟剿从伙拷锟斤拷锟斤拷目锟筋建锟斤拷锟叫撅拷锟斤拷锟杰★拷
+锟斤拷全锟接固★拷锟斤拷锟斤拷锟斤拷锟斤拷台锟斤拷全维锟饺达拷磨锟斤拷
 
 ## Round 51 - Research run persistence + history + detail pages
 
@@ -542,25 +542,25 @@ across server restarts (when LAUNCHLENS_STORAGE_DIR is configured) and
 are accessible via a history page and individual detail pages.
 
 **Storage layer:**
-- src/lib/research/storage.ts �� in-memory + disk-backed storage
+- src/lib/research/storage.ts 锟斤拷 in-memory + disk-backed storage
 - saveResearchRun(), listResearchRuns(), getResearchRun(), deleteResearchRun()
 - LAUNCHLENS_STORAGE_DIR for persistence (JSON files on disk)
 - 50-run in-memory cache when no storage dir is set
 - 14 unit tests including integration tests
 
 **API endpoints:**
-- GET /api/research/runs?limit=N �� paginated list of recent runs (summary)
-- GET /api/research/runs/[id] �� full run detail with result + sources
+- GET /api/research/runs?limit=N 锟斤拷 paginated list of recent runs (summary)
+- GET /api/research/runs/[id] 锟斤拷 full run detail with result + sources
 
 **UI pages:**
-- /history �� run history list with status badges, keywords, timestamps
-- /research/[id] �� full run detail page with sources + result
+- /history 锟斤拷 run history list with status badges, keywords, timestamps
+- /research/[id] 锟斤拷 full run detail page with sources + result
 - Markdown export button on detail page
 - Dark theme, responsive layout, auto-refresh every 10s
 
 **Integration:**
 - Research engine auto-saves completed runs to storage
-- Best-effort �� save failures don't break the research run
+- Best-effort 锟斤拷 save failures don't break the research run
 - 19 new history e2e tests (pages + API + integration)
 
 Total automated tests: 426 (305 unit + 121 e2e). Lint: 0 errors,
@@ -573,18 +573,18 @@ History page gets search + filtering capabilities, and the research runs
 API gains export formats and bulk operations.
 
 **Storage module improvements:**
-- searchResearchRuns() �� query search + status filter + provider filter + pagination
-- ulkDeleteRuns(ids) �� delete multiple runs at once
-- exportRuns(format, ids?) �� export in JSON / CSV / JSONL formats
+- searchResearchRuns() 锟斤拷 query search + status filter + provider filter + pagination
+- ulkDeleteRuns(ids) 锟斤拷 delete multiple runs at once
+- exportRuns(format, ids?) 锟斤拷 export in JSON / CSV / JSONL formats
 - 14 new unit tests (28 total for storage module)
 
 **API enhancements:**
-- GET /api/research/runs?q=X �� search by query text or keywords
-- GET /api/research/runs?status=completed|failed �� filter by status
-- GET /api/research/runs?provider=X �� filter by provider
-- GET /api/research/runs?offset=N&limit=M �� paginated results
-- GET /api/research/runs?format=json|csv|jsonl �� export all runs
-- DELETE /api/research/runs?ids=a,b,c �� bulk delete runs
+- GET /api/research/runs?q=X 锟斤拷 search by query text or keywords
+- GET /api/research/runs?status=completed|failed 锟斤拷 filter by status
+- GET /api/research/runs?provider=X 锟斤拷 filter by provider
+- GET /api/research/runs?offset=N&limit=M 锟斤拷 paginated results
+- GET /api/research/runs?format=json|csv|jsonl 锟斤拷 export all runs
+- DELETE /api/research/runs?ids=a,b,c 锟斤拷 bulk delete runs
 - Returns 	otal, offset, limit for pagination awareness
 
 **History page UI:**
@@ -610,9 +610,9 @@ structured sections instead of raw text. Parses the JSON-formatted
 synthesis output and presents it in a visually scannable layout.
 
 **New component & parser:**
-- src/lib/research/synthesis-parser.ts �� shared parser utility
-- parseSynthesis() �� parses JSON synthesis (handles markdown fences)
-- isStructuredResult() �� detection helper
+- src/lib/research/synthesis-parser.ts 锟斤拷 shared parser utility
+- parseSynthesis() 锟斤拷 parses JSON synthesis (handles markdown fences)
+- isStructuredResult() 锟斤拷 detection helper
 - SynthesisOutput type + nested interfaces (Source, KeyInsight, etc.)
 - 9 unit tests
 
@@ -628,8 +628,8 @@ synthesis output and presents it in a visually scannable layout.
 - Graceful fallback to raw text for non-structured results
 
 **Exports:**
-- Export MD button �� generates well-formatted Markdown report
-- Export JSON button �� downloads full run as JSON
+- Export MD button 锟斤拷 generates well-formatted Markdown report
+- Export JSON button 锟斤拷 downloads full run as JSON
 - Client-side generation (no API hit needed)
 
 **Design:**
@@ -656,7 +656,7 @@ leaving the admin dashboard.
 - Refresh button for manual reload
 - JSON + CSV export links
 - Run list with status badges, provider info, timestamps, keywords
-- View link �� opens full detail page in new context
+- View link 锟斤拷 opens full detail page in new context
 - Delete button with confirmation
 - Empty state and loading states
 
@@ -686,23 +686,23 @@ Full regression sweep at the end of cycle 11. All checks green.
 - Type check: clean
 - Audit: all security headers present, CSRF tokens work
 
-**Cycle 11 summary (R51�CR54):**
+**Cycle 11 summary (R51锟紺R54):**
 8 new and modified files, ~3,070 lines of new code.
 
-R51 �� Research run persistence layer (in-memory + disk-backed) with list/detail
+R51 锟斤拷 Research run persistence layer (in-memory + disk-backed) with list/detail
 API endpoints, history page, and detail page. 14 storage unit tests, 19 e2e tests.
 
-R52 �� Search, filter, export (JSON/CSV/JSONL), bulk delete, and pagination
+R52 锟斤拷 Search, filter, export (JSON/CSV/JSONL), bulk delete, and pagination
 for research runs. Enhanced history page with search bar, status filter, and
 export links. 14 new unit tests, 22 new e2e tests.
 
-R53 �� Structured research result rendering. Synthesis parser utility that
+R53 锟斤拷 Structured research result rendering. Synthesis parser utility that
 parses JSON output and renders it as beautiful sections: exec summary,
 score bars, key insights with confidence badges, opportunities cards,
 risks cards, next step callout, sources. MD + JSON client-side export.
 9 new unit tests.
 
-R54 �� Admin UI Research Management tab. Full research run management
+R54 锟斤拷 Admin UI Research Management tab. Full research run management
 integrated into the admin console: search, filter, delete, export.
 Inherits admin token authentication.
 
@@ -712,17 +712,17 @@ Inherits admin token authentication.
 - Total: 457 automated tests
 
 **Known issues to address in Cycle 12:**
-- ESLint warnings remain at ~33 (unused vars, missing deps) �� cosmetic
+- ESLint warnings remain at ~33 (unused vars, missing deps) 锟斤拷 cosmetic
 - No Playwright e2e coverage for new UI pages
 - No integration tests for admin research tab
 - Plain text research results still render as raw text fallback
 - No bulk-select for run deletion in UI
-- Home page is a bare form �� no dashboard / recent runs view
+- Home page is a bare form 锟斤拷 no dashboard / recent runs view
 - No shareable public links for research results
 - No comparison / side-by-side view
 - No saved research templates
 
-## Round 60 �� Cycle 12 Report & Regression Sweep
+## Round 60 锟斤拷 Cycle 12 Report & Regression Sweep
 
 Full regression sweep at the end of cycle 12. All checks green.
 
@@ -734,24 +734,24 @@ Full regression sweep at the end of cycle 12. All checks green.
 - Type check: clean
 - Audit: all security headers present
 
-**Cycle 12 summary (R56�CR60):**
+**Cycle 12 summary (R56锟紺R60):**
 ~2,900 lines of new code across 7 new and 5 modified files.
 
-R56 �� Homepage dashboard upgrade. Stats cards (total runs, completed,
+R56 锟斤拷 Homepage dashboard upgrade. Stats cards (total runs, completed,
 failed, avg duration) + recent runs list + quick links. Live-refreshes
 every 15s. 4 stats cards, 5-item recent runs preview.
 
-R57 �� Shareable research links with public view. Server-side share
+R57 锟斤拷 Shareable research links with public view. Server-side share
 token system with expiration + max views + revocable. Public /share/[token]
 page with beautiful structured rendering. Disk persistence for share tokens.
 13 unit tests, 8 e2e tests.
 
-R58 �� A/B side-by-side comparison page. /compare?a=xxx&b=yyy route
+R58 锟斤拷 A/B side-by-side comparison page. /compare?a=xxx&b=yyy route
 with side-by-side layout: scores (with diff indicators), exec summaries,
 insights, opportunities, risks, next steps. Blue/pink color-coded sides.
 Responsive mobile layout.
 
-R59 �� Research templates / saved queries. 4 built-in templates
+R59 锟斤拷 Research templates / saved queries. 4 built-in templates
 (market entry, competitive intel, startup due diligence, trend radar).
 Custom template creation, save-as-template from current research,
 use-count tracking, localStorage persistence. Template picker UI in
@@ -763,7 +763,7 @@ homepage with keyword pill previews. 11 unit tests.
 - Total: 468+ automated tests
 
 **Known issues to address in Cycle 13:**
-- ~28 ESLint warnings (unused vars, missing deps) �� cosmetic debt
+- ~28 ESLint warnings (unused vars, missing deps) 锟斤拷 cosmetic debt
 - No Playwright e2e coverage for new pages (dashboard, compare, share, templates)
 - Home page dashboard only shows 5 recent runs, no pagination
 - Compare page only compares two runs at a time (no multi-way)
@@ -775,7 +775,7 @@ homepage with keyword pill previews. 11 unit tests.
 - Share tokens are single-server only (no Redis/shared cache)
 
 
-## Round 65 �� Cycle 13 Report & Regression Sweep
+## Round 65 锟斤拷 Cycle 13 Report & Regression Sweep
 
 Full regression sweep. All checks green.
 
@@ -786,32 +786,32 @@ Full regression sweep. All checks green.
 - Build: 25 routes, clean TypeScript
 - Bundle: ~91 KB CSS, stable JS size
 
-**Cycle 13 summary (R61�CR65):**
+**Cycle 13 summary (R61锟紺R65):**
 ~3,500 lines of new code across 11 new and 6 modified files.
 
-R61 �� Admin dashboard upgrade. New /api/admin/stats endpoint with aggregated
+R61 锟斤拷 Admin dashboard upgrade. New /api/admin/stats endpoint with aggregated
 metrics. Dashboard tab in admin panel: 6 stat cards (total runs, completed,
 failed, shares, alerts, avg duration), 24h hourly activity bar chart,
 Top 10 keywords tag cloud. 8 e2e tests.
 
-R62 �� Template management page. Dedicated /templates route with full CRUD:
+R62 锟斤拷 Template management page. Dedicated /templates route with full CRUD:
 create, edit, delete, use-count tracking, import/export JSON. 4 built-in
 templates (market entry, competitive intel, startup due diligence, trend radar).
 Grid + list view, responsive mobile layout.
 
-R63 �� Batch research. Batch API: POST /api/research/batch creates up to 10
+R63 锟斤拷 Batch research. Batch API: POST /api/research/batch creates up to 10
 research runs queued sequentially. GET /api/research/batch/[id] for live
 status with progress percentage. /batch page with multi-line query input,
 real-time progress bar, per-run status indicators, recent batch history.
 11 e2e tests.
 
-R64 �� Research result diff tool. diffResearch() algorithm with bigram
+R64 锟斤拷 Research result diff tool. diffResearch() algorithm with bigram
 similarity matching. Detects added/removed/modified insights, opportunities,
 risks, and next-step changes. Score delta formatting. Integrated into the
 /compare page as a toggleable "Diff view" with color-coded added/removed
 highlighting. 16 unit tests.
 
-R65 �� Regression sweep + cycle report. Lint cleanup (from 11 errors to 0),
+R65 锟斤拷 Regression sweep + cycle report. Lint cleanup (from 11 errors to 0),
 type fixes, comprehensive e2e coverage.
 
 **Current test totals:**
@@ -820,7 +820,7 @@ type fixes, comprehensive e2e coverage.
 - Total: 507+ automated tests
 
 **Known issues to address in Cycle 14:**
-- 33 ESLint warnings (unused vars, missing deps) �� tech debt
+- 33 ESLint warnings (unused vars, missing deps) 锟斤拷 tech debt
 - No Playwright/visual e2e coverage for new pages
 - Batch runs are sequential, no concurrency control
 - No batch result summary/combined report
@@ -833,7 +833,7 @@ type fixes, comprehensive e2e coverage.
 - Mobile nav could use a hamburger menu
 
 
-## Round 70 �� Cycle 14 Report & Regression Sweep
+## Round 70 锟斤拷 Cycle 14 Report & Regression Sweep
 
 Full regression sweep. Build clean, tests green.
 
@@ -844,33 +844,33 @@ Full regression sweep. Build clean, tests green.
 - Build: 25+ routes, clean TypeScript
 - Bundle: ~91 KB CSS, stable
 
-**Cycle 14 summary (R66�CR70):**
+**Cycle 14 summary (R66锟紺R70):**
 ~3,200 lines of new code across 10+ new and 8+ modified files.
 
-R66 �� Keyboard shortcuts & command palette. ?K / Ctrl+K global command palette
-with fuzzy search, category grouping, keyboard navigation (���� Enter Esc).
+R66 锟斤拷 Keyboard shortcuts & command palette. ?K / Ctrl+K global command palette
+with fuzzy search, category grouping, keyboard navigation (锟斤拷锟斤拷 Enter Esc).
 Global commands: navigation (G H, G S...), tools, admin. Shortcuts help modal
 triggered with ? key. 6 built-in global shortcuts. Custom command registry
 with available() predicates.
 
-R67 �� Research notes & annotations. Client-side notes system (localStorage) with:
+R67 锟斤拷 Research notes & annotations. Client-side notes system (localStorage) with:
 personal notes (auto-save debounced), 5-star rating, star/bookmark toggle,
 custom tags (add/remove), annotations/highlights framework. NotesPanel sidebar
 component integrated into research results page. 22 unit tests.
 
-R68 �� Custom research agent personas. 6 built-in agents: �������ʦ, ����Ͷ����,
-��������, ʵս��Ӫ��, �����ȷ�, ѧ���о�Ա. Each with unique system prompt,
+R68 锟斤拷 Custom research agent personas. 6 built-in agents: 锟斤拷锟斤拷锟斤拷锟绞? 锟斤拷锟斤拷投锟斤拷锟斤拷,
+锟斤拷锟斤拷锟斤拷锟斤拷, 实战锟斤拷营锟斤拷, 锟斤拷锟斤拷锟饺凤拷, 学锟斤拷锟叫撅拷员. Each with unique system prompt,
 tone, risk bias, detail level, focus areas, and score adjustments. Custom agent
 creation/management (localStorage). AgentSelector dropdown component integrated
 into the home page. Agent parameter passed through API to research engine.
 12 unit tests.
 
-R69 �� Export enhancements. 4 export formats: Markdown (full report with metadata),
+R69 锟斤拷 Export enhancements. 4 export formats: Markdown (full report with metadata),
 structured JSON (all run data parsed), plain text (markdown-stripped),
 and Print/PDF (browser-native). ExportMenu dropdown in research results toolbar.
 Smart filename generation (slugified query + date). 10 unit tests.
 
-R70 �� Regression sweep + cycle report. Lint cleanup, type fixes,
+R70 锟斤拷 Regression sweep + cycle report. Lint cleanup, type fixes,
 comprehensive test coverage.
 
 **Current test totals:**
@@ -945,3 +945,79 @@ type fixes, comprehensive test coverage verification.
 - No webhook notification integration for completed research
 - Visual regression harness exists but not run in CI
 - Homepage uses Tailwind light theme, inner pages use CSS dark theme (design mismatch)
+## Round 75 - Agent Persona System Prompt Injection
+
+Mock provider now receives an agent persona system prompt that shapes the
+tone, depth, and framing of each agent's output. Six distinct personas
+(Analyst, Strategist, Researcher, Critic, Synthesist, Ethicist) map to the
+six agent types, producing noticeably different voices and angles.
+
+**Persona system:**
+- mock-persona.ts — persona definitions with role, traits, focus areas,
+  and writing style instructions
+- 6 persona types matching the 6 research agents
+- Persona text injected into mock generation pipeline
+- Deterministic: same query + same agent = same persona-flavored output
+
+**Test coverage:**
+- 12 unit tests for persona definitions and injection logic
+- All existing tests still pass
+
+**Current test totals:**
+- Unit tests: 454 (44 test files)
+- E2E tests: 6 suites (admin, admin-ui, cors, history, playwright, security)
+- Total: 500+ automated checks
+
+## Round 76 - Batch Research Concurrency Control & Priority Queue
+
+Batch research gets a global scheduler with concurrency limits, priority
+queuing, retry logic, and progress tracking. No more unbounded parallelism
+when running large batches.
+
+**Global scheduler:**
+- Configurable global concurrency limit (default: 3, max: 10)
+- Priority-based scheduling: high > normal > low
+- FIFO ordering within each priority level
+- Per-batch concurrency override (default: 2)
+
+**Reliability features:**
+- Retry on failure with exponential backoff (default: 1 retry)
+- Pause / resume / cancel operations on individual batches
+- Progress tracking with ETA estimation based on average run duration
+- Stable sort ordering via internal sequence counter
+
+**API surface:**
+- createBatch(queries, keywords, options) — create a batch with priority, concurrency, retries
+- getBatch(id) — get batch with computed progress + ETA
+- listBatches(limit) — list batches newest-first
+- pauseBatch(id) / esumeBatch(id) / cancelBatch(id) — lifecycle control
+- setGlobalConcurrency(limit) — tune global capacity
+- getConcurrencyStats() — real-time queue depth + active counts
+- _resetBatchManager() — test helper
+
+**Test coverage:**
+- 23 unit tests covering creation, priority, concurrency, lifecycle, and sorting
+- All 23 tests passing
+- Playwright E2E: 29/29 passing
+- Security E2E: 13/13 passing
+- CORS E2E: 10/10 passing
+- Admin E2E: 76/76 passing
+
+**Current test totals:**
+- Unit tests: 477 (45 test files)
+- E2E tests: 6 suites, 128+ tests
+- Total: 600+ automated checks
+
+**Known issues to address in Cycle 16:**
+- 57 ESLint warnings (tech debt to clear progressively)
+- Notes/folders/templates are localStorage-only, no cross-device sync
+- Batch research concurrency is new; needs stress / throughput testing
+- Diff tool missing modified-item side-by-side view
+- No dark/light theme toggle (ThemeToggle component exists but not wired)
+- No i18n multi-language support (LanguageSwitcher component exists but not wired)
+- Share tokens do not include notes/annotations
+- No scheduled / recurring research
+- No webhook notification integration for completed research
+- Visual regression harness exists but not run in CI
+- Homepage uses Tailwind light theme, inner pages use CSS dark theme (design mismatch)
+- CommandPalette has memoization compilation warning
