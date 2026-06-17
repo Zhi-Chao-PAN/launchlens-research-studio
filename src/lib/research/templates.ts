@@ -404,3 +404,302 @@ export function saveAsTemplate(
     category: "Custom",
   });
 }
+
+
+// ============================================================
+// Template export / import
+// ============================================================
+
+export interface TemplateExportPackage {
+  version: 1;
+  exportedAt: number;
+  source: string;
+  templates: ResearchTemplate[];
+}
+
+const TEMPLATE_EXPORT_VERSION = 1;
+const TEMPLATE_EXPORT_SOURCE = "launchlens-templates";
+
+/**
+ * Export templates as a JSON-serializable package.
+ * By default exports only custom templates; set includeDefaults to true to include default ones.
+ */
+export function exportTemplates(options: {
+  includeDefaults?: boolean;
+  category?: string;
+} = {}): TemplateExportPackage {
+  const templates = readTemplates();
+  let filtered = templates;
+
+  if (!options.includeDefaults) {
+    filtered = filtered.filter((t) => !t.isDefault);
+  }
+
+  if (options.category) {
+    filtered = filtered.filter((t) => t.category === options.category);
+  }
+
+  // Strip internal ids so import creates fresh ones
+  const cleaned = filtered.map((t) => ({
+    ...t,
+    id: undefined,
+    createdAt: undefined,
+    updatedAt: undefined,
+    useCount: 0,
+  }));
+
+  return {
+    version: TEMPLATE_EXPORT_VERSION,
+    exportedAt: Date.now(),
+    source: TEMPLATE_EXPORT_SOURCE,
+    templates: cleaned as ResearchTemplate[],
+  };
+}
+
+/**
+ * Validate a template export package.
+ * Returns list of error messages, empty if valid.
+ */
+export function validateTemplatePackage(pkg: unknown): string[] {
+  const errors: string[] = [];
+
+  if (!pkg || typeof pkg !== "object") {
+    return ["Package is not an object"];
+  }
+
+  const p = pkg as Record<string, unknown>;
+
+  if (p.source !== TEMPLATE_EXPORT_SOURCE) {
+    errors.push("Unknown source: " + p.source);
+  }
+  if (typeof p.version !== "number" || p.version < 1) {
+    errors.push("Invalid version: " + p.version);
+  }
+  if (!Array.isArray(p.templates)) {
+    errors.push("templates is not an array");
+    return errors;
+  }
+
+  const templates = p.templates as unknown[];
+  for (let i = 0; i < templates.length; i++) {
+    const t = templates[i] as Record<string, unknown>;
+    if (!t.name || typeof t.name !== "string") {
+      errors.push("templates[" + i + "]: missing name");
+    }
+    if (!Array.isArray(t.keywords)) {
+      errors.push("templates[" + i + "]: keywords is not an array");
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Import templates from a package.
+ * Returns count of imported templates.
+ */
+export function importTemplates(
+  pkg: TemplateExportPackage,
+  strategy: "merge" | "overwrite" | "skip" = "merge",
+): number {
+  const errors = validateTemplatePackage(pkg);
+  if (errors.length > 0) return 0;
+
+  return bulkImportTemplates(pkg.templates, strategy);
+}
+
+/**
+ * Generate filename for template export.
+ */
+export function getTemplateExportFilename(): string {
+  const now = new Date();
+  const dateStr =
+    now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+  return "launchlens-templates-" + dateStr + ".json";
+}
+
+// ============================================================
+// Template duplication
+// ============================================================
+
+/**
+ * Duplicate a template with a new name.
+ * Returns the new template.
+ */
+export function duplicateTemplate(id: string, newName?: string): ResearchTemplate | null {
+  const original = getTemplate(id);
+  if (!original) return null;
+
+  const name = newName || original.name + " (Copy)";
+
+  return createTemplate({
+    name,
+    description: original.description,
+    query: original.query,
+    keywords: [...original.keywords],
+    category: original.category,
+    agents: original.agents,
+    model: original.model,
+  });
+}
+
+// ============================================================
+// Custom categories
+// ============================================================
+
+const CUSTOM_CATEGORIES_KEY = "launchlens:template-categories";
+
+/**
+ * Get all custom categories added by the user.
+ */
+export function getCustomCategories(): string[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((c: unknown) => typeof c === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomCategories(categories: string[]): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(categories));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Add a custom category. Returns true if added (false if already exists).
+ */
+export function addCustomCategory(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+
+  const all = getAllCategories();
+  if (all.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return false;
+
+  const custom = getCustomCategories();
+  custom.push(trimmed);
+  saveCustomCategories(custom);
+  return true;
+}
+
+/**
+ * Remove a custom category. Templates in this category are moved to "Custom".
+ * Returns true if removed.
+ */
+export function removeCustomCategory(name: string): boolean {
+  const custom = getCustomCategories();
+  const idx = custom.findIndex((c) => c === name);
+  if (idx === -1) return false;
+
+  custom.splice(idx, 1);
+  saveCustomCategories(custom);
+
+  // Move templates from this category to "Custom"
+  const templates = readTemplates();
+  let changed = false;
+  for (const t of templates) {
+    if (t.category === name && !t.isDefault) {
+      t.category = "Custom";
+      t.updatedAt = Date.now();
+      changed = true;
+    }
+  }
+  if (changed) writeTemplates(templates);
+
+  return true;
+}
+
+/**
+ * Rename a custom category. All templates in the category get the new name.
+ * Returns true if renamed.
+ */
+export function renameCustomCategory(oldName: string, newName: string): boolean {
+  const trimmed = newName.trim();
+  if (!trimmed || oldName === trimmed) return false;
+
+  const custom = getCustomCategories();
+  const idx = custom.findIndex((c) => c === oldName);
+  if (idx === -1) return false;
+
+  // Check for conflict
+  const all = getAllCategories();
+  if (all.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return false;
+
+  custom[idx] = trimmed;
+  saveCustomCategories(custom);
+
+  // Update templates
+  const templates = readTemplates();
+  let changed = false;
+  for (const t of templates) {
+    if (t.category === oldName && !t.isDefault) {
+      t.category = trimmed;
+      t.updatedAt = Date.now();
+      changed = true;
+    }
+  }
+  if (changed) writeTemplates(templates);
+
+  return true;
+}
+
+/**
+ * Get all categories: default + custom, sorted.
+ * Default categories in their original order, then custom alphabetically.
+ */
+export function getAllCategories(): string[] {
+  const defaults = getDefaultCategories();
+  const custom = getCustomCategories();
+  // Filter out any custom categories that duplicate defaults
+  const defaultSet = new Set(defaults.map((d) => d.toLowerCase()));
+  const uniqueCustom = custom.filter((c) => !defaultSet.has(c.toLowerCase()));
+  return [...defaults, ...uniqueCustom.sort()];
+}
+
+// ============================================================
+// Template stats
+// ============================================================
+
+export interface TemplateStats {
+  total: number;
+  defaultCount: number;
+  customCount: number;
+  categories: number;
+  totalUses: number;
+  mostUsed: { name: string; useCount: number } | null;
+}
+
+/**
+ * Get summary statistics about the template library.
+ */
+export function getTemplateStats(): TemplateStats {
+  const templates = readTemplates();
+  const defaults = templates.filter((t) => t.isDefault);
+  const custom = templates.filter((t) => !t.isDefault);
+  const totalUses = templates.reduce((sum, t) => sum + t.useCount, 0);
+
+  let mostUsed: { name: string; useCount: number } | null = null;
+  for (const t of templates) {
+    if (!mostUsed || t.useCount > mostUsed.useCount) {
+      mostUsed = { name: t.name, useCount: t.useCount };
+    }
+  }
+
+  return {
+    total: templates.length,
+    defaultCount: defaults.length,
+    customCount: custom.length,
+    categories: getTemplateCategories().length,
+    totalUses,
+    mostUsed: mostUsed?.useCount ? mostUsed : null,
+  };
+}
