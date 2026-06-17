@@ -19,6 +19,7 @@ interface ResearchRun {
   model: string;
   createdAt: number;
   durationMs: number;
+  sources?: { title: string; url: string }[];
   status: "completed" | "failed";
 }
 
@@ -116,6 +117,10 @@ export default function ComparePage() {
       // Queue as microtask to avoid synchronous setState in effect
       void Promise.resolve().then(() => {
         setDiff(diffResearch(synA, synB));
+        setSourceOverlap(computeSourceOverlap(
+          (synA.citations || []).map((c: { title: string; url: string }) => ({ title: c.title, url: c.url })),
+          (synB.citations || []).map((c: { title: string; url: string }) => ({ title: c.title, url: c.url })),
+        ));
       });
     }
   }, [synA, synB]);
@@ -575,6 +580,75 @@ export default function ComparePage() {
             })()}
           </section>
         )}
+
+        {/* Source overlap analysis */}
+        {sourceOverlap ? (
+          <section className="compare-section">
+            <h2 className="compare-section-title">
+              来源重合度
+              <span className="diff-summary-badge">
+                相似度 {Math.round(sourceOverlap.jaccardSimilarity * 100)}%
+              </span>
+            </h2>
+
+            <div className="source-overlap-stats">
+              <div className="source-overlap-stat">
+                <div className="source-overlap-stat-value">{sourceOverlap.totalA}</div>
+                <div className="source-overlap-stat-label">方案 A 来源</div>
+              </div>
+              <div className="source-overlap-stat shared">
+                <div className="source-overlap-stat-value">{sourceOverlap.shared}</div>
+                <div className="source-overlap-stat-label">共有</div>
+              </div>
+              <div className="source-overlap-stat">
+                <div className="source-overlap-stat-value">{sourceOverlap.totalB}</div>
+                <div className="source-overlap-stat-label">方案 B 来源</div>
+              </div>
+            </div>
+
+            {sourceOverlap.sharedDomains.length > 0 && (
+              <div className="source-domain-group">
+                <p className="source-domain-label">共有域名 ({sourceOverlap.sharedDomains.length})</p>
+                <div className="source-domain-list">
+                  {sourceOverlap.sharedDomains.map((d) => (
+                    <span key={d} className="source-domain-tag shared">{d}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(sourceOverlap.domainsOnlyA.length > 0 || sourceOverlap.domainsOnlyB.length > 0) && (
+              <div className="compare-row" style={{ marginTop: 16 }}>
+                <div className="compare-col compare-col-a">
+                  {sourceOverlap.domainsOnlyA.length > 0 && (
+                    <div className="source-domain-group">
+                      <p className="source-domain-label">仅 A 域名</p>
+                      <div className="source-domain-list">
+                        {sourceOverlap.domainsOnlyA.map((d) => (
+                          <span key={d} className="source-domain-tag only-a">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="compare-divider" />
+                <div className="compare-col compare-col-b">
+                  {sourceOverlap.domainsOnlyB.length > 0 && (
+                    <div className="source-domain-group">
+                      <p className="source-domain-label">仅 B 域名</p>
+                      <div className="source-domain-list">
+                        {sourceOverlap.domainsOnlyB.map((d) => (
+                          <span key={d} className="source-domain-tag only-b">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        ) : null}
+
 
 
         {/* Executive summaries */}
