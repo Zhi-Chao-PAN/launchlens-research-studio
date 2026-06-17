@@ -2,21 +2,17 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { formatDistanceToNow } from "@/lib/utils/date-utils";
-import { FolderSidebar } from "@/components/folders/FolderSidebar";
-import { SiteHeader } from "@/components/layout/SiteHeader";
 import { getFolder } from "@/lib/research/folders";
-import { DataManager } from "@/components/data/DataManager";
 
 interface HistoryRun {
   id: string;
   query: string;
-  keywords: string[];
-  status: string;
+  status: "completed" | "failed" | "running";
   createdAt: number;
   durationMs: number;
-  opportunityScore?: number;
-  riskScore?: number;
+  provider: string;
+  model: string;
+  keywords?: string[];
 }
 
 export default function HistoryPage() {
@@ -51,7 +47,7 @@ export default function HistoryPage() {
           const folder = getFolder(selectedFolder);
           if (folder) {
             allRuns = allRuns.filter((r: HistoryRun) =>
-              folder.runIds.includes(r.id),
+              folder.runIds.includes(r.id)
             );
           }
         }
@@ -89,180 +85,173 @@ export default function HistoryPage() {
   }, [selectedFolder, searchQuery, statusFilter, sortBy]);
 
   useEffect(() => {
-    if (selectedFolder) {
-      const folder = getFolder(selectedFolder);
-      void Promise.resolve().then(() => { setFolderName(folder?.name || ""); })
-    } else {
-      void Promise.resolve().then(() => { setFolderName(""); })
-    }
-  }, [selectedFolder, runs.length]);
+    void Promise.resolve().then(() => {
+      if (selectedFolder) {
+        const folder = getFolder(selectedFolder);
+        if (folder) {
+          setFolderName(folder.name);
+        }
+      } else {
+        setFolderName("");
+      }
+    });
+  }, [selectedFolder]);
 
   return (
     <div className="history-page">
-      <SiteHeader />
-      <div className="history-layout">
-        <FolderSidebar
-          selectedFolderId={selectedFolder}
-          onSelectFolder={setSelectedFolder}
-        />
-
-        <div className="history-content">
-          <DataManager />
-          <header className="history-header">
-            <div>
-              <h1 className="history-title">
-                {selectedFolder ? folderName : "Research History"}
-              </h1>
-              <p className="history-subtitle">
-                {selectedFolder
-                  ? "Research in this folder"
-                  : "All research records"}
-                {totalRuns > 0 && (
-                  <>
-                    {" "}
-                    <span className="history-count">
-                      {runs.length} of {totalRuns} results
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
-            <Link href="/" className="btn btn-primary">
-              + New Research
-            </Link>
-          </header>
-
-          {/* Search & filter toolbar */}
-          <div className="history-toolbar">
-            <div className="history-search">
-              <span className="history-search-icon">🔍</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search research queries, keywords..."
-                className="history-search-input"
-              />
-              {searchQuery && (
-                <button
-                  className="history-search-clear"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Clear search"
-                >
-                  �?                </button>
+      <div className="history-inner">
+        <header className="history-header">
+          <div>
+            <h1 className="history-title">Research History</h1>
+            <p className="history-subtitle">
+              {selectedFolder
+                ? "Research in this folder"
+                : "All research records"}
+              {totalRuns > 0 && (
+                <>
+                  {" "}
+                  <span className="history-count">
+                    {runs.length} of {totalRuns} results
+                  </span>
+                </>
               )}
-            </div>
+            </p>
+          </div>
+          <Link href="/" className="btn btn-primary history-new-btn">
+            + New Research
+          </Link>
+        </header>
 
-            <div className="history-filters">
-              <div className="history-filter-group">
-                <label className="history-filter-label">Status</label>
-                <div className="history-filter-buttons">
-                  {(["all", "completed", "failed"] as const).map((s) => (
-                    <button
-                      key={s}
-                      className={`history-filter-btn status-${s} ${statusFilter === s ? "active" : ""}`}
-                      onClick={() => setStatusFilter(s)}
-                    >
-                      {s === "all" ? "All" : s === "completed" ? "�?Success" : "�?Failed"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="history-filter-group">
-                <label className="history-filter-label">Sort</label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="history-sort-select"
-                >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="fastest">Fastest first</option>
-                  <option value="slowest">Slowest first</option>
-                </select>
-              </div>
-            </div>
+        {/* Search & filter toolbar */}
+        <div className="history-toolbar">
+          <div className="history-search">
+            <span className="history-search-icon">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search research queries, keywords..."
+              className="history-search-input"
+            />
+            {searchQuery && (
+              <button
+                className="history-search-clear"
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
-          {/* Results count */}
-          {(searchQuery || statusFilter !== "all") && (
-            <div className="history-results-info">
-              <span>
-                Found <strong>{runs.length}</strong> result{runs.length !== 1 ? "s" : ""}
-                {searchQuery && <> for &quot;<strong>{searchQuery}</strong>&quot;</>}
-              </span>
-              {searchQuery && (
-                <button
-                  className="history-clear-all"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setStatusFilter("all");
-                    setSortBy("newest");
-                  }}
-                >
-                  Clear filters
-                </button>
-              )}
+          <div className="history-filters">
+            <div className="history-filter-group">
+              <label className="history-filter-label">Status</label>
+              <div className="history-filter-buttons">
+                {(["all", "completed", "failed"] as const).map((s) => (
+                  <button
+                    key={s}
+                    className={`history-filter-btn status-${s} ${statusFilter === s ? "active" : ""}`}
+                    onClick={() => setStatusFilter(s)}
+                  >
+                    {s === "all" ? "All" : s === "completed" ? "✓ Success" : "✗ Failed"}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
 
-          {loading ? (
-            <div className="history-loading">Loading...</div>
-          ) : runs.length === 0 ? (
-            <div className="history-empty">
-              <div className="history-empty-icon">馃摥</div>
-              <h3>No research yet</h3>
-              <p>
-                {selectedFolder
-                  ? "This folder is empty"
-                  : "Start your first research project"}
-              </p>
-              <Link href="/" className="btn btn-primary">
-                Start Research
-              </Link>
+            <div className="history-filter-group">
+              <label className="history-filter-label">Sort</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="history-sort-select"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="fastest">Fastest first</option>
+                <option value="slowest">Slowest first</option>
+              </select>
             </div>
-          ) : (
-            <div className="history-list">
-              {runs.map((run) => (
-                <Link
-                  key={run.id}
-                  href={"/research/" + run.id}
-                  className={"history-item status-" + run.status}
-                >
-                  <div className="history-item-main">
+          </div>
+        </div>
+
+        {/* Results count */}
+        {(searchQuery || statusFilter !== "all") && (
+          <div className="history-results-info">
+            <span>
+              Found <strong>{runs.length}</strong> result{runs.length !== 1 ? "s" : ""}
+              {searchQuery && <> for &quot;<strong>{searchQuery}</strong>&quot;</>}
+            </span>
+            {searchQuery && (
+              <button
+                className="history-clear-all"
+                onClick={() => {
+                  setSearchQuery("");
+                  setStatusFilter("all");
+                  setSortBy("newest");
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="history-loading">Loading...</div>
+        ) : runs.length === 0 ? (
+          <div className="history-empty">
+            <div className="history-empty-icon">📋</div>
+            <h3>No research yet</h3>
+            <p>
+              {searchQuery || statusFilter !== "all"
+                ? "No results match your filters. Try clearing them."
+                : "Run your first research to see it here."}
+            </p>
+            <Link href="/" className="btn btn-primary">
+              Start Research
+            </Link>
+          </div>
+        ) : (
+          <div className="history-list">
+            {runs.map((run) => (
+              <Link
+                key={run.id}
+                href={`/research/${run.id}`}
+                className="history-item"
+              >
+                <div className="history-item-main">
+                  <div className={`history-item-status status-${run.status}`}>
+                    {run.status === "completed" ? "✓" : run.status === "failed" ? "✗" : "●"}
+                  </div>
+                  <div className="history-item-content">
                     <h3 className="history-item-query">{run.query}</h3>
-                    {run.keywords.length > 0 && (
+                    <div className="history-item-meta">
+                      <span>{new Date(run.createdAt).toLocaleString()}</span>
+                      <span>·</span>
+                      <span>
+                        {run.durationMs < 1000
+                          ? run.durationMs + "ms"
+                          : (run.durationMs / 1000).toFixed(1) + "s"}
+                      </span>
+                      <span>·</span>
+                      <span>{run.provider} / {run.model}</span>
+                    </div>
+                    {run.keywords && run.keywords.length > 0 && (
                       <div className="history-item-keywords">
-                        {run.keywords.slice(0, 3).map((kw) => (
-                          <span key={kw} className="history-kw-tag">
-                            {kw}
-                          </span>
+                        {run.keywords.slice(0, 5).map((kw) => (
+                          <span key={kw} className="history-kw-tag">{kw}</span>
                         ))}
-                        {run.keywords.length > 3 && (
-                          <span className="history-kw-more">
-                            +{run.keywords.length - 3}
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
-                  <div className="history-item-meta">
-                    <span className="history-status">{run.status}</span>
-                    <span className="history-date">
-                      {formatDistanceToNow(run.createdAt)}
-                    </span>
-                    {run.opportunityScore !== undefined && (
-                      <span className="history-score">
-                        Opportunity {run.opportunityScore}
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+                </div>
+                <div className="history-item-arrow">→</div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -6029,3 +6029,349 @@ a:focus-visible {
     min-width: 140px;
   }
 }
+
+
+/* ===== Share Page (Round 83 polish) ===== */
+
+.share-page {
+  min-height: 100vh;
+  background: #080810;
+}
+
+/* Branded header */
+.share-page-header {
+  background: #0f0f17;
+  border-bottom: 1px solid #1e1e2e;
+  padding: 14px 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(8px);
+  background: rgba(15, 15, 23, 0.85);
+}
+
+.share-page-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.share-page-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.share-page-logo-icon {
+  font-size: 22px;
+}
+
+.share-page-logo-text {
+  background: linear-gradient(135deg, #a5b4fc 0%, #c084fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.share-page-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.share-status-badge.status-completed {
+  background: rgba(74, 222, 128, 0.12);
+  color: #4ade80;
+}
+
+/* Share info banner */
+.share-info-banner {
+  background: #0f0f17;
+  border-bottom: 1px solid #1e1e2e;
+  padding: 10px 0;
+}
+
+.share-info-row {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.share-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.share-info-icon {
+  font-size: 16px;
+}
+
+.share-info-label {
+  color: #666688;
+}
+
+.share-info-value {
+  color: #a5b4fc;
+  font-weight: 500;
+}
+
+.share-info-spacer {
+  flex: 1;
+}
+
+.share-copy-btn {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.share-copy-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* Error page */
+.share-error-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.share-error-inner {
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+
+.share-error-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+
+.share-error-logo {
+  font-size: 28px;
+}
+
+.share-error-brand-name {
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #a5b4fc 0%, #c084fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.share-error-card {
+  background: #0f0f17;
+  border: 1px solid #1e1e2e;
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+
+.share-error-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+
+.share-error-card h1 {
+  font-size: 24px;
+  color: #ffffff;
+  margin: 0 0 8px;
+}
+
+.share-error-desc {
+  color: #ccccdd;
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.share-error-hint {
+  color: #666688;
+  margin: 0 0 24px;
+  font-size: 13px;
+}
+
+.share-error-btn {
+  display: inline-block;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #ffffff;
+  text-decoration: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.share-error-btn:hover {
+  opacity: 0.9;
+}
+
+.share-error-footer {
+  color: #555577;
+  font-size: 12px;
+  margin-top: 24px;
+}
+
+/* Light mode overrides for share page */
+[data-theme="light"] .share-page {
+  background: #f8fafc;
+}
+
+[data-theme="light"] .share-page-header {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom-color: #e2e8f0;
+}
+
+[data-theme="light"] .share-page-logo {
+  color: #1e293b;
+}
+
+[data-theme="light"] .share-info-banner {
+  background: #ffffff;
+  border-bottom-color: #e2e8f0;
+}
+
+[data-theme="light"] .share-info-label {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .share-copy-btn {
+  background: rgba(99, 102, 241, 0.08);
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+[data-theme="light"] .share-copy-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+[data-theme="light"] .share-error-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .share-error-card h1 {
+  color: #1e293b;
+}
+
+[data-theme="light"] .share-error-desc {
+  color: #475569;
+}
+
+[data-theme="light"] .share-error-hint {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .share-error-footer {
+  color: #94a3b8;
+}
+
+/* Print styles */
+@media print {
+  .share-page-header,
+  .share-info-banner,
+  .share-footer,
+  .research-back-link {
+    display: none !important;
+  }
+
+  .share-page,
+  .research-detail {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .research-detail-inner {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  .research-detail-header {
+    background: #ffffff !important;
+    border-bottom: 2px solid #000 !important;
+    padding: 0 0 16px 0 !important;
+    margin-bottom: 24px !important;
+  }
+
+  .research-detail-title {
+    color: #000000 !important;
+    font-size: 24pt !important;
+  }
+
+  .research-detail-meta {
+    color: #333333 !important;
+  }
+
+  .research-keyword {
+    border: 1px solid #999999 !important;
+    color: #333333 !important;
+    background: #f5f5f5 !important;
+  }
+
+  .research-section {
+    page-break-inside: avoid;
+    border-bottom: 1px solid #cccccc !important;
+    padding: 16px 0 !important;
+  }
+
+  .research-section h2 {
+    color: #000000 !important;
+    font-size: 14pt !important;
+  }
+
+  .research-card {
+    background: #fafafa !important;
+    border: 1px solid #cccccc !important;
+    page-break-inside: avoid;
+  }
+
+  .research-card-title {
+    color: #000000 !important;
+  }
+
+  .score-bar-fill {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .research-source-item a {
+    color: #0000ee !important;
+    text-decoration: underline;
+  }
+
+  .research-insight-item,
+  .research-next-step {
+    page-break-inside: avoid;
+  }
+}
