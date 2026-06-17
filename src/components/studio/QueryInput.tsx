@@ -1,7 +1,9 @@
-/* eslint-disable @next/next/no-img-element */
-﻿"use client";
+﻿/* eslint-disable @next/next/no-img-element */
+"use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { AutocompleteDropdown } from "@/components/autocomplete/AutocompleteDropdown";
+import { useResearchHistory } from "@/lib/research/history";
 
 interface QueryInputProps {
   onSubmit: (query: string, keywords: string[]) => void;
@@ -30,6 +32,22 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
   const [query, setQuery] = useState(defaultQuery);
   const [keywordInput, setKeywordInput] = useState(defaultKeywords.join(", "));
   const [showExamples, setShowExamples] = useState(false);
+  const [autocompleteOpen, setAutocompleteOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const queryInputRef = useRef<HTMLTextAreaElement>(null);
+  const { history: rawHistory, hydrated } = useResearchHistory();
+
+  // Convert history to the format autocomplete expects (numeric timestamps)
+  const autocompleteHistory = useMemo(
+    () =>
+      rawHistory.map((e) => ({
+        id: e.id,
+        query: e.query,
+        keywords: e.keywords,
+        createdAt: new Date(e.createdAt).getTime(),
+      })),
+    [rawHistory]
+  );
 
   const trimmed = query.trim();
   const keywordList = useMemo(
@@ -57,17 +75,87 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
 
   const isValid = trimmed.length >= QUERY_LIMITS.MIN && trimmed.length <= QUERY_LIMITS.MAX && !keywordError;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isValid || isLoading) return;
-    onSubmit(trimmed, keywordList);
-  };
+  const handleSubmit = useCallback(
+    (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      if (!isValid || isLoading) return;
+      setAutocompleteOpen(false);
+      onSubmit(trimmed, keywordList);
+    },
+    [isValid, isLoading, onSubmit, trimmed, keywordList]
+  );
 
   const handleExampleClick = (example: { query: string; keywords: string[] }) => {
     setQuery(example.query);
     setKeywordInput(example.keywords.join(", "));
     setShowExamples(false);
+    queryInputRef.current?.focus();
   };
+
+  const handleAutocompleteSelect = useCallback((text: string, keywords: string[]) => {
+    setQuery(text);
+    if (keywords.length > 0 && keywordList.length === 0) {
+      setKeywordInput(keywords.join(", "));
+    }
+    setAutocompleteOpen(false);
+    setHighlightedIndex(0);
+    queryInputRef.current?.focus();
+  }, [keywordList]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!autocompleteOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        setAutocompleteOpen(true);
+        setHighlightedIndex(0);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.min(i + 1, 5)); // maxItems - 1
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+        if (highlightedIndex >= 0) {
+          e.preventDefault();
+          // The dropdown will handle via click simulation, but we need direct access
+          // For now, submit on Enter (default behavior) — autocomplete closes on submit
+          // If user is navigating, they'll use Tab or click. Keep Enter as submit.
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setAutocompleteOpen(false);
+        setHighlightedIndex(0);
+        break;
+      case "Tab":
+        if (highlightedIndex >= 0 && autocompleteOpen) {
+          // Don't prevent — let tab move focus, but close the dropdown
+          setAutocompleteOpen(false);
+        }
+        break;
+    }
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-query-autocomplete]")) {
+        setAutocompleteOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const shouldShowAutocomplete = hydrated && autocompleteOpen && !isLoading;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -77,7 +165,7 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" data-research-form>
-        <div>
+        <div className="relative" data-query-autocomplete>
           <div className="flex items-center justify-between mb-1.5">
             <label htmlFor="query-input" className="block text-sm font-medium text-slate-700">
               Product idea
@@ -95,8 +183,15 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
           </div>
           <textarea
             id="query-input"
+            ref={queryInputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setAutocompleteOpen(true);
+              setHighlightedIndex(0);
+            }}
+            onFocus={() => setAutocompleteOpen(true)}
+            onKeyDown={handleKeyDown}
             placeholder="Describe the product idea you want to research… e.g., an AI-powered go-to-market tool for solo founders"
             className={`w-full px-4 py-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent resize-none transition-colors ${
               queryError
@@ -108,11 +203,28 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
             maxLength={QUERY_LIMITS.MAX + 50}
             aria-invalid={!!queryError}
             aria-describedby={queryError ? "query-error" : undefined}
+            aria-expanded={autocompleteOpen}
+            aria-controls="autocomplete-listbox"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-activedescendant={autocompleteOpen ? `autocomplete-item-${highlightedIndex}` : undefined}
           />
           {queryError && (
             <p id="query-error" className="text-xs text-rose-600 mt-1">
               {queryError}
             </p>
+          )}
+
+          {shouldShowAutocomplete && (
+            <AutocompleteDropdown
+              query={trimmed}
+              history={autocompleteHistory}
+              onSelect={handleAutocompleteSelect}
+              isOpen={true}
+              highlightedIndex={highlightedIndex}
+              onHighlight={setHighlightedIndex}
+              maxItems={6}
+            />
           )}
         </div>
 
@@ -166,7 +278,7 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
             </>
           ) : (
             <>
-              <span aria-hidden>🚀</span>
+              <span aria-hidden>🔬</span>
               <span>Start Research</span>
             </>
           )}
@@ -178,7 +290,7 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
           onClick={() => setShowExamples((v) => !v)}
           className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1"
         >
-          <span className={`transition-transform ${showExamples ? "rotate-90" : ""}`} aria-hidden>▸</span>
+          <span className={`transition-transform ${showExamples ? "rotate-90" : ""}`} aria-hidden>▶</span>
           <span>Or try an example</span>
         </button>
         {showExamples && (
