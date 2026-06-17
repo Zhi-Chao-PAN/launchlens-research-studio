@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
+﻿import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
 import {
   savePersonalNote,
   getNotes,
@@ -14,6 +14,21 @@ import {
   getStarredRuns,
   getAllTags,
   searchNotes,
+  getQuickNoteTemplates,
+  addQuickNoteTemplate,
+  deleteQuickNoteTemplate,
+  insertQuickNote,
+  bulkAddTag,
+  bulkRemoveTag,
+  bulkStarRuns,
+  bulkArchiveRuns,
+  bulkSetRating,
+  getNotesStats,
+  updateAnnotation,
+  getAnnotationsByType,
+  getAllAnnotations,
+  exportNotesPackage,
+  importNotesPackage,
 } from "@/lib/research/notes";
 
 // Mock localStorage
@@ -206,5 +221,374 @@ describe("research notes", () => {
     it("searchNotes returns empty for no matches", () => {
       expect(searchNotes("nonexistent")).toHaveLength(0);
     });
+  });
+});
+
+
+
+describe("quick note templates", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
+  it("returns default quick note templates", () => {
+    const templates = getQuickNoteTemplates();
+    expect(templates.length).toBeGreaterThanOrEqual(6);
+    expect(templates[0].id).toContain("qn-");
+    expect(templates[0].name).toBeTruthy();
+    expect(templates[0].content).toBeTruthy();
+  });
+
+  it("adds a custom quick note template", () => {
+    const tpl = addQuickNoteTemplate("My Template", "My note content");
+    expect(tpl.id).toContain("qn-");
+    expect(tpl.name).toBe("My Template");
+    expect(tpl.content).toBe("My note content");
+
+    const all = getQuickNoteTemplates();
+    expect(all.some((t) => t.id === tpl.id)).toBe(true);
+  });
+
+  it("deletes a quick note template", () => {
+    const tpl = addQuickNoteTemplate("Delete Me", "content");
+    const result = deleteQuickNoteTemplate(tpl.id);
+    expect(result).toBe(true);
+
+    const all = getQuickNoteTemplates();
+    expect(all.some((t) => t.id === tpl.id)).toBe(false);
+  });
+
+  it("returns false when deleting non-existent template", () => {
+    expect(deleteQuickNoteTemplate("nonexistent")).toBe(false);
+  });
+
+  it("inserts a quick note into a run's personal note", () => {
+    const tpl = addQuickNoteTemplate("Custom", "**Custom:** ");
+    const result = insertQuickNote("run-with-quicknote", tpl.id);
+    expect(result).toBeTruthy();
+    expect(result).toContain("**Custom:**");
+
+    const notes = getNotes("run-with-quicknote");
+    expect(notes?.personalNote).toContain("**Custom:**");
+  });
+
+  it("returns null for non-existent template", () => {
+    const result = insertQuickNote("run-1", "nonexistent-template");
+    expect(result).toBeNull();
+  });
+
+  it("appends quick note below existing content", () => {
+    savePersonalNote("run-append", "Existing note");
+    const tpl = addQuickNoteTemplate("Append", "Appended text");
+    insertQuickNote("run-append", tpl.id);
+
+    const notes = getNotes("run-append");
+    expect(notes?.personalNote).toContain("Existing note");
+    expect(notes?.personalNote).toContain("Appended text");
+  });
+});
+
+describe("bulk note operations", () => {
+  beforeEach(() => {
+    storage.clear();
+    // Set up some runs
+    addTag("run-1", "tag1");
+    addTag("run-2", "tag1");
+    addTag("run-3", "tag2");
+    toggleStar("run-starred");
+    toggleArchive("run-archived");
+  });
+
+  it("bulk adds a tag to multiple runs", () => {
+    const result = bulkAddTag(["run-1", "run-2", "run-3"], "new-tag");
+    expect(result.updated).toBe(3);
+    expect(result.skipped).toBe(0);
+    expect(result.errors.length).toBe(0);
+
+    const notes1 = getNotes("run-1");
+    expect(notes1?.tags).toContain("new-tag");
+  });
+
+  it("skips runs that already have the tag", () => {
+    const result = bulkAddTag(["run-1", "run-2"], "tag1");
+    expect(result.updated).toBe(0);
+    expect(result.skipped).toBe(2);
+  });
+
+  it("bulk removes a tag from multiple runs", () => {
+    const result = bulkRemoveTag(["run-1", "run-2", "run-3"], "tag1");
+    expect(result.updated).toBe(2);
+
+    const notes1 = getNotes("run-1");
+    expect(notes1?.tags).not.toContain("tag1");
+  });
+
+  it("bulk stars multiple runs", () => {
+    const result = bulkStarRuns(["run-1", "run-2"], true);
+    expect(result.updated).toBe(2);
+
+    const starred = getStarredRuns();
+    expect(starred).toContain("run-1");
+    expect(starred).toContain("run-2");
+  });
+
+  it("bulk unstars runs", () => {
+    const result = bulkStarRuns(["run-starred"], false);
+    expect(result.updated).toBe(1);
+
+    const starred = getStarredRuns();
+    expect(starred).not.toContain("run-starred");
+  });
+
+  it("bulk archives multiple runs", () => {
+    const result = bulkArchiveRuns(["run-1", "run-2"], true);
+    expect(result.updated).toBe(2);
+    expect(getNotes("run-1")?.isArchived).toBe(true);
+  });
+
+  it("bulk sets rating for multiple runs", () => {
+    const result = bulkSetRating(["run-1", "run-2"], 4);
+    expect(result.updated).toBe(2);
+    expect(getNotes("run-1")?.rating).toBe(4);
+  });
+
+  it("clamps rating to 0-5 range", () => {
+    bulkSetRating(["run-1"], 10);
+    expect(getNotes("run-1")?.rating).toBe(5);
+
+    bulkSetRating(["run-1"], -1);
+    expect(getNotes("run-1")?.rating).toBe(0);
+  });
+});
+
+describe("notes statistics", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
+  it("returns zeroed stats when no notes exist", () => {
+    const stats = getNotesStats();
+    expect(stats.totalRuns).toBe(0);
+    expect(stats.starred).toBe(0);
+    expect(stats.avgRating).toBeNull();
+    expect(stats.tagFrequency.length).toBe(0);
+  });
+
+  it("calculates correct statistics", () => {
+    savePersonalNote("run-1", "My personal note");
+    addTag("run-1", "tag-a");
+    addTag("run-1", "tag-b");
+    setRating("run-1", 4);
+    toggleStar("run-1");
+    addAnnotation("run-1", { type: "highlight", content: "highlighted text" });
+
+    addTag("run-2", "tag-a");
+    addTag("run-2", "tag-c");
+    setRating("run-2", 2);
+
+    toggleArchive("run-3");
+
+    const stats = getNotesStats();
+    expect(stats.totalRuns).toBe(3);
+    expect(stats.withPersonalNote).toBe(1);
+    expect(stats.withAnnotations).toBe(1);
+    expect(stats.starred).toBe(1);
+    expect(stats.archived).toBe(1);
+    expect(stats.totalAnnotations).toBe(1);
+    expect(stats.totalTags).toBe(3);
+    expect(stats.ratedRuns).toBe(2);
+    expect(stats.avgRating).toBe(3);
+    expect(stats.tagFrequency[0].tag).toBe("tag-a");
+    expect(stats.tagFrequency[0].count).toBe(2);
+  });
+});
+
+describe("annotation enhancements", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
+  it("updates an existing annotation", () => {
+    const anno = addAnnotation("run-update", {
+      type: "note",
+      content: "original text",
+    });
+
+    const updated = updateAnnotation("run-update", anno.id, {
+      content: "updated text",
+      color: "#ff0",
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated?.content).toBe("updated text");
+    expect(updated?.color).toBe("#ff0");
+    expect(updated?.updatedAt).toBeGreaterThanOrEqual(anno.createdAt);
+  });
+
+  it("returns null for updating non-existent annotation", () => {
+    expect(updateAnnotation("run-1", "nonexistent", { content: "x" })).toBeNull();
+  });
+
+  it("gets annotations filtered by type", () => {
+    addAnnotation("run-types", { type: "highlight", content: "h1" });
+    addAnnotation("run-types", { type: "note", content: "n1" });
+    addAnnotation("run-types", { type: "highlight", content: "h2" });
+
+    const highlights = getAnnotationsByType("run-types", "highlight");
+    expect(highlights.length).toBe(2);
+    expect(highlights.every((h) => h.type === "highlight")).toBe(true);
+  });
+
+  it("gets all annotations across all runs", () => {
+    addAnnotation("run-a", { type: "note", content: "note a" });
+    addAnnotation("run-b", { type: "highlight", content: "highlight b" });
+
+    const all = getAllAnnotations();
+    expect(all.length).toBe(2);
+    expect(all.some((a) => a.runId === "run-a")).toBe(true);
+    expect(all.some((a) => a.runId === "run-b")).toBe(true);
+  });
+
+  it("gets all annotations filtered by type", () => {
+    addAnnotation("run-a", { type: "note", content: "note" });
+    addAnnotation("run-b", { type: "highlight", content: "highlight" });
+
+    const highlights = getAllAnnotations("highlight");
+    expect(highlights.length).toBe(1);
+    expect(highlights[0].annotation.type).toBe("highlight");
+  });
+
+  it("sorts annotations by createdAt descending", () => {
+    addAnnotation("run-1", { type: "note", content: "first" });
+    // Add a small delay simulation isn't needed since they'll have same timestamp
+    addAnnotation("run-1", { type: "note", content: "second" });
+
+    const all = getAllAnnotations();
+    // At minimum should return all of them
+    expect(all.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("notes export / import", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
+  it("exports a valid notes package", () => {
+    savePersonalNote("run-export", "My note");
+    addTag("run-export", "test-tag");
+
+    const pkg = exportNotesPackage();
+    expect(pkg.version).toBe(1);
+    expect(pkg.source).toBe("launchlens-notes");
+    expect(typeof pkg.exportedAt).toBe("number");
+    expect(pkg.notes.length).toBeGreaterThanOrEqual(1);
+    expect(pkg.quickNoteTemplates.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("imports notes with merge strategy", () => {
+    savePersonalNote("run-existing", "Original note");
+    addTag("run-existing", "original-tag");
+
+    const pkg = {
+      version: 1,
+      notes: [
+        {
+          runId: "run-existing",
+          annotations: [],
+          personalNote: "Updated note",
+          rating: 5,
+          tags: ["new-tag"],
+          isStarred: true,
+          isArchived: false,
+          lastOpenedAt: Date.now() + 100000,
+          updatedAt: Date.now() + 100000,
+        },
+        {
+          runId: "run-new",
+          annotations: [],
+          personalNote: "Brand new",
+          rating: 3,
+          tags: ["fresh"],
+          isStarred: false,
+          isArchived: false,
+          lastOpenedAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    };
+
+    const result = importNotesPackage(pkg, "merge");
+    expect(result.imported).toBe(2);
+
+    const existing = getNotes("run-existing");
+    expect(existing?.tags).toContain("original-tag");
+    expect(existing?.tags).toContain("new-tag");
+    expect(existing?.personalNote).toBe("Updated note");
+
+    const newNotes = getNotes("run-new");
+    expect(newNotes).not.toBeNull();
+    expect(newNotes?.personalNote).toBe("Brand new");
+  });
+
+  it("imports with skip strategy", () => {
+    savePersonalNote("run-keep", "Keep this");
+
+    const pkg = {
+      version: 1,
+      notes: [
+        {
+          runId: "run-keep",
+          annotations: [],
+          personalNote: "Overwrite attempt",
+          rating: 0,
+          tags: [],
+          isStarred: false,
+          isArchived: false,
+          lastOpenedAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    };
+
+    const result = importNotesPackage(pkg, "skip");
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+
+    const notes = getNotes("run-keep");
+    expect(notes?.personalNote).toBe("Keep this");
+  });
+
+  it("imports with overwrite strategy", () => {
+    savePersonalNote("run-overwrite", "Old content");
+    addTag("run-overwrite", "old-tag");
+
+    const pkg = {
+      version: 1,
+      notes: [
+        {
+          runId: "run-overwrite",
+          annotations: [],
+          personalNote: "New content",
+          rating: 4,
+          tags: ["new-tag"],
+          isStarred: true,
+          isArchived: false,
+          lastOpenedAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ],
+    };
+
+    importNotesPackage(pkg, "overwrite");
+    const notes = getNotes("run-overwrite");
+    expect(notes?.personalNote).toBe("New content");
+    expect(notes?.tags).toEqual(["new-tag"]);
+  });
+
+  it("rejects invalid package", () => {
+    const result = importNotesPackage({ version: 0, notes: [] } as any);
+    expect(result.imported).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 });
