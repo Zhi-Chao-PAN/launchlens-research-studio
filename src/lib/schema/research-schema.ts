@@ -178,6 +178,8 @@ export interface ResearchSession {
   id: string;
   query: string;
   keywords: string[];
+  /** Persona/agent style ID that shapes all research outputs */
+  personaId?: string;
   createdAt: string;
   updatedAt: string;
   status: "pending" | "running" | "completed" | "error";

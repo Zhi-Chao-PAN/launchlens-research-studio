@@ -5,6 +5,7 @@ import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { applyQueryVariability } from "@/lib/providers/mock-variability";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
+import { applyPersona } from "@/lib/providers/mock-persona";
 
 const MOCK_STEPS = [
   { fraction: 0.2, step: "Loading research context" },
@@ -25,6 +26,7 @@ export const mockResearchProvider: ResearchProvider = {
       }
     }
     const base = generateMockAgentOutput(agentId, ctx.query, ctx.keywords, ctx.upstream);
-    return applyQueryVariability(agentId, base, ctx.query, ctx.keywords);
+    const withVariability = applyQueryVariability(agentId, base, ctx.query, ctx.keywords);
+    return applyPersona(withVariability, ctx.personaId);
   },
 };

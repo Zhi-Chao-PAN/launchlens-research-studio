@@ -6,6 +6,7 @@
   AgentOutput,
 } from "@/lib/schema/research-schema";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
+import { applyPersona } from "@/lib/providers/mock-persona";
 import { selectProvider } from "@/lib/providers/provider-registry";
 import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
@@ -166,7 +167,7 @@ async function runAgent(
         } catch (e) {
           telemetryOk = false;
           telemetryErr = e instanceof Error ? e.message : String(e);
-          output = generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs);
+          output = applyPersona(generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs), session.personaId);
         } finally {
           if (!selected.isMock) {
             if (telemetryOk) breakerRecordSuccess("provider:" + selected.id);

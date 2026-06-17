@@ -21,6 +21,8 @@ export interface ProviderContext {
   query: string;
   keywords: string[];
   upstream?: AgentOutput[];
+  /** Optional persona ID to shape the output (mock providers only for now) */
+  personaId?: string;
   signal?: AbortSignal;
   // When defined, providers should call this between sub-steps so the
   // engine can fan progress out to subscribers. Optional so legacy
