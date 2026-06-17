@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseSynthesis, type SynthesisOutput } from "@/lib/research/synthesis-parser";
 import { diffResearch, formatDelta, type ResearchDiff } from "@/lib/research/research-diff";
+import { VennDiagram } from "@/components/venn/VennDiagram";
+import { CardSkeleton } from "@/components/skeleton/Skeleton";
 
 interface ResearchRun {
   id: string;
@@ -120,10 +122,44 @@ export default function ComparePage() {
 
   if (loading) {
     return (
-      <div className="research-detail">
-        <div className="research-detail-inner">
-          <p className="loading">加载中...</p>
-        </div>
+      <div className="compare-page">
+        <header className="compare-header">
+          <div className="compare-header-inner">
+            <div className="research-back-link" style={{ opacity: 0.5 }}>← 返回历史</div>
+            <h1 className="compare-title">研究对比</h1>
+          </div>
+        </header>
+        <main className="compare-main">
+          <div className="compare-header-row">
+            <div className="compare-header-cell compare-header-a">
+              <div className="compare-label">方案 A</div>
+              <div style={{ height: 24, width: "70%", borderRadius: 6, background: "rgba(255,255,255,0.1)" }} />
+              <div className="compare-meta" style={{ opacity: 0.5 }}>加载中...</div>
+            </div>
+            <div className="compare-header-divider">VS</div>
+            <div className="compare-header-cell compare-header-b">
+              <div className="compare-label">方案 B</div>
+              <div style={{ height: 24, width: "70%", borderRadius: 6, background: "rgba(255,255,255,0.1)" }} />
+              <div className="compare-meta" style={{ opacity: 0.5 }}>加载中...</div>
+            </div>
+          </div>
+          <section className="compare-section">
+            <h2 className="compare-section-title">评分对比</h2>
+            <div className="compare-row">
+              <div className="compare-col compare-col-a"><CardSkeleton lines={3} /></div>
+              <div className="compare-divider" />
+              <div className="compare-col compare-col-b"><CardSkeleton lines={3} /></div>
+            </div>
+          </section>
+          <section className="compare-section">
+            <h2 className="compare-section-title">执行摘要</h2>
+            <div className="compare-row">
+              <div className="compare-col compare-col-a"><CardSkeleton lines={5} /></div>
+              <div className="compare-divider" />
+              <div className="compare-col compare-col-b"><CardSkeleton lines={5} /></div>
+            </div>
+          </section>
+        </main>
       </div>
     );
   }
@@ -480,6 +516,66 @@ export default function ComparePage() {
             </div>
           </section>
         )}
+
+        {/* Keywords overlap Venn */}
+        {runA && runB && runA.keywords.length > 0 && runB.keywords.length > 0 && (
+          <section className="compare-section">
+            <h2 className="compare-section-title">关键词重合度</h2>
+            <div className="compare-venn-wrapper">
+              {(() => {
+                const labelA = runA.query.length > 20 ? runA.query.slice(0, 20) + "…" : runA.query;
+                const labelB = runB.query.length > 20 ? runB.query.slice(0, 20) + "…" : runB.query;
+                const vennSets = [
+                  { label: labelA, color: "#6366f1", items: runA.keywords },
+                  { label: labelB, color: "#ec4899", items: runB.keywords },
+                ];
+                return <VennDiagram sets={vennSets} width={440} height={240} />;
+              })()}
+            </div>
+            {(() => {
+              const setA = new Set(runA.keywords);
+              const setB = new Set(runB.keywords);
+              const shared = [...setA].filter((k) => setB.has(k));
+              const onlyA = [...setA].filter((k) => !setB.has(k));
+              const onlyB = [...setB].filter((k) => !setA.has(k));
+              return (
+                <div className="compare-keyword-list">
+                  {shared.length > 0 && (
+                    <div className="compare-keyword-group">
+                      <span className="compare-keyword-label">共有 ({shared.length})</span>
+                      <div className="compare-keywords">
+                        {shared.map((k) => (
+                          <span key={k} className="compare-kw-tag shared">{k}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {onlyA.length > 0 && (
+                    <div className="compare-keyword-group">
+                      <span className="compare-keyword-label">仅 A ({onlyA.length})</span>
+                      <div className="compare-keywords">
+                        {onlyA.map((k) => (
+                          <span key={k} className="compare-kw-tag only-a">{k}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {onlyB.length > 0 && (
+                    <div className="compare-keyword-group">
+                      <span className="compare-keyword-label">仅 B ({onlyB.length})</span>
+                      <div className="compare-keywords">
+                        {onlyB.map((k) => (
+                          <span key={k} className="compare-kw-tag only-b">{k}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </section>
+        )}
+
 
         {/* Executive summaries */}
         {synA && synB && (

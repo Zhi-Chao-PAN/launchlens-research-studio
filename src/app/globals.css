@@ -2311,6 +2311,78 @@ a:focus-visible {
   gap: 10px;
 }
 
+/* Venn diagram */
+.compare-venn-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+.venn-svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.venn-label, .venn-count, .venn-intersect {
+  font-family: inherit;
+}
+
+/* Keyword overlap list */
+.compare-keyword-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.compare-keyword-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compare-keyword-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8888aa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.compare-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.compare-kw-tag {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.compare-kw-tag.shared {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.compare-kw-tag.only-a {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.compare-kw-tag.only-b {
+  background: rgba(236, 72, 153, 0.15);
+  color: #ec4899;
+  border-color: rgba(236, 72, 153, 0.3);
+}
+
 @media (max-width: 768px) {
   .compare-header-row {
     grid-template-columns: 1fr;
