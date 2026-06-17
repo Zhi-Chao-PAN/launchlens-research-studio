@@ -175,3 +175,154 @@ export async function checkPendingNotifications(): Promise<void> {
     }
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Notification preferences                                           */
+/* ------------------------------------------------------------------ */
+
+const PREFS_KEY = "launchlens:notif-prefs";
+
+export interface NotificationPrefs {
+  desktopEnabled: boolean;
+  soundEnabled: boolean;
+  inAppEnabled: boolean;
+  doNotDisturb: boolean;
+  dndStartHour?: number; // 0-23
+  dndEndHour?: number;
+  notifyOnComplete: boolean;
+  notifyOnFailure: boolean;
+  notifyOnStar: boolean;
+}
+
+const DEFAULT_PREFS: NotificationPrefs = {
+  desktopEnabled: true,
+  soundEnabled: false,
+  inAppEnabled: true,
+  doNotDisturb: false,
+  notifyOnComplete: true,
+  notifyOnFailure: true,
+  notifyOnStar: false,
+};
+
+export function getNotificationPrefs(): NotificationPrefs {
+  if (typeof localStorage === "undefined") return { ...DEFAULT_PREFS };
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return { ...DEFAULT_PREFS };
+    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+  } catch { return { ...DEFAULT_PREFS }; }
+}
+
+export function updateNotificationPrefs(prefs: Partial<NotificationPrefs>): NotificationPrefs {
+  const merged = { ...getNotificationPrefs(), ...prefs };
+  if (typeof localStorage !== "undefined") {
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(merged)); } catch {}
+  }
+  return merged;
+}
+
+export function isInDNDWindow(): boolean {
+  const prefs = getNotificationPrefs();
+  if (!prefs.doNotDisturb || prefs.dndStartHour === undefined || prefs.dndEndHour === undefined) return false;
+  const hour = new Date().getHours();
+  if (prefs.dndStartHour <= prefs.dndEndHour) {
+    return hour >= prefs.dndStartHour && hour < prefs.dndEndHour;
+  } else {
+    return hour >= prefs.dndStartHour || hour < prefs.dndEndHour;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notification history                                               */
+/* ------------------------------------------------------------------ */
+
+const HISTORY_KEY = "launchlens:notif-history";
+const MAX_HISTORY = 100;
+
+export interface HistoryEntry {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  runId?: string;
+  seen: boolean;
+  createdAt: string;
+}
+
+export function getNotificationHistory(): HistoryEntry[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export function recordNotificationHistory(entry: Omit<HistoryEntry, "id" | "seen" | "createdAt">): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const history = getNotificationHistory();
+    history.unshift({
+      id: "notif_" + Date.now().toString(36),
+      seen: false,
+      createdAt: new Date().toISOString(),
+      ...entry,
+    });
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  } catch {}
+}
+
+export function markNotificationSeen(id: string): void {
+  const history = getNotificationHistory();
+  const entry = history.find((e) => e.id === id);
+  if (entry) entry.seen = true;
+  if (typeof localStorage !== "undefined") {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
+  }
+}
+
+export function markAllNotificationsSeen(): number {
+  const history = getNotificationHistory();
+  let count = 0;
+  for (const e of history) { if (!e.seen) { e.seen = true; count++; } }
+  if (typeof localStorage !== "undefined") {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch {}
+  }
+  return count;
+}
+
+export function getUnreadNotificationCount(): number {
+  return getNotificationHistory().filter((e) => !e.seen).length;
+}
+
+export function clearNotificationHistory(): void {
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem(HISTORY_KEY);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Bulk operations                                                    */
+/* ------------------------------------------------------------------ */
+
+export function clearAllPendingNotifications(): number {
+  const pending = getPendingNotifications();
+  if (typeof localStorage !== "undefined") {
+    try { localStorage.setItem(PENDING_KEY, "[]"); } catch {}
+  }
+  return pending.length;
+}
+
+export function getPendingCount(): number {
+  return getPendingNotifications().length;
+}
+
+export function removeStalePendingNotifications(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
+  const pending = getPendingNotifications();
+  const now = Date.now();
+  const fresh = pending.filter((p) => now - p.createdAt < maxAgeMs);
+  const removed = pending.length - fresh.length;
+  if (removed > 0 && typeof localStorage !== "undefined") {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(fresh)); } catch {}
+  }
+  return removed;
+}
