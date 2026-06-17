@@ -109,3 +109,168 @@ export function parseSynthesis(result: string): SynthesisOutput | null {
 export function isStructuredResult(result: string): boolean {
   return parseSynthesis(result) !== null;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Validation and completeness check                                  */
+/* ------------------------------------------------------------------ */
+
+export interface ValidationIssue {
+  field: string;
+  severity: "error" | "warning";
+  message: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+  completenessScore: number; // 0-100
+  missingFields: string[];
+}
+
+export function validateSynthesis(syn: Partial<SynthesisOutput>): ValidationResult {
+  const issues: ValidationIssue[] = [];
+  const missingFields: string[] = [];
+
+  const required: Array<[string, unknown]> = [
+    ["execSummary", syn.execSummary],
+    ["keyInsights", syn.keyInsights],
+    ["topThreeOpportunities", syn.topThreeOpportunities],
+    ["topThreeRisks", syn.topThreeRisks],
+    ["recommendedNextStep", syn.recommendedNextStep],
+  ];
+
+  for (const [field, val] of required) {
+    if (!val || (Array.isArray(val) && val.length === 0) || (typeof val === "string" && !val.trim())) {
+      issues.push({ field, severity: "error", message: "Missing required field: " + field });
+      missingFields.push(field);
+    }
+  }
+
+  if (syn.opportunityScore != null) {
+    if (typeof syn.opportunityScore !== "number" || syn.opportunityScore < 0 || syn.opportunityScore > 100) {
+      issues.push({ field: "opportunityScore", severity: "error", message: "Score must be 0-100" });
+    }
+  } else { missingFields.push("opportunityScore"); }
+
+  if (syn.riskScore != null) {
+    if (typeof syn.riskScore !== "number" || syn.riskScore < 0 || syn.riskScore > 100) {
+      issues.push({ field: "riskScore", severity: "error", message: "Score must be 0-100" });
+    }
+  } else { missingFields.push("riskScore"); }
+
+  if (syn.keyInsights) {
+    if (syn.keyInsights.length < 1) {
+      issues.push({ field: "keyInsights", severity: "warning", message: "Expected at least 1 insight" });
+    }
+    for (const [i, insight] of syn.keyInsights.entries()) {
+      if (!insight.confidence || !["high","medium","low"].includes(insight.confidence)) {
+        issues.push({ field: "keyInsights[" + i + "].confidence", severity: "warning", message: "Invalid confidence level" });
+      }
+    }
+  }
+
+  const totalFields = 7;
+  const filled = totalFields - missingFields.length;
+  const completenessScore = Math.round((filled / totalFields) * 100);
+
+  return {
+    valid: issues.filter((i) => i.severity === "error").length === 0,
+    issues,
+    completenessScore,
+    missingFields,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Score interpretation and recommendations                           */
+/* ------------------------------------------------------------------ */
+
+export interface ScoreInterpretation {
+  opportunityLabel: string;
+  riskLabel: string;
+  netScore: number;
+  verdict: "strong-buy" | "positive" | "neutral" | "cautious" | "high-risk";
+  summary: string;
+}
+
+export function interpretScores(opportunityScore: number, riskScore: number): ScoreInterpretation {
+  const netScore = opportunityScore - riskScore;
+  const opportunityLabel = opportunityScore >= 75 ? "Very High" : opportunityScore >= 50 ? "High" : opportunityScore >= 25 ? "Moderate" : "Low";
+  const riskLabel = riskScore >= 75 ? "Very High" : riskScore >= 50 ? "High" : riskScore >= 25 ? "Moderate" : "Low";
+  let verdict: ScoreInterpretation["verdict"];
+  let summary: string;
+  if (netScore >= 40) { verdict = "strong-buy"; summary = "Strong opportunity significantly outweighs risk; recommend aggressive exploration."; }
+  else if (netScore >= 15) { verdict = "positive"; summary = "Opportunity exceeds risk; recommend proceeding with due diligence."; }
+  else if (netScore >= -15) { verdict = "neutral"; summary = "Balanced opportunity and risk; recommend careful consideration."; }
+  else if (netScore >= -40) { verdict = "cautious"; summary = "Risk exceeds opportunity; recommend mitigation before proceeding."; }
+  else { verdict = "high-risk"; summary = "High risk dominates; recommend avoiding or rethinking approach."; }
+  return { opportunityLabel, riskLabel, netScore, verdict, summary };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Section extraction and word count                                  */
+/* ------------------------------------------------------------------ */
+
+export interface SectionStats {
+  name: string;
+  wordCount: number;
+  charCount: number;
+  populated: boolean;
+}
+
+export function getSectionStats(syn: SynthesisOutput): SectionStats[] {
+  const sections: Array<{ name: string; text: string }> = [
+    { name: "execSummary", text: syn.execSummary || "" },
+    { name: "keyInsights", text: (syn.keyInsights || []).map((k) => k.insight).join(" ") },
+    { name: "opportunities", text: (syn.topThreeOpportunities || []).map((o) => o.title + " " + o.description + " " + o.rationale).join(" ") },
+    { name: "risks", text: (syn.topThreeRisks || []).map((r) => r.title + " " + r.description + " " + r.mitigation).join(" ") },
+    { name: "nextStep", text: syn.recommendedNextStep || "" },
+    { name: "brief", text: syn.launchlensBrief || "" },
+  ];
+  return sections.map((s) => ({
+    name: s.name,
+    wordCount: s.text.trim() ? s.text.trim().split(/\s+/).length : 0,
+    charCount: s.text.length,
+    populated: s.text.trim().length > 0,
+  }));
+}
+
+/* ------------------------------------------------------------------ */
+/*  Summary / quick glance                                             */
+/* ------------------------------------------------------------------ */
+
+export interface SynthesisSummary {
+  headline: string;
+  topInsight: string;
+  topOpportunity: string;
+  topRisk: string;
+  nextStep: string;
+  verdict: string;
+}
+
+export function summarizeSynthesis(syn: SynthesisOutput): SynthesisSummary {
+  const verdict = interpretScores(syn.opportunityScore, syn.riskScore);
+  return {
+    headline: syn.execSummary.slice(0, 120),
+    topInsight: syn.keyInsights[0]?.insight || "No insights available",
+    topOpportunity: syn.topThreeOpportunities[0]?.title || "N/A",
+    topRisk: syn.topThreeRisks[0]?.title || "N/A",
+    nextStep: syn.recommendedNextStep || "N/A",
+    verdict: verdict.summary,
+  };
+}
+
+export function countCitations(syn: SynthesisOutput): number {
+  return syn.citations?.length || 0;
+}
+
+export function getConfidenceDistribution(syn: SynthesisOutput): { high: number; medium: number; low: number } {
+  const dist = { high: 0, medium: 0, low: 0 };
+  for (const k of syn.keyInsights || []) {
+    if (k.confidence === "high") dist.high++;
+    else if (k.confidence === "medium") dist.medium++;
+    else dist.low++;
+  }
+  return dist;
+}
+
