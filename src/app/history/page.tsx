@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getFolder, getFolders, bulkAddRunsToFolder } from "@/lib/research/folders";
 import { getStarredRunIds, isRunStarred } from "@/lib/research/starred";
 import { HistoryItemSkeleton } from "@/components/skeleton/Skeleton";
-import { getAllTags, getRunTags, getTagDetails, bulkAddTags, type RunTag } from "@/lib/research/tags";
+import { getAllTags, getRunTags, getTagDetails, bulkAddTags, bulkRemoveTags, type RunTag } from "@/lib/research/tags";
 import { useToast } from "@/components/toast/ToastContext";
 import { UndoManager } from "@/lib/utils/undo-manager";
 
@@ -42,6 +42,8 @@ export default function HistoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [showMoveFolderMenu, setShowMoveFolderMenu] = useState(false);
+  const [showBulkTagMenu, setShowBulkTagMenu] = useState(false);
+  const [tagRevision, setTagRevision] = useState(0);
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const { showToast, dismissToast } = useToast();
@@ -282,7 +284,40 @@ export default function HistoryPage() {
     // Show a quick success indicator via browser notification or just close
     console.log(`Added ${added} run(s) to folder`);
     clearSelection();
+  }
+
+  // Bulk tag actions
+  const handleBulkAddTags = (tagIds: string[]) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setBulkActionLoading(true);
+    try {
+      bulkAddTags(ids, tagIds);
+      showToast(`Added ${tagIds.length} tag(s) to ${ids.length} research runs`, "success");
+      setShowBulkTagMenu(false);
+      setTagRevision(r => r + 1);
+    } catch {
+      showToast("Failed to add tags", "error");
+    } finally {
+      setBulkActionLoading(false);
+    }
   };
+
+  const handleBulkRemoveTags = (tagIds: string[]) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setBulkActionLoading(true);
+    try {
+      bulkRemoveTags(ids, tagIds);
+      showToast(`Removed ${tagIds.length} tag(s) from ${ids.length} research runs`, "success");
+      setShowBulkTagMenu(false);
+      setTagRevision(r => r + 1);
+    } catch {
+      showToast("Failed to remove tags", "error");
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };;
 
   return (
     <div className="history-page">
@@ -466,7 +501,34 @@ export default function HistoryPage() {
               >
                 📤 Export
               </button>
-              <button
+              <div className="history-bulk-tag-menu">
+  <button
+    className="btn btn-sm btn-secondary"
+    onClick={() => setShowBulkTagMenu(!showBulkTagMenu)}
+    disabled={bulkActionLoading}
+  >
+    🏷 Add tags
+    {showBulkTagMenu && (
+      <div className="history-tag-dropdown">
+        {allTags.length === 0 ? (
+          <div className="history-tag-dropdown-empty">No tags yet</div>
+        ) : (
+          allTags.map((tag) => (
+            <button
+              key={tag.id}
+              className="history-tag-dropdown-item"
+              onClick={() => handleBulkAddTags([tag.id])}
+            >
+              <span className="history-tag-dot" style={{ background: tag.color || "#6366f1" }} />
+              {tag.name}
+            </button>
+          ))
+        )}
+      </div>
+    )}
+  </button>
+</div>
+<button
                 className="btn btn-sm btn-danger"
                 onClick={handleBulkDelete}
                 disabled={bulkActionLoading}
