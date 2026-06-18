@@ -4,6 +4,7 @@ import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
 import { snapshotFlips } from "@/lib/utils/flip-history";
 import { getRecentRequests } from "@/lib/telemetry/request-log";
 import { selectProvider } from "@/lib/providers/provider-registry";
+import { getSchedulerStats, listSchedules } from "@/lib/research/scheduler";
 import packageJson from "../../../package.json";
 
 function pct(x: number): string {
@@ -58,6 +59,8 @@ export default function DiagnosticsPage() {
     version: packageJson.version,
     renderedAt: formatTimestamp(NOW),
   };
+  const schedulerStats = getSchedulerStats();
+  const schedules = listSchedules().slice(0, 5);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8">
@@ -93,6 +96,34 @@ export default function DiagnosticsPage() {
             </p>
           </div>
         </section>
+
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Schedules</p>
+            <p className="text-lg font-semibold text-slate-800 mt-1">{schedulerStats.total} defined</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {schedulerStats.active} active, {schedulerStats.paused} paused, {schedulerStats.totalRuns} total runs
+            </p>
+            {schedulerStats.nextRunAt ? (
+              <p className="text-xs text-slate-500 mt-1">next run: {formatTimestamp(schedulerStats.nextRunAt)}</p>
+            ) : null}
+        </section>
+
+        {schedules.length > 0 ? (
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-slate-800 mb-3">Upcoming schedules</h2>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {schedules.map((sch: any) => (
+                <li key={sch.id} className="py-2 flex items-center justify-between">
+                  <span className="font-medium text-slate-700">{sch.name}</span>
+                  <span className="text-slate-500 text-xs">
+                    {sch.status} | {sch.totalRuns} runs
+                    {sch.nextRunAt ? " | next " + formatTimestamp(sch.nextRunAt) : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <h2 className="text-lg font-semibold text-slate-800 mb-3">Provider breakdown</h2>
