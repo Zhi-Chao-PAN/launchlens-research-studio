@@ -361,7 +361,7 @@ export function diffInsightConfidence(
 export type DiffSeverity = "minor" | "moderate" | "major";
 
 export function getDiffSeverity(diff: ResearchDiff): DiffSeverity {
-  const { totalChanges, added, removed, modified } = diff.summary;
+  const { added, removed, modified } = diff.summary;
 
   // Score-based assessment
   let score = 0;
@@ -667,4 +667,212 @@ export function diffResearchExtended(
     confidenceChanges,
     severity,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Extended diff utilities (round 141)                               */
+/* ------------------------------------------------------------------ */
+
+export interface DiffTimelineEntry {
+  id: string;
+  timestamp: string;
+  label?: string;
+  diff: ResearchDiff;
+}
+
+export function createTimelineEntry(
+  diff: ResearchDiff,
+  label?: string,
+): DiffTimelineEntry {
+  return {
+    id: Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    timestamp: new Date().toISOString(),
+    label,
+    diff,
+  };
+}
+
+export interface DiffTimelineSummary {
+  totalEntries: number;
+  opportunityTrend: number[];
+  riskTrend: number[];
+  netChangesOverTime: Array<{ timestamp: string; totalChanges: number; severity: DiffSeverity }>;
+  mostChangedField?: string;
+}
+
+export function summarizeTimeline(entries: DiffTimelineEntry[]): DiffTimelineSummary {
+  const oppTrend: number[] = [];
+  const riskTrend: number[] = [];
+  const netChanges: Array<{ timestamp: string; totalChanges: number; severity: DiffSeverity }> = [];
+  const fieldChanges = new Map<string, number>();
+  let oppAcc = 0, riskAcc = 0;
+
+  for (const e of entries) {
+    oppAcc += e.diff.scoreChanges.opportunityScore;
+    riskAcc += e.diff.scoreChanges.riskScore;
+    oppTrend.push(oppAcc);
+    riskTrend.push(riskAcc);
+    netChanges.push({
+      timestamp: e.timestamp,
+      totalChanges: e.diff.summary.totalChanges,
+      severity: getDiffSeverity(e.diff),
+    });
+    fieldChanges.set("insights", (fieldChanges.get("insights") || 0) + e.diff.insights.added.length);
+    fieldChanges.set("insights", (fieldChanges.get("insights") || 0) + e.diff.insights.removed.length);
+    fieldChanges.set("opportunities", (fieldChanges.get("opportunities") || 0) + e.diff.opportunities.added.length);
+    fieldChanges.set("opportunities", (fieldChanges.get("opportunities") || 0) + e.diff.opportunities.removed.length);
+    fieldChanges.set("risks", (fieldChanges.get("risks") || 0) + e.diff.risks.added.length);
+    fieldChanges.set("risks", (fieldChanges.get("risks") || 0) + e.diff.risks.removed.length);
+    if (e.diff.nextStepChanged) fieldChanges.set("nextStep", (fieldChanges.get("nextStep") || 0) + 1);
+  }
+
+  let mostChangedField: string | undefined;
+  let maxCount = 0;
+  for (const [f, c] of fieldChanges) {
+    if (c > maxCount) { maxCount = c; mostChangedField = f; }
+  }
+
+  return {
+    totalEntries: entries.length,
+    opportunityTrend: oppTrend,
+    riskTrend: riskTrend,
+    netChangesOverTime: netChanges,
+    mostChangedField,
+  };
+}
+
+export function reverseDiff(diff: ResearchDiff): ResearchDiff {
+  return {
+    scoreChanges: {
+      opportunityScore: -diff.scoreChanges.opportunityScore,
+      riskScore: -diff.scoreChanges.riskScore,
+    },
+    insights: {
+      added: diff.insights.removed,
+      removed: diff.insights.added,
+      modified: diff.insights.modified.map(m => ({ old: m.new, new: m.old, similarity: m.similarity })),
+    },
+    opportunities: {
+      added: diff.opportunities.removed,
+      removed: diff.opportunities.added,
+      modified: diff.opportunities.modified.map(m => ({ old: m.new, new: m.old })),
+    },
+    risks: {
+      added: diff.risks.removed,
+      removed: diff.risks.added,
+      modified: diff.risks.modified.map(m => ({ old: m.new, new: m.old })),
+    },
+    nextStepChanged: diff.nextStepChanged,
+    oldNextStep: diff.newNextStep,
+    newNextStep: diff.oldNextStep,
+    summary: {
+      totalChanges: diff.summary.totalChanges,
+      added: diff.summary.removed,
+      removed: diff.summary.added,
+      modified: diff.summary.modified,
+    },
+  };
+}
+
+export function diffToJson(diff: ResearchDiff, meta?: { oldLabel?: string; newLabel?: string }): string {
+  return JSON.stringify({
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    meta: meta || {},
+    severity: getDiffSeverity(diff),
+    diff,
+  }, null, 2);
+}
+
+export interface OneLineSummaryOptions {
+  includeScores?: boolean;
+  maxItems?: number;
+}
+
+export function diffToOneLine(diff: ResearchDiff, opts: OneLineSummaryOptions = {}): string {
+  const incScores = opts.includeScores !== false;
+  const parts: string[] = [];
+  const s = diff.summary;
+  parts.push(s.added + " added");
+  parts.push(s.removed + " removed");
+  if (s.modified) parts.push(s.modified + " modified");
+  let result = parts.join(", ");
+  if (incScores) {
+    const od = formatDelta(diff.scoreChanges.opportunityScore);
+    const rd = formatDelta(diff.scoreChanges.riskScore);
+    result += " (opp:" + od + " risk:" + rd + ")";
+  }
+  if (diff.nextStepChanged) result += ", next step changed";
+  return result;
+}
+
+export function applyPatch(base: string, segments: WordDiffSegment[]): string {
+  let out = "";
+  for (const seg of segments) {
+    if (seg.type === "added" || seg.type === "unchanged") out += seg.text;
+  }
+  return out;
+}
+
+export interface ChangeHotspot {
+  field: string;
+  changeCount: number;
+  shareOfTotal: number;
+}
+
+export function findChangeHotspots(diff: ResearchDiff): ChangeHotspot[] {
+  const counts: Array<{ field: string; count: number }> = [
+    { field: "insights", count: diff.insights.added.length + diff.insights.removed.length + diff.insights.modified.length },
+    { field: "opportunities", count: diff.opportunities.added.length + diff.opportunities.removed.length + diff.opportunities.modified.length },
+    { field: "risks", count: diff.risks.added.length + diff.risks.removed.length + diff.risks.modified.length },
+    { field: "nextStep", count: diff.nextStepChanged ? 1 : 0 },
+    { field: "scores", count: (diff.scoreChanges.opportunityScore !== 0 || diff.scoreChanges.riskScore !== 0) ? 1 : 0 },
+  ];
+  const total = counts.reduce((a, c) => a + c.count, 0) || 1;
+  return counts
+    .filter(c => c.count > 0)
+    .map(c => ({ field: c.field, changeCount: c.count, shareOfTotal: Math.round((c.count / total) * 100) }))
+    .sort((a, b) => b.changeCount - a.changeCount);
+}
+
+export function isEmptyDiff(diff: ResearchDiff): boolean {
+  return diff.summary.totalChanges === 0
+    && diff.scoreChanges.opportunityScore === 0
+    && diff.scoreChanges.riskScore === 0;
+}
+
+export function mergeDiffs(diffs: ResearchDiff[]): ResearchDiff {
+  const base: ResearchDiff = {
+    scoreChanges: { opportunityScore: 0, riskScore: 0 },
+    insights: { added: [], removed: [], modified: [] },
+    opportunities: { added: [], removed: [], modified: [] },
+    risks: { added: [], removed: [], modified: [] },
+    nextStepChanged: false,
+    summary: { totalChanges: 0, added: 0, removed: 0, modified: 0 },
+  };
+  let latestNextStep: { old?: string; new?: string } = {};
+  for (const d of diffs) {
+    base.scoreChanges.opportunityScore += d.scoreChanges.opportunityScore;
+    base.scoreChanges.riskScore += d.scoreChanges.riskScore;
+    base.insights.added.push(...d.insights.added);
+    base.insights.removed.push(...d.insights.removed);
+    base.insights.modified.push(...d.insights.modified);
+    base.opportunities.added.push(...d.opportunities.added);
+    base.opportunities.removed.push(...d.opportunities.removed);
+    base.opportunities.modified.push(...d.opportunities.modified);
+    base.risks.added.push(...d.risks.added);
+    base.risks.removed.push(...d.risks.removed);
+    base.risks.modified.push(...d.risks.modified);
+    if (d.nextStepChanged) {
+      base.nextStepChanged = true;
+      latestNextStep = { old: d.oldNextStep, new: d.newNextStep };
+    }
+    base.summary.totalChanges += d.summary.totalChanges;
+    base.summary.added += d.summary.added;
+    base.summary.removed += d.summary.removed;
+    base.summary.modified += d.summary.modified;
+  }
+  base.oldNextStep = latestNextStep.old;
+  base.newNextStep = latestNextStep.new;
+  return base;
 }

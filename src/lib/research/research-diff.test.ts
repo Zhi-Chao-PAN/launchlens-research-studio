@@ -9,6 +9,15 @@ import {
   wordDiff,
   diffToMarkdown,
   diffResearchExtended,
+createTimelineEntry,
+  summarizeTimeline,
+  reverseDiff,
+  diffToJson,
+  diffToOneLine,
+  applyPatch,
+  findChangeHotspots,
+  isEmptyDiff,
+  mergeDiffs,
 } from "@/lib/research/research-diff";
 import type { SynthesisOutput } from "@/lib/research/synthesis-parser";
 
@@ -439,5 +448,154 @@ describe("diffResearchExtended", () => {
 
     expect(diff.severity).toBeDefined();
     expect(["minor", "moderate", "major"]).toContain(diff.severity);
+  });
+});
+
+
+describe("extended diff utilities (round 141)", () => {
+  function makeDiff(overrides = {}) {
+    return {
+      scoreChanges: { opportunityScore: 5, riskScore: -3 },
+      insights: { added: ["new insight"], removed: ["old"], modified: [] },
+      opportunities: { added: [], removed: [], modified: [] },
+      risks: { added: [{ title: "R", description: "D" }], removed: [], modified: [] },
+      nextStepChanged: true,
+      oldNextStep: "old step",
+      newNextStep: "new step",
+      summary: { totalChanges: 4, added: 2, removed: 1, modified: 1 },
+      ...overrides,
+    };
+  }
+
+  describe("createTimelineEntry", () => {
+    it("returns an entry with id and timestamp", () => {
+      const e = createTimelineEntry(makeDiff(), "v2");
+      expect(e.id).toBeTruthy();
+      expect(e.timestamp).toMatch(/^\d{4}-/);
+      expect(e.label).toBe("v2");
+    });
+  });
+
+  describe("summarizeTimeline", () => {
+    it("aggregates score trends", () => {
+      const entries = [
+        createTimelineEntry(makeDiff(), "a"),
+        createTimelineEntry({ ...makeDiff(), scoreChanges: { opportunityScore: 2, riskScore: 1 } }, "b"),
+      ];
+      const s = summarizeTimeline(entries);
+      expect(s.totalEntries).toBe(2);
+      expect(s.opportunityTrend.length).toBe(2);
+      expect(s.opportunityTrend[1]).toBe(7);
+      expect(s.mostChangedField).toBeDefined();
+    });
+
+    it("returns zeros for empty timeline", () => {
+      const s = summarizeTimeline([]);
+      expect(s.totalEntries).toBe(0);
+      expect(s.opportunityTrend).toEqual([]);
+      expect(s.mostChangedField).toBeUndefined();
+    });
+  });
+
+  describe("reverseDiff", () => {
+    it("flips added/removed and score signs", () => {
+      const d = makeDiff();
+      const r = reverseDiff(d);
+      expect(r.scoreChanges.opportunityScore).toBe(-5);
+      expect(r.insights.added).toEqual(["old"]);
+      expect(r.insights.removed).toEqual(["new insight"]);
+      expect(r.oldNextStep).toBe("new step");
+      expect(r.newNextStep).toBe("old step");
+      expect(r.summary.added).toBe(1);
+      expect(r.summary.removed).toBe(2);
+    });
+  });
+
+  describe("diffToJson", () => {
+    it("produces parseable JSON with version and severity", () => {
+      const d = makeDiff();
+      const j = diffToJson(d, { oldLabel: "v1", newLabel: "v2" });
+      const parsed = JSON.parse(j);
+      expect(parsed.version).toBe(1);
+      expect(parsed.severity).toBeDefined();
+      expect(parsed.meta.oldLabel).toBe("v1");
+    });
+  });
+
+  describe("diffToOneLine", () => {
+    it("contains counts and scores", () => {
+      const d = makeDiff();
+      const line = diffToOneLine(d);
+      expect(line).toContain("added");
+      expect(line).toContain("opp:+5");
+      expect(line).toContain("next step changed");
+    });
+
+    it("omits scores when requested", () => {
+      const line = diffToOneLine(makeDiff(), { includeScores: false });
+      expect(line).not.toContain("opp:");
+    });
+  });
+
+  describe("applyPatch", () => {
+    it("applies added and unchanged, drops removed", () => {
+      const segs = [
+        { type: "unchanged", text: "hello " },
+        { type: "removed", text: "old " },
+        { type: "added", text: "new " },
+        { type: "unchanged", text: "world" },
+      ];
+      expect(applyPatch("hello old world", segs)).toBe("hello new world");
+    });
+  });
+
+  describe("findChangeHotspots", () => {
+    it("identifies dominant field", () => {
+      const d = makeDiff();
+      const h = findChangeHotspots(d);
+      expect(h.length).toBeGreaterThan(0);
+      const top = h[0];
+      expect(top.changeCount).toBeGreaterThan(0);
+      expect(top.shareOfTotal).toBeGreaterThan(0);
+    });
+  });
+
+  describe("isEmptyDiff", () => {
+    it("returns true when zero changes and zero score delta", () => {
+      expect(isEmptyDiff({
+        scoreChanges: { opportunityScore: 0, riskScore: 0 },
+        insights: { added: [], removed: [], modified: [] },
+        opportunities: { added: [], removed: [], modified: [] },
+        risks: { added: [], removed: [], modified: [] },
+        nextStepChanged: false,
+        summary: { totalChanges: 0, added: 0, removed: 0, modified: 0 },
+      })).toBe(true);
+    });
+
+    it("returns false when any change exists", () => {
+      expect(isEmptyDiff(makeDiff())).toBe(false);
+    });
+  });
+
+  describe("mergeDiffs", () => {
+    it("sums scores and concatenates lists", () => {
+      const a = makeDiff();
+      const b = {
+        ...makeDiff(),
+        scoreChanges: { opportunityScore: 10, riskScore: -1 },
+        insights: { added: ["x"], removed: [], modified: [] },
+      };
+      const m = mergeDiffs([a, b]);
+      expect(m.scoreChanges.opportunityScore).toBe(15);
+      expect(m.insights.added).toContain("new insight");
+      expect(m.insights.added).toContain("x");
+      expect(m.summary.totalChanges).toBe(8);
+      expect(m.nextStepChanged).toBe(true);
+    });
+
+    it("returns base for empty list", () => {
+      const m = mergeDiffs([]);
+      expect(m.summary.totalChanges).toBe(0);
+    });
   });
 });
