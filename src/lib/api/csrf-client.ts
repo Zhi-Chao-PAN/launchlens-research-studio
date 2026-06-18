@@ -186,3 +186,37 @@ export async function fetchWithCsrfStrict(
   }
   return res;
 }
+
+
+/* ------------------------------------------------------------------ */
+/*  Human-friendly API error formatting (round 188)                   */
+/* ------------------------------------------------------------------ */
+
+export interface ApiErrorFormatOptions {
+  /** Prefix shown before the reason (e.g. "Failed to start research: ..."). */
+  prefix?: string;
+  /** Override for rate-limit message; receives seconds. */
+  rateLimitLabel?: (seconds: number) => string;
+}
+
+/**
+ * Turn a thrown value from fetchWithCsrfStrict (Response, Error, RateLimitError, TypeError, ...)
+ * into a single human-readable string. Callers only need one catch block.
+ */
+export function formatApiError(err: unknown, opts: ApiErrorFormatOptions = {}): string {
+  const prefix = opts.prefix ? opts.prefix + " " : "";
+  if (err instanceof RateLimitError) {
+    const sec = Math.max(1, Math.ceil(err.retryAfterMs / 1000));
+    if (opts.rateLimitLabel) return prefix + opts.rateLimitLabel(sec);
+    return prefix + "Too many requests. Please wait " + sec + "s before trying again.";
+  }
+  if (err instanceof TypeError && /failed to fetch|network/i.test(err.message)) {
+    return prefix + "Network error. Please check your connection and try again.";
+  }
+  if (err instanceof Error) {
+    // Error from parseApiError or similar: use the message directly
+    return prefix + err.message;
+  }
+  if (typeof err === "string") return prefix + err;
+  return prefix + "An unexpected error occurred.";
+}

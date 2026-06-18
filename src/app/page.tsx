@@ -31,7 +31,7 @@ import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 export default function Home() {
   useFreezeMode();
   const { t } = useLocale();
-  const { state, startResearch, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
+  const { state, startResearch, cancel, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
   const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;

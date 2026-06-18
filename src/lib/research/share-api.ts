@@ -18,49 +18,70 @@ export function buildShareUrl(token: string): string {
   return `${window.location.origin}/share/${token}`;
 }
 
+export interface CopyShareResult {
+  ok: boolean;
+  url?: string;
+  token?: string;
+  copied: boolean;
+  error?: string;
+}
+
 /**
- * Create a share token for a run and copy the URL to clipboard.
- * Returns true on success.
+ * Create a share token for a run and copy the URL to the clipboard.
+ * Returns structured result so callers can show the URL on copy failure.
  */
-export async function copyShareUrl(
+export async function createShareAndCopyUrl(
   runId: string,
   options: { expiresInMs?: number; maxViews?: number } = {},
-): Promise<boolean> {
+): Promise<CopyShareResult> {
   try {
-    const res = await fetchWithCsrf(SHARE_API_BASE, { method: "POST",
+    const res = await fetchWithCsrf(SHARE_API_BASE, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        runId,
-        ...options,
-      }),
+      body: JSON.stringify({ runId, ...options }),
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      let reason = "HTTP " + res.status;
+      try { const body = await res.json(); if (body?.error) reason = String(body.error); } catch { /* no body */ }
+      return { ok: false, copied: false, error: reason };
+    }
 
     const data = await res.json();
     const url = buildShareUrl(data.token);
 
+    let copied = false;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(url);
-      return true;
+      try { await navigator.clipboard.writeText(url); copied = true; } catch { copied = false; }
     }
-
-    // Fallback
-    const textarea = document.createElement("textarea");
-    textarea.value = url;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return true;
-  } catch {
-    return false;
+    if (!copied) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch { copied = false; }
+    }
+    return { ok: true, url, token: data.token, copied };
+  } catch (e) {
+    return { ok: false, copied: false, error: e instanceof Error ? e.message : "Failed to create share link" };
   }
 }
 
-/**
- * Create a share token with options. Returns the share data or null on failure.
- */
+/** Back-compat: returns true when share is created AND URL is copied to clipboard. */
+export async function copyShareUrl(
+  runId: string,
+  options: { expiresInMs?: number; maxViews?: number } = {},
+): Promise<boolean> {
+  const r = await createShareAndCopyUrl(runId, options);
+  return r.ok && r.copied;
+}
+
 export async function createShareWithOptions(
   runId: string,
   options: { expiresInMs?: number; maxViews?: number } = {},

@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
-﻿"use client";
+"use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
@@ -9,7 +8,7 @@ export interface ResearchStudioState {
   sessionId: string | null;
   query: string;
   keywords: string[];
-  status: "idle" | "loading" | "running" | "completed" | "error";
+  status: "idle" | "loading" | "running" | "completed" | "error" | "cancelling";
   agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>;
   agentOutputs: Record<AgentId, AgentOutput | null>;
   activeAgentTab: AgentId;
@@ -75,6 +74,7 @@ export function useResearchStudio() {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const closeEventSource = useCallback(() => {
     if (eventSourceRef.current) {
@@ -305,7 +305,17 @@ export function useResearchStudio() {
     setState((prev) => ({ ...prev, activeAgentTab: agentId }));
   }, []);
 
+  const cancel = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = null;
+    closeEventSource();
+    sessionIdRef.current = null;
+    setState((prev) => ({ ...prev, status: "idle", error: null }));
+  }, [closeEventSource]);
+
   const reset = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = null;
     closeEventSource();
     sessionIdRef.current = null;
     setState(initialState);
@@ -320,6 +330,7 @@ export function useResearchStudio() {
   return {
     state,
     startResearch,
+    cancel,
     setActiveAgentTab,
     reset,
     allAgentIds: ALL_AGENT_IDS,
@@ -390,7 +401,7 @@ export function computeStudioProgress(
   };
 }
 
-export type StudioPhase = "idle" | "loading" | "running" | "completed" | "error" | "mixed";
+export type StudioPhase = "idle" | "loading" | "running" | "completed" | "error" | "mixed" | "cancelling";
 
 /** Derive human-friendly phase from state/agents. */
 export function deriveStudioPhase(state: Pick<ResearchStudioState, "status" | "agents">): StudioPhase {
