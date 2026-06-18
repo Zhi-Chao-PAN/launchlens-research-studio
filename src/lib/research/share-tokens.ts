@@ -480,3 +480,156 @@ export function _resetShareTokens(): void {
   shareTokens.clear();
   persistShares();
 }
+
+/* ------------------------------------------------------------------ */
+/*  Pure share helpers (round 158) — side-effect free                 */
+/* ------------------------------------------------------------------ */
+
+export type ShareHealth = "active" | "expired" | "maxed" | "revoked";
+
+export interface ShareSummary {
+  token: string;
+  runId: string;
+  type: "run" | "folder" | "password";
+  health: ShareHealth;
+  viewsRemaining: number | null;
+  msRemaining: number | null;
+  ageMs: number;
+  hasPassword: boolean;
+  name: string;
+}
+
+export function getShareType(share: ShareToken): "run" | "folder" | "password" {
+  if (isFolderShare(share)) return "folder";
+  if (isPasswordProtected(share)) return "password";
+  return "run";
+}
+
+/** Pure check of health, does NOT mutate the in-memory store. */
+export function getShareHealth(share: ShareToken, nowMs: number = Date.now()): ShareHealth {
+  if (share.revoked) return "revoked";
+  if (share.expiresAt && nowMs > share.expiresAt) return "expired";
+  if (share.maxViews != null && share.views >= share.maxViews) return "maxed";
+  return "active";
+}
+
+export function shareRemainingMs(share: ShareToken, nowMs: number = Date.now()): number | null {
+  if (share.revoked || !share.expiresAt) return null;
+  return Math.max(0, share.expiresAt - nowMs);
+}
+
+export function shareViewsRemaining(share: ShareToken): number | null {
+  if (share.maxViews == null) return null;
+  return Math.max(0, share.maxViews - share.views);
+}
+
+export function summarizeShareToken(
+  share: ShareToken,
+  nowMs: number = Date.now(),
+): ShareSummary {
+  return {
+    token: share.token,
+    runId: share.runId,
+    type: getShareType(share),
+    health: getShareHealth(share, nowMs),
+    viewsRemaining: shareViewsRemaining(share),
+    msRemaining: shareRemainingMs(share, nowMs),
+    ageMs: Math.max(0, nowMs - share.createdAt),
+    hasPassword: isPasswordProtected(share),
+    name: share.name || "",
+  };
+}
+
+export interface ShareBatchSummary {
+  total: number;
+  active: number;
+  expired: number;
+  maxed: number;
+  revoked: number;
+  totalViews: number;
+  folderShares: number;
+  passwordShares: number;
+  runShares: number;
+}
+
+export function summarizeShares(shares: ShareToken[], nowMs: number = Date.now()): ShareBatchSummary {
+  const out: ShareBatchSummary = { total: shares.length, active: 0, expired: 0, maxed: 0, revoked: 0, totalViews: 0, folderShares: 0, passwordShares: 0, runShares: 0 };
+  for (const s of shares) {
+    out.totalViews += s.views;
+    const t = getShareType(s);
+    if (t === "folder") out.folderShares++;
+    else if (t === "password") out.passwordShares++;
+    else out.runShares++;
+    out[getShareHealth(s, nowMs)]++;
+  }
+  return out;
+}
+
+/** Validate create options without writing state. Throws on invalid input. */
+export function validateShareOptions(opts: { expiresInMs?: number; maxViews?: number; name?: string } = {}): { expiresInMs?: number; maxViews?: number; name?: string } {
+  const o: any = { ...opts };
+  if (o.expiresInMs !== undefined) {
+    if (typeof o.expiresInMs !== "number" || !Number.isFinite(o.expiresInMs) || o.expiresInMs <= 0) {
+      throw new Error("expiresInMs must be a positive number");
+    }
+    o.expiresInMs = Math.max(60_000, Math.min(o.expiresInMs, 365 * 24 * 60 * 60 * 1000));
+  }
+  if (o.maxViews !== undefined) {
+    if (!Number.isInteger(o.maxViews) || o.maxViews < 1) throw new Error("maxViews must be a positive integer");
+    o.maxViews = Math.max(1, Math.min(o.maxViews, 100_000));
+  }
+  if (o.name !== undefined) o.name = String(o.name).trim().slice(0, 120);
+  return o;
+}
+
+/** CSV export of shares. */
+export function sharesToCsv(shares: ShareToken[], nowMs: number = Date.now()): string {
+  const header = "token,runId,type,health,views,maxViews,viewsRemaining,msRemaining,createdAt,expiresAt,revoked,name";
+  const rows = shares.map((s) => {
+    const sum = summarizeShareToken(s, nowMs);
+    return [
+      s.token, s.runId, sum.type, sum.health, s.views, s.maxViews ?? "",
+      sum.viewsRemaining ?? "", sum.msRemaining ?? "", s.createdAt, s.expiresAt ?? "",
+      s.revoked ? 1 : 0, JSON.stringify(sum.name),
+    ].join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
+/** Deep structural equality for shares (ignores in-memory identity). */
+export function sharesEqual(a: ShareToken, b: ShareToken): boolean {
+  if (a.token !== b.token || a.runId !== b.runId) return false;
+  if (a.createdAt !== b.createdAt || a.expiresAt !== b.expiresAt) return false;
+  if (a.views !== b.views || a.maxViews !== b.maxViews) return false;
+  if (a.revoked !== b.revoked) return false;
+  if ((a.name || "") !== (b.name || "")) return false;
+  if ((a.description || "") !== (b.description || "")) return false;
+  if (isFolderShare(a) !== isFolderShare(b)) return false;
+  if (isFolderShare(a) && isFolderShare(b)) {
+    if ((a as any).folderId !== (b as any).folderId) return false;
+    if ((a as any).includeNotes !== (b as any).includeNotes) return false;
+  }
+  if (isPasswordProtected(a) !== isPasswordProtected(b)) return false;
+  if (isPasswordProtected(a) && isPasswordProtected(b)) {
+    if ((a as any).passwordHash !== (b as any).passwordHash) return false;
+  }
+  return true;
+}
+
+/** Find shares whose token/runId/name matches a term. */
+export function searchShares(shares: ShareToken[], term: string): ShareToken[] {
+  const q = term.trim().toLowerCase();
+  if (!q) return shares.slice();
+  return shares.filter((s) =>
+    s.token.toLowerCase().includes(q) ||
+    s.runId.toLowerCase().includes(q) ||
+    (s.name || "").toLowerCase().includes(q)
+  );
+}
+
+/** Returns true if a share is safe to expose in a list view (hides password hash). */
+export function toPublicShareView(share: ShareToken): Omit<ShareToken, "passwordHash"> {
+  const { passwordHash: _ph, ...rest } = share as any;
+  return rest;
+}
+
