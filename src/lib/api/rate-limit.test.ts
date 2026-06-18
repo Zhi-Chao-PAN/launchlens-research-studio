@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { checkRateLimit, clearRateLimits } from "./rate-limit";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { checkRateLimit, checkRateLimitForIp, clearRateLimits } from "./rate-limit";
+
+vi.mock("./trusted-ips", () => ({ isTrustedIp: (ip: string) => ip === "10.0.0.1" }));
 
 describe("checkRateLimit", () => {
   beforeEach(() => clearRateLimits());
@@ -32,5 +34,63 @@ describe("checkRateLimit", () => {
     expect(checkRateLimit("ip-a", cfg).allowed).toBe(true);
     expect(checkRateLimit("ip-b", cfg).allowed).toBe(true);
     expect(checkRateLimit("ip-a", cfg).allowed).toBe(false);
+  });
+
+  it("uses default 10/60s config when none supplied", () => {
+    for (let i = 0; i < 10; i++) expect(checkRateLimit("ip-default").allowed).toBe(true);
+    expect(checkRateLimit("ip-default").allowed).toBe(false);
+  });
+
+  it("resetMs is bounded within (0, refillIntervalMs] on fresh window", () => {
+    const cfg = { capacity: 2, refillIntervalMs: 5000 };
+    const r = checkRateLimit("ip-reset", cfg, 1_000_000);
+    expect(r.resetMs).toBeGreaterThan(0);
+    expect(r.resetMs).toBeLessThanOrEqual(5000);
+  });
+
+  it("returns remaining = capacity - 1 after first hit", () => {
+    const cfg = { capacity: 5, refillIntervalMs: 1000 };
+    expect(checkRateLimit("ip-rem", cfg, 0).remaining).toBe(4);
+  });
+
+  it("does not throw or grant tokens under clock skew (now < lastRefill)", () => {
+    const cfg = { capacity: 1, refillIntervalMs: 1000 };
+    expect(checkRateLimit("ip-skew", cfg, 5000).allowed).toBe(true);
+    const r = checkRateLimit("ip-skew", cfg, 1000);
+    expect(r.allowed).toBe(false);
+    expect(r.remaining).toBe(0);
+  });
+});
+
+describe("checkRateLimitForIp", () => {
+  beforeEach(() => clearRateLimits());
+
+  it("isolation is per IP (keyed by ip:<addr>)", () => {
+    for (let i = 0; i < 10; i++) checkRateLimitForIp("1.2.3.4");
+    expect(checkRateLimitForIp("1.2.3.4").allowed).toBe(false);
+    expect(checkRateLimitForIp("1.2.3.5").allowed).toBe(true);
+  });
+
+  it("bypasses limits and sets bypassed=true for trusted IPs", () => {
+    const cfg = { capacity: 1, refillIntervalMs: 60_000 };
+    expect(checkRateLimitForIp("10.0.0.1", cfg).allowed).toBe(true);
+    const second = checkRateLimitForIp("10.0.0.1", cfg);
+    expect(second.allowed).toBe(true);
+    expect(second.bypassed).toBe(true);
+    expect(second.remaining).toBe(Infinity);
+    expect(second.resetMs).toBe(0);
+  });
+
+  it("leaves bypassed unset for untrusted IPs", () => {
+    expect(checkRateLimitForIp("8.8.8.8").bypassed).toBeUndefined();
+  });
+});
+
+describe("clearRateLimits", () => {
+  it("resets all buckets", () => {
+    for (let i = 0; i < 10; i++) checkRateLimit("k1");
+    expect(checkRateLimit("k1").allowed).toBe(false);
+    clearRateLimits();
+    expect(checkRateLimit("k1").allowed).toBe(true);
   });
 });
