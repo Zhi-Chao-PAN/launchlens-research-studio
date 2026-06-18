@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
+import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
 
 interface BatchRun {
   id: string;
@@ -34,6 +35,7 @@ export default function BatchPage() {
   const [submitting, setSubmitting] = useState(false);
   const [currentBatch, setCurrentBatch] = useState<BatchInfo | null>(null);
   const [recentBatches, setRecentBatches] = useState<BatchInfo[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,29 +59,38 @@ export default function BatchPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/research/batch", {
+      const res = await fetchWithCsrfStrict("/api/research/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           queries: queryList,
           keywords: keywordList,
         }),
+        throwOnRateLimit: true,
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentBatch({
-          id: data.batchId,
-          total: data.total,
-          completed: 0,
-          failed: 0,
-          status: data.status,
-          runs: data.runs,
-          createdAt: Date.now(),
-          progress: 0,
-        });
-        setQueries("");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || ("HTTP " + res.status));
       }
+      const data = await res.json();
+      setCurrentBatch({
+        id: data.batchId,
+        total: data.total,
+        completed: 0,
+        failed: 0,
+        status: data.status,
+        runs: data.runs,
+        createdAt: Date.now(),
+        progress: 0,
+      });
+      setQueries("");
+    } catch (err) {
+      let msg = err instanceof Error ? err.message : "Failed to create batch.";
+      if (err instanceof RateLimitError) {
+        msg = "Too many batch requests. Please wait " + Math.ceil(err.retryAfterMs / 1000) + "s before trying again.";
+      }
+      setSubmitError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -197,6 +208,7 @@ export default function BatchPage() {
           >
             {submitting ? "提交中..." : "🚀 开始批量研究"}
           </button>
+          {submitError && <div className="form-error" role="alert">{submitError}</div>}
         </form>
 
         {/* Current batch status */}
