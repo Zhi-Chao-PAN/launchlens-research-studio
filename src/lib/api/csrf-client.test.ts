@@ -3,6 +3,7 @@ import {
   normalizeMethod, isCsrfSafeMethod, withCsrfHeader, isValidFetchUrl,
   buildCsrfInit, csrfErrorMessage, CSRF_HEADER, CSRF_SAFE_METHODS,
   fetchWithCsrf, fetchWithCsrfStrict, parseRateLimit, RateLimitError, invalidateCsrfToken,
+  formatApiError,
 } from "@/lib/api/csrf-client";
 
 describe("csrf-client pure helpers (round 165)", () => {
@@ -155,4 +156,26 @@ it("fetchWithCsrf passes non-GET methods through with token header", async () =>
   await fetchWithCsrf("/x", { method: "POST" });
   (globalThis as any).fetch = origFetch;
   invalidateCsrfToken();
+});
+
+
+describe("formatApiError (round 188/189)", () => {
+  it("returns user-friendly message for RateLimitError with seconds rounded up", () => {
+    const msg = formatApiError(new RateLimitError("x", 2500));
+    expect(msg).toMatch(/wait 3s/);
+  });
+  it("prefixes with supplied prefix", () => {
+    const msg = formatApiError(new Error("boom"), { prefix: "Submit failed:" });
+    expect(msg.startsWith("Submit failed: boom")).toBe(true);
+  });
+  it("detects network errors", () => {
+    const msg = formatApiError(new TypeError("Failed to fetch"));
+    expect(msg).toMatch(/Network error/);
+  });
+  it("falls back to generic message for unknown shapes", () => {
+    expect(formatApiError({ foo: 1 })).toMatch(/unexpected/i);
+  });
+  it("accepts strings directly", () => {
+    expect(formatApiError("oops")).toBe("oops");
+  });
 });

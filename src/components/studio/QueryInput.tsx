@@ -7,6 +7,7 @@ import { useResearchHistory } from "@/lib/research/history";
 
 interface QueryInputProps {
   onSubmit: (query: string, keywords: string[]) => void;
+  onCancel?: () => void;
   isLoading: boolean;
   defaultQuery?: string;
   defaultKeywords?: string[];
@@ -28,7 +29,7 @@ const QUERY_LIMITS = {
   MAX_KEYWORD_LENGTH: 40,
 };
 
-export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeywords = [] }: QueryInputProps) {
+export function QueryInput({ onSubmit, onCancel, isLoading, defaultQuery = "", defaultKeywords = [] }: QueryInputProps) {
   const [query, setQuery] = useState(defaultQuery);
   const [keywordInput, setKeywordInput] = useState(defaultKeywords.join(", "));
   const [showExamples, setShowExamples] = useState(false);
@@ -266,23 +267,35 @@ export function QueryInput({ onSubmit, isLoading, defaultQuery = "", defaultKeyw
           )}
         </div>
 
-        <button
-          type="submit"
-          disabled={isLoading || !isValid}
-          className="w-full py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-violet-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-        >
-          {isLoading ? (
-            <>
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Starting research…</span>
-            </>
-          ) : (
-            <>
-              <span aria-hidden>🔬</span>
-              <span>Start Research</span>
-            </>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={isLoading || !isValid}
+            className="flex-1 py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-violet-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Starting research…</span>
+              </>
+            ) : (
+              <>
+                <span aria-hidden>🔬</span>
+                <span>Start Research</span>
+              </>
+            )}
+          </button>
+          {isLoading && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="py-3 px-5 bg-white border border-slate-300 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-all"
+              aria-label="Cancel research"
+            >
+              Cancel
+            </button>
           )}
-        </button>
+        </div>
       </form>
 
       <div className="mt-4 pt-4 border-t border-slate-100">

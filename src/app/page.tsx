@@ -287,7 +287,7 @@ export default function Home() {
                 {t("hero.subtitle")}
               </p>
             </div>
-            <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
+            <QueryInput onSubmit={handleSubmit} onCancel={cancel} isLoading={isRunning} />
 
             {stats && (
               <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -410,8 +410,7 @@ export default function Home() {
               data-no-print
               className={"w-full lg:w-96 flex-shrink-0 space-y-4 " + (sidebarOpen ? "block" : "hidden lg:block")}
             >
-              <QueryInput
-                onSubmit={handleSubmit}
+              <QueryInput onSubmit={handleSubmit} onCancel={cancel}
                 isLoading={isRunning}
                 defaultQuery={state.query}
                 defaultKeywords={state.keywords}
