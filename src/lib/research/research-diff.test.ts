@@ -18,6 +18,14 @@ createTimelineEntry,
   findChangeHotspots,
   isEmptyDiff,
   mergeDiffs,
+  emptyDiff,
+  diffsEqual,
+  diffNetScore,
+  breakdownByField,
+  diffBreakdownToCsv,
+  insightsWithSign,
+  totalChangedOpportunities,
+  totalChangedRisks,
 } from "@/lib/research/research-diff";
 import type { SynthesisOutput } from "@/lib/research/synthesis-parser";
 
@@ -597,5 +605,83 @@ describe("extended diff utilities (round 141)", () => {
       const m = mergeDiffs([]);
       expect(m.summary.totalChanges).toBe(0);
     });
+  });
+});
+describe("research-diff extensions (round 154)", () => {
+  const baseSynth = (overrides: any = {}): any => ({
+    opportunityScore: 50,
+    riskScore: 20,
+    keyInsights: [{ insight: "i1", confidence: "high" }],
+    topThreeOpportunities: [{ title: "O1", description: "d1" }],
+    topThreeRisks: [{ title: "R1", description: "r1" }],
+    recommendedNextStep: "step1",
+    ...overrides,
+  });
+
+  it("emptyDiff returns a zero-change diff", () => {
+    const d = emptyDiff();
+    expect(d.summary.totalChanges).toBe(0);
+    expect(d.scoreChanges.opportunityScore).toBe(0);
+    expect(d.nextStepChanged).toBe(false);
+    expect(isEmptyDiff(d)).toBe(true);
+  });
+
+  it("diffsEqual detects equality and mismatches", () => {
+    const a = emptyDiff();
+    const b = emptyDiff();
+    expect(diffsEqual(a, b)).toBe(true);
+    b.summary.added = 1;
+    expect(diffsEqual(a, b)).toBe(false);
+  });
+
+  it("diffsEqual respects deep object lists", () => {
+    const a = { ...emptyDiff(), opportunities: { added: [{ title: "x", description: "y" }], removed: [], modified: [] }, risks: { added: [], removed: [], modified: [] }, insights: { added: [], removed: [], modified: [] } };
+    const b = { ...emptyDiff(), opportunities: { added: [{ title: "x", description: "y" }], removed: [], modified: [] }, risks: { added: [], removed: [], modified: [] }, insights: { added: [], removed: [], modified: [] } };
+    expect(diffsEqual(a, b)).toBe(true);
+    b.opportunities.added[0].title = "z";
+    expect(diffsEqual(a, b)).toBe(false);
+  });
+
+  it("diffNetScore = oppDelta - riskDelta", () => {
+    const d = { ...emptyDiff(), scoreChanges: { opportunityScore: 5, riskScore: 3 } };
+    expect(diffNetScore(d)).toBe(2);
+  });
+
+  it("breakdownByField counts per field", () => {
+    const oldS = baseSynth();
+    const newS = baseSynth({
+      keyInsights: [{ insight: "i1", confidence: "high" }, { insight: "i2", confidence: "low" }],
+      topThreeOpportunities: [{ title: "O2", description: "d2" }],
+      recommendedNextStep: "step2",
+    });
+    const d = diffResearch(oldS, newS);
+    const bd = breakdownByField(d);
+    expect(bd.find(b => b.field === "insights").added).toBe(1);
+    expect(bd.find(b => b.field === "opportunities").total).toBeGreaterThan(0);
+    expect(bd.find(b => b.field === "nextStep").total).toBe(1);
+    expect(bd.reduce((sum, r) => sum + r.total, 0)).toBeGreaterThan(0);
+  });
+
+  it("diffBreakdownToCsv includes header and score row", () => {
+    const d = emptyDiff();
+    const csv = diffBreakdownToCsv(d);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe("field,added,removed,modified,total");
+    expect(lines.some(l => l.startsWith("scores"))).toBe(true);
+  });
+
+  it("insightsWithSign tags added/removed/modified", () => {
+    const d = { ...emptyDiff(), insights: { added: ["a"], removed: ["b"], modified: [{ old: "x", new: "y", similarity: 0.5 }] } };
+    const tagged = insightsWithSign(d);
+    expect(tagged.map(t => t.sign)).toEqual(["+", "-", "~"]);
+    expect(tagged.find(t => t.sign === "~").text).toContain("(was: x)");
+  });
+
+  it("totalChangedOpportunities/Risks aggregate counts", () => {
+    const d = { ...emptyDiff(),
+      opportunities: { added: [1,2], removed: [3], modified: [4] },
+      risks: { added: [], removed: [1,2], modified: [] } } as any;
+    expect(totalChangedOpportunities(d)).toBe(4);
+    expect(totalChangedRisks(d)).toBe(2);
   });
 });

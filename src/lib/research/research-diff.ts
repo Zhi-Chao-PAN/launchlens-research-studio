@@ -876,3 +876,93 @@ export function mergeDiffs(diffs: ResearchDiff[]): ResearchDiff {
   base.newNextStep = latestNextStep.new;
   return base;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended diff helpers (round 154)                                 */
+/* ------------------------------------------------------------------ */
+
+export function emptyDiff(): ResearchDiff {
+  return {
+    scoreChanges: { opportunityScore: 0, riskScore: 0 },
+    insights: { added: [], removed: [], modified: [] },
+    opportunities: { added: [], removed: [], modified: [] },
+    risks: { added: [], removed: [], modified: [] },
+    nextStepChanged: false,
+    summary: { totalChanges: 0, added: 0, removed: 0, modified: 0 },
+  };
+}
+
+export function diffsEqual(a: ResearchDiff, b: ResearchDiff): boolean {
+  if (a.summary.totalChanges !== b.summary.totalChanges) return false;
+  if (a.summary.added !== b.summary.added) return false;
+  if (a.summary.removed !== b.summary.removed) return false;
+  if (a.summary.modified !== b.summary.modified) return false;
+  if (a.scoreChanges.opportunityScore !== b.scoreChanges.opportunityScore) return false;
+  if (a.scoreChanges.riskScore !== b.scoreChanges.riskScore) return false;
+  if (a.nextStepChanged !== b.nextStepChanged) return false;
+  if ((a.oldNextStep || "") !== (b.oldNextStep || "")) return false;
+  if ((a.newNextStep || "") !== (b.newNextStep || "")) return false;
+  const sameStrings = (x: string[], y: string[]) =>
+    x.length === y.length && new Set(x).size === new Set([...x, ...y]).size;
+  if (!sameStrings(a.insights.added, b.insights.added)) return false;
+  if (!sameStrings(a.insights.removed, b.insights.removed)) return false;
+  if (a.insights.modified.length !== b.insights.modified.length) return false;
+  const keyOf = (o: any) => JSON.stringify(o);
+  const sameObj = (x: any[], y: any[]) => {
+    if (x.length !== y.length) return false;
+    const sx = new Set(x.map(keyOf));
+    for (const o of y) if (!sx.has(keyOf(o))) return false;
+    return true;
+  };
+  if (!sameObj(a.opportunities.added, b.opportunities.added)) return false;
+  if (!sameObj(a.opportunities.removed, b.opportunities.removed)) return false;
+  if (!sameObj(a.risks.added, b.risks.added)) return false;
+  if (!sameObj(a.risks.removed, b.risks.removed)) return false;
+  return true;
+}
+
+export function diffNetScore(diff: ResearchDiff): number {
+  return diff.scoreChanges.opportunityScore - diff.scoreChanges.riskScore;
+}
+
+export interface FieldBreakdown {
+  field: "insights" | "opportunities" | "risks" | "nextStep";
+  added: number;
+  removed: number;
+  modified: number;
+  total: number;
+}
+
+export function breakdownByField(diff: ResearchDiff): FieldBreakdown[] {
+  return [
+    { field: "insights", added: diff.insights.added.length, removed: diff.insights.removed.length, modified: diff.insights.modified.length, total: diff.insights.added.length + diff.insights.removed.length + diff.insights.modified.length },
+    { field: "opportunities", added: diff.opportunities.added.length, removed: diff.opportunities.removed.length, modified: diff.opportunities.modified.length, total: diff.opportunities.added.length + diff.opportunities.removed.length + diff.opportunities.modified.length },
+    { field: "risks", added: diff.risks.added.length, removed: diff.risks.removed.length, modified: diff.risks.modified.length, total: diff.risks.added.length + diff.risks.removed.length + diff.risks.modified.length },
+    { field: "nextStep", added: 0, removed: 0, modified: diff.nextStepChanged ? 1 : 0, total: diff.nextStepChanged ? 1 : 0 },
+  ];
+}
+
+export function diffBreakdownToCsv(diff: ResearchDiff): string {
+  const rows = ["field,added,removed,modified,total"];
+  for (const r of breakdownByField(diff)) {
+    rows.push([r.field, r.added, r.removed, r.modified, r.total].join(","));
+  }
+  rows.push(["scores", diff.scoreChanges.opportunityScore, diff.scoreChanges.riskScore, diffNetScore(diff), ""].join(","));
+  return rows.join("\n");
+}
+
+export function insightsWithSign(diff: ResearchDiff): Array<{ text: string; sign: "+" | "-" | "~" }> {
+  const out: Array<{ text: string; sign: "+" | "-" | "~" }> = [];
+  diff.insights.added.forEach((t) => out.push({ text: t, sign: "+" }));
+  diff.insights.removed.forEach((t) => out.push({ text: t, sign: "-" }));
+  diff.insights.modified.forEach((m) => out.push({ text: m.new + " (was: " + m.old + ")", sign: "~" }));
+  return out;
+}
+
+export function totalChangedOpportunities(diff: ResearchDiff): number {
+  return diff.opportunities.added.length + diff.opportunities.removed.length + diff.opportunities.modified.length;
+}
+export function totalChangedRisks(diff: ResearchDiff): number {
+  return diff.risks.added.length + diff.risks.removed.length + diff.risks.modified.length;
+}
+
