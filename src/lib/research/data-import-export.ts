@@ -454,3 +454,153 @@ export function getFoldersBundleFilename(folderCount: number): string {
 
   return `launchlens-folders-${folderCount}-${dateStr}.json`;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended data-package utilities (round 149)                       */
+/* ------------------------------------------------------------------ */
+
+export interface PackageSummary {
+  version: number;
+  source: string;
+  exportedAt: number;
+  exportedAtIso: string;
+  ageMs: number;
+  counts: { runs: number; notes: number; folders: number; templates: number };
+  totalItems: number;
+  estimatedBytes: number;
+}
+
+export function summarizePackage(pkg: DataPackage, now: number = Date.now()): PackageSummary {
+  const counts = {
+    runs: pkg.data.runs?.length ?? 0,
+    notes: pkg.data.notes?.length ?? 0,
+    folders: pkg.data.folders?.length ?? 0,
+    templates: pkg.data.templates?.length ?? 0,
+  };
+  return {
+    version: pkg.version,
+    source: pkg.source,
+    exportedAt: pkg.exportedAt,
+    exportedAtIso: new Date(pkg.exportedAt).toISOString(),
+    ageMs: Math.max(0, now - pkg.exportedAt),
+    counts,
+    totalItems: counts.runs + counts.notes + counts.folders + counts.templates,
+    estimatedBytes: estimatePackageSize(pkg),
+  };
+}
+
+export interface CompatibilityCheck {
+  compatible: boolean;
+  warnings: string[];
+  errors: string[];
+}
+
+/** Check whether a package can be safely imported into the current schema. */
+export function checkPackageCompatibility(pkg: DataPackage): CompatibilityCheck {
+  const errors = validateDataPackage(pkg);
+  const warnings: string[] = [];
+  if (pkg.version > DATA_PACKAGE_VERSION) {
+    warnings.push("Package version is newer than current schema; unknown fields may be ignored.");
+  }
+  if (pkg.version < DATA_PACKAGE_VERSION) {
+    warnings.push("Package version is older; forward-migration will be best-effort.");
+  }
+  if (pkg.source !== DATA_PACKAGE_SOURCE) {
+    warnings.push("Package source differs from LaunchLens; import will be attempted anyway.");
+  }
+  return { compatible: errors.length === 0, warnings, errors };
+}
+
+/** Filter a package to only include the requested collection flags. */
+export function filterPackage(
+  pkg: DataPackage,
+  opts: { runs?: boolean; notes?: boolean; folders?: boolean; templates?: boolean },
+): DataPackage {
+  return {
+    version: pkg.version,
+    source: pkg.source,
+    exportedAt: pkg.exportedAt,
+    data: {
+      runs: opts.runs ? (pkg.data.runs ?? []) : [],
+      notes: opts.notes ? (pkg.data.notes ?? []) : [],
+      folders: opts.folders ? (pkg.data.folders ?? []) : [],
+      templates: opts.templates ? (pkg.data.templates ?? []) : [],
+    },
+  };
+}
+
+/** Merge two packages (incoming applied on top of base using mergeById semantics). */
+export function mergePackages(base: DataPackage, incoming: DataPackage, strategy: ImportMergeStrategy = "merge"): DataPackage {
+  const merged = importDataPackage(base.data, incoming, { strategy });
+  return {
+    version: Math.max(base.version, incoming.version),
+    source: DATA_PACKAGE_SOURCE,
+    exportedAt: Math.max(base.exportedAt, incoming.exportedAt),
+    data: { runs: merged.runs, notes: merged.notes, folders: merged.folders, templates: merged.templates },
+  };
+}
+
+/** Filename for a single-template export. */
+export function getTemplateExportFilename(templateName: string): string {
+  const sanitized = templateName
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, "");
+  const now = new Date();
+  const d = now.getFullYear() + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
+  return "launchlens-template-" + (sanitized || "export") + "-" + d + ".json";
+}
+
+/** Format byte count in human-friendly KB/MB. */
+export function formatBytes(n: number): string {
+  if (n < 1024) return String(n) + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(2) + " MB";
+}
+
+/** Produce a diff summary between two packages (adds per collection). */
+export function diffPackages(a: DataPackage, b: DataPackage): {
+  runs: { added: number; removed: number };
+  notes: { added: number; removed: number };
+  folders: { added: number; removed: number };
+  templates: { added: number; removed: number };
+} {
+  const diffKey = (x: string[] | undefined, y: string[] | undefined) => {
+    const xs = new Set(x ?? []);
+    const ys = new Set(y ?? []);
+    let added = 0, removed = 0;
+    ys.forEach((k) => { if (!xs.has(k)) added++; });
+    xs.forEach((k) => { if (!ys.has(k)) removed++; });
+    return { added, removed };
+  };
+  const idsFor = (arr: Array<{ id?: string }> | undefined): string[] =>
+    (arr ?? []).map((r) => r.id).filter((v): v is string => Boolean(v));
+  const noteIds = (arr: Array<{ runId?: string }> | undefined): string[] =>
+    (arr ?? []).map((r) => r.runId).filter((v): v is string => Boolean(v));
+  return {
+    runs: diffKey(idsFor(a.data.runs), idsFor(b.data.runs)),
+    notes: diffKey(noteIds(a.data.notes), noteIds(b.data.notes)),
+    folders: diffKey(idsFor(a.data.folders), idsFor(b.data.folders)),
+    templates: diffKey(idsFor(a.data.templates), idsFor(b.data.templates)),
+  };
+}
+
+/** Export a small CSV preview of runs in a package. */
+export function packageRunsToCsv(pkg: DataPackage): string {
+  const header = "id,query,provider,model,status,createdAt,durationMs";
+  const lines: string[] = [header];
+  (pkg.data.runs ?? []).forEach((r) => {
+    lines.push([
+      JSON.stringify(r.id),
+      JSON.stringify(r.query),
+      r.provider || "",
+      r.model || "",
+      r.status || "",
+      String(r.createdAt ?? ""),
+      String(r.durationMs ?? ""),
+    ].join(","));
+  });
+  return lines.join("\n");
+}
+

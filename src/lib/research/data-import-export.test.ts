@@ -462,3 +462,111 @@ describe("getFoldersBundleFilename", () => {
     expect(name).toMatch(/^launchlens-folders-5-\d{8}\.json$/);
   });
 });
+
+import {
+  summarizePackage,
+  checkPackageCompatibility,
+  filterPackage,
+  mergePackages,
+  getTemplateExportFilename,
+  formatBytes,
+  diffPackages,
+  packageRunsToCsv,
+} from '@/lib/research/data-import-export';
+
+describe('data-import-export extensions (round 149)', () => {
+  it('summarizePackage reports counts and age', () => {
+    const pkg = createDataPackage({ runs: [makeRun('r1')], folders: [makeFolder('f1','A')] });
+    const before = pkg.exportedAt;
+    const s = summarizePackage(pkg, before + 5000);
+    expect(s.version).toBe(DATA_PACKAGE_VERSION);
+    expect(s.source).toBe(DATA_PACKAGE_SOURCE);
+    expect(s.counts.runs).toBe(1);
+    expect(s.counts.folders).toBe(1);
+    expect(s.totalItems).toBe(2);
+    expect(s.ageMs).toBe(5000);
+    expect(s.exportedAtIso).toMatch(/^\d{4}-/);
+    expect(s.estimatedBytes).toBeGreaterThan(0);
+  });
+
+  it('checkPackageCompatibility accepts valid packages and flags version drift', () => {
+    const ok = createDataPackage({ runs: [makeRun('r1')] });
+    expect(checkPackageCompatibility(ok).compatible).toBe(true);
+    const newer = { ...ok, version: DATA_PACKAGE_VERSION + 1 };
+    const newerCheck = checkPackageCompatibility(newer);
+    expect(newerCheck.compatible).toBe(true);
+    expect(newerCheck.warnings.some((w) => w.includes('newer'))).toBe(true);
+    const bad = { ...ok, version: 0, source: 'x' };
+    expect(checkPackageCompatibility(bad).compatible).toBe(false);
+    expect(checkPackageCompatibility(bad).errors.length).toBeGreaterThan(0);
+  });
+
+  it('filterPackage zeroes out excluded collections', () => {
+    const pkg = createDataPackage({
+      runs: [makeRun('r1')],
+      notes: [makeNotes('r1')],
+      folders: [makeFolder('f1','A')],
+      templates: [makeTemplate('t1','T')],
+    });
+    const onlyRuns = filterPackage(pkg, { runs: true });
+    expect(onlyRuns.data.runs?.length).toBe(1);
+    expect(onlyRuns.data.notes?.length).toBe(0);
+    expect(onlyRuns.data.folders?.length).toBe(0);
+    expect(onlyRuns.data.templates?.length).toBe(0);
+    const onlyFoldersNotes = filterPackage(pkg, { folders: true, notes: true });
+    expect(onlyFoldersNotes.data.folders?.length).toBe(1);
+    expect(onlyFoldersNotes.data.notes?.length).toBe(1);
+    expect(onlyFoldersNotes.data.runs?.length).toBe(0);
+  });
+
+  it('mergePackages unions two packages using merge strategy', () => {
+    const a = createDataPackage({ runs: [makeRun('r1')], folders: [makeFolder('f1','A')] });
+    const b = createDataPackage({ runs: [makeRun('r2')], folders: [makeFolder('f2','B')] });
+    const merged = mergePackages(a, b);
+    expect(merged.data.runs?.length).toBe(2);
+    expect(merged.data.folders?.length).toBe(2);
+    expect(merged.version).toBe(DATA_PACKAGE_VERSION);
+  });
+
+  it('mergePackages overwrite strategy replaces collisions', () => {
+    const base = createDataPackage({ runs: [makeRun('r1','old')] });
+    const next = createDataPackage({ runs: [makeRun('r1','new')] });
+    const merged = mergePackages(base, next, 'overwrite');
+    expect(merged.data.runs?.[0].query).toBe('new');
+  });
+
+  it('formatBytes returns human friendly units', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(500)).toBe('500 B');
+    expect(formatBytes(2048)).toBe('2.0 KB');
+    expect(formatBytes(1048576)).toBe('1.00 MB');
+  });
+
+  it('getTemplateExportFilename produces sanitized dated name', () => {
+    expect(getTemplateExportFilename('My Template')).toMatch(/^launchlens-template-my-template-\d{8}\.json$/);
+    expect(getTemplateExportFilename('')).toMatch(/launchlens-template-export-/);
+  });
+
+  it('diffPackages reports added/removed per collection', () => {
+    const a = createDataPackage({ runs: [makeRun('r1'), makeRun('r2')], folders: [makeFolder('f1','A')] });
+    const b = createDataPackage({ runs: [makeRun('r2'), makeRun('r3')], folders: [] });
+    const d = diffPackages(a, b);
+    expect(d.runs).toEqual({ added: 1, removed: 1 });
+    expect(d.folders).toEqual({ added: 0, removed: 1 });
+    expect(d.notes).toEqual({ added: 0, removed: 0 });
+  });
+
+  it('packageRunsToCsv emits header and quoted query cells', () => {
+    const pkg = createDataPackage({ runs: [makeRun('r1','hello, world')] });
+    const csv = packageRunsToCsv(pkg);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe('id,query,provider,model,status,createdAt,durationMs');
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toContain('hello, world');
+  });
+
+  it('packageRunsToCsv returns just header for empty package', () => {
+    const csv = packageRunsToCsv(createDataPackage({}));
+    expect(csv.split("\n").length).toBe(1);
+  });
+});
