@@ -1,4 +1,5 @@
-﻿import { recordAuthAudit, snapshotAuthAudit, clearAuthAudit } from "@/lib/api/auth-audit";
+/// <reference types="vitest/globals" />
+import { recordAuthAudit, snapshotAuthAudit, clearAuthAudit } from "@/lib/api/auth-audit";
 
 describe("auth-audit", () => {
   beforeEach(() => {

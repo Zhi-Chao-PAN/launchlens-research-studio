@@ -1,4 +1,5 @@
-﻿import { getAlerts, clearAlerts, alertConfig, _computeWebhookSignature, getWebhookQueueStats, _resetWebhookQueue } from "@/lib/api/auth-alerts";
+/// <reference types="vitest/globals" />
+import { getAlerts, clearAlerts, alertConfig, _computeWebhookSignature, getWebhookQueueStats, _resetWebhookQueue } from "@/lib/api/auth-alerts";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 
 // Note: auth-alerts.ts auto-registers a listener on import via onAuthAuditEvent.

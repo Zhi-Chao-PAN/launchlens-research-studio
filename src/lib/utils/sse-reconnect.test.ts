@@ -1,4 +1,5 @@
-﻿import {
+/// <reference types="vitest/globals" />
+import {
   readSseWithReconnect,
   parseOpenAiSse,
   parseAnthropicSse,

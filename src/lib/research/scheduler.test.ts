@@ -1,4 +1,5 @@
-﻿import {
+/// <reference types="vitest/globals" />
+import {
   _resetScheduler,
   calculateNextRun,
   createSchedule,

@@ -1,4 +1,5 @@
-﻿import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
+/// <reference types="vitest/globals" />
+import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest";
 import {
   savePersonalNote,
   getNotes,
@@ -44,6 +45,7 @@ import {
   tagCloud,
   notesToCsv,
   notesEqual,
+  type ResearchNotes,
 } from "@/lib/research/notes";
 
 // Mock localStorage

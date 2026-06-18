@@ -1,4 +1,5 @@
-﻿import {
+/// <reference types="vitest/globals" />
+import {
   generateCsrfToken,
   checkCsrfToken,
   CSRF_COOKIE_NAME,

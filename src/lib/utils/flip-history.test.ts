@@ -1,4 +1,5 @@
-﻿import { recordFlip, snapshotFlips, clearFlips } from "@/lib/utils/flip-history";
+/// <reference types="vitest/globals" />
+import { recordFlip, snapshotFlips, clearFlips } from "@/lib/utils/flip-history";
 
 describe("flip-history", () => {
   beforeEach(() => {

@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { isTrustedIp, getTrustedIpList, _resetTrustedIpCache } from "@/lib/api/trusted-ips";
 
 describe("Trusted IPs", () => {

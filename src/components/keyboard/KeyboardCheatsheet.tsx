@@ -168,7 +168,7 @@ export function KeyboardCheatsheet({ isOpen, onClose }: KeyboardCheatsheetProps)
                     return (
                       <div
                         key={sc.keys + sc.description}
-                        className={cheatsheet-item }
+                        className={"cheatsheet-item" + (selected ? " cheatsheet-selected" : "")}
                         role="option"
                         aria-selected={selected}
                       >

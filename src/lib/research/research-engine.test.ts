@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { describe, it, expect, vi } from "vitest";
 import {
   createResearchSession,

@@ -1,4 +1,5 @@
-﻿// Integration test: verify CORS headers are present on responses
+/// <reference types="vitest/globals" />
+// Integration test: verify CORS headers are present on responses
 // We can't easily test Next.js route handlers in unit tests,
 // but we can verify the cors.ts module logic directly.
 

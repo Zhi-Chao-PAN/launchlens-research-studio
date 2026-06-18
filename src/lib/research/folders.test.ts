@@ -1,4 +1,5 @@
-﻿import {
+/// <reference types="vitest/globals" />
+import {
   getFolders,
   getFolder,
   createFolder,
