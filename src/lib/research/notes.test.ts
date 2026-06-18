@@ -35,6 +35,15 @@ import {
   hasUnsavedNotes,
   getEmptyNotesCount,
   cleanupEmptyNotes,
+  summarizeNotes,
+  filterNotesByRating,
+  filterNotesByTags,
+  filterNotesByFlags,
+  mergeNotes,
+  dedupeNotes,
+  tagCloud,
+  notesToCsv,
+  notesEqual,
 } from "@/lib/research/notes";
 
 // Mock localStorage
@@ -668,4 +677,130 @@ describe("word count and activity (round 138)", () => {
     expect(getEmptyNotesCount()).toBe(0);
   });
 });
+describe('notes extensions (round 151)', () => {
+  const base = (overrides: Partial<ResearchNotes> = {}): ResearchNotes => ({
+    runId: 'r1',
+    annotations: [],
+    personalNote: '',
+    rating: 0,
+    tags: [],
+    isStarred: false,
+    isArchived: false,
+    lastOpenedAt: 0,
+    updatedAt: 0,
+    ...overrides,
+  });
 
+  it('summarizeNotes aggregates counts and unique tags', () => {
+    const notes = [
+      base({ runId: 'a', personalNote: 'hello world note', rating: 4, tags: ['alpha','beta'], isStarred: true, updatedAt: 100 }),
+      base({ runId: 'b', personalNote: 'another one', rating: 2, tags: ['beta','gamma'], annotations: [{ id: 'x', type: 'note', content: 'yo', createdAt: 1, updatedAt: 1 }], updatedAt: 200 }),
+      base({ runId: 'c', personalNote: '', tags: [], isArchived: true }),
+    ];
+    const s2 = summarizeNotes(notes);
+    expect(s2.total).toBe(3);
+    expect(s2.withNote).toBe(2);
+    expect(s2.withAnnotation).toBe(1);
+    expect(s2.starred).toBe(1);
+    expect(s2.archived).toBe(1);
+    expect(s2.totalAnnotations).toBe(1);
+    expect(s2.totalTags).toBe(3);
+    expect(s2.uniqueTags).toEqual(['alpha','beta','gamma']);
+    expect(s2.avgRating).toBe(3);
+    expect(s2.latestUpdate).toBe(200);
+    expect(s2.avgWordCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('summarizeNotes returns zeroed summary for empty input', () => {
+    const s2 = summarizeNotes([]);
+    expect(s2.total).toBe(0);
+    expect(s2.avgRating).toBeNull();
+    expect(s2.latestUpdate).toBeNull();
+    expect(s2.uniqueTags).toEqual([]);
+  });
+
+  it('filterNotesByRating clamps and applies inclusive range', () => {
+    const notes = [base({ runId: 'a', rating: 1 }), base({ runId: 'b', rating: 3 }), base({ runId: 'c', rating: 5 })];
+    expect(filterNotesByRating(notes, 2, 4).map((n) => n.runId)).toEqual(['b']);
+    expect(filterNotesByRating(notes, -5, 50).map((n) => n.runId)).toEqual(['a','b','c']);
+  });
+
+  it('filterNotesByTags supports OR and AND modes case-insensitively', () => {
+    const notes = [
+      base({ runId: 'a', tags: ['Alpha'] }),
+      base({ runId: 'b', tags: ['beta','GAMMA'] }),
+      base({ runId: 'c', tags: ['alpha','gamma'] }),
+    ];
+    expect(filterNotesByTags(notes, ['alpha']).map((n) => n.runId).sort()).toEqual(['a','c']);
+    expect(filterNotesByTags(notes, ['alpha','gamma'], true).map((n) => n.runId)).toEqual(['c']);
+    expect(filterNotesByTags(notes, [])).toHaveLength(3);
+  });
+
+  it('filterNotesByFlags honors starred and archived tristates', () => {
+    const notes = [
+      base({ runId: 'a', isStarred: true }),
+      base({ runId: 'b', isArchived: true }),
+      base({ runId: 'c' }),
+    ];
+    expect(filterNotesByFlags(notes, { starred: true }).map((n) => n.runId)).toEqual(['a']);
+    expect(filterNotesByFlags(notes, { starred: false, archived: false }).map((n) => n.runId)).toEqual(['c']);
+    expect(filterNotesByFlags(notes, { archived: true }).map((n) => n.runId)).toEqual(['b']);
+    expect(filterNotesByFlags(notes, {})).toHaveLength(3);
+  });
+
+  it('mergeNotes unions tags/annotations and picks newer content', () => {
+    const older = base({ runId: 'r', personalNote: 'old', rating: 2, tags: ['x'], isStarred: false, updatedAt: 10,
+      annotations: [{ id: 'a1', type: 'note', content: 'one', createdAt: 1, updatedAt: 1 }] });
+    const newer = base({ runId: 'r', personalNote: 'new', rating: 5, tags: ['y'], isStarred: true, updatedAt: 20,
+      annotations: [{ id: 'a2', type: 'note', content: 'two', createdAt: 2, updatedAt: 2 }] });
+    const m = mergeNotes(older, newer);
+    expect(m.personalNote).toBe('new');
+    expect(m.rating).toBe(5);
+    expect(m.isStarred).toBe(true);
+    expect(m.tags.slice().sort()).toEqual(['x','y']);
+    expect(m.annotations.map((a) => a.id).sort()).toEqual(['a1','a2']);
+    expect(m.updatedAt).toBe(20);
+  });
+
+  it('mergeNotes throws when runIds differ', () => {
+    expect(() => mergeNotes(base({ runId: 'a' }), base({ runId: 'b' }))).toThrow(/same runId/);
+  });
+
+  it('dedupeNotes merges duplicates by runId', () => {
+    const a = base({ runId: 'r', personalNote: 'first', tags: ['x'], updatedAt: 1 });
+    const b = base({ runId: 'r', personalNote: 'second', tags: ['y'], isStarred: true, updatedAt: 2 });
+    const out = dedupeNotes([a, b, base({ runId: 'other' })]);
+    expect(out).toHaveLength(2);
+    const found = out.find((n) => n.runId === 'r');
+    expect(found.personalNote).toBe('second');
+    expect(found.tags.slice().sort()).toEqual(['x','y']);
+    expect(found.isStarred).toBe(true);
+  });
+
+  it('tagCloud sorts by count desc then tag asc', () => {
+    const notes = [base({ tags: ['b','a'] }), base({ tags: ['b'] }), base({ tags: ['c','a'] })];
+    expect(tagCloud(notes)).toEqual([
+      { tag: 'a', count: 2 }, { tag: 'b', count: 2 }, { tag: 'c', count: 1 }]);
+  });
+
+  it('notesToCsv emits header and a csv-safe row per note', () => {
+    const notes = [base({ runId: 'id,1', rating: 4, isStarred: true, isArchived: false, personalNote: 'hi', tags: ['x'], updatedAt: 42 })];
+    const csv = notesToCsv(notes);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe('runId,rating,starred,archived,tags,noteChars,updatedAt');
+    expect(lines[1]).toContain("id,1");
+    expect(lines[1]).toContain(',4,1,0,1,2,42');
+  });
+
+  it('notesEqual detects equality and mutations', () => {
+    const a = base({ runId: 'r', tags: ['x'], annotations: [{ id: 'a1', type: 'note', content: 'c', createdAt: 1, updatedAt: 1 }] });
+    const b = JSON.parse(JSON.stringify(a)) as ResearchNotes;
+    expect(notesEqual(a, b)).toBe(true);
+    b.rating = 3;
+    expect(notesEqual(a, b)).toBe(false);
+    const c = JSON.parse(JSON.stringify(a)) as ResearchNotes;
+    c.annotations[0].content = 'changed';
+    expect(notesEqual(a, c)).toBe(false);
+    expect(notesEqual(a, base({ runId: 'other' }))).toBe(false);
+  });
+});

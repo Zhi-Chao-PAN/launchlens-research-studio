@@ -753,3 +753,173 @@ export function cleanupEmptyNotes(): number {
   if (removed > 0) saveStore(store);
   return removed;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended notes utilities (round 151) -- pure, SSR-safe            */
+/* ------------------------------------------------------------------ */
+
+export interface NotesSummary {
+  total: number;
+  withNote: number;
+  withAnnotation: number;
+  starred: number;
+  archived: number;
+  totalAnnotations: number;
+  totalTags: number;
+  uniqueTags: string[];
+  avgRating: number | null;
+  avgWordCount: number;
+  latestUpdate: number | null;
+}
+
+export function summarizeNotes(notes: ResearchNotes[]): NotesSummary {
+  let withNote = 0, withAnnotation = 0, starred = 0, archived = 0;
+  let totalAnnotations = 0, totalWords = 0, ratingSum = 0, rated = 0;
+  let latest: number | null = null;
+  const tagSet = new Set<string>();
+  notes.forEach((n) => {
+    if (n.personalNote && n.personalNote.trim()) withNote++;
+    if (n.annotations.length > 0) { withAnnotation++; totalAnnotations += n.annotations.length; }
+    if (n.isStarred) starred++;
+    if (n.isArchived) archived++;
+    n.tags.forEach((t) => tagSet.add(t));
+    if (n.rating > 0) { ratingSum += n.rating; rated++; }
+    let wc = 0;
+    if (n.personalNote) wc += n.personalNote.trim().split(/\s+/).filter(Boolean).length;
+    n.annotations.forEach((a) => { if (a.content) wc += a.content.trim().split(/\s+/).filter(Boolean).length; });
+    totalWords += wc;
+    if (latest === null || n.updatedAt > latest) latest = n.updatedAt;
+  });
+  const uniqueTags = Array.from(tagSet).sort();
+  return {
+    total: notes.length,
+    withNote,
+    withAnnotation,
+    starred,
+    archived,
+    totalAnnotations,
+    totalTags: uniqueTags.length,
+    uniqueTags,
+    avgRating: rated > 0 ? Math.round((ratingSum / rated) * 10) / 10 : null,
+    avgWordCount: notes.length > 0 ? Math.round(totalWords / notes.length) : 0,
+    latestUpdate: latest,
+  };
+}
+
+export function filterNotesByRating(notes: ResearchNotes[], min: number, max: number = 5): ResearchNotes[] {
+  const lo = Math.max(0, Math.min(5, Math.floor(min)));
+  const hi = Math.max(lo, Math.min(5, Math.floor(max)));
+  return notes.filter((n) => n.rating >= lo && n.rating <= hi);
+}
+
+export function filterNotesByTags(notes: ResearchNotes[], tags: string[], matchAll: boolean = false): ResearchNotes[] {
+  if (tags.length === 0) return notes.slice();
+  const want = new Set(tags.map((t) => t.toLowerCase()));
+  return notes.filter((n) => {
+    const have = new Set(n.tags.map((t) => t.toLowerCase()));
+    if (matchAll) {
+      let ok = true;
+      want.forEach((t) => { if (!have.has(t)) ok = false; });
+      return ok;
+    }
+    let hit = false;
+    have.forEach((t) => { if (want.has(t)) hit = true; });
+    return hit;
+  });
+}
+
+/** Filter by starred / archived flags. A null flag means "do not care". */
+export function filterNotesByFlags(notes: ResearchNotes[], opts: {
+  starred?: boolean | null;
+  archived?: boolean | null;
+}): ResearchNotes[] {
+  return notes.filter((n) => {
+    if (opts.starred === true && !n.isStarred) return false;
+    if (opts.starred === false && n.isStarred) return false;
+    if (opts.archived === true && !n.isArchived) return false;
+    if (opts.archived === false && n.isArchived) return false;
+    return true;
+  });
+}
+
+export function mergeNotes(a: ResearchNotes, b: ResearchNotes): ResearchNotes {
+  if (a.runId !== b.runId) throw new Error("mergeNotes requires same runId");
+  const useB = (b.updatedAt || 0) >= (a.updatedAt || 0);
+  const newer = useB ? b : a;
+  const older = useB ? a : b;
+  const annoById = new Map<string, NoteAnnotation>();
+  [older, newer].forEach((n) => n.annotations.forEach((an) => {
+    const ex = annoById.get(an.id);
+    if (!ex || (an.updatedAt || 0) >= (ex.updatedAt || 0)) annoById.set(an.id, an);
+  }));
+  const tagSet = new Set<string>();
+  older.tags.forEach((t) => tagSet.add(t));
+  newer.tags.forEach((t) => tagSet.add(t));
+  return {
+    runId: a.runId,
+    annotations: Array.from(annoById.values()).sort((x, y) => x.createdAt - y.createdAt),
+    personalNote: newer.personalNote,
+    rating: newer.rating,
+    tags: Array.from(tagSet),
+    isStarred: newer.isStarred || older.isStarred,
+    isArchived: newer.isArchived,
+    lastOpenedAt: Math.max(older.lastOpenedAt || 0, newer.lastOpenedAt || 0),
+    updatedAt: Math.max(older.updatedAt || 0, newer.updatedAt || 0),
+  };
+}
+
+export function dedupeNotes(notes: ResearchNotes[]): ResearchNotes[] {
+  const byId = new Map<string, ResearchNotes>();
+  notes.forEach((n) => {
+    const ex = byId.get(n.runId);
+    byId.set(n.runId, ex ? mergeNotes(ex, n) : n);
+  });
+  return Array.from(byId.values());
+}
+
+export function tagCloud(notes: ResearchNotes[]): Array<{ tag: string; count: number }> {
+  const counts = new Map<string, number>();
+  notes.forEach((n) => n.tags.forEach((t) => counts.set(t, (counts.get(t) || 0) + 1)));
+  return Array.from(counts.entries())
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+export function notesToCsv(notes: ResearchNotes[]): string {
+  const rows: string[] = ["runId,rating,starred,archived,tags,noteChars,updatedAt"];
+  notes.forEach((n) => {
+    rows.push([
+      JSON.stringify(n.runId),
+      String(n.rating),
+      n.isStarred ? "1" : "0",
+      n.isArchived ? "1" : "0",
+      String(n.tags.length),
+      String(n.personalNote.length),
+      String(n.updatedAt),
+    ].join(","));
+  });
+  return rows.join("\n");
+}
+
+export function notesEqual(a: ResearchNotes, b: ResearchNotes): boolean {
+  if (a.runId !== b.runId) return false;
+  if (a.personalNote !== b.personalNote) return false;
+  if (a.rating !== b.rating) return false;
+  if (a.isStarred !== b.isStarred) return false;
+  if (a.isArchived !== b.isArchived) return false;
+  if (a.updatedAt !== b.updatedAt) return false;
+  if (a.lastOpenedAt !== b.lastOpenedAt) return false;
+  if (a.tags.length !== b.tags.length) return false;
+  const ta = new Set(a.tags), tb = new Set(b.tags);
+  for (const t of ta) if (!tb.has(t)) return false;
+  if (a.annotations.length !== b.annotations.length) return false;
+  const aa = new Map(a.annotations.map((x) => [x.id, x]));
+  for (const an of b.annotations) {
+    const other = aa.get(an.id);
+    if (!other) return false;
+    if (other.type !== an.type) return false;
+    if (other.content !== an.content) return false;
+  }
+  return true;
+}
+
