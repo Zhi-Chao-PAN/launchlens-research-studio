@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 ﻿import { describe, beforeEach, it, expect } from "vitest";
 import {
   createShareToken,
@@ -173,7 +174,7 @@ describe("folder share tokens", () => {
     createFolderShareToken("f2");
     const shares = getSharesForFolder("f1");
     expect(shares.length).toBe(2);
-    expect(shares.every((s) => (s as { folderId: string }).folderId === "f1")).toBe(true);
+    expect(shares.every((s) => (s as unknown as { folderId: string }).folderId === "f1")).toBe(true);
   });
 
   it("revokes all shares for a folder", () => {
@@ -390,10 +391,10 @@ describe('share url helpers (round 147)', () => {
   it('inspects a valid https share url and returns session info', () => {
     const info = inspectShareUrl('https://example.com/app#share:sess_abc123');
     expect(info).not.toBeNull();
-    expect(info.sessionId).toBe('sess_abc123');
-    expect(info.isSecure).toBe(true);
-    expect(info.hash).toBe('#share:sess_abc123');
-    expect(info.url).toContain('https://example.com/app');
+    expect(info!.sessionId).toBe('sess_abc123');
+    expect(info!.isSecure).toBe(true);
+    expect(info!.hash).toBe('#share:sess_abc123');
+    expect(info!.url).toContain('https://example.com/app');
   });
 
   it('returns null from inspectShareUrl for urls without share hash', () => {
@@ -463,9 +464,9 @@ describe('share url helpers (round 147)', () => {
 
   it('summarizes share events by channel with first/last timestamps', () => {
     const evts = [
-      { id: '1', sessionId: 's', channel: 'twitter', timestamp: 100 },
-      { id: '2', sessionId: 's', channel: 'copy',    timestamp: 200 },
-      { id: '3', sessionId: 's', channel: 'twitter', timestamp: 300 },
+      { id: '1', sessionId: 's', channel: 'twitter' as const, timestamp: 100 },
+      { id: '2', sessionId: 's', channel: 'copy' as const,    timestamp: 200 },
+      { id: '3', sessionId: 's', channel: 'twitter' as const, timestamp: 300 },
     ];
     const s = summarizeShares(evts);
     expect(s.totalShares).toBe(3);
@@ -495,8 +496,8 @@ describe('share url helpers (round 147)', () => {
     const payload = { sessionId: 'ses-u', createdAt: 1, note: 'note with symbols <>&' };
     const token = encodeShareToken(payload);
     const decoded = decodeShareToken(token);
-    expect(decoded.sessionId).toBe('ses-u');
-    expect(decoded.note).toBe('note with symbols <>&');
+    expect(decoded!.sessionId).toBe('ses-u');
+    expect((decoded! as typeof decoded & { note: string }).note).toBe('note with symbols <>&');
   });
 
   it('returns null for invalid tokens', () => {

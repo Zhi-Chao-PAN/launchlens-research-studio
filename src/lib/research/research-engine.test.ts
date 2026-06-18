@@ -26,7 +26,7 @@ afterAll(() => { vi.useRealTimers(); });
 const emptySession = (): ResearchSession => createResearchSession("test query", ["kw1", "kw2"]);
 
 function setAgent(session: ResearchSession, id: string, status: AgentState["status"], progress = 0) {
-  session.agents[id] = { ...session.agents[id], status, progress, currentStep: status };
+  session.agents[id as keyof typeof session.agents] = { ...session.agents[id as keyof typeof session.agents], status, progress, currentStep: status };
 }
 
 describe("research-engine helpers (round 155)", () => {

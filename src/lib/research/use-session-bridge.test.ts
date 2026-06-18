@@ -7,7 +7,7 @@ import {
 } from "@/lib/research/use-session-bridge";
 
 const make = (overrides: any = {}): any => ({
-  id: "abc123-xyz", status: "completed",
+  id: "abc123-xyz",
   query: "AI tools",
   status: "completed",
   savedAt: 1_700_000_000_000,

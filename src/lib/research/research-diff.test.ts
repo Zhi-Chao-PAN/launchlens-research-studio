@@ -549,10 +549,10 @@ describe("extended diff utilities (round 141)", () => {
   describe("applyPatch", () => {
     it("applies added and unchanged, drops removed", () => {
       const segs = [
-        { type: "unchanged", text: "hello " },
-        { type: "removed", text: "old " },
-        { type: "added", text: "new " },
-        { type: "unchanged", text: "world" },
+        { type: "unchanged" as const, text: "hello " },
+        { type: "removed" as const, text: "old " },
+        { type: "added" as const, text: "new " },
+        { type: "unchanged" as const, text: "world" },
       ];
       expect(applyPatch("hello old world", segs)).toBe("hello new world");
     });
@@ -657,9 +657,9 @@ describe("research-diff extensions (round 154)", () => {
     });
     const d = diffResearch(oldS, newS);
     const bd = breakdownByField(d);
-    expect(bd.find(b => b.field === "insights").added).toBe(1);
-    expect(bd.find(b => b.field === "opportunities").total).toBeGreaterThan(0);
-    expect(bd.find(b => b.field === "nextStep").total).toBe(1);
+    expect(bd.find(b => b.field === "insights")!.added).toBe(1);
+    expect(bd.find(b => b.field === "opportunities")!.total).toBeGreaterThan(0);
+    expect(bd.find(b => b.field === "nextStep")!.total).toBe(1);
     expect(bd.reduce((sum, r) => sum + r.total, 0)).toBeGreaterThan(0);
   });
 
@@ -675,7 +675,7 @@ describe("research-diff extensions (round 154)", () => {
     const d = { ...emptyDiff(), insights: { added: ["a"], removed: ["b"], modified: [{ old: "x", new: "y", similarity: 0.5 }] } };
     const tagged = insightsWithSign(d);
     expect(tagged.map(t => t.sign)).toEqual(["+", "-", "~"]);
-    expect(tagged.find(t => t.sign === "~").text).toContain("(was: x)");
+    expect(tagged.find(t => t.sign === "~")!.text).toContain("(was: x)");
   });
 
   it("totalChangedOpportunities/Risks aggregate counts", () => {

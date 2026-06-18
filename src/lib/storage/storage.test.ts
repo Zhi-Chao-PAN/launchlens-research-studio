@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,11 +22,11 @@ describe("storage backends", () => {
   it("uses file backend when LAUNCHLENS_STORAGE_DIR is set", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ll-storage-"));
     setBackendForTests(null);
-    const b = getBackend({ LAUNCHLENS_STORAGE_DIR: dir } as NodeJS.ProcessEnv);
+    const b = getBackend({ LAUNCHLENS_STORAGE_DIR: dir } as unknown as NodeJS.ProcessEnv);
     expect(b.id.startsWith("file:")).toBe(true);
     b.write("breakers", { failures: 2 });
     setBackendForTests(null);
-    const b2 = getBackend({ LAUNCHLENS_STORAGE_DIR: dir } as NodeJS.ProcessEnv);
+    const b2 = getBackend({ LAUNCHLENS_STORAGE_DIR: dir } as unknown as NodeJS.ProcessEnv);
     expect(b2.read("breakers")).toEqual({ failures: 2 });
     fs.rmSync(dir, { recursive: true, force: true });
   });

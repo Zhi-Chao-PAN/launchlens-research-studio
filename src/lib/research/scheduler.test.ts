@@ -258,7 +258,7 @@ describe("updateSchedule", () => {
     const originalNext = s.nextRunAt;
     const updated = updateSchedule(s.id, { interval: "interval", intervalMinutes: 120 });
     expect(updated?.nextRunAt).not.toBe(originalNext);
-    expect(updated?.nextRunAt - s.createdAt).toBe(120 * 60 * 1000);
+    expect((updated?.nextRunAt ?? 0) - s.createdAt).toBe(120 * 60 * 1000);
   });
 
   it("does not recalculate nextRun when status changes to paused", () => {

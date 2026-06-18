@@ -775,7 +775,7 @@ describe('notes extensions (round 151)', () => {
     expect(out).toHaveLength(2);
     const found = out.find((n) => n.runId === 'r');
     expect(found!.personalNote).toBe('second');
-    expect(found.tags.slice().sort()).toEqual(['x','y']);
+    expect(found!.tags.slice().sort()).toEqual(['x','y']);
     expect(found!.isStarred).toBe(true);
   });
 

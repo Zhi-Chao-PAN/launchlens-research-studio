@@ -249,7 +249,7 @@ describe("template duplication", () => {
 
   it("duplicates a template with (Copy) suffix", () => {
     const original = createTemplate({
-      name: "Original Template",
+      name: "Original Template", query: "q",
       keywords: ["a", "b"],
       description: "Test description",
       category: "Custom",
