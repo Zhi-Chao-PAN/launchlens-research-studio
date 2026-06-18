@@ -241,3 +241,128 @@ export const RESEARCH_AGENTS: AgentId[] = [
   "pricing-scout",
   "channel-scout",
 ];
+
+
+// ---------- Pure runtime helpers (side-effect free) ----------
+
+const AGENT_ID_SET: ReadonlySet<string> = new Set<string>([
+  "market-sizer",
+  "competitor-analyst",
+  "pain-detective",
+  "pricing-scout",
+  "channel-scout",
+  "synthesis",
+]);
+
+const CONFIDENCE_SET: ReadonlySet<string> = new Set<string>(["low", "medium", "high"]);
+
+export function isAgentId(value: unknown): value is AgentId {
+  return typeof value === "string" && AGENT_ID_SET.has(value);
+}
+
+export function isConfidenceLevel(value: unknown): value is ConfidenceLevel {
+  return typeof value === "string" && CONFIDENCE_SET.has(value);
+}
+
+export const CONFIDENCE_LEVELS: readonly ConfidenceLevel[] = ["low", "medium", "high"] as const;
+
+/** Returns a stable ordering comparator for AgentId based on AGENT_METADATA.order. */
+export function compareAgentsByOrder(a: AgentId, b: AgentId): number {
+  return AGENT_METADATA[a].order - AGENT_METADATA[b].order;
+}
+
+/** AgentId values in declared execution order (synthesis last). */
+export function agentIdsByOrder(): AgentId[] {
+  return (Object.keys(AGENT_METADATA) as AgentId[]).slice().sort(compareAgentsByOrder);
+}
+
+/** Research-only agent ids (excludes synthesis). */
+export function researchAgentIds(): AgentId[] {
+  return RESEARCH_AGENTS.slice().sort(compareAgentsByOrder);
+}
+
+export function createEmptyAgentState(id: AgentId): AgentState {
+  return {
+    id,
+    status: "idle",
+    progress: 0,
+    currentStep: "",
+  };
+}
+
+/** Create an empty agents record keyed by every AgentId. */
+export function createEmptyAgentsRecord(): Record<AgentId, AgentState> {
+  const out = {} as Record<AgentId, AgentState>;
+  for (const id of Object.keys(AGENT_METADATA) as AgentId[]) {
+    out[id] = createEmptyAgentState(id);
+  }
+  return out;
+}
+
+export interface SessionSummary {
+  totalAgents: number;
+  completed: number;
+  running: number;
+  errored: number;
+  idle: number;
+  progressPercent: number; // 0..100, average progress across agents
+  isFinished: boolean;
+}
+
+export function summarizeSession(session: Pick<ResearchSession, "agents" | "status">): SessionSummary {
+  const ids = Object.keys(session.agents) as AgentId[];
+  let done = 0;
+  let running = 0;
+  let errored = 0;
+  let idle = 0;
+  let progressSum = 0;
+  for (const id of ids) {
+    const a = session.agents[id];
+    progressSum += Math.max(0, Math.min(100, a.progress || 0));
+    if (a.status === "done") done++;
+    else if (a.status === "running") running++;
+    else if (a.status === "error") errored++;
+    else idle++;
+  }
+  const total = ids.length;
+  return {
+    totalAgents: total,
+    completed: done,
+    running,
+    errored,
+    idle,
+    progressPercent: total === 0 ? 0 : Math.round(progressSum / total),
+    isFinished: session.status === "completed" || session.status === "error",
+  };
+}
+
+/** Map an opportunityScore 0..100 to a bucket label. */
+export function scoreLabel(score: number): "poor" | "fair" | "good" | "strong" {
+  if (!Number.isFinite(score)) return "poor";
+  if (score < 35) return "poor";
+  if (score < 60) return "fair";
+  if (score < 80) return "good";
+  return "strong";
+}
+
+/** Type guard for SourceCitation shape (structural, not deep). */
+export function isSourceCitation(value: unknown): value is SourceCitation {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.id === "string" &&
+    typeof v.title === "string" &&
+    typeof v.snippet === "string" &&
+    typeof v.accessedAt === "string" &&
+    isConfidenceLevel(v.confidence) &&
+    isAgentId(v.agent)
+  );
+}
+
+/** Clamp a progress value to integer 0..100. */
+export function clampProgress(p: number): number {
+  if (!Number.isFinite(p)) return 0;
+  if (p < 0) return 0;
+  if (p > 100) return 100;
+  return Math.round(p);
+}
