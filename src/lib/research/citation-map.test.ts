@@ -1,87 +1,173 @@
-﻿import { describe, it, expect } from "vitest";
-import { computeSourceCitationMap } from "./synthesis-parser";
-import type { SynthesisOutput } from "./synthesis-parser";
+import { describe, it, expect } from "vitest";
+import {
+  extractCitations,
+  buildCitationGraph,
+  citationCoverage,
+  findOrphanSources,
+  findTopSources,
+  balancedCoverage,
+  renderInlineCitations,
+  renderReferencesSection,
+  citationHealthReport,
+  graphToMermaid,
+  mergeCitationGraphs,
+} from "./citation-map";
 
-describe("computeSourceCitationMap", () => {
-  const makeSynthesis = (overrides: Partial<SynthesisOutput> = {}): SynthesisOutput => ({
-    agent: "test",
-    execSummary: "This is a summary with [1] and [2] citations.",
-    opportunityScore: 75,
-    riskScore: 40,
+function makeSyn(overrides = {}) {
+  return {
+    execSummary: "Summary with [1] and [2].",
     keyInsights: [
-      { insight: "First insight from [1] source.", supportingAgents: [], confidence: "high" },
-      { insight: "Second insight cites [3] and [1].", supportingAgents: [], confidence: "medium" },
+      { insight: "Insight from [1]." },
+      { insight: "Cites [3] and [1]." },
     ],
     topThreeOpportunities: [
-      { title: "Opp 1", description: "Desc with [2]", rationale: "Rationale with [1]" },
-      { title: "Opp 2", description: "No cites here", rationale: "Still none" },
-      { title: "Opp 3", description: "[3] is cited here", rationale: "And [2] too" },
+      { title: "O1", description: "Desc [2]", rationale: "Rat [1]" },
+      { title: "O2", description: "none", rationale: "none" },
+      { title: "O3", description: "[3]", rationale: "[2]" },
     ],
     topThreeRisks: [
-      { title: "Risk 1", description: "Risk from [1]", mitigation: "Mitigate with [2]" },
-      { title: "Risk 2", description: "No cite", mitigation: "Also none" },
-      { title: "Risk 3", description: "[4] risk", mitigation: "[4] mitigation" },
+      { title: "R1", description: "Risk [1]", mitigation: "Mit [2]" },
+      { title: "R2", description: "none", mitigation: "none" },
     ],
-    recommendedNextStep: "Next step references [1] and [3].",
-    launchlensBrief: "",
-    citations: [],
+    recommendedNextStep: "Next [1] and [3].",
+    citations: [
+      { url: "https://a.com", title: "A" },
+      { url: "https://b.com", title: "B" },
+      { url: "https://c.com", title: "C" },
+    ],
     ...overrides,
+  };
+}
+
+describe("extractCitations", () => {
+  it("extracts 0-based indices", () => {
+    expect(extractCitations("[1] and [2] plus [1] again")).toEqual([0, 1, 0]);
   });
-
-  it("maps source indices to sections that cite them", () => {
-    const result = computeSourceCitationMap(makeSynthesis());
-
-    // Source 0 ([1]) should be in Executive Summary, Key Insights, Opportunities, Risks, Next Step
-    expect(result.get(0)).toContain("Executive Summary");
-    expect(result.get(0)).toContain("Key Insights");
-    expect(result.get(0)).toContain("Opportunities");
-    expect(result.get(0)).toContain("Risks");
-    expect(result.get(0)).toContain("Next Step");
-
-    // Source 1 ([2]) should be in Executive Summary, Opportunities, Risks
-    expect(result.get(1)).toContain("Executive Summary");
-    expect(result.get(1)).toContain("Opportunities");
-    expect(result.get(1)).toContain("Risks");
-
-    // Source 2 ([3]) should be in Key Insights, Opportunities, Next Step
-    expect(result.get(2)).toContain("Key Insights");
-    expect(result.get(2)).toContain("Opportunities");
-    expect(result.get(2)).toContain("Next Step");
-
-    // Source 3 ([4]) should be only in Risks
-    expect(result.get(3)).toEqual(["Risks"]);
+  it("returns empty for empty/null", () => {
+    expect(extractCitations("")).toEqual([]);
+    expect(extractCitations(null)).toEqual([]);
   });
-
-  it("returns empty map when no citations exist", () => {
-    const synth = makeSynthesis({
-      execSummary: "No citations here",
-      keyInsights: [{ insight: "No cites", supportingAgents: [], confidence: "high" }],
-      topThreeOpportunities: [{ title: "O", description: "d", rationale: "r" }],
-      topThreeRisks: [{ title: "R", description: "d", mitigation: "m" }],
-      recommendedNextStep: "nothing",
-    });
-    const result = computeSourceCitationMap(synth);
-    expect(result.size).toBe(0);
+  it("ignores non-numeric or zero", () => {
+    expect(extractCitations("[0] [abc] [1]")).toEqual([0]);
   });
+});
 
-  it("handles empty synthesis gracefully", () => {
-    const synth = makeSynthesis({
-      execSummary: "",
-      keyInsights: [],
-      topThreeOpportunities: [],
-      topThreeRisks: [],
-      recommendedNextStep: "",
-    });
-    const result = computeSourceCitationMap(synth);
-    expect(result.size).toBe(0);
+describe("buildCitationGraph", () => {
+  it("maps sources to sections", () => {
+    const g = buildCitationGraph(makeSyn());
+    expect(g.sourceToSections.get(0)).toContain("Executive Summary");
+    expect(g.sourceToSections.get(0)).toContain("Key Insights");
+    expect(g.sourceToSections.get(0)).toContain("Opportunities");
+    expect(g.sourceToSections.get(0)).toContain("Risks");
+    expect(g.sourceToSections.get(0)).toContain("Next Step");
+    expect(g.sourceToSections.get(1)).toContain("Executive Summary");
+    expect(g.sourceToSections.get(2)).toContain("Key Insights");
   });
+  it("reverse maps sections to sources", () => {
+    const g = buildCitationGraph(makeSyn());
+    expect(g.sectionToSources.get("Risks")!.sort()).toEqual([0, 1]);
+  });
+  it("handles empty input", () => {
+    const g = buildCitationGraph({ execSummary: "", keyInsights: [], topThreeOpportunities: [], topThreeRisks: [], recommendedNextStep: "" });
+    expect(g.references.length).toBe(0);
+    expect(g.sources.length).toBe(0);
+  });
+});
 
-  it("does not duplicate section names even when cited multiple times in same section", () => {
-    const synth = makeSynthesis({
-      execSummary: "[1] [1] [1] lots of [1]",
-    });
-    const result = computeSourceCitationMap(synth);
-    const sections = result.get(0);
-    expect(sections?.filter((s) => s === "Executive Summary").length).toBe(1);
+describe("citationCoverage", () => {
+  it("counts refs per source", () => {
+    const g = buildCitationGraph(makeSyn());
+    const cov = citationCoverage(g);
+    expect(cov).toHaveLength(3);
+    const src0 = cov.find(c => c.sourceIndex === 0)!;
+    expect(src0.sectionsCount).toBe(5);
+    expect(src0.refCount).toBeGreaterThan(0);
+  });
+});
+
+describe("findOrphanSources", () => {
+  it("finds sources cited in 0 sections", () => {
+    const g = buildCitationGraph(makeSyn({ citations: [
+      { url: "https://a.com", title: "A" },
+      { url: "https://b.com", title: "B" },
+      { url: "https://c.com", title: "C" },
+      { url: "https://d.com", title: "D" },
+    ]}));
+    const orphans = findOrphanSources(g, 0);
+    expect(orphans).toContain(3);
+  });
+});
+
+describe("findTopSources", () => {
+  it("returns top N by ref count", () => {
+    const g = buildCitationGraph(makeSyn());
+    const top = findTopSources(g, 2);
+    expect(top.length).toBe(2);
+    expect(top[0].refCount).toBeGreaterThanOrEqual(top[1].refCount);
+  });
+});
+
+describe("balancedCoverage", () => {
+  it("returns 100 when all sources cited in >=N sections", () => {
+    const g = buildCitationGraph(makeSyn());
+    // source 2 cited in key ins/opps/next = 3 sections -> meets min 2
+    // source 1 cited in summary/opps/risks = 3
+    // source 0 cited everywhere
+    expect(balancedCoverage(g, 2)).toBe(100);
+  });
+  it("returns 0 for empty graph", () => {
+    const g = buildCitationGraph({ execSummary: "", keyInsights: [], topThreeOpportunities: [], topThreeRisks: [] });
+    expect(balancedCoverage(g)).toBe(0);
+  });
+});
+
+describe("renderInlineCitations", () => {
+  it("converts [N] to footnotes", () => {
+    expect(renderInlineCitations("see [1] and [2]")).toBe("see [^1] and [^2]");
+  });
+});
+
+describe("renderReferencesSection", () => {
+  it("renders numbered list", () => {
+    const md = renderReferencesSection([{ title: "A", url: "https://a.com" }, { title: "B" }]);
+    expect(md).toContain("[1]");
+    expect(md).toContain("https://a.com");
+    expect(md).toContain("[2]");
+    expect(md).toContain("## References");
+  });
+});
+
+describe("citationHealthReport", () => {
+  it("has expected fields", () => {
+    const g = buildCitationGraph(makeSyn());
+    const h = citationHealthReport(g);
+    expect(h.totalSources).toBe(3);
+    expect(h.totalReferences).toBeGreaterThan(0);
+    expect(h.citedSources).toBe(3);
+    expect(h.orphanSources).toEqual([]);
+    expect(h.topSources.length).toBeGreaterThan(0);
+    expect(Array.isArray(h.sectionsMissingCitations)).toBe(true);
+  });
+});
+
+describe("graphToMermaid", () => {
+  it("emits a mermaid graph", () => {
+    const g = buildCitationGraph(makeSyn());
+    const m = graphToMermaid(g);
+    expect(m.startsWith("graph LR")).toBe(true);
+    expect(m).toContain("S0");
+    expect(m).toContain("-->");
+  });
+});
+
+describe("mergeCitationGraphs", () => {
+  it("concatenates sources and offsets refs", () => {
+    const a = buildCitationGraph(makeSyn());
+    const b = buildCitationGraph(makeSyn());
+    const m = mergeCitationGraphs([a, b]);
+    expect(m.sources.length).toBe(6);
+    // references from second graph should point into offset range 3..5
+    const srcsFromB = m.references.filter(r => r.sourceIndex >= 3);
+    expect(srcsFromB.length).toBeGreaterThan(0);
   });
 });
