@@ -13,6 +13,16 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 };
 
 export type DictionaryKey =
+  | "agent.channel-scout.description"
+  | "agent.channel-scout.name"
+  | "agent.competitor-analyst.description"
+  | "agent.competitor-analyst.name"
+  | "agent.market-sizer.description"
+  | "agent.market-sizer.name"
+  | "agent.pain-detective.description"
+  | "agent.pain-detective.name"
+  | "agent.pricing-scout.description"
+  | "agent.pricing-scout.name"
   | "agent.status.done"
   | "agent.status.error"
   | "agent.status.idle"
@@ -51,7 +61,6 @@ export type DictionaryKey =
   | "crash.goHome"
   | "crash.title"
   | "crash.tryAgain"
-  | "en"
   | "errors.dismiss"
   | "errors.startFailed"
   | "export.copied"
@@ -89,8 +98,6 @@ export type DictionaryKey =
   | "history.sortOldest"
   | "history.sortQuery"
   | "history.title"
-  | "ja"
-  | "ko"
   | "language.label"
   | "notFound.backHome"
   | "notFound.body"

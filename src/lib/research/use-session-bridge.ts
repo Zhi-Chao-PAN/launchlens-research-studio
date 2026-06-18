@@ -95,7 +95,7 @@ export function isValidSessionId(id: unknown): id is string {
 export function isShareableSession(s: ResearchSession | null | undefined): boolean {
   if (!s) return false;
   if (s.status !== "completed") return false;
-  if (!isValidSessionId(s.sessionId)) return false;
+  if (!isValidSessionId(s.id)) return false;
   if (typeof s.query !== "string" || !s.query.trim()) return false;
   return true;
 }

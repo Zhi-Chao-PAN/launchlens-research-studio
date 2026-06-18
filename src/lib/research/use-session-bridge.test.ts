@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 ﻿import { describe, it, expect } from "vitest";
 import {
   isValidSessionId, isShareableSession, getSessionStatusLabel,
@@ -25,10 +26,11 @@ describe("use-session-bridge pure helpers (round 163)", () => {
   });
 
   it("isShareableSession requires completed + valid id + query", () => {
-    expect(isShareableSession(make())).toBe(true);
-    expect(isShareableSession(make({ status: "running" }))).toBe(false);
-    expect(isShareableSession(make({ sessionId: "bad" }))).toBe(false);
-    expect(isShareableSession(make({ query: "   " }))).toBe(false);
+    const rs = (overrides: any = {}) => ({ id: "abc123-xyz", query: "AI tools", status: "completed", agents: {}, citations: [], createdAt: "2024-01-01", updatedAt: "2024-01-01", keywords: [], ...overrides });
+    expect(isShareableSession(rs())).toBe(true);
+    expect(isShareableSession(rs({ status: "running" }))).toBe(false);
+    expect(isShareableSession(rs({ id: "bad" }))).toBe(false);
+    expect(isShareableSession(rs({ query: "   " }))).toBe(false);
     expect(isShareableSession(null)).toBe(false);
   });
 
