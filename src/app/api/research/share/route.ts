@@ -28,10 +28,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
 
-    const share = createShareToken(runId, {
-      expiresInMs: expiresInMs ? parseInt(expiresInMs) : undefined,
-      maxViews: maxViews ? parseInt(maxViews) : undefined,
-    });
+    let expiresMs: number | undefined;
+    let maxViewsN: number | undefined;
+    if (expiresInMs !== undefined && expiresInMs !== null && expiresInMs !== "") {
+      const n = Number(expiresInMs);
+      if (!Number.isFinite(n) || n < 60_000 || n > 365 * 24 * 60 * 60 * 1000) {
+        return NextResponse.json({ error: "expiresInMs must be a number between 60000 and 31536000000" }, { status: 400 });
+      }
+      expiresMs = Math.floor(n);
+    }
+    if (maxViews !== undefined && maxViews !== null && maxViews !== "") {
+      const n = Number(maxViews);
+      if (!Number.isInteger(n) || n < 1 || n > 100_000) {
+        return NextResponse.json({ error: "maxViews must be an integer between 1 and 100000" }, { status: 400 });
+      }
+      maxViewsN = n;
+    }
+
+    const share = createShareToken(runId, { expiresInMs: expiresMs, maxViews: maxViewsN });
 
     return NextResponse.json({
       token: share.token,

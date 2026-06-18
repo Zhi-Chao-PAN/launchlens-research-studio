@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { selectProvider } from "@/lib/providers/provider-registry";
 import { getSchedulerStats } from "@/lib/research/scheduler";
 import { summarizeTelemetry } from "@/lib/telemetry/telemetry";
@@ -10,14 +10,14 @@ const STARTED_AT = Date.now();
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const provider = selectProvider();
-  const scheduler = getSchedulerStats();
-  const telemetry = summarizeTelemetry();
-  const breakers = snapshotBreakers();
-  const openBreakers = Object.values(breakers).filter((b) => b.openedAt !== null).length;
+  const url = new URL(request.url);
+  const key = url.searchParams.get("key");
+  const expected = process.env.LAUNCHLENS_PROBE_KEY;
+  const authed = !!expected && key === expected;
 
-  return NextResponse.json({
+  const base = {
     status: "ok",
     service: packageJson.name,
     version: packageJson.version,
@@ -29,6 +29,24 @@ export async function GET() {
       isMock: provider.isMock,
       supportsStreaming: provider.supportsStreaming,
     },
+    timestamp: Date.now(),
+  };
+
+  if (!authed) {
+    return NextResponse.json(base, {
+      headers: expected
+        ? { "X-Probe-Auth": "required" }
+        : undefined,
+    });
+  }
+
+  const scheduler = getSchedulerStats();
+  const telemetry = summarizeTelemetry();
+  const breakers = snapshotBreakers();
+  const openBreakers = Object.values(breakers).filter((b) => b.openedAt !== null).length;
+
+  return NextResponse.json({
+    ...base,
     scheduler,
     telemetry: {
       total: telemetry.total,
@@ -39,6 +57,5 @@ export async function GET() {
       total: Object.keys(breakers).length,
       open: openBreakers,
     },
-    timestamp: Date.now(),
   });
 }

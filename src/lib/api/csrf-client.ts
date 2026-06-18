@@ -123,3 +123,64 @@ export function csrfErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return "Unknown CSRF/fetch error.";
 }
+
+
+/* ------------------------------------------------------------------ */
+/*  429 / rate-limit aware fetch helpers (round 183)                  */
+/* ------------------------------------------------------------------ */
+
+export interface RateLimitInfo {
+  limited: boolean;
+  retryAfterMs: number | null;
+}
+
+/** Parse a 429 response into a retry delay (ms). Honors Retry-After header. */
+export function parseRateLimit(response: Response): RateLimitInfo {
+  if (response.status !== 429) return { limited: false, retryAfterMs: null };
+  const ra = response.headers.get("retry-after");
+  let ms: number | null = null;
+  if (ra) {
+    const n = Number(ra);
+    if (Number.isFinite(n)) ms = n >= 1_000_000 ? n : n * 1000; // sec vs ms heuristic
+    else {
+      const d = new Date(ra).getTime();
+      if (Number.isFinite(d)) ms = Math.max(0, d - Date.now());
+    }
+  }
+  if (ms === null || ms < 0) ms = 5000;
+  return { limited: true, retryAfterMs: Math.min(ms, 60_000) };
+}
+
+export class RateLimitError extends Error {
+  retryAfterMs: number;
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export interface FetchWithCsrfOptions extends CsrfFetchOptions {
+  /** When the server responds 429, throw a RateLimitError instead of returning the Response. */
+  throwOnRateLimit?: boolean;
+}
+
+/** fetchWithCsrf extended: optionally throws RateLimitError on 429. */
+export async function fetchWithCsrfStrict(
+  url: string,
+  options: FetchWithCsrfOptions = {},
+): Promise<Response> {
+  const { throwOnRateLimit, ...rest } = options;
+  const res = await fetchWithCsrf(url, rest);
+  if (throwOnRateLimit && res.status === 429) {
+    const info = parseRateLimit(res);
+    // Attempt to read JSON error body
+    let msg = "Too many requests";
+    try {
+      const body = await res.clone().json();
+      if (body && body.error) msg = String(body.error);
+    } catch { /* ignore */ }
+    throw new RateLimitError(msg, info.retryAfterMs ?? 5000);
+  }
+  return res;
+}
