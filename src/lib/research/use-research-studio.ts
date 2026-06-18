@@ -327,7 +327,7 @@ export function useResearchStudio() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Pure studio helpers (round 162) ¡ª no React, no network            */
+/*  Pure studio helpers (round 162) -- no React, no network            */
 /* ------------------------------------------------------------------ */
 
 /** Normalize user query before submission: trim, collapse whitespace, clamp length. */
@@ -341,7 +341,7 @@ export function normalizeQuery(raw: string, maxLength = 500): string {
 /** Normalize keyword list: trim, dedupe (case-preserving), drop empties, cap count. */
 export function normalizeKeywords(raw: string[] | string | undefined, maxCount = 10, maxLen = 60): string[] {
   let items: string[] = [];
-  if (typeof raw === "string") items = raw.split(/[,£¬;£»\n]+/);
+  if (typeof raw === "string") items = raw.split(/[,;\n]+/);
   else if (Array.isArray(raw)) items = raw;
   const seen = new Set<string>();
   const out: string[] = [];

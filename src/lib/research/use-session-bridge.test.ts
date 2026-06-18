@@ -7,7 +7,7 @@ import {
 } from "@/lib/research/use-session-bridge";
 
 const make = (overrides: any = {}): any => ({
-  sessionId: "abc123-xyz",
+  id: "abc123-xyz", status: "completed",
   query: "AI tools",
   status: "completed",
   savedAt: 1_700_000_000_000,
@@ -53,7 +53,7 @@ describe("use-session-bridge pure helpers (round 163)", () => {
   });
 
   it("summarizeCachedSessions tallies timestamps/completed", () => {
-    const s = summarizeCachedSessions([make(), make({ sessionId: "run-session", status: "running", savedAt: 1_699_999_000_000 })]);
+    const s = summarizeCachedSessions([make(), make({ id: "run-session", status: "running", savedAt: 1_699_999_000_000 })]);
     expect(s.total).toBe(2);
     expect(s.completed).toBe(1);
     expect(s.newestTs).toBe(1_700_000_000_000);
@@ -64,7 +64,7 @@ describe("use-session-bridge pure helpers (round 163)", () => {
 
   it("cachedSessionsEqual compares key fields", () => {
     expect(cachedSessionsEqual(make(), make())).toBe(true);
-    expect(cachedSessionsEqual(make(), make({ sessionId: "other" }))).toBe(false);
+    expect(cachedSessionsEqual(make(), make({ id: "other" }))).toBe(false);
     expect(cachedSessionsEqual(make(), make({ status: "running" }))).toBe(false);
     expect(cachedSessionsEqual(make(), make({ savedAt: 1 }))).toBe(false);
   });
@@ -72,7 +72,7 @@ describe("use-session-bridge pure helpers (round 163)", () => {
   it("cachedSessionsToCsv includes header and rows", () => {
     const csv = cachedSessionsToCsv([make()]);
     const [header, row] = csv.split("\n");
-    expect(header).toBe("sessionId,query,status,savedAt,createdAt");
+    expect(header).toBe("id,query,status,savedAt,createdAt");
     expect(row).toContain("abc123-xyz");
   });
 

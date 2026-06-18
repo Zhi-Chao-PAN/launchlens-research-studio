@@ -158,7 +158,7 @@ describe("fuzzy-search", () => {
     it("falls back to subsequence match", () => {
       const ranges = getMatchRanges("hello world", "hlo");
       expect(ranges.length).toBeGreaterThan(0);
-      // h at 0, l at 2, o at 4 ¡ª three separate ranges
+      // h at 0, l at 2, o at 4 -- three separate ranges
       expect(ranges).toContainEqual({ start: 0, end: 1 });
       expect(ranges).toContainEqual({ start: 2, end: 3 });
       expect(ranges).toContainEqual({ start: 4, end: 5 });

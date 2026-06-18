@@ -25,23 +25,23 @@ export const viewport: Viewport = {
 
 const SITE_URL = "https://research.launchlens.ai";
 const SITE_DESCRIPTION =
-  "AI 辅助的大模型评估工作台 — 输入任务，上传看板和产物，AI 帮你生成专业评估报告。";
+  "LaunchLens Research Studio - Multi-agent market intelligence for your product idea. AI agents synthesize professional market research reports in minutes.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "ModelEval Studio · AI 模型评估工作台",
-    template: "%s | ModelEval Studio",
+    default: "LaunchLens Research Studio",
+    template: "%s | LaunchLens",
   },
   description: SITE_DESCRIPTION,
-  applicationName: "ModelEval Studio",
+  applicationName: "LaunchLens Research Studio",
   keywords: [
-    "模型评估",
-    "大模型测试",
-    "AI 评估",
-    "多模型对比",
-    "模型测试",
-    "评估助手",
+    "market research",
+    "competitor analysis",
+    "AI research",
+    "pricing intelligence",
+    "go-to-market",
+    "launch strategy",
   ],
   authors: [{ name: "ModelEval Team" }],
   creator: "ModelEval Studio",
@@ -52,7 +52,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "zh_CN",
     url: SITE_URL,
-    title: "ModelEval Studio · AI 模型评估工作台",
+    title: "ModelEval Studio -- AI 模----------台",
     description: SITE_DESCRIPTION,
     siteName: "ModelEval Studio",
     images: [
@@ -92,7 +92,7 @@ export default function RootLayout({
           <ToastProvider>
             <CommandPaletteProvider>
               <a href="#main-content" className="skip-link">
-                跳转到主要内容
+                --转----要----
               </a>
               {children}
               <CommandPalette />

@@ -11,8 +11,10 @@ export interface CachedSession {
   id: string;
   query: string;
   keywords: string[];
+  status: ResearchSession["status"];
   createdAt: string;
   updatedAt: string;
+  savedAt: number;
   outputs: Record<AgentId, AgentOutput | null>;
   agentStatuses: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>;
   citationCount: number;
@@ -53,8 +55,10 @@ export function saveSessionSnapshot(session: ResearchSession): void {
     id: session.id,
     query: session.query,
     keywords: session.keywords,
+    status: session.status,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    savedAt: Date.now(),
     completedAt: new Date().toISOString(),
     outputs: {} as Record<AgentId, AgentOutput | null>,
     agentStatuses: {} as Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>,

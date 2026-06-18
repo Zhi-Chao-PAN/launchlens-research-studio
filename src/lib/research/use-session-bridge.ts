@@ -148,16 +148,16 @@ export function summarizeCachedSessions(sessions: CachedSession[]): CachedSessio
 }
 
 export function cachedSessionsEqual(a: CachedSession, b: CachedSession): boolean {
-  if (a.sessionId !== b.sessionId) return false;
+  if (a.id !== b.id) return false;
   if (a.status !== b.status || a.query !== b.query) return false;
   if ((a.savedAt ?? 0) !== (b.savedAt ?? 0)) return false;
   return true;
 }
 
 export function cachedSessionsToCsv(sessions: CachedSession[]): string {
-  const header = "sessionId,query,status,savedAt,createdAt";
+  const header = "id,query,status,savedAt,createdAt";
   const rows = sessions.map((s) => [
-    s.sessionId, JSON.stringify((s.query || "").slice(0, 120)), s.status,
+    s.id, JSON.stringify((s.query || "").slice(0, 120)), s.status,
     s.savedAt ?? "", s.createdAt ?? "",
   ].join(","));
   return [header, ...rows].join("\n");

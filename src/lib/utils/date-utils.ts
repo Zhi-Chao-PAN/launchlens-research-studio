@@ -8,9 +8,9 @@
 export function formatDistanceToNow(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
-  
-  if (diff < 0) return "�ո�";
-  
+
+  if (diff < 0) return "in the future";
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
@@ -19,19 +19,19 @@ export function formatDistanceToNow(timestamp: number): string {
   const months = Math.floor(days / 30);
   const years = Math.floor(days / 365);
 
-  if (seconds < 60) return "�ո�";
-  if (minutes < 60) return minutes + " ����ǰ";
-  if (hours < 24) return hours + " Сʱǰ";
-  if (days < 7) return days + " ��ǰ";
-  if (weeks < 5) return weeks + " ��ǰ";
-  if (months < 12) return months + " ����ǰ";
-  return years + " ��ǰ";
+  if (seconds < 60) return "just now";
+  if (minutes < 60) return minutes + " min ago";
+  if (hours < 24) return hours + " hr ago";
+  if (days < 7) return days + " days ago";
+  if (weeks < 5) return weeks + " wk ago";
+  if (months < 12) return months + " mo ago";
+  return years + " yr ago";
 }
 
 /**
  * Format a date as a locale string.
  */
-export function formatDate(timestamp: number, locale = "zh-CN"): string {
+export function formatDate(timestamp: number, locale = "en-US"): string {
   return new Date(timestamp).toLocaleDateString(locale, {
     year: "numeric",
     month: "short",
@@ -42,7 +42,7 @@ export function formatDate(timestamp: number, locale = "zh-CN"): string {
 /**
  * Format a datetime as a locale string.
  */
-export function formatDateTime(timestamp: number, locale = "zh-CN"): string {
+export function formatDateTime(timestamp: number, locale = "en-US"): string {
   return new Date(timestamp).toLocaleString(locale, {
     year: "numeric",
     month: "short",

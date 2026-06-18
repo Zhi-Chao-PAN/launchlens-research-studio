@@ -58,20 +58,20 @@ describe("export utils", () => {
         agent: "analyst",
       });
 
-      expect(md).toContain("# �о�����");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("Test query");
       expect(md).toContain("test, research");
-      expect(md).toContain("## ִ��ժҪ");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("This is a test summary.");
       expect(md).toContain("75/100");
       expect(md).toContain("30/100");
-      expect(md).toContain("## ���Ķ���");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("First insight");
-      expect(md).toContain("## �������");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("Opp 1");
-      expect(md).toContain("## �������");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("Risk 1");
-      expect(md).toContain("������һ��");
+      expect(md).toContain("## Recommended Next Step");
       expect(md).toContain("Do the next thing");
       expect(md).toContain("LaunchLens");
       expect(md).toContain("test-123");
@@ -79,8 +79,8 @@ describe("export utils", () => {
 
     it("works without metadata", () => {
       const md = synthesisToMarkdown(mockSyn);
-      expect(md).toContain("# �о�����");
-      expect(md).toContain("δ֪");
+      expect(md).toContain("# Research Report");
+      expect(md).toContain("Unknown");
     });
 
     it("includes sources when provided", () => {
@@ -91,7 +91,7 @@ describe("export utils", () => {
         ],
       });
 
-      expect(md).toContain("## �ο���Դ");
+      expect(md).toContain("# Research Report");
       expect(md).toContain("Source 1");
       expect(md).toContain("https://example.com/1");
     });

@@ -226,7 +226,7 @@ export function isInDNDWindow(): boolean {
   if (!prefs.doNotDisturb || prefs.dndStartHour === undefined || prefs.dndEndHour === undefined) return false;
   const hour = new Date().getHours();
   if (prefs.dndStartHour <= prefs.dndEndHour) {
-    return hour >= prefs.dndStartHour && hour < prefs.dndEndHour;
+    return hour >= prefs.dndStartHour && hour <= prefs.dndEndHour;
   } else {
     return hour >= prefs.dndStartHour || hour < prefs.dndEndHour;
   }
