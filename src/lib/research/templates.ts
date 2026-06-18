@@ -703,3 +703,111 @@ export function getTemplateStats(): TemplateStats {
     mostUsed: mostUsed?.useCount ? mostUsed : null,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended template utilities (round 146)                            */
+/* ------------------------------------------------------------------ */
+
+export interface TemplateCoverage {
+  templatesWithKeywords: number;
+  templatesWithQuery: number;
+  templatesWithDescription: number;
+  averageKeywordsPerTemplate: number;
+  unusedTemplates: number;
+}
+
+export function analyzeTemplateCoverage(templates: ResearchTemplate[]): TemplateCoverage {
+  const total = templates.length;
+  if (total === 0) {
+    return { templatesWithKeywords: 0, templatesWithQuery: 0, templatesWithDescription: 0, averageKeywordsPerTemplate: 0, unusedTemplates: 0 };
+  }
+  let withKw = 0, withQuery = 0, withDesc = 0, totalKw = 0, unused = 0;
+  templates.forEach(t => {
+    if (t.keywords.length > 0) withKw++;
+    if (t.query && t.query.trim()) withQuery++;
+    if (t.description && t.description.trim()) withDesc++;
+    totalKw += t.keywords.length;
+    if (t.useCount === 0) unused++;
+  });
+  return {
+    templatesWithKeywords: withKw,
+    templatesWithQuery: withQuery,
+    templatesWithDescription: withDesc,
+    averageKeywordsPerTemplate: Math.round((totalKw / total) * 10) / 10,
+    unusedTemplates: unused,
+  };
+}
+
+export interface TagCloudItem { tag: string; count: number; }
+
+export function buildKeywordCloud(templates: ResearchTemplate[], limit = 20): TagCloudItem[] {
+  const counts = new Map<string, number>();
+  templates.forEach(t => t.keywords.forEach(k => counts.set(k.toLowerCase(), (counts.get(k.toLowerCase()) || 0) + 1)));
+  return Array.from(counts.entries())
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+export function templatesToMarkdown(templates: ResearchTemplate[]): string {
+  const lines = ["# Research Templates", ""];
+  templates.forEach(t => {
+    lines.push("## " + t.name, "");
+    if (t.description) lines.push("> " + t.description, "");
+    lines.push("- **Category:** " + (t.category || "Custom"));
+    lines.push("- **Used:** " + t.useCount + " times");
+    if (t.keywords.length) lines.push("- **Keywords:** " + t.keywords.join(", "));
+    if (t.query) lines.push("- **Query:** " + t.query);
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
+export function applyTemplateFields(template: ResearchTemplate, overrides: { query?: string; extraKeywords?: string[] } = {}): { query: string; keywords: string[] } {
+  const query = overrides.query ?? template.query;
+  const extra = overrides.extraKeywords || [];
+  const seen = new Set<string>();
+  const keywords: string[] = [];
+  template.keywords.forEach(k => {
+    const kk = k.toLowerCase();
+    if (!seen.has(kk)) { seen.add(kk); keywords.push(k); }
+  });
+  extra.forEach(k => {
+    const kk = k.toLowerCase();
+    if (!seen.has(kk)) { seen.add(kk); keywords.push(k); }
+  });
+  return { query, keywords };
+}
+
+export function findTemplatesMissingFields(templates: ResearchTemplate[]): Array<{ id: string; name: string; missing: string[] }> {
+  return templates
+    .map(t => {
+      const missing: string[] = [];
+      if (!t.description || !t.description.trim()) missing.push("description");
+      if (!t.query || !t.query.trim()) missing.push("query");
+      if (!t.keywords || t.keywords.length === 0) missing.push("keywords");
+      return { id: t.id, name: t.name, missing };
+    })
+    .filter(x => x.missing.length > 0);
+}
+
+export function suggestKeywordsFromTemplates(templates: ResearchTemplate[], query: string, limit = 5): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const scored = new Map<string, number>();
+  templates.forEach(t => {
+    const matchesQuery = t.query.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
+    t.keywords.forEach(k => {
+      const kk = k.toLowerCase();
+      let score = scored.get(kk) || 0;
+      if (matchesQuery) score += 2;
+      if (kk.includes(q)) score += 1;
+      scored.set(kk, score);
+    });
+  });
+  return Array.from(scored.entries())
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([k]) => k);
+}

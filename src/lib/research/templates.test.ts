@@ -379,3 +379,63 @@ describe("template stats", () => {
     expect(stats.mostUsed!.useCount).toBe(2);
   });
 });
+import {
+  analyzeTemplateCoverage,
+  buildKeywordCloud,
+  templatesToMarkdown,
+  applyTemplateFields,
+  findTemplatesMissingFields,
+  suggestKeywordsFromTemplates,
+} from "./templates";
+import type { ResearchTemplate } from "./templates";
+
+function mkT(id: string, overrides: Partial<ResearchTemplate> = {}): ResearchTemplate {
+  return {
+    id, name: "T " + id, description: "d", query: "q", keywords: ["a", "b"],
+    category: "Custom", isDefault: false, createdAt: 0, updatedAt: 0, useCount: 1, ...overrides,
+  };
+}
+
+describe("extended template utilities (round 146)", () => {
+  it("analyzeTemplateCoverage computes ratios", () => {
+    const c = analyzeTemplateCoverage([mkT("a"), mkT("b", { description: "", query: "", keywords: [], useCount: 0 })]);
+    expect(c.templatesWithKeywords).toBe(1);
+    expect(c.templatesWithQuery).toBe(1);
+    expect(c.unusedTemplates).toBe(1);
+  });
+  it("analyzeTemplateCoverage returns zeros for empty", () => {
+    expect(analyzeTemplateCoverage([]).templatesWithKeywords).toBe(0);
+  });
+  it("buildKeywordCloud counts case-insensitively", () => {
+    const cloud = buildKeywordCloud([mkT("a", { keywords: ["AI", "ml"] }), mkT("b", { keywords: ["ai", "saas"] })]);
+    expect(cloud[0].tag).toBe("ai");
+    expect(cloud[0].count).toBe(2);
+  });
+  it("templatesToMarkdown emits heading per template", () => {
+    const md = templatesToMarkdown([mkT("a", { name: "Alpha" })]);
+    expect(md).toContain("# Research Templates");
+    expect(md).toContain("## Alpha");
+  });
+  it("applyTemplateFields dedupes and adds extras", () => {
+    const r = applyTemplateFields(mkT("a", { keywords: ["A", "a", "B"] }), { extraKeywords: ["B", "C"] });
+    expect(r.keywords).toEqual(["A", "B", "C"]);
+  });
+  it("applyTemplateFields overrides query", () => {
+    expect(applyTemplateFields(mkT("a"), { query: "new" }).query).toBe("new");
+  });
+  it("findTemplatesMissingFields reports blanks", () => {
+    const miss = findTemplatesMissingFields([mkT("a", { description: "", keywords: [] })]);
+    expect(miss).toHaveLength(1);
+    expect(miss[0].missing).toContain("description");
+    expect(miss[0].missing).toContain("keywords");
+  });
+  it("suggestKeywordsFromTemplates suggests from matches", () => {
+    const ts = [mkT("a", { name: "AI Market", query: "AI trends", keywords: ["AI", "ML"] }), mkT("b", { name: "Growth", query: "SaaS growth", keywords: ["saas"] })];
+    const sug = suggestKeywordsFromTemplates(ts, "AI", 3);
+    expect(sug).toContain("ai");
+    expect(sug).toContain("ml");
+  });
+  it("suggestKeywordsFromTemplates empty for empty query", () => {
+    expect(suggestKeywordsFromTemplates([mkT("a")], "")).toEqual([]);
+  });
+});
