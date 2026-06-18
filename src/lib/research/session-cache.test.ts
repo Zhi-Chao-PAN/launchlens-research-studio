@@ -39,6 +39,13 @@ import {
   evictOldest,
   getTopAccessedSessions,
   warmCache,
+  summarizeCachedSessions,
+  computeHitRate,
+  isValidCachedSession,
+  sanitizeCachedSessions,
+  cachedSessionsToCsv,
+  cachedSessionsEqual,
+  searchCachedSessions,
 } from "@/lib/research/session-cache";
 import type { ResearchSession, AgentOutput } from "@/lib/schema/research-schema";
 
@@ -428,3 +435,78 @@ describe("warmup / preload (round 131)", () => {
   });
 });
 
+describe("session-cache pure helpers (round 157)", () => {
+  const base = (overrides: any = {}) => ({
+    id: "s1", query: "AI tools", keywords: ["ai", "saas"],
+    createdAt: "2024-06-01T00:00:00.000Z", updatedAt: "2024-06-01T00:05:00.000Z",
+    completedAt: "2024-06-01T00:05:00.000Z", citationCount: 12,
+    outputs: { "market-sizer": { agent: "market-sizer", insights: [] } as any, synthesis: null },
+    agentStatuses: {
+      "market-sizer": { status: "done", progress: 100, currentStep: "x", hasOutput: true },
+      synthesis: { status: "done", progress: 100, currentStep: "x", hasOutput: false },
+    },
+    ...overrides,
+  });
+
+  it("summarizeCachedSessions aggregates totals and staleness", () => {
+    const now = new Date("2024-06-02T00:00:00.000Z").getTime();
+    const sum = summarizeCachedSessions([base(), base({ id: "s2", citationCount: 6, createdAt: "2024-05-01T00:00:00.000Z" })], now);
+    expect(sum.totalSessions).toBe(2);
+    expect(sum.totalOutputs).toBe(2);
+    expect(sum.totalCitations).toBe(18);
+    expect(sum.avgCitationCount).toBe(9);
+    expect(sum.sessionsWithOutputs).toBe(2);
+    expect(sum.isStale).toBe(false);
+  });
+
+  it("summarizeCachedSessions marks stale after threshold", () => {
+    const now = new Date("2024-08-01T00:00:00.000Z").getTime();
+    const sum = summarizeCachedSessions([base()], now);
+    expect(sum.isStale).toBe(true);
+  });
+
+  it("computeHitRate yields rates", () => {
+    const r = computeHitRate({ hits: 80, misses: 20, evictions: 5 });
+    expect(r.totalRequests).toBe(100);
+    expect(r.hitRate).toBe(80);
+    expect(r.missRate).toBe(20);
+    expect(r.evictionRate).toBe(5);
+  });
+
+  it("isValidCachedSession rejects bad shapes", () => {
+    expect(isValidCachedSession(null)).toBe(false);
+    expect(isValidCachedSession({})).toBe(false);
+    expect(isValidCachedSession(base())).toBe(true);
+    expect(isValidCachedSession({ ...base(), id: "" })).toBe(false);
+    expect(isValidCachedSession({ ...base(), keywords: "x" })).toBe(false);
+  });
+
+  it("sanitizeCachedSessions filters and sorts by createdAt desc", () => {
+    const bad: any = { id: "" };
+    const old = base({ id: "a", createdAt: "2024-01-01T00:00:00.000Z" });
+    const recent = base({ id: "b", createdAt: "2024-06-01T00:00:00.000Z" });
+    const out = sanitizeCachedSessions([bad, old, recent]);
+    expect(out.map((s) => s.id)).toEqual(["b", "a"]);
+  });
+
+  it("cachedSessionsToCsv includes header and query", () => {
+    const csv = cachedSessionsToCsv([base()]);
+    expect(csv.startsWith("id,query,keywords")).toBe(true);
+    expect(csv).toContain("AI tools");
+  });
+
+  it("cachedSessionsEqual detects equality and differences", () => {
+    const a = base();
+    expect(cachedSessionsEqual(a, { ...a })).toBe(true);
+    expect(cachedSessionsEqual(a, { ...a, citationCount: 3 })).toBe(false);
+    expect(cachedSessionsEqual(a, { ...a, keywords: [...a.keywords, "x"] })).toBe(false);
+    expect(cachedSessionsEqual(a, { ...a, agentStatuses: { ...a.agentStatuses, "market-sizer": { ...a.agentStatuses["market-sizer"], progress: 99 } } })).toBe(false);
+  });
+
+  it("searchCachedSessions matches query and keywords", () => {
+    const sessions = [base(), base({ id: "s2", query: "Pricing tools", keywords: ["pricing"] })];
+    expect(searchCachedSessions(sessions, "ai").map((s) => s.id)).toEqual(["s1"]);
+    expect(searchCachedSessions(sessions, "Pricing").map((s) => s.id)).toEqual(["s2"]);
+    expect(searchCachedSessions(sessions, "  ").map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+});

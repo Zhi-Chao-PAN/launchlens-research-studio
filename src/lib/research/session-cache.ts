@@ -37,7 +37,7 @@ function safeWrite(sessions: CachedSession[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
   } catch {
-    // localStorage quota exceeded ¡ª drop oldest
+    // localStorage quota exceeded ï¿½ï¿½ drop oldest
     if (sessions.length > 1) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, Math.max(1, sessions.length - 1))));
@@ -95,7 +95,7 @@ export function clearAllCachedSessions(): void {
 /**
  * Restore a cached session into the in-memory engine so the user can keep
  * interacting with it (e.g. re-run export, switch tabs). This is a best-effort
- * hydration ¡ª if the server has its own copy, that takes precedence.
+ * hydration ï¿½ï¿½ if the server has its own copy, that takes precedence.
  */
 export function restoreCachedSessionIntoEngine(
   engine: {
@@ -381,5 +381,134 @@ export function warmCache(limit: number = 5): number {
   const rest = all.filter((s) => !topIds.has(s.id));
   safeWrite([...top, ...rest]);
   return top.length;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Pure cache helpers (round 157) â€” side-effect free                 */
+/* ------------------------------------------------------------------ */
+
+export interface CacheSummary {
+  totalSessions: number;
+  totalOutputs: number;
+  totalCitations: number;
+  avgCitationCount: number;
+  oldestCreatedAt?: string;
+  newestCreatedAt?: string;
+  sessionsWithOutputs: number;
+  stalenessMs: number;
+  isStale: boolean;
+}
+
+const DEFAULT_STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export function summarizeCachedSessions(
+  sessions: CachedSession[],
+  nowMs: number = Date.now(),
+  staleThresholdMs: number = DEFAULT_STALE_THRESHOLD_MS,
+): CacheSummary {
+  let totalOutputs = 0, totalCitations = 0, withOutputs = 0;
+  let oldestMs = Infinity, newestMs = -Infinity;
+  for (const s of sessions) {
+    let outCount = 0;
+    for (const out of Object.values(s.outputs)) if (out) { outCount++; }
+    totalOutputs += outCount;
+    if (outCount > 0) withOutputs++;
+    totalCitations += s.citationCount || 0;
+    const created = new Date(s.createdAt).getTime();
+    if (Number.isFinite(created)) {
+      if (created < oldestMs) oldestMs = created;
+      if (created > newestMs) newestMs = created;
+    }
+  }
+  const total = sessions.length;
+  const newestAge = newestMs > -Infinity ? Math.max(0, nowMs - newestMs) : 0;
+  return {
+    totalSessions: total,
+    totalOutputs,
+    totalCitations,
+    avgCitationCount: total > 0 ? Math.round((totalCitations / total) * 100) / 100 : 0,
+    oldestCreatedAt: oldestMs < Infinity ? new Date(oldestMs).toISOString() : undefined,
+    newestCreatedAt: newestMs > -Infinity ? new Date(newestMs).toISOString() : undefined,
+    sessionsWithOutputs: withOutputs,
+    stalenessMs: newestAge,
+    isStale: newestAge > staleThresholdMs,
+  };
+}
+
+/** Compute hit-rate summary without mutating stats. */
+export function computeHitRate(stats: { hits: number; misses: number; evictions: number }): {
+  totalRequests: number; hitRate: number; missRate: number; evictionRate: number;
+} {
+  const total = stats.hits + stats.misses;
+  const base = total > 0 ? total : 1;
+  return {
+    totalRequests: total,
+    hitRate: Math.round((stats.hits / base) * 10000) / 100,
+    missRate: Math.round((stats.misses / base) * 10000) / 100,
+    evictionRate: Math.round((stats.evictions / base) * 10000) / 100,
+  };
+}
+
+/** Shape check for localStorage data (defensive: corrupted JSON shouldn't crash UI). */
+export function isValidCachedSession(value: unknown): value is CachedSession {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== "string" || !v.id) return false;
+  if (typeof v.query !== "string") return false;
+  if (!Array.isArray(v.keywords)) return false;
+  if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") return false;
+  if (!v.outputs || typeof v.outputs !== "object") return false;
+  if (!v.agentStatuses || typeof v.agentStatuses !== "object") return false;
+  if (typeof v.citationCount !== "number") return false;
+  if (typeof v.completedAt !== "string") return false;
+  return true;
+}
+
+/** Filter and sort by createdAt desc. Tolerates invalid entries. */
+export function sanitizeCachedSessions(entries: unknown[]): CachedSession[] {
+  return entries
+    .filter(isValidCachedSession)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+/** CSV export of cached sessions. */
+export function cachedSessionsToCsv(sessions: CachedSession[]): string {
+  const header = "id,query,keywords,citationCount,outputs,createdAt,completedAt";
+  const rows = sessions.map((s) => {
+    const outCount = Object.values(s.outputs).filter(Boolean).length;
+    return [
+      s.id, JSON.stringify(s.query), JSON.stringify(s.keywords.join("|")),
+      s.citationCount, outCount, s.createdAt, s.completedAt,
+    ].join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
+/** Deep structural equality for cached sessions. */
+export function cachedSessionsEqual(a: CachedSession, b: CachedSession): boolean {
+  if (a.id !== b.id) return false;
+  if (a.query !== b.query) return false;
+  if (a.citationCount !== b.citationCount) return false;
+  if (a.createdAt !== b.createdAt || a.completedAt !== b.completedAt) return false;
+  if (a.keywords.length !== b.keywords.length) return false;
+  if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
+  const aAgents = Object.keys(a.agentStatuses).sort().join(",");
+  const bAgents = Object.keys(b.agentStatuses).sort().join(",");
+  if (aAgents !== bAgents) return false;
+  for (const id of Object.keys(a.agentStatuses)) {
+    const x = a.agentStatuses[id], y = b.agentStatuses[id];
+    if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput) return false;
+  }
+  return true;
+}
+
+/** Find sessions whose query matches a search term (case-insensitive substring). */
+export function searchCachedSessions(sessions: CachedSession[], term: string): CachedSession[] {
+  const q = term.trim().toLowerCase();
+  if (!q) return sessions.slice();
+  return sessions.filter((s) =>
+    s.query.toLowerCase().includes(q) ||
+    s.keywords.some((k) => k.toLowerCase().includes(q))
+  );
 }
 
