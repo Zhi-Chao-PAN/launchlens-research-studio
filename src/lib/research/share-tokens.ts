@@ -79,6 +79,39 @@ if (typeof window === "undefined" && process.env.LAUNCHLENS_STORAGE_DIR) {
   }
 }
 
+let _shareWatcher: ReturnType<typeof import("fs").watch> | null = null;
+let _lastMtimeMs = 0;
+
+function watchShareStorage(): void {
+  if (!shareStoragePath || _shareWatcher) return;
+  const fsx = getFs();
+  if (!fsx) return;
+  try { _lastMtimeMs = fsx.existsSync(shareStoragePath) ? fsx.statSync(shareStoragePath).mtimeMs : 0; } catch { _lastMtimeMs = 0; }
+  try {
+    _shareWatcher = fsx.watch(shareStoragePath, { persistent: false }, (event) => {
+      if (event !== "change" && event !== "rename") return;
+      try {
+        const st = fsx.statSync(shareStoragePath!);
+        if (st.mtimeMs <= _lastMtimeMs) return;
+        _lastMtimeMs = st.mtimeMs;
+      } catch { return; }
+      // File changed externally - reload
+      try {
+        const raw = fsx.readFileSync(shareStoragePath!, "utf8");
+        const data = JSON.parse(raw);
+        shareTokens.clear();
+        for (const t of data) shareTokens.set(t.token, t);
+      } catch { /* corrupted - leave current state */ }
+    });
+  } catch { /* watch not supported */ }
+}
+
+function markPersisted(): void {
+  const fsx = getFs();
+  if (!fsx || !shareStoragePath) return;
+  try { _lastMtimeMs = fsx.statSync(shareStoragePath).mtimeMs; } catch { /* ignore */ }
+}
+
 function persistShares() {
   if (!shareStoragePath || typeof window !== "undefined") return;
   const fs = getFs();
@@ -86,6 +119,7 @@ function persistShares() {
   try {
     const all = Array.from(shareTokens.values());
     fs.writeFileSync(shareStoragePath, JSON.stringify(all, null, 2));
+    markPersisted();
   } catch {
     // Best effort
   }

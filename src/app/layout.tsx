@@ -44,9 +44,9 @@ export const metadata: Metadata = {
     "go-to-market",
     "launch strategy",
   ],
-  authors: [{ name: "ModelEval Team" }],
-  creator: "ModelEval Studio",
-  publisher: "ModelEval Studio",
+  authors: [{ name: "LaunchLens Team" }],
+  creator: "LaunchLens Research Studio",
+  publisher: "LaunchLens Research Studio",
   category: "productivity",
   classification: "Developer Tools",
   openGraph: {
@@ -55,13 +55,13 @@ export const metadata: Metadata = {
     url: SITE_URL,
     title: "LaunchLens Research Studio",
     description: SITE_DESCRIPTION,
-    siteName: "ModelEval Studio",
+    siteName: "LaunchLens Research Studio",
     images: [
       {
         url: "/og.svg",
         width: 1200,
         height: 630,
-        alt: "ModelEval Studio",
+        alt: "LaunchLens Research Studio",
         type: "image/svg+xml",
       },
     ],
