@@ -326,3 +326,157 @@ export function removeStalePendingNotifications(maxAgeMs: number = 24 * 60 * 60 
   }
   return removed;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended notification utilities (round 152) — pure helpers        */
+/* ------------------------------------------------------------------ */
+
+export type NotificationSeverity = "info" | "success" | "warning" | "error";
+
+export function severityFor(type: string): NotificationSeverity {
+  switch (type) {
+    case "research-complete":
+    case "batch-complete":
+      return "success";
+    case "research-failed":
+    case "schedule-missed":
+      return "error";
+    case "system":
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
+export function truncateBody(body: string, max: number = 120): string {
+  if (!body) return "";
+  if (body.length <= max) return body;
+  return body.slice(0, Math.max(0, max - 1)) + String.fromCharCode(8230);
+}
+
+export function formatNotificationTime(isoOrMs: string | number): string {
+  const ms = typeof isoOrMs === "number" ? isoOrMs : Date.parse(isoOrMs);
+  if (Number.isNaN(ms)) return "";
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+    + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+export interface NotificationSummary {
+  total: number;
+  unread: number;
+  byType: Record<string, number>;
+  bySeverity: Record<NotificationSeverity, number>;
+  latest?: HistoryEntry;
+}
+
+export function summarizeHistory(entries: HistoryEntry[]): NotificationSummary {
+  const byType: Record<string, number> = {};
+  const bySeverity: Record<NotificationSeverity, number> = { info: 0, success: 0, warning: 0, error: 0 };
+  let unread = 0;
+  let latest: HistoryEntry | undefined;
+  entries.forEach((e) => {
+    byType[e.type] = (byType[e.type] || 0) + 1;
+    bySeverity[severityFor(e.type)]++;
+    if (!e.seen) unread++;
+    if (!latest || e.createdAt > latest.createdAt) latest = e;
+  });
+  return { total: entries.length, unread, byType, bySeverity, latest };
+}
+
+export function filterHistoryByType(entries: HistoryEntry[], type: string): HistoryEntry[] {
+  return entries.filter((e) => e.type === type);
+}
+
+export function filterHistoryBySeen(entries: HistoryEntry[], seen: boolean): HistoryEntry[] {
+  return entries.filter((e) => e.seen === seen);
+}
+
+/** Group entries by calendar day (YYYY-MM-DD), preserving order within day. */
+export function groupHistoryByDay(entries: HistoryEntry[]): Array<{ day: string; entries: HistoryEntry[] }> {
+  const map = new Map<string, HistoryEntry[]>();
+  const order: string[] = [];
+  entries.forEach((e) => {
+    const day = (e.createdAt || "").slice(0, 10);
+    if (!day) return;
+    if (!map.has(day)) { map.set(day, []); order.push(day); }
+    map.get(day)!.push(e);
+  });
+  return order.map((day) => ({ day, entries: map.get(day)! }));
+}
+
+/**
+ * Collapse consecutive duplicates (same type+runId) that fall within windowMs,
+ * keeping the newest of each burst. Entries separated by more than windowMs
+ * are preserved as separate notifications.
+ */
+export function dedupeHistory(entries: HistoryEntry[], windowMs: number = 60_000): HistoryEntry[] {
+  const ordered = entries.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const result: HistoryEntry[] = [];
+  for (const e of ordered) {
+    const last = result.length > 0 ? result[result.length - 1] : undefined;
+    const sameKey = last && last.type === e.type && (last.runId || "") === (e.runId || "");
+    const tLast = last ? Date.parse(last.createdAt) : NaN;
+    const tCur = Date.parse(e.createdAt);
+    if (sameKey && !Number.isNaN(tLast) && !Number.isNaN(tCur) && tCur - tLast < windowMs) {
+      result[result.length - 1] = e; // replace previous in same burst
+    } else {
+      result.push(e);
+    }
+  }
+  return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Return true when, given prefs and a Date, a notification should be suppressed. */
+export function shouldSuppressByPrefs(
+  prefs: NotificationPrefs,
+  type: string,
+  now: Date = new Date(),
+): boolean {
+  if (prefs.doNotDisturb) {
+    const hour = now.getHours();
+    const s = prefs.dndStartHour;
+    const e = prefs.dndEndHour;
+    if (s !== undefined && e !== undefined) {
+      const inWindow = s <= e ? (hour >= s && hour < e) : (hour >= s || hour < e);
+      if (inWindow) return true;
+    }
+  }
+  if (!prefs.inAppEnabled) return true;
+  if ((type === "research-complete" || type === "batch-complete") && !prefs.notifyOnComplete) return true;
+  if (type === "research-failed" && !prefs.notifyOnFailure) return true;
+  return false;
+}
+
+export function pendingSummary(pending: PendingNotification[]): {
+  total: number;
+  oldestAgeMs: number;
+  newestCreatedAt: number;
+} {
+  if (pending.length === 0) return { total: 0, oldestAgeMs: 0, newestCreatedAt: 0 };
+  let oldest = pending[0].createdAt;
+  let newest = pending[0].createdAt;
+  pending.forEach((p) => {
+    if (p.createdAt < oldest) oldest = p.createdAt;
+    if (p.createdAt > newest) newest = p.createdAt;
+  });
+  return { total: pending.length, oldestAgeMs: Date.now() - oldest, newestCreatedAt: newest };
+}
+
+export function historyToCsv(entries: HistoryEntry[]): string {
+  const rows: string[] = ["id,type,title,body,runId,seen,createdAt"];
+  entries.forEach((e) => {
+    rows.push([
+      JSON.stringify(e.id),
+      e.type,
+      JSON.stringify(e.title),
+      JSON.stringify(e.body),
+      e.runId || "",
+      e.seen ? "1" : "0",
+      e.createdAt,
+    ].join(","));
+  });
+  return rows.join("\n");
+}
+
