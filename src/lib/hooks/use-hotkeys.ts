@@ -30,7 +30,7 @@ function normalizeKey(key: string): string {
   return key.toLowerCase();
 }
 
-function matchKey(e: KeyboardEvent, reg: HotkeyRegistration): boolean {
+export function matchKey(e: Pick<KeyboardEvent, "key"|"ctrlKey"|"metaKey"|"shiftKey"|"altKey">, reg: HotkeyRegistration): boolean {
   if (normalizeKey(e.key) !== normalizeKey(reg.key)) return false;
   if (reg.ctrl !== undefined && reg.ctrl !== e.ctrlKey) return false;
   if (reg.meta !== undefined && reg.meta !== e.metaKey) return false;
@@ -68,7 +68,7 @@ export function useHotkeys(
 
   const { preventDefault = true, ignoreInputs = true, enabled = true, scope = "global" } = options;
 
-  const parseCombo = useCallback((comboStr: string): Omit<HotkeyRegistration, "id" | "handler" | "options" | "scope"> => {
+  const parseCombo = useCallback(/** @internal */(comboStr: string): Omit<HotkeyRegistration, "id" | "handler" | "options" | "scope"> => {
     const parts = comboStr.toLowerCase().split("+").map((s) => s.trim());
     const key = parts[parts.length - 1];
     const ctrl = parts.includes("ctrl") || parts.includes("control");
@@ -116,6 +116,17 @@ export function useHotkeys(
 /**
  * Get all registered hotkeys (for command palette / help display).
  */
+/** Pure combo parser (no React dependency). */
+export function parseComboString(comboStr: string): Omit<HotkeyRegistration, "id" | "handler" | "options" | "scope"> {
+  const parts = comboStr.toLowerCase().split("+").map((s) => s.trim());
+  const key = parts[parts.length - 1];
+  const ctrl = parts.includes("ctrl") || parts.includes("control");
+  const meta = parts.includes("cmd") || parts.includes("meta") || parts.includes("command");
+  const shift = parts.includes("shift");
+  const alt = parts.includes("alt") || parts.includes("option");
+  return { key, ctrl: ctrl || undefined, meta: meta || undefined, shift: shift || undefined, alt: alt || undefined };
+}
+
 export function getAllHotkeys(): HotkeyRegistration[] {
   return [...globalRegistry];
 }

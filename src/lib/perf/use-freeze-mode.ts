@@ -13,10 +13,9 @@ import { useEffect } from "react";
 
 const FREEZE_CLASS = "freeze-mode";
 
-function hasFreezeParam(): boolean {
-  if (typeof window === "undefined") return false;
+export function hasFreezeParam(search: string = typeof window !== "undefined" ? window.location.search : ""): boolean {
   try {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(search);
     return params.get("freeze") === "1";
   } catch {
     return false;

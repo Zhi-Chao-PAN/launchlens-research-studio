@@ -30,22 +30,16 @@ function getConnection(): NetworkInformation | undefined {
   return nav.connection;
 }
 
-function readState(): NetworkState {
-  if (typeof navigator === "undefined") {
-    return {
-      isOnline: true,
-      since: null,
-      downlink: null,
-      effectiveType: null,
-      rtt: null,
-      saveData: false,
-    };
+export function readState(nav?: Navigator & { connection?: { downlink?: number; effectiveType?: string; rtt?: number; saveData?: boolean }; onLine?: boolean }, now: number = Date.now()): NetworkState {
+  // SSR: there is no window, so we cannot read navigator.onLine.
+  const navObj = nav ?? (typeof window !== "undefined" && typeof navigator !== "undefined" ? navigator : undefined);
+  if (!navObj) {
+    return { isOnline: true, since: null, downlink: null, effectiveType: null, rtt: null, saveData: false };
   }
-
-  const conn = getConnection();
+  const conn = (navObj as NavigatorWithConnection).connection;
   return {
-    isOnline: navigator.onLine,
-    since: Date.now(),
+    isOnline: navObj.onLine !== false,
+    since: now,
     downlink: conn?.downlink ?? null,
     effectiveType: conn?.effectiveType ?? null,
     rtt: conn?.rtt ?? null,

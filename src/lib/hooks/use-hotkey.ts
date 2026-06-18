@@ -152,8 +152,8 @@ export function subscribeToCommands(listener: () => void): () => void {
 // Helper: format shortcut string from config
 export function formatShortcut(key: string, meta?: boolean, shift?: boolean): string {
   const parts: string[] = [];
-  if (meta) parts.push("⌘");
-  if (shift) parts.push("⇧");
+  if (meta) parts.push("Cmd+");
+  if (shift) parts.push("Shift+");
   parts.push(key.toUpperCase());
   return parts.join("");
 }
