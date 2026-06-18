@@ -420,3 +420,150 @@ export function subscribeToSession(
 export function listSessions(): string[] {
   return Array.from(sessions.keys());
 }
+
+/* ------------------------------------------------------------------ */
+/*  Pure session helpers (round 155) — stateless, SSR-safe            */
+/* ------------------------------------------------------------------ */
+
+export interface SessionSummary {
+  id: string;
+  status: ResearchSession["status"];
+  query: string;
+  keywordCount: number;
+  totalAgents: number;
+  doneAgents: number;
+  runningAgents: number;
+  errorAgents: number;
+  idleAgents: number;
+  overallProgress: number;
+  citationCount: number;
+  durationMs: number;
+  hasSynthesis: boolean;
+}
+
+export function summarizeSession(session: ResearchSession, nowMs: number = Date.now()): SessionSummary {
+  const agents = Object.values(session.agents);
+  const done = agents.filter((a) => a.status === "done").length;
+  const running = agents.filter((a) => a.status === "running").length;
+  const errored = agents.filter((a) => a.status === "error").length;
+  const idle = agents.filter((a) => a.status === "idle" || a.status === "pending").length;
+  const total = agents.length;
+  const avgProgress = total > 0
+    ? Math.round(agents.reduce((sum, a) => sum + (a.progress || 0), 0) / total)
+    : 0;
+  const createdMs = new Date(session.createdAt).getTime();
+  const durationMs = Number.isFinite(createdMs) && createdMs > 0 ? Math.max(0, nowMs - createdMs) : 0;
+  return {
+    id: session.id,
+    status: session.status,
+    query: session.query,
+    keywordCount: session.keywords.length,
+    totalAgents: total,
+    doneAgents: done,
+    runningAgents: running,
+    errorAgents: errored,
+    idleAgents: idle,
+    overallProgress: session.status === "completed" ? 100 : avgProgress,
+    citationCount: session.citations.length,
+    durationMs,
+    hasSynthesis: session.agents.synthesis?.status === "done",
+  };
+}
+
+export function agentStatesList(session: ResearchSession): AgentState[] {
+  // Returns agents in a stable order (by AGENT_METADATA.order if available, else insertion).
+  const entries = Object.entries(session.agents);
+  entries.sort(([a], [b]) => {
+    const ORDER: Record<string, number> = {
+      "market-sizer": 0, "competitor-analyst": 1, "pain-detective": 2,
+      "pricing-scout": 3, "channel-scout": 4, "synthesis": 5,
+    };
+    return (ORDER[a] ?? 99) - (ORDER[b] ?? 99);
+  });
+  return entries.map(([, v]) => v);
+}
+
+export function isSessionHealthy(session: ResearchSession): boolean {
+  if (session.status === "pending" || session.status === "running") return true;
+  if (session.status === "error") return false;
+  // completed with fewer than 3 done agents is degraded
+  return Object.values(session.agents).filter((a) => a.status === "done").length >= 3;
+}
+
+export function sessionToPlainRow(session: ResearchSession): {
+  id: string; status: string; query: string; keywords: string; agentsDone: number;
+  agentsTotal: number; progress: number; citations: number; createdAt: string; updatedAt: string;
+} {
+  const agents = Object.values(session.agents);
+  return {
+    id: session.id,
+    status: session.status,
+    query: session.query,
+    keywords: session.keywords.join("|"),
+    agentsDone: agents.filter((a) => a.status === "done").length,
+    agentsTotal: agents.length,
+    progress: summarizeSession(session).overallProgress,
+    citations: session.citations.length,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
+export function sessionsToCsv(sessions: ResearchSession[]): string {
+  const header = "id,status,query,keywords,agentsDone,agentsTotal,progress,citations,createdAt,updatedAt";
+  const rows = sessions.map((s) => {
+    const r = sessionToPlainRow(s);
+    return [
+      r.id, r.status, JSON.stringify(r.query), JSON.stringify(r.keywords),
+      r.agentsDone, r.agentsTotal, r.progress, r.citations, r.createdAt, r.updatedAt,
+    ].join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
+/** Returns the set of agent ids that finished with output. */
+export function completedAgentIds(session: ResearchSession): string[] {
+  return Object.entries(session.agents)
+    .filter(([, a]) => a.status === "done" && a.output)
+    .map(([id]) => id);
+}
+
+/** Returns the set of agent ids currently in error state. */
+export function erroredAgentIds(session: ResearchSession): string[] {
+  return Object.entries(session.agents)
+    .filter(([, a]) => a.status === "error")
+    .map(([id]) => id);
+}
+
+/** Rough ETA in ms based on average pace of finished agents. */
+export function estimateEtaMs(session: ResearchSession, nowMs: number = Date.now()): number | null {
+  if (session.status === "completed" || session.status === "error") return 0;
+  const createdMs = new Date(session.createdAt).getTime();
+  if (!Number.isFinite(createdMs) || createdMs <= 0) return null;
+  const agents = Object.values(session.agents);
+  const totalNonSynthesis = agents.filter((a) => a.id !== "synthesis").length;
+  const doneNonSynthesis = agents.filter((a) => a.id !== "synthesis" && a.status === "done").length;
+  if (doneNonSynthesis === 0) return null;
+  const elapsed = nowMs - createdMs;
+  const perAgent = elapsed / doneNonSynthesis;
+  const remaining = (totalNonSynthesis - doneNonSynthesis) * perAgent + perAgent * 0.5; // synthesis ~half an agent
+  return Math.max(0, Math.round(remaining));
+}
+
+export function sessionsEqual(a: ResearchSession, b: ResearchSession): boolean {
+  if (a.id !== b.id) return false;
+  if (a.query !== b.query) return false;
+  if (a.status !== b.status) return false;
+  if (a.keywords.length !== b.keywords.length) return false;
+  if (a.keywords.join("\u0000") !== b.keywords.join("\u0000")) return false;
+  if (a.citations.length !== b.citations.length) return false;
+  const aIds = Object.keys(a.agents).sort().join(",");
+  const bIds = Object.keys(b.agents).sort().join(",");
+  if (aIds !== bIds) return false;
+  if (a.query !== b.query) return false;
+  if (a.status !== b.status) return false;
+  if (a.citations.length !== b.citations.length) return false;
+  if ((a.createdAt || "") !== (b.createdAt || "")) return false;
+  return true;
+}
+
