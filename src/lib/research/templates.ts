@@ -452,7 +452,7 @@ export function exportTemplates(options: {
     version: TEMPLATE_EXPORT_VERSION,
     exportedAt: Date.now(),
     source: TEMPLATE_EXPORT_SOURCE,
-    templates: cleaned as ResearchTemplate[],
+    templates: cleaned as unknown as ResearchTemplate[],
   };
 }
 

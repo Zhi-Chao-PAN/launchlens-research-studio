@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 ﻿import { describe, beforeEach, it, expect } from "vitest";
 
 // Mock localStorage before importing
@@ -155,7 +156,7 @@ describe("template export / import", () => {
   });
 
   it("exports custom templates as a valid package", () => {
-    createTemplate({ name: "My Template", keywords: ["a", "b"] });
+    createTemplate({ name: "My Template", query: "q", keywords: ["a", "b"] });
     const pkg = exportTemplates();
 
     expect(pkg.version).toBe(1);
@@ -183,7 +184,7 @@ describe("template export / import", () => {
   });
 
   it("strips internal IDs from exported templates", () => {
-    createTemplate({ name: "Strip Test", keywords: ["x"] });
+    createTemplate({ name: "Strip Test", query: "q", keywords: ["x"] });
     const pkg = exportTemplates();
     const custom = pkg.templates.find((t) => t.name === "Strip Test")!;
     expect(custom.id).toBeUndefined();
@@ -219,8 +220,8 @@ describe("template export / import", () => {
       source: "launchlens-templates",
       exportedAt: Date.now(),
       templates: [
-        { name: "Imported 1", keywords: ["k1"] },
-        { name: "Imported 2", keywords: ["k2"], category: "Growth & Marketing" },
+        { name: "Imported 1", query: "q", keywords: ["k1"] },
+        { name: "Imported 2", query: "q", keywords: ["k2"], category: "Growth & Marketing" },
       ],
     };
     const count = importTemplates(pkg);
@@ -265,7 +266,7 @@ describe("template duplication", () => {
   });
 
   it("duplicates with custom name", () => {
-    const original = createTemplate({ name: "Orig", keywords: ["x"] });
+    const original = createTemplate({ name: "Orig", query: "q", keywords: ["x"] });
     const dup = duplicateTemplate(original.id, "My Custom Name");
     expect(dup!.name).toBe("My Custom Name");
   });
@@ -299,7 +300,7 @@ describe("custom categories", () => {
 
   it("removes a custom category and moves templates to Custom", () => {
     addCustomCategory("To Delete");
-    createTemplate({ name: "T1", keywords: [], category: "To Delete" });
+    createTemplate({ name: "T1", query: "q", keywords: [], category: "To Delete" });
 
     const removed = removeCustomCategory("To Delete");
     expect(removed).toBe(true);
@@ -314,7 +315,7 @@ describe("custom categories", () => {
 
   it("renames a custom category", () => {
     addCustomCategory("Old Name");
-    createTemplate({ name: "T1", keywords: [], category: "Old Name" });
+    createTemplate({ name: "T1", query: "q", keywords: [], category: "Old Name" });
 
     const result = renameCustomCategory("Old Name", "New Name");
     expect(result).toBe(true);
@@ -364,8 +365,8 @@ describe("template stats", () => {
   });
 
   it("tracks custom templates and use counts", () => {
-    const t1 = createTemplate({ name: "Custom 1", keywords: [] });
-    const t2 = createTemplate({ name: "Custom 2", keywords: [] });
+    const t1 = createTemplate({ name: "Custom 1", query: "q", keywords: [] });
+    const t2 = createTemplate({ name: "Custom 2", query: "q", keywords: [] });
 
     incrementTemplateUse(t1.id);
     incrementTemplateUse(t1.id);
