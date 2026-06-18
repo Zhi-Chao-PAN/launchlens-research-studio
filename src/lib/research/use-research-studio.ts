@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
+import { fetchWithCsrfStrict, RateLimitError, fetchWithCsrf } from "@/lib/api/csrf-client";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 
 export interface ResearchStudioState {

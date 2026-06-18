@@ -291,6 +291,7 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const router = useRouter();
   const [isRunning, setIsRunning] = useState(false);
@@ -676,22 +677,15 @@ async function loadRun() {
   const handleGenerateShare = useCallback(async () => {
     if (!run) return;
     setShareLoading(true);
-    try {
-      const res = await fetchWithCsrf("/api/research/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: run.id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setShareToken(data.token);
-      }
-    } catch (e) {
-      console.error("Failed to create share", e);
-    } finally {
-      setShareLoading(false);
-    }
-  }, [run]);
+    setShareError(null);
+    const { createShareAndCopyUrl, buildShareUrl } = await import("@/lib/research/share-api");
+    const r = await createShareAndCopyUrl(run.id);
+    setShareLoading(false);
+    if (!r.ok) { setShareError(r.error || "Failed to create share link"); return; }
+    setShareToken(r.token || null);
+    if (r.copied) showToast("Share link copied to clipboard");
+    else showToast("Share link created: " + buildShareUrl(r.token || ""));
+  }, [run, showToast]);
 
   const handleCopyShareLink = useCallback(async () => {
     if (!shareToken) return;

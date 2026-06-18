@@ -182,7 +182,7 @@ export interface ResearchSession {
   personaId?: string;
   createdAt: string;
   updatedAt: string;
-  status: "pending" | "running" | "completed" | "error";
+  status: "pending" | "running" | "completed" | "error" | "cancelled";
   agents: Record<AgentId, AgentState>;
   citations: SourceCitation[];
 }
@@ -332,7 +332,7 @@ export function summarizeSession(session: Pick<ResearchSession, "agents" | "stat
     errored,
     idle,
     progressPercent: total === 0 ? 0 : Math.round(progressSum / total),
-    isFinished: session.status === "completed" || session.status === "error",
+    isFinished: session.status === "completed" || session.status === "error" || session.status === "cancelled",
   };
 }
 

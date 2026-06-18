@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
-import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
+import { fetchWithCsrfStrict, formatApiError } from "@/lib/api/csrf-client";
 
 interface BatchRun {
   id: string;
@@ -86,11 +86,7 @@ export default function BatchPage() {
       });
       setQueries("");
     } catch (err) {
-      let msg = err instanceof Error ? err.message : "Failed to create batch.";
-      if (err instanceof RateLimitError) {
-        msg = "Too many batch requests. Please wait " + Math.ceil(err.retryAfterMs / 1000) + "s before trying again.";
-      }
-      setSubmitError(msg);
+      setSubmitError(formatApiError(err, { prefix: "Failed to create batch:" }));
     } finally {
       setSubmitting(false);
     }

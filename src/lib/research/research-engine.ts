@@ -16,6 +16,7 @@ import { saveResearchRun } from "@/lib/research/storage";
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
 const sessions = new Map<string, ResearchSession>();
+const cancelledSessions = new Set<string>();
 const eventListeners = new Map<string, (event: ResearchEvent) => void>();
 
 function generateId(): string {
@@ -67,6 +68,20 @@ export function createResearchSession(query: string, keywords: string[], agentId
 export function getResearchSession(id: string): ResearchSession | undefined {
   return sessions.get(id);
 }
+
+export function cancelSession(id: string): boolean {
+  const session = sessions.get(id);
+  if (!session) return false;
+  if (session.status === "completed" || session.status === "error") return false;
+  cancelledSessions.add(id);
+  session.status = "cancelled";
+  session.updatedAt = new Date().toISOString();
+  emitEvent(id, { type: "error", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Session cancelled by user" });
+  emitEvent(id, { type: "complete", agentId: "synthesis", timestamp: new Date().toISOString() });
+  return true;
+}
+
+function isCancelled(id: string): boolean { return cancelledSessions.has(id); }
 
 function emitEvent(sessionId: string, event: ResearchEvent): void {
   const listener = eventListeners.get(sessionId);
@@ -326,6 +341,13 @@ export async function runResearchSession(
     researchAgentIds.map((agentId) => runAgent(session, agentId, stepDelay)),
   );
 
+  if (isCancelled(sessionId)) {
+    session.status = "cancelled";
+    session.updatedAt = new Date().toISOString();
+    cancelledSessions.delete(sessionId);
+    return session;
+  }
+
   const failedAgents = settled
     .map((r, i) => ({ agentId: researchAgentIds[i], r }))
     .filter((x) => x.r.status === "rejected");
@@ -354,6 +376,7 @@ export async function runResearchSession(
     });
   }
 
+  if (isCancelled(sessionId)) { session.status = "cancelled"; cancelledSessions.delete(sessionId); session.updatedAt = new Date().toISOString(); return session; }
   session.status = "completed";
 
 
