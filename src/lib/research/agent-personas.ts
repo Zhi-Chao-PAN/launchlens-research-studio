@@ -26,7 +26,7 @@ export const DEFAULT_AGENTS: AgentPersona[] = [
     name: "资深分析师",
     description: "数据驱动、客观中立、深度分析",
     icon: "📊",
-    systemPrompt: "你是一名资深行业分析师。你的风格是数据驱动、客观中立的。你会基于事实和数据进行分析，避免主观臆断。你会提供全面、深入的分析，涵盖机遇和风险两个方面。",
+    systemPrompt: "你是一名资深行业分析师。你的风格是数据驱动、客观中立的。你会基于事实和数据进行分析，避免主观臆断。你会提供全面、深入的分析，覆盖机会和风险两个方面。",
     tone: "analytical",
     riskBias: "neutral",
     detailLevel: "comprehensive",
@@ -38,7 +38,7 @@ export const DEFAULT_AGENTS: AgentPersona[] = [
     id: "investor",
     name: "风险投资人",
     description: "寻找高回报机会，关注可扩展性和市场空间",
-    icon: "💼",
+    icon: "💰",
     systemPrompt: "你是一名风险投资合伙人。你的风格是积极、有远见的。你会重点关注市场规模、增长潜力、可扩展性和投资回报。你会识别颠覆性机会，但也会注意关键风险因素。你偏向乐观，但也讲求实际。",
     tone: "enthusiastic",
     riskBias: "aggressive",
@@ -170,3 +170,158 @@ export function setSelectedAgentId(id: string): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(SELECTED_AGENT_KEY, id);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended persona utilities (round 143)                             */
+/* ------------------------------------------------------------------ */
+
+export interface PersonaMatch {
+  persona: AgentPersona;
+  score: number;
+  reasons: string[];
+}
+
+const TONE_KEYWORDS: Record<AgentPersona["tone"], string[]> = {
+  analytical: ["data", "analysis", "research", "market", "evidence", "size", "trends", "report"],
+  creative: ["future", "innovation", "imagine", "trends", "emerging", "disrupt", "new", "2030"],
+  pragmatic: ["execute", "launch", "cost", "practical", "how to", "go-to-market", "build", "operate"],
+  skeptical: ["risk", "challenge", "validate", "assumption", "pitfall", "downside", "weakness", "threat"],
+  enthusiastic: ["opportunity", "growth", "scale", "upside", "potential", "invest", "hot", "boom"],
+};
+
+export function recommendPersonasForQuery(query: string, limit = 3): PersonaMatch[] {
+  const q = query.toLowerCase();
+  const matches: PersonaMatch[] = [];
+  for (const p of getAllAgents()) {
+    const reasons: string[] = [];
+    let score = 0;
+    for (const kw of TONE_KEYWORDS[p.tone]) {
+      if (q.includes(kw)) { score += 1; reasons.push(kw); }
+    }
+    for (const fa of p.focusAreas) {
+      if (q.includes(fa.toLowerCase())) { score += 2; reasons.push(fa); }
+    }
+    if (p.id === "analyst") score += 0.5; // slight default preference
+    matches.push({ persona: p, score, reasons });
+  }
+  return matches.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+export function adjustScoreByPersona(baseScore: number, persona: AgentPersona, kind: "opportunity" | "risk"): number {
+  const adj = kind === "opportunity" ? persona.defaultOpportunityAdjustment : persona.defaultRiskAdjustment;
+  return Math.max(0, Math.min(100, baseScore + adj));
+}
+
+export interface PersonaComparison {
+  id: string;
+  name: string;
+  icon: string;
+  adjustedOpportunity: number;
+  adjustedRisk: number;
+  perspective: string;
+}
+
+export function compareAcrossPersonas(baseOpportunity: number, baseRisk: number, personaIds?: string[]): PersonaComparison[] {
+  const pool = personaIds ? personaIds.map(id => getAgentById(id)).filter(Boolean) as AgentPersona[] : DEFAULT_AGENTS;
+  return pool.map(p => ({
+    id: p.id,
+    name: p.name,
+    icon: p.icon,
+    adjustedOpportunity: adjustScoreByPersona(baseOpportunity, p, "opportunity"),
+    adjustedRisk: adjustScoreByPersona(baseRisk, p, "risk"),
+    perspective: p.description,
+  }));
+}
+
+export interface PersonaStats {
+  totalAgents: number;
+  defaultCount: number;
+  customCount: number;
+  toneBreakdown: Record<string, number>;
+  riskBiasBreakdown: Record<string, number>;
+}
+
+export function getPersonaStats(): PersonaStats {
+  const all = getAllAgents();
+  const tones: Record<string, number> = {};
+  const biases: Record<string, number> = {};
+  let custom = 0;
+  for (const p of all) {
+    tones[p.tone] = (tones[p.tone] || 0) + 1;
+    biases[p.riskBias] = (biases[p.riskBias] || 0) + 1;
+    if (p.isCustom) custom++;
+  }
+  return {
+    totalAgents: all.length,
+    defaultCount: DEFAULT_AGENTS.length,
+    customCount: custom,
+    toneBreakdown: tones,
+    riskBiasBreakdown: biases,
+  };
+}
+
+export function personaToMarkdown(p: AgentPersona): string {
+  const lines = [
+    "# " + p.icon + " " + p.name,
+    "",
+    "> " + p.description,
+    "",
+    "- **Tone:** " + p.tone,
+    "- **Risk bias:** " + p.riskBias,
+    "- **Detail level:** " + p.detailLevel,
+    "- **Opportunity adj:** " + (p.defaultOpportunityAdjustment > 0 ? "+" : "") + p.defaultOpportunityAdjustment,
+    "- **Risk adj:** " + (p.defaultRiskAdjustment > 0 ? "+" : "") + p.defaultRiskAdjustment,
+    "",
+    "## Focus areas",
+    "",
+    ...p.focusAreas.map(fa => "- " + fa),
+  ];
+  return lines.join("\n");
+}
+
+export function exportPersonasJson(): string {
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), agents: getAllAgents() }, null, 2);
+}
+
+export function validatePersona(p: Partial<AgentPersona>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!p.name || p.name.trim().length === 0) errors.push("name is required");
+  if (!p.description || p.description.trim().length === 0) errors.push("description is required");
+  if (p.tone && !["analytical","creative","pragmatic","skeptical","enthusiastic"].includes(p.tone)) errors.push("invalid tone");
+  if (p.riskBias && !["conservative","neutral","aggressive"].includes(p.riskBias)) errors.push("invalid riskBias");
+  if (p.detailLevel && !["concise","balanced","comprehensive"].includes(p.detailLevel)) errors.push("invalid detailLevel");
+  if (typeof p.defaultOpportunityAdjustment === "number" && (p.defaultOpportunityAdjustment < -10 || p.defaultOpportunityAdjustment > 10)) {
+    errors.push("defaultOpportunityAdjustment must be between -10 and 10");
+  }
+  if (typeof p.defaultRiskAdjustment === "number" && (p.defaultRiskAdjustment < -10 || p.defaultRiskAdjustment > 10)) {
+    errors.push("defaultRiskAdjustment must be between -10 and 10");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+export function clonePersona(id: string, overrides: Partial<AgentPersona> = {}): AgentPersona | undefined {
+  const src = getAgentById(id);
+  if (!src) return undefined;
+  const copy: AgentPersona = {
+    ...src,
+    id: "agent-" + Math.random().toString(36).slice(2, 10),
+    name: (overrides.name ?? src.name) + " (copy)",
+    isCustom: true,
+    ...overrides,
+  };
+  return copy;
+}
+
+export function consensusFromPersonas(
+  scores: Array<{ persona: string; opportunity: number; risk: number }>
+): { avgOpportunity: number; avgRisk: number; agreement: number } {
+  if (scores.length === 0) return { avgOpportunity: 0, avgRisk: 0, agreement: 0 };
+  const avgO = scores.reduce((a, s) => a + s.opportunity, 0) / scores.length;
+  const avgR = scores.reduce((a, s) => a + s.risk, 0) / scores.length;
+  const spreadO = scores.reduce((a, s) => a + Math.abs(s.opportunity - avgO), 0) / scores.length;
+  const spreadR = scores.reduce((a, s) => a + Math.abs(s.risk - avgR), 0) / scores.length;
+  const avgSpread = (spreadO + spreadR) / 2;
+  const agreement = Math.max(0, Math.min(100, Math.round(100 - avgSpread)));
+  return { avgOpportunity: Math.round(avgO), avgRisk: Math.round(avgR), agreement };
+}
+
