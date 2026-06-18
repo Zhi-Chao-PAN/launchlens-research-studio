@@ -573,10 +573,7 @@ export async function catchUpMissedSchedules(): Promise<number> {
     try {
       const result = await triggerScheduleNow(schedule.id);
       if (result) {
-        addHistoryRecord(schedule.id, {
-          batchId: result.batchId,
-          status: "success",
-          completedAt: Date.now(),
+        addHistoryRecord(schedule.id, { scheduleId: scheduleId, batchId: result.batchId, status: "success" as const, completedAt: Date.now(),
         });
         caughtUp++;
       }

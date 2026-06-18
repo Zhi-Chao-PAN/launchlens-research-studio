@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 ﻿import { describe, it, expect } from "vitest";
 import {
   generateAgentMarkdown,
@@ -16,7 +17,7 @@ import type { MarketSizerOutput, SynthesisOutput } from "@/lib/schema/research-s
 const market: MarketSizerOutput = {
   agent: "market-sizer",
   summary: "The market for AI tools is large and growing.",
-  marketSize: { tam: 10_000_000_000, sam: 2_000_000_000, som: 200_000_000, currency: "USD", growthRate: 25, growthTrend: "accelerating", confidence: "high" },
+  marketSize: { tam: 10_000_000_000, sam: 2_000_000_000, som: 200_000_000, currency: "USD", growthRate: 25, growthTrend: "accelerating", confidence: "high", unit: "revenue", sources: ["c1"] },
   keyTrends: [
     { trend: "AI adoption rising", impact: "positive", evidence: "Gartner 2024" },
     { trend: "Data privacy concerns", impact: "negative", evidence: "Multiple breaches" },
@@ -25,7 +26,7 @@ const market: MarketSizerOutput = {
     { name: "SMB SaaS", size: 500_000_000, description: "Fast-moving" },
   ],
   citations: [
-    { title: "Gartner Report", url: "https://gartner.example/r", snippet: "adoption growing", confidence: "high" },
+    { id: "c1", title: "Gartner Report", url: "https://gartner.example/r", snippet: "adoption growing", confidence: "high", accessedAt: "2026-01-01T00:00:00Z", agent: "market-sizer" },
   ],
 };
 
@@ -48,6 +49,7 @@ const synth: SynthesisOutput = {
     { insight: "Good moat", supportingAgents: ["market-sizer"], confidence: "high" },
   ],
   recommendedNextStep: "Launch MVP",
+  launchlensBrief: "# LaunchLens Brief\n\nStrong opportunity with medium risk. Next: Launch MVP.",
   citations: [],
 };
 

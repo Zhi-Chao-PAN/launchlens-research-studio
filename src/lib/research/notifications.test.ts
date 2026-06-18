@@ -253,7 +253,7 @@ describe('notifications extensions (round 152)', () => {
     expect(s2.bySeverity.success).toBe(1);
     expect(s2.bySeverity.error).toBe(1);
     expect(s2.bySeverity.warning).toBe(1);
-    expect(s2.latest.id).toBe("c");
+    expect(s2.latest!.id).toBe("c");
   });
 
   it('filterHistoryByType and filterHistoryBySeen', () => {

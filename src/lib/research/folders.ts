@@ -14,6 +14,7 @@ export interface ResearchFolder {
   createdAt: number;
   updatedAt: number;
   isSystem?: boolean; // system folders can't be deleted
+  position?: number; // manual ordering
 }
 
 const STORAGE_KEY = "launchlens:folders";

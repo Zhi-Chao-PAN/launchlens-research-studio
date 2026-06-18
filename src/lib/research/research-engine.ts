@@ -446,7 +446,7 @@ export function summarizeSession(session: ResearchSession, nowMs: number = Date.
   const done = agents.filter((a) => a.status === "done").length;
   const running = agents.filter((a) => a.status === "running").length;
   const errored = agents.filter((a) => a.status === "error").length;
-  const idle = agents.filter((a) => a.status === "idle" || a.status === "pending").length;
+  const idle = agents.filter((a) => a.status === "idle").length;
   const total = agents.length;
   const avgProgress = total > 0
     ? Math.round(agents.reduce((sum, a) => sum + (a.progress || 0), 0) / total)

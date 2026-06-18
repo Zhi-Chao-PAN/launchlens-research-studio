@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import {
   synthesisToMarkdown,
@@ -17,7 +18,7 @@ beforeAll(() => {
     createObjectURL: () => "blob:test",
     revokeObjectURL: () => {},
   });
-  vi.stubGlobal("Blob", function (parts: any[], opts: any) {
+  vi.stubGlobal("Blob", function (this: any, parts: any[], opts: any) {
     this.parts = parts;
     this.opts = opts;
   });
@@ -57,20 +58,20 @@ describe("export utils", () => {
         agent: "analyst",
       });
 
-      expect(md).toContain("# ÑÐ¾¿±¨¸æ");
+      expect(md).toContain("# ï¿½Ð¾ï¿½ï¿½ï¿½ï¿½ï¿½");
       expect(md).toContain("Test query");
       expect(md).toContain("test, research");
-      expect(md).toContain("## Ö´ÐÐÕªÒª");
+      expect(md).toContain("## Ö´ï¿½ï¿½ÕªÒª");
       expect(md).toContain("This is a test summary.");
       expect(md).toContain("75/100");
       expect(md).toContain("30/100");
-      expect(md).toContain("## ºËÐÄ¶´²ì");
+      expect(md).toContain("## ï¿½ï¿½ï¿½Ä¶ï¿½ï¿½ï¿½");
       expect(md).toContain("First insight");
-      expect(md).toContain("## Èý´ó»úÓö");
+      expect(md).toContain("## ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
       expect(md).toContain("Opp 1");
-      expect(md).toContain("## Èý´ó·çÏÕ");
+      expect(md).toContain("## ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
       expect(md).toContain("Risk 1");
-      expect(md).toContain("½¨ÒéÏÂÒ»²½");
+      expect(md).toContain("ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½");
       expect(md).toContain("Do the next thing");
       expect(md).toContain("LaunchLens");
       expect(md).toContain("test-123");
@@ -78,7 +79,7 @@ describe("export utils", () => {
 
     it("works without metadata", () => {
       const md = synthesisToMarkdown(mockSyn);
-      expect(md).toContain("# ÑÐ¾¿±¨¸æ");
+      expect(md).toContain("# ï¿½Ð¾ï¿½ï¿½ï¿½ï¿½ï¿½");
       expect(md).toContain("Î´Öª");
     });
 
@@ -90,7 +91,7 @@ describe("export utils", () => {
         ],
       });
 
-      expect(md).toContain("## ²Î¿¼À´Ô´");
+      expect(md).toContain("## ï¿½Î¿ï¿½ï¿½ï¿½Ô´");
       expect(md).toContain("Source 1");
       expect(md).toContain("https://example.com/1");
     });
@@ -105,7 +106,7 @@ describe("export utils", () => {
     });
 
     it("handles Chinese queries", () => {
-      const name = generateExportFilename("ÈË¹¤ÖÇÄÜÊÐ³¡", "json");
+      const name = generateExportFilename("ï¿½Ë¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð³ï¿½", "json");
       expect(name).toMatch(/\.json$/);
       expect(name.length).toBeGreaterThan(0);
     });
@@ -157,6 +158,9 @@ describe("export utils", () => {
         query: "test",
         keywords: [],
         status: "completed" as const,
+        provider: "mock",
+        model: "mock",
+        durationMs: 0,
         result: "plain text result",
         sources: [],
         createdAt: Date.now(),
@@ -173,6 +177,9 @@ describe("export utils", () => {
         query: "q",
         keywords: [],
         status: "completed" as const,
+        provider: "mock",
+        model: "mock",
+        durationMs: 0,
         result: "{}",
         sources: [],
         createdAt: Date.now(),

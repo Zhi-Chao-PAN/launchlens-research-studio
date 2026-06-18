@@ -774,9 +774,9 @@ describe('notes extensions (round 151)', () => {
     const out = dedupeNotes([a, b, base({ runId: 'other' })]);
     expect(out).toHaveLength(2);
     const found = out.find((n) => n.runId === 'r');
-    expect(found.personalNote).toBe('second');
+    expect(found!.personalNote).toBe('second');
     expect(found.tags.slice().sort()).toEqual(['x','y']);
-    expect(found.isStarred).toBe(true);
+    expect(found!.isStarred).toBe(true);
   });
 
   it('tagCloud sorts by count desc then tag asc', () => {

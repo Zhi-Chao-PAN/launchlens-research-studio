@@ -496,7 +496,8 @@ export function cachedSessionsEqual(a: CachedSession, b: CachedSession): boolean
   const bAgents = Object.keys(b.agentStatuses).sort().join(",");
   if (aAgents !== bAgents) return false;
   for (const id of Object.keys(a.agentStatuses)) {
-    const x = a.agentStatuses[id], y = b.agentStatuses[id];
+    const aid = id as keyof typeof a.agentStatuses;
+    const x = a.agentStatuses[aid], y = b.agentStatuses[aid];
     if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput) return false;
   }
   return true;

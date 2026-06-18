@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { describe, it, expect } from "vitest";
 import { getAutocompleteSuggestions, getEmptyQuerySuggestions, groupSuggestionsByType,
   highlightMatch,
@@ -7,6 +8,7 @@ import { getAutocompleteSuggestions, getEmptyQuerySuggestions, groupSuggestionsB
   suggestTypos,
   getCompletionsForLastWord,
 } from "./autocomplete";
+import type { AutocompleteItem } from "./autocomplete";
 
 const mockHistory = [
   {
@@ -74,7 +76,7 @@ describe("autocomplete", () => {
     it("includes template completions for short queries", () => {
       const results = getAutocompleteSuggestions("AI", mockHistory, 8);
       const templateResults = results.filter((r) => r.type === "template");
-      // May or may not include templates depending on matches ¡ª not guaranteed
+      // May or may not include templates depending on matches ï¿½ï¿½ not guaranteed
       // but should not crash
       expect(Array.isArray(templateResults)).toBe(true);
     });
@@ -153,7 +155,7 @@ describe("autocomplete", () => {
 describe("extended autocomplete (round 142)", () => {
   describe("groupSuggestionsByType", () => {
     it("groups items and preserves order", () => {
-      const items = [
+      const items: AutocompleteItem[] = [
         { text: "a", type: "history", score: 1 },
         { text: "b", type: "keyword", score: 1 },
         { text: "c", type: "history", score: 1 },
@@ -211,7 +213,7 @@ describe("extended autocomplete (round 142)", () => {
 
   describe("dedupeSuggestions", () => {
     it("removes case-insensitive duplicates, keeps first", () => {
-      const items = [
+      const items: AutocompleteItem[] = [
         { text: "AI", type: "history", score: 1 },
         { text: "ai", type: "keyword", score: 2 },
       ];

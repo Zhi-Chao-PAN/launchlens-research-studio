@@ -1,5 +1,11 @@
+/// <reference types="vitest/globals" />
 ﻿import { describe, it, expect } from "vitest";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
+import type { AgentOutput } from "@/lib/schema/research-schema";
+
+function summaryOf(out: AgentOutput): string {
+  return out.agent === "synthesis" ? out.execSummary : (out as Extract<AgentOutput, { summary: string }>).summary;
+}
 
 describe("mock provider — query-aware personalization", () => {
   it("includes a query-derived snippet in market-sizer summary", () => {
@@ -25,15 +31,15 @@ describe("mock provider — query-aware personalization", () => {
     const out = generateMockAgentOutput("market-sizer", "Just a query", []);
     expect(out).toBeDefined();
     expect(out.agent).toBe("market-sizer");
-    expect(typeof out.summary).toBe("string");
+    expect(typeof summaryOf(out)).toBe("string");
     // Should not contain "Focus areas: " when no keywords
-    expect(out.summary).not.toContain("Focus areas:");
+    expect(summaryOf(out)).not.toContain("Focus areas:");
   });
 
   it("handles empty query gracefully", () => {
     const out = generateMockAgentOutput("market-sizer", "", ["ai"]);
     expect(out).toBeDefined();
-    expect(out.summary).toContain("this market");
+    expect(summaryOf(out)).toContain("this market");
   });
 
   it("truncates very long queries", () => {
@@ -49,14 +55,14 @@ describe("mock provider — query-aware personalization", () => {
   it("is deterministic: same query yields same output", () => {
     const a = generateMockAgentOutput("market-sizer", "Determinism test", ["k1"]);
     const b = generateMockAgentOutput("market-sizer", "Determinism test", ["k1"]);
-    expect(a.summary).toBe(b.summary);
+    expect(summaryOf(a)).toBe(summaryOf(b));
   });
 
   it("different queries yield different prefixes", () => {
     const a = generateMockAgentOutput("market-sizer", "Mobile app for cats", []);
     const b = generateMockAgentOutput("market-sizer", "Enterprise B2B SaaS", []);
     // Summaries should differ (different query, different seed)
-    expect(a.summary).not.toBe(b.summary);
+    expect(summaryOf(a)).not.toBe(summaryOf(b));
   });
 
   it("synthesis also personalizes", () => {
