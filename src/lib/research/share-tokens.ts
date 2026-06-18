@@ -81,29 +81,63 @@ if (typeof window === "undefined" && process.env.LAUNCHLENS_STORAGE_DIR) {
 
 let _shareWatcher: ReturnType<typeof import("fs").watch> | null = null;
 let _lastMtimeMs = 0;
+let _reloadTimer: ReturnType<typeof setTimeout> | null = null;
+const RELOAD_DEBOUNCE_MS = 100;
+
+function reloadSharesFromDisk(): void {
+  const fsx = getFs();
+  if (!fsx || !shareStoragePath) return;
+  try {
+    const raw = fsx.readFileSync(shareStoragePath, "utf8");
+    const data = JSON.parse(raw);
+    shareTokens.clear();
+    for (const t of data) shareTokens.set(t.token, t);
+    try { _lastMtimeMs = fsx.statSync(shareStoragePath).mtimeMs; } catch { /* ignore */ }
+  } catch { /* corrupted or missing - leave current state */ }
+}
 
 function watchShareStorage(): void {
   if (!shareStoragePath || _shareWatcher) return;
   const fsx = getFs();
   if (!fsx) return;
   try { _lastMtimeMs = fsx.existsSync(shareStoragePath) ? fsx.statSync(shareStoragePath).mtimeMs : 0; } catch { _lastMtimeMs = 0; }
-  try {
-    _shareWatcher = fsx.watch(shareStoragePath, { persistent: false }, (event) => {
-      if (event !== "change" && event !== "rename") return;
-      try {
-        const st = fsx.statSync(shareStoragePath!);
-        if (st.mtimeMs <= _lastMtimeMs) return;
-        _lastMtimeMs = st.mtimeMs;
-      } catch { return; }
-      // File changed externally - reload
-      try {
-        const raw = fsx.readFileSync(shareStoragePath!, "utf8");
-        const data = JSON.parse(raw);
-        shareTokens.clear();
-        for (const t of data) shareTokens.set(t.token, t);
-      } catch { /* corrupted - leave current state */ }
-    });
-  } catch { /* watch not supported */ }
+
+  const start = () => {
+    try {
+      _shareWatcher = fsx.watch(shareStoragePath!, { persistent: false }, (event) => {
+        if (event !== "change" && event !== "rename") return;
+        // Debounce rapid events (some editors emit multi-change; atomic rename emits rename then change)
+        if (_reloadTimer) clearTimeout(_reloadTimer);
+        _reloadTimer = setTimeout(() => {
+          _reloadTimer = null;
+          // If file was renamed-away, fs.watch on some platforms becomes invalid; close and re-arm.
+          try {
+            if (!fsx.existsSync(shareStoragePath!)) {
+              try { _shareWatcher?.close(); } catch { /* ignore */ }
+              _shareWatcher = null;
+              setTimeout(start, 500);
+              return;
+            }
+            const st = fsx.statSync(shareStoragePath!);
+            if (st.mtimeMs <= _lastMtimeMs) return;
+          } catch {
+            // stat failed - watcher likely invalid; re-arm
+            try { _shareWatcher?.close(); } catch { /* ignore */ }
+            _shareWatcher = null;
+            setTimeout(start, 500);
+            return;
+          }
+          reloadSharesFromDisk();
+        }, RELOAD_DEBOUNCE_MS);
+      });
+      _shareWatcher.on?.("error", () => {
+        try { _shareWatcher?.close(); } catch { /* ignore */ }
+        _shareWatcher = null;
+        setTimeout(start, 1000);
+      });
+    } catch { /* watch not supported on this platform - silently degrade */ }
+  };
+  start();
 }
 
 function markPersisted(): void {

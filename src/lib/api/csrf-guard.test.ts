@@ -59,7 +59,17 @@ describe("csrf-guard (round 176)", () => {
     expect(verifyCsrf(makeReq("PUT", { cookie: "x", header: "x" }))).toBeNull();
   });
 
-  it("URL-decodes cookie value to support server-side encoding", () => {
+  it("does not throw when cookie/header lengths differ (timingSafeEqual guard)", () => {
+    const headers = new Headers();
+    headers.set("cookie", "csrf_token=short");
+    headers.set("x-csrf-token", "muchlongerstringhere");
+    const req = new Request("http://localhost/x", { method: "POST", headers });
+    const res = verifyCsrf(req);
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(403);
+  });
+
+    it("URL-decodes cookie value to support server-side encoding", () => {
     const headers = new Headers();
     headers.set("cookie", "csrf_token=hello%20world");
     headers.set("x-csrf-token", "hello world");
