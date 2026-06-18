@@ -1,5 +1,12 @@
-ï»¿import { describe, it, expect } from "vitest";
-import { getAutocompleteSuggestions, getEmptyQuerySuggestions } from "./autocomplete";
+import { describe, it, expect } from "vitest";
+import { getAutocompleteSuggestions, getEmptyQuerySuggestions, groupSuggestionsByType,
+  highlightMatch,
+  rankHistoryRuns,
+  dedupeSuggestions,
+  suggestRefinements,
+  suggestTypos,
+  getCompletionsForLastWord,
+} from "./autocomplete";
 
 const mockHistory = [
   {
@@ -67,7 +74,7 @@ describe("autocomplete", () => {
     it("includes template completions for short queries", () => {
       const results = getAutocompleteSuggestions("AI", mockHistory, 8);
       const templateResults = results.filter((r) => r.type === "template");
-      // May or may not include templates depending on matches â€” not guaranteed
+      // May or may not include templates depending on matches ¡ª not guaranteed
       // but should not crash
       expect(Array.isArray(templateResults)).toBe(true);
     });
@@ -138,6 +145,126 @@ describe("autocomplete", () => {
       const results = getEmptyQuerySuggestions(mockHistory, 3);
       const historyResults = results.filter((r) => r.type === "history");
       expect(historyResults[0].keywords?.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+
+describe("extended autocomplete (round 142)", () => {
+  describe("groupSuggestionsByType", () => {
+    it("groups items and preserves order", () => {
+      const items = [
+        { text: "a", type: "history", score: 1 },
+        { text: "b", type: "keyword", score: 1 },
+        { text: "c", type: "history", score: 1 },
+        { text: "d", type: "template", score: 1 },
+      ];
+      const g = groupSuggestionsByType(items);
+      expect(g).toHaveLength(3);
+      expect(g[0].label).toBe("Recent");
+      expect(g[0].items).toHaveLength(2);
+      expect(g[1].label).toBe("Keywords");
+      expect(g[2].label).toBe("Suggestions");
+    });
+
+    it("returns empty for empty input", () => {
+      expect(groupSuggestionsByType([])).toEqual([]);
+    });
+  });
+
+  describe("highlightMatch", () => {
+    it("returns single segment when no match", () => {
+      const segs = highlightMatch("market size", "xyz");
+      expect(segs).toHaveLength(1);
+      expect(segs[0].matched).toBe(false);
+    });
+
+    it("marks the matched portion", () => {
+      const segs = highlightMatch("AI in healthcare", "ai");
+      expect(segs.some(s => s.matched)).toBe(true);
+      const joined = segs.map(s => s.text).join("");
+      expect(joined).toBe("AI in healthcare");
+    });
+  });
+
+  describe("rankHistoryRuns", () => {
+    it("prefers recent prefix matches", () => {
+      const now = Date.now();
+      const runs = [
+        { id: "1", query: "Market size of AI", keywords: ["ai"], createdAt: now - 5 * 86400000 },
+        { id: "2", query: "AI in healthcare", keywords: ["ai"], createdAt: now - 1 },
+      ];
+      const ranked = rankHistoryRuns(runs, "AI", { now });
+      expect(ranked[0].run.id).toBe("2");
+    });
+
+    it("boosts often-selected items", () => {
+      const now = Date.now();
+      const runs = [
+        { id: "1", query: "SaaS pricing", keywords: ["saas"], createdAt: now - 10 * 86400000, selectedCount: 50 },
+        { id: "2", query: "SaaS growth", keywords: ["saas"], createdAt: now - 1 },
+      ];
+      const ranked = rankHistoryRuns(runs, "SaaS", { now });
+      expect(ranked[0].run.id).toBe("1");
+    });
+  });
+
+  describe("dedupeSuggestions", () => {
+    it("removes case-insensitive duplicates, keeps first", () => {
+      const items = [
+        { text: "AI", type: "history", score: 1 },
+        { text: "ai", type: "keyword", score: 2 },
+      ];
+      const out = dedupeSuggestions(items);
+      expect(out).toHaveLength(1);
+      expect(out[0].text).toBe("AI");
+    });
+  });
+
+  describe("suggestRefinements", () => {
+    it("applies industry hints for known topics", () => {
+      const r = suggestRefinements("AI startup", 3);
+      expect(r.length).toBeGreaterThan(0);
+      expect(r[0].toLowerCase()).toContain("ai startup");
+    });
+
+    it("falls back to generic suffixes", () => {
+      const r = suggestRefinements("quantum widgets", 3);
+      expect(r.length).toBe(3);
+      expect(r[0]).toContain("quantum widgets");
+    });
+
+    it("returns empty for empty query", () => {
+      expect(suggestRefinements("")).toEqual([]);
+    });
+  });
+
+  describe("suggestTypos", () => {
+    it("finds close keyword matches", () => {
+      const r = suggestTypos("Saaz");
+      expect(r.length).toBeGreaterThan(0);
+      expect(r[0].suggestion).toBe("saas");
+      expect(r[0].distance).toBe(1);
+    });
+
+    it("skips short queries", () => {
+      expect(suggestTypos("ai")).toEqual([]);
+    });
+
+    it("returns nothing for exact matches", () => {
+      expect(suggestTypos("SaaS")).toEqual([]);
+    });
+  });
+
+  describe("getCompletionsForLastWord", () => {
+    it("completes the last word using seed keywords", () => {
+      const c = getCompletionsForLastWord("market size of Sa");
+      expect(c.length).toBeGreaterThan(0);
+      expect(c[0].text.toLowerCase()).toContain("saas");
+    });
+
+    it("returns nothing for very short last word", () => {
+      expect(getCompletionsForLastWord("a")).toEqual([]);
     });
   });
 });
