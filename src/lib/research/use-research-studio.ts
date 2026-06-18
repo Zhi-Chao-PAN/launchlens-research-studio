@@ -325,3 +325,154 @@ export function useResearchStudio() {
     allAgentIds: ALL_AGENT_IDS,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Pure studio helpers (round 162) ¡ª no React, no network            */
+/* ------------------------------------------------------------------ */
+
+/** Normalize user query before submission: trim, collapse whitespace, clamp length. */
+export function normalizeQuery(raw: string, maxLength = 500): string {
+  if (typeof raw !== "string") return "";
+  const cleaned = raw.trim().replace(/\s+/g, " ");
+  if (cleaned.length <= maxLength) return cleaned;
+  return cleaned.slice(0, maxLength).trim();
+}
+
+/** Normalize keyword list: trim, dedupe (case-preserving), drop empties, cap count. */
+export function normalizeKeywords(raw: string[] | string | undefined, maxCount = 10, maxLen = 60): string[] {
+  let items: string[] = [];
+  if (typeof raw === "string") items = raw.split(/[,£¬;£»\n]+/);
+  else if (Array.isArray(raw)) items = raw;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    if (typeof it !== "string") continue;
+    const k = it.trim().replace(/\s+/g, " ");
+    if (!k) continue;
+    const key = k.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k.slice(0, maxLen));
+    if (out.length >= maxCount) break;
+  }
+  return out;
+}
+
+export interface StudioProgress {
+  overallPercent: number;
+  completedAgents: number;
+  runningAgents: number;
+  errorAgents: number;
+  totalAgents: number;
+}
+
+/** Compute aggregate progress across agents (pure, deterministic). */
+export function computeStudioProgress(
+  agents: ResearchStudioState["agents"],
+  agentErrors: ResearchStudioState["agentErrors"],
+): StudioProgress {
+  const ids = Object.keys(agents) as AgentId[];
+  let sum = 0, completed = 0, running = 0, errors = 0;
+  for (const id of ids) {
+    const a = agents[id];
+    sum += Math.max(0, Math.min(100, a.progress || 0));
+    if (agentErrors[id]) errors++;
+    else if (a.status === "done" || a.status === "completed") completed++;
+    else if (a.status === "running") running++;
+  }
+  const total = ids.length || 1;
+  return {
+    overallPercent: Math.round(sum / total),
+    completedAgents: completed,
+    runningAgents: running,
+    errorAgents: errors,
+    totalAgents: ids.length,
+  };
+}
+
+export type StudioPhase = "idle" | "loading" | "running" | "completed" | "error" | "mixed";
+
+/** Derive human-friendly phase from state/agents. */
+export function deriveStudioPhase(state: Pick<ResearchStudioState, "status" | "agents">): StudioPhase {
+  if (state.status === "idle" || state.status === "loading" || state.status === "error") return state.status;
+  if (state.status === "completed") return "completed";
+  const statuses = new Set(Object.values(state.agents).map((a) => a.status));
+  if (statuses.has("running")) return "running";
+  if (statuses.has("done") && statuses.size > 1) return "mixed";
+  return state.status;
+}
+
+/** Deep equality of the studio state snapshot (good for memoization checks). */
+export function studioStateEqual(a: ResearchStudioState, b: ResearchStudioState): boolean {
+  if (a.sessionId !== b.sessionId) return false;
+  if (a.query !== b.query || a.status !== b.status || a.error !== b.error) return false;
+  if (a.activeAgentTab !== b.activeAgentTab) return false;
+  if (a.keywords.length !== b.keywords.length) return false;
+  if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
+  for (const id of ALL_AGENT_IDS) {
+    const x = a.agents[id], y = b.agents[id];
+    if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput || x.currentStep !== y.currentStep) return false;
+    if ((a.agentOutputs[id] != null) !== (b.agentOutputs[id] != null)) return false;
+    if ((a.agentErrors[id] || "") !== (b.agentErrors[id] || "")) return false;
+  }
+  return true;
+}
+
+/** Apply agent-progress event immutably, returns new state. */
+export function applyAgentProgress(
+  state: ResearchStudioState,
+  sessionId: string,
+  ev: { agentId: AgentId; progress: number; step?: string },
+): ResearchStudioState {
+  if (state.sessionId !== sessionId) return state;
+  return {
+    ...state,
+    status: "running",
+    agents: {
+      ...state.agents,
+      [ev.agentId]: {
+        ...state.agents[ev.agentId],
+        progress: Math.max(0, Math.min(100, ev.progress)),
+        currentStep: ev.step || state.agents[ev.agentId].currentStep,
+        status: "running",
+      },
+    },
+  };
+}
+
+/** Apply agent-output event immutably. */
+export function applyAgentOutput(
+  state: ResearchStudioState,
+  sessionId: string,
+  ev: { agentId: AgentId; output: AgentOutput | null },
+): ResearchStudioState {
+  if (state.sessionId !== sessionId) return state;
+  return {
+    ...state,
+    agents: {
+      ...state.agents,
+      [ev.agentId]: { ...state.agents[ev.agentId], status: "done", progress: 100, hasOutput: true },
+    },
+    agentOutputs: { ...state.agentOutputs, [ev.agentId]: ev.output },
+  };
+}
+
+/** Apply agent-error event immutably. */
+export function applyAgentError(
+  state: ResearchStudioState,
+  sessionId: string,
+  ev: { agentId: AgentId; message?: string },
+): ResearchStudioState {
+  if (state.sessionId !== sessionId) return state;
+  return {
+    ...state,
+    agentErrors: { ...state.agentErrors, [ev.agentId]: ev.message || "Agent failed" },
+  };
+}
+
+export const STUDIO_CONSTANTS = {
+  ALL_AGENT_IDS,
+  maxQueryLength: 500,
+  maxKeywords: 10,
+  maxKeywordLength: 60,
+};
