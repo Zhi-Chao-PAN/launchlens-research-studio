@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { createBatch, listBatches } from "@/lib/research/batch-manager";
@@ -12,6 +13,9 @@ const BatchSchema = z.object({
 
 // POST /api/research/batch — create a batch of research runs
 export async function POST(request: NextRequest) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   try {
     const body = await request.json();
     const parsed = BatchSchema.safeParse(body);

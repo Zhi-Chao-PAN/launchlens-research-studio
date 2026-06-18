@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
@@ -29,6 +30,9 @@ export async function GET() {
 
 // POST /api/research/schedules - create a new schedule
 export async function POST(request: NextRequest) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   try {
     const body = await request.json();
     const parsed = CreateScheduleSchema.safeParse(body);

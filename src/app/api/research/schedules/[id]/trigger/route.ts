@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import type { NextRequest } from "next/server";
 import { triggerScheduleNow } from "@/lib/research/scheduler";
 
@@ -7,6 +8,9 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const csrfRejection = verifyCsrf(_request);
+  if (csrfRejection) return csrfRejection;
+
   try {
     const { id } = await params;
     const result = await triggerScheduleNow(id);

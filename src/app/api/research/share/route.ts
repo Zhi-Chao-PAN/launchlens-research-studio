@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { createShareToken, getSharesForRun, revokeShareToken } from "@/lib/research/share-tokens";
 import { getResearchRun } from "@/lib/research/storage";
 
 // Create a share token for a run
 export async function POST(request: Request) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   try {
     const body = await request.json();
     const { runId, expiresInMs, maxViews } = body;
@@ -49,6 +53,9 @@ export async function GET(request: Request) {
 
 // Revoke a share token
 export async function DELETE(request: Request) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   const url = new URL(request.url);
   const token = url.searchParams.get("token");
 

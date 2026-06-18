@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
@@ -41,6 +42,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -73,6 +77,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const csrfRejection = verifyCsrf(_request);
+  if (csrfRejection) return csrfRejection;
+
   const { id } = await params;
   const deleted = deleteSchedule(id);
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { listResearchRuns, getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns } from "@/lib/research/storage";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 
@@ -63,6 +64,9 @@ export async function GET(request: Request) {
 
 // Bulk delete
 export async function DELETE(request: Request) {
+  const csrfRejection = verifyCsrf(request);
+  if (csrfRejection) return csrfRejection;
+
   const url = new URL(request.url);
   const idsParam = url.searchParams.get("ids");
   const ids = idsParam ? idsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
