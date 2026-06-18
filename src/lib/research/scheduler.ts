@@ -75,7 +75,7 @@ declare global {
 
 function getSchedulesDir(): string | null {
   if (!STORAGE_DIR) return null;
-  const dir = path.join(STORAGE_DIR, "research", "schedules");
+  const dir = path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "research", "schedules");
   try {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
