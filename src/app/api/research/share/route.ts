@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { createShareToken, getSharesForRun, revokeShareToken } from "@/lib/research/share-tokens";
+import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { getResearchRun } from "@/lib/research/storage";
 
 // Create a share token for a run
 export async function POST(request: Request) {
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 30, refillIntervalMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
 
   try {
     const body = await request.json();
@@ -55,6 +61,11 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 60, refillIntervalMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
 
   const url = new URL(request.url);
   const token = url.searchParams.get("token");

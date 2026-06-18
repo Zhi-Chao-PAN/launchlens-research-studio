@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
@@ -32,6 +33,12 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
+
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 20, refillIntervalMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
 
   try {
     const body = await request.json();
