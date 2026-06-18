@@ -471,6 +471,186 @@ function getFinalRun(id: string): { id: string; status: string; [key: string]: u
   return null;
 }
 
+
+
+/* ------------------------------------------------------------------ */
+/*  Extended batch utilities (round 148)                              */
+/* ------------------------------------------------------------------ */
+
+export interface BatchSummary {
+  batchId: string;
+  status: Batch["status"];
+  total: number;
+  completed: number;
+  failed: number;
+  queued: number;
+  running: number;
+  progress: number;
+  createdAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  priority: BatchPriority;
+  retriesPerRun: number;
+  errors: string[];
+}
+
+export function summarizeBatch(batch: Batch): BatchSummary {
+  const queued = batch.runs.filter((r) => r.status === "queued").length;
+  const running = batch.runs.filter((r) => r.status === "running").length;
+  const done = batch.completed + batch.failed;
+  const progress = batch.total > 0 ? Math.round((done / batch.total) * 100) : 0;
+  const durationMs = batch.completedAt && batch.createdAt
+    ? batch.completedAt - batch.createdAt
+    : undefined;
+  const errors: string[] = [];
+  batch.runs.forEach((r) => { if (r.error) errors.push(r.error); });
+  return {
+    batchId: batch.id,
+    status: batch.status,
+    total: batch.total,
+    completed: batch.completed,
+    failed: batch.failed,
+    queued,
+    running,
+    progress,
+    createdAt: batch.createdAt,
+    completedAt: batch.completedAt,
+    durationMs,
+    priority: batch.priority,
+    retriesPerRun: batch.retriesPerRun,
+    errors,
+  };
+}
+
+export function summarizeAllBatches(batches: Batch[]): {
+  total: number;
+  running: number;
+  paused: number;
+  completed: number;
+  totalRuns: number;
+  totalCompleted: number;
+  totalFailed: number;
+  aggregateProgress: number;
+} {
+  let running = 0, paused = 0, completed = 0;
+  let totalRuns = 0, totalCompleted = 0, totalFailed = 0;
+  batches.forEach((b) => {
+    if (b.status === "running") running++;
+    else if (b.status === "paused") paused++;
+    else if (b.status === "completed") completed++;
+    totalRuns += b.total;
+    totalCompleted += b.completed;
+    totalFailed += b.failed;
+  });
+  const aggregateProgress = totalRuns > 0
+    ? Math.round(((totalCompleted + totalFailed) / totalRuns) * 100)
+    : 0;
+  return { total: batches.length, running, paused, completed, totalRuns, totalCompleted, totalFailed, aggregateProgress };
+}
+
+export function filterBatchesByStatus(batches: Batch[], status: Batch["status"]): Batch[] {
+  return batches.filter((b) => b.status === status);
+}
+
+export function filterBatchesByPriority(batches: Batch[], priority: BatchPriority): Batch[] {
+  return batches.filter((b) => b.priority === priority);
+}
+
+/** Compare function: high->normal->low, then createdAt ascending (FIFO). */
+export function comparePriority(a: Batch, b: Batch): number {
+  const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+  if (pd !== 0) return pd;
+  return a.createdAt - b.createdAt;
+}
+
+export interface EstimateInput {
+  total: number;
+  completed: number;
+  failed: number;
+  avgRunDuration: number;
+  concurrency: number;
+}
+
+export function estimateRemainingMs(input: EstimateInput): number | null {
+  if (input.total <= 0 || input.concurrency <= 0) return null;
+  const remaining = input.total - input.completed - input.failed;
+  if (remaining <= 0) return 0;
+  if (!input.avgRunDuration || input.avgRunDuration <= 0) return null;
+  const effective = Math.min(input.concurrency, remaining);
+  return Math.round((remaining * input.avgRunDuration) / effective);
+}
+
+/**
+ * Mark a specific run as failed with a provided error, bumping batch failed
+ * count and auto-completing the batch if nothing is left queued or running.
+ */
+export function failRun(batchId: string, runIndex: number, error: string): boolean {
+  const store = getStore();
+  const batch = store.get(batchId);
+  if (!batch) return false;
+  const run = batch.runs[runIndex];
+  if (!run) return false;
+  if (run.status === "failed" || run.status === "completed") return false;
+  run.status = "failed";
+  run.error = error;
+  run.completedAt = Date.now();
+  batch.failed++;
+  const allDone = batch.runs.every((r) => r.status === "completed" || r.status === "failed");
+  if (allDone) {
+    batch.status = "completed";
+    batch.completedAt = Date.now();
+  }
+  store.set(batchId, { ...batch });
+  return true;
+}
+
+/** Force-mark a queued or failed run back to completed (manual override). */
+export function forceCompleteRun(batchId: string, runIndex: number): boolean {
+  const store = getStore();
+  const batch = store.get(batchId);
+  if (!batch) return false;
+  const run = batch.runs[runIndex];
+  if (!run) return false;
+  if (run.status === "completed") return false;
+  const prev = run.status;
+  run.status = "completed";
+  run.completedAt = Date.now();
+  run.error = undefined;
+  if (prev === "failed") batch.failed = Math.max(0, batch.failed - 1);
+  batch.completed++;
+  const allDone = batch.runs.every((r) => r.status === "completed" || r.status === "failed");
+  if (allDone) {
+    batch.status = "completed";
+    batch.completedAt = Date.now();
+  }
+  store.set(batchId, { ...batch });
+  return true;
+}
+
+/** Export a batch summary as a plain JSON string. */
+export function exportBatchAsJson(batch: Batch): string {
+  return JSON.stringify(summarizeBatch(batch), null, 2);
+}
+
+/** Export a batch as CSV: query, status, retries, error. */
+export function exportBatchAsCsv(batch: Batch): string {
+  const header = "query,status,retryCount,error";
+  const lines: string[] = [header];
+  batch.runs.forEach((r) => {
+    const q = JSON.stringify(r.query);
+    const err = r.error ? JSON.stringify(r.error) : "";
+    lines.push([q, r.status, String(r.retryCount), err].join(","));
+  });
+  return lines.join("\n");
+}
+
+export function retryPolicyLabel(retries: number): string {
+  if (retries <= 0) return "no-retries";
+  if (retries === 1) return "single-retry";
+  if (retries <= 3) return "standard";
+  return "aggressive";
+}
+
 // Keep processBatch as a thin wrapper that triggers the scheduler
 async function processBatch(
   batchId: string,

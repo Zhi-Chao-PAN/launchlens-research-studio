@@ -170,3 +170,146 @@ describe("batch-manager", () => {
     });
   });
 });
+import {
+  summarizeBatch,
+  summarizeAllBatches,
+  filterBatchesByStatus,
+  filterBatchesByPriority,
+  comparePriority,
+  estimateRemainingMs,
+  failRun,
+  forceCompleteRun,
+  exportBatchAsJson,
+  exportBatchAsCsv,
+  retryPolicyLabel,
+} from '@/lib/research/batch-manager';
+
+describe('batch-manager extensions (round 148)', () => {
+  beforeEach(() => { _resetBatchManager(); (globalThis as any).__globalConcurrency = 3; });
+
+  it('summarizeBatch counts queued/running and computes progress', () => {
+    const b = createBatch(['a','b','c','d'], []);
+    const s2 = summarizeBatch(b);
+    expect(s2.batchId).toBe(b.id);
+    expect(s2.total).toBe(4);
+    expect(s2.completed + s2.failed + s2.queued + s2.running).toBe(4);
+    expect(typeof s2.progress).toBe('number');
+    expect(s2.errors).toEqual([]);
+    expect(s2.priority).toBe('normal');
+    expect(s2.retriesPerRun).toBe(1);
+  });
+
+  it('summarizeBatch collects errors and duration when complete', () => {
+    const b = createBatch(['a','b'], []);
+    expect(failRun(b.id, 0, 'boom')).toBe(true);
+    expect(failRun(b.id, 1, 'bang')).toBe(true);
+    const done = getBatch(b.id)!;
+    const s2 = summarizeBatch(done);
+    expect(s2.failed).toBe(2);
+    expect(s2.status).toBe('completed');
+    expect(s2.errors).toContain('boom');
+    expect(s2.errors).toContain('bang');
+    expect(s2.durationMs).toBeGreaterThanOrEqual(0);
+    expect(s2.completedAt).toBeTypeOf('number');
+  });
+
+  it('failRun returns false for nonexistent/terminal runs', () => {
+    expect(failRun('missing', 0, 'x')).toBe(false);
+    const b = createBatch(['a'], []);
+    failRun(b.id, 0, 'x');
+    expect(failRun(b.id, 0, 'again')).toBe(false);
+    expect(failRun(b.id, 99, 'x')).toBe(false);
+  });
+
+  it('forceCompleteRun flips a failed run to completed', () => {
+    const b = createBatch(['a','b'], []);
+    failRun(b.id, 0, 'bad');
+    const after = getBatch(b.id)!;
+    expect(after.failed).toBeGreaterThanOrEqual(1);
+    expect(forceCompleteRun(b.id, 0)).toBe(true);
+    const done = getBatch(b.id)!;
+    expect(done.completed).toBeGreaterThanOrEqual(1);
+    expect(done.runs[0].status).toBe('completed');
+    expect(done.runs[0].error).toBeUndefined();
+  });
+
+  it('forceCompleteRun is idempotent and safe for bad indices', () => {
+    const b = createBatch(['a'], []);
+    failRun(b.id, 0, 'bad');
+    forceCompleteRun(b.id, 0);
+    expect(forceCompleteRun(b.id, 0)).toBe(false);
+    expect(forceCompleteRun(b.id, 99)).toBe(false);
+  });
+
+  it('summarizeAllBatches aggregates across batches', () => {
+    (globalThis as any).__globalConcurrency = 10;
+    const a = createBatch(['a1','a2'], [], { priority: 'high' });
+    const b = createBatch(['b1'], []);
+    pauseBatch(b.id);
+    const c = createBatch(['c1','c2'], []);
+    failRun(c.id, 0, 'oops');
+    failRun(c.id, 1, 'oops');
+    const all = [getBatch(a.id)!, getBatch(b.id)!, getBatch(c.id)!];
+    const agg = summarizeAllBatches(all);
+    expect(agg.total).toBe(3);
+    expect(agg.paused).toBe(1);
+    expect(agg.totalRuns).toBe(5);
+    expect(agg.totalFailed).toBe(2);
+    expect(agg.aggregateProgress).toBeGreaterThanOrEqual(0);
+    expect(agg.aggregateProgress).toBeLessThanOrEqual(100);
+  });
+
+  it('filterBatchesByStatus and filterBatchesByPriority', () => {
+    const a = createBatch(['a'], [], { priority: 'high' });
+    const b = createBatch(['b'], []);
+    pauseBatch(b.id);
+    const all = [getBatch(a.id)!, getBatch(b.id)!];
+    expect(filterBatchesByStatus(all, 'paused').map((x) => x.id)).toEqual([b.id]);
+    expect(filterBatchesByStatus(all, 'running').map((x) => x.id)).toEqual([a.id]);
+    expect(filterBatchesByPriority(all, 'high').map((x) => x.id)).toEqual([a.id]);
+    expect(filterBatchesByPriority(all, 'low')).toEqual([]);
+  });
+
+  it('comparePriority orders by tier then FIFO', () => {
+    const hi = { priority: 'high', createdAt: 500 } as any;
+    const nm1 = { priority: 'normal', createdAt: 100 } as any;
+    const nm2 = { priority: 'normal', createdAt: 200 } as any;
+    const lo = { priority: 'low', createdAt: 10 } as any;
+    const sorted = [lo, nm2, hi, nm1].sort(comparePriority);
+    expect(sorted.map((bb) => bb.priority + "@" + bb.createdAt)).toEqual(['high@500', 'normal@100', 'normal@200', 'low@10']);
+  });
+
+  it('estimateRemainingMs honors concurrency and edge cases', () => {
+    expect(estimateRemainingMs({ total: 10, completed: 4, failed: 1, avgRunDuration: 1000, concurrency: 2 })).toBe(2500);
+    expect(estimateRemainingMs({ total: 10, completed: 10, failed: 0, avgRunDuration: 1000, concurrency: 2 })).toBe(0);
+    expect(estimateRemainingMs({ total: 0, completed: 0, failed: 0, avgRunDuration: 1000, concurrency: 2 })).toBeNull();
+    expect(estimateRemainingMs({ total: 5, completed: 2, failed: 0, avgRunDuration: 0, concurrency: 2 })).toBeNull();
+    expect(estimateRemainingMs({ total: 5, completed: 2, failed: 0, avgRunDuration: 1000, concurrency: 0 })).toBeNull();
+    expect(estimateRemainingMs({ total: 4, completed: 0, failed: 0, avgRunDuration: 800, concurrency: 4 })).toBe(800);
+  });
+
+  it('exportBatchAsJson produces parseable summary', () => {
+    const b = createBatch(['hello world'], []);
+    const json = exportBatchAsJson(getBatch(b.id)!);
+    const parsed = JSON.parse(json);
+    expect(parsed.batchId).toBe(b.id);
+    expect(parsed.total).toBe(1);
+  });
+
+  it('exportBatchAsCsv emits header and one quoted row per run', () => {
+    const b = createBatch(['one, two','three'], []);
+    const csv = exportBatchAsCsv(getBatch(b.id)!);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe('query,status,retryCount,error');
+    expect(lines.length).toBe(3);
+    expect(lines[1]).toContain('one, two');
+    expect(lines[2]).toContain('three');
+  });
+
+  it('retryPolicyLabel maps counts to buckets', () => {
+    expect(retryPolicyLabel(0)).toBe('no-retries');
+    expect(retryPolicyLabel(1)).toBe('single-retry');
+    expect(retryPolicyLabel(3)).toBe('standard');
+    expect(retryPolicyLabel(5)).toBe('aggressive');
+  });
+});
