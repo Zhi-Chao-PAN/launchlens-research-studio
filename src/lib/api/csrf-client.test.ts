@@ -2,6 +2,7 @@
 import {
   normalizeMethod, isCsrfSafeMethod, withCsrfHeader, isValidFetchUrl,
   buildCsrfInit, csrfErrorMessage, CSRF_HEADER, CSRF_SAFE_METHODS,
+  fetchWithCsrf, fetchWithCsrfStrict, parseRateLimit, RateLimitError, invalidateCsrfToken,
 } from "@/lib/api/csrf-client";
 
 describe("csrf-client pure helpers (round 165)", () => {
@@ -63,7 +64,6 @@ describe("csrf-client pure helpers (round 165)", () => {
   });
 });
 
-import { parseRateLimit, RateLimitError, fetchWithCsrfStrict } from "@/lib/api/csrf-client";
 
 describe("429 rate-limit helpers (round 183)", () => {
   it("non-429 responses return limited:false", () => {
@@ -132,4 +132,27 @@ describe("429 rate-limit helpers (round 183)", () => {
       (globalThis as any).fetch = origFetch;
     }
   });
+});
+
+it("withCsrfHeader accepts [string,string][] headers shape", () => {
+  const out = withCsrfHeader([["content-type", "application/json"]], "abc");
+  expect(out["content-type"]).toBe("application/json");
+  expect(out["X-CSRF-Token"]).toBe("abc");
+});
+
+it("fetchWithCsrf passes non-GET methods through with token header", async () => {
+  const origFetch = globalThis.fetch;
+  let capturedHeaders: HeadersInit | undefined;
+  globalThis.fetch = ((_url: string, init?: RequestInit) => {
+    capturedHeaders = init?.headers;
+    return Promise.resolve(new Response(null, { status: 200 }));
+  }) as typeof fetch;
+  invalidateCsrfToken();
+  (globalThis as any).fetch = ((_url: string, init?: RequestInit) => {
+    capturedHeaders = init?.headers;
+    return Promise.resolve(new Response(JSON.stringify({ csrfToken: "t1" }), { status: 200 }));
+  }) as typeof fetch;
+  await fetchWithCsrf("/x", { method: "POST" });
+  (globalThis as any).fetch = origFetch;
+  invalidateCsrfToken();
 });

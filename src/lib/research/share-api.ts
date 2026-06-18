@@ -1,4 +1,6 @@
-﻿/**
+﻿import { fetchWithCsrf } from "@/lib/api/csrf-client";
+
+/**
  * Client-side share utilities.
  * Works in the browser — calls the share API to create tokens.
  */
@@ -25,8 +27,7 @@ export async function copyShareUrl(
   options: { expiresInMs?: number; maxViews?: number } = {},
 ): Promise<boolean> {
   try {
-    const res = await fetch(SHARE_API_BASE, {
-      method: "POST",
+    const res = await fetchWithCsrf(SHARE_API_BASE, { method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         runId,
@@ -65,8 +66,7 @@ export async function createShareWithOptions(
   options: { expiresInMs?: number; maxViews?: number } = {},
 ): Promise<{ token: string; expiresAt?: number; maxViews?: number; createdAt: number } | null> {
   try {
-    const res = await fetch(SHARE_API_BASE, {
-      method: "POST",
+    const res = await fetchWithCsrf(SHARE_API_BASE, { method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         runId,
@@ -86,7 +86,7 @@ export async function createShareWithOptions(
  */
 export async function revokeShare(token: string): Promise<boolean> {
   try {
-    const res = await fetch(`${SHARE_API_BASE}?token=${encodeURIComponent(token)}`, {
+    const res = await fetchWithCsrf(`${SHARE_API_BASE}?token=${encodeURIComponent(token)}`, {
       method: "DELETE",
     });
     return res.ok;

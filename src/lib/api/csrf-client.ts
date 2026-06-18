@@ -31,8 +31,8 @@ export function invalidateCsrfToken(): void {
   cachedToken = null;
 }
 
-export interface CsrfFetchOptions extends RequestInit {
-  headers?: Record<string, string>;
+export interface CsrfFetchOptions extends Omit<RequestInit, "headers"> {
+  headers?: HeadersInit;
 }
 
 /**
@@ -51,9 +51,9 @@ export async function fetchWithCsrf(
   }
 
   const token = await getCsrfToken();
-  const headers = { ...(options.headers || {}) };
+  const headers = new Headers(options.headers as HeadersInit || {});
   if (token) {
-    headers["X-CSRF-Token"] = token;
+    headers.set("X-CSRF-Token", token);
   }
 
   return fetch(url, { ...options, headers });
@@ -82,13 +82,15 @@ export function isCsrfSafeMethod(method: string | undefined): boolean {
 
 /** Merge CSRF header into existing headers, preserving user values when present. */
 export function withCsrfHeader(
-  headers: Record<string, string> | Headers | undefined,
+  headers: HeadersInit | undefined,
   token: string | null,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (headers) {
     if (headers instanceof Headers) {
       headers.forEach((v, k) => { out[k] = v; });
+    } else if (Array.isArray(headers)) {
+      for (const [k, v] of headers) if (k) out[k] = v;
     } else {
       Object.assign(out, headers);
     }

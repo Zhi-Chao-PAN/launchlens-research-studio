@@ -1,4 +1,5 @@
 "use client";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 /* eslint-disable */
 
@@ -676,7 +677,7 @@ async function loadRun() {
     if (!run) return;
     setShareLoading(true);
     try {
-      const res = await fetch("/api/research/share", {
+      const res = await fetchWithCsrf("/api/research/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ runId: run.id }),

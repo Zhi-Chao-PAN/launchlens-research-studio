@@ -1,4 +1,5 @@
 "use client";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -121,7 +122,7 @@ export default function AdminPage() {
   async function deleteRun(id: string) {
     if (!confirm("Delete this research run?")) return;
     try {
-      const res = await fetch(`/api/research/runs?ids=${id}`, { method: "DELETE" });
+      const res = await fetchWithCsrf(`/api/research/runs?ids=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setResearchRuns((prev) => prev.filter((r) => r.id !== id));
       setResearchTotal((prev) => Math.max(0, prev - 1));
@@ -132,7 +133,7 @@ export default function AdminPage() {
 
 
   async function apiCall(path: string, options: RequestInit = {}): Promise<Response> {
-    return fetch(path, {
+    return fetchWithCsrf(path, {
       ...options,
       headers: {
         "Authorization": `Bearer ${token}`,

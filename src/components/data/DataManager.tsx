@@ -1,4 +1,5 @@
 "use client";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 import { useState, useRef } from "react";
 import {
@@ -121,7 +122,7 @@ export function DataManager() {
       // Import runs via API
       if (pkg.data.runs?.length) {
         try {
-          const res = await fetch(`/api/data/import?strategy=${importStrategy}`, {
+          const res = await fetchWithCsrf(`/api/data/import?strategy=${importStrategy}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(pkg),

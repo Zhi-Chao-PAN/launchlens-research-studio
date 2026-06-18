@@ -1,4 +1,5 @@
 "use client";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -149,7 +150,7 @@ export function ScheduleManager() {
 
   const handleToggle = async (id: string) => {
     try {
-      const res = await fetch(`/api/research/schedules/${id}`, {
+      const res = await fetchWithCsrf(`/api/research/schedules/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
       });
@@ -161,7 +162,7 @@ export function ScheduleManager() {
       const s = schedules.find((s) => s.id === id);
       if (!s) return;
 
-      const toggleRes = await fetch(`/api/research/schedules/${id}`, {
+      const toggleRes = await fetchWithCsrf(`/api/research/schedules/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: s.status === "active" ? "paused" : "active" }),
@@ -178,7 +179,7 @@ export function ScheduleManager() {
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除这个定时研究吗？")) return;
     try {
-      const res = await fetch(`/api/research/schedules/${id}`, {
+      const res = await fetchWithCsrf(`/api/research/schedules/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -191,7 +192,7 @@ export function ScheduleManager() {
 
   const handleTrigger = async (id: string) => {
     try {
-      const res = await fetch(`/api/research/schedules/${id}/trigger`, {
+      const res = await fetchWithCsrf(`/api/research/schedules/${id}/trigger`, {
         method: "POST",
       });
       if (res.ok) {

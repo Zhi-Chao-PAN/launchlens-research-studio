@@ -1,4 +1,5 @@
 "use client";
+import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
@@ -56,7 +57,7 @@ export default function HistoryPage() {
       onDelete: async (item) => {
         // Actually delete from API
         try {
-          await fetch(`/api/research/${item.id}`, { method: "DELETE" });
+          await fetchWithCsrf(`/api/research/${item.id}`, { method: "DELETE" });
         } catch (e) {
           console.error("Delete failed:", e);
           showToast("Failed to delete research", "error");
@@ -242,7 +243,7 @@ export default function HistoryPage() {
     setBulkActionLoading(true);
     try {
       const ids = Array.from(selectedIds).join(",");
-      const res = await fetch(`/api/research/runs?ids=${encodeURIComponent(ids)}`, {
+      const res = await fetchWithCsrf(`/api/research/runs?ids=${encodeURIComponent(ids)}`, {
         method: "DELETE",
       });
       if (res.ok) {
