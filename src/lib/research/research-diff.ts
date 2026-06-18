@@ -1,5 +1,5 @@
 ﻿/**
- * Research result diff tool 鈥?compares two synthesis outputs.
+ * Research result diff tool -compares two synthesis outputs.
  * Finds added/removed insights, opportunities, risks, and score changes.
  */
 

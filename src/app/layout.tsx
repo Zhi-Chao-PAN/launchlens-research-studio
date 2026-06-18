@@ -8,6 +8,7 @@ import { GlobalCommands } from "@/components/command-palette/GlobalCommands";
 import { ToastProvider } from "@/components/toast/ToastContext";
 import { NetworkStatus } from "@/components/ui/NetworkStatus";
 import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatsheetGlobal";
+import { FreezeMode } from "@/components/perf/FreezeMode";
 
 // Use system fonts instead of Google Fonts for better compatibility in China
 const fontClasses = "font-sans";
@@ -52,7 +53,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "zh_CN",
     url: SITE_URL,
-    title: "ModelEval Studio -- AI ģ----------̨",
+    title: "LaunchLens Research Studio",
     description: SITE_DESCRIPTION,
     siteName: "ModelEval Studio",
     images: [
@@ -92,7 +93,7 @@ export default function RootLayout({
           <ToastProvider>
             <CommandPaletteProvider>
               <a href="#main-content" className="skip-link">
-                --ת----Ҫ----
+                Skip to content
               </a>
               {children}
               <CommandPalette />

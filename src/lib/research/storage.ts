@@ -6,7 +6,7 @@
 // Storage structure:
 //   LAUNCHLENS_STORAGE_DIR/research/
 //     runs/
-//       <runId>.json   鈥?full run metadata + result
+//       <runId>.json   -full run metadata + result
 //
 // If LAUNCHLENS_STORAGE_DIR is not set, runs are stored in-memory only
 // (best-effort, doesn't survive restarts).
@@ -87,7 +87,7 @@ export function saveResearchRun(run: ResearchRun): void {
     const filePath = path.join(runsDir, `${run.id}.json`);
     fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf8");
   } catch {
-    // Best-effort persistence 鈥?don't fail the research run if storage fails
+    // Best-effort persistence -don't fail the research run if storage fails
   }
 }
 
