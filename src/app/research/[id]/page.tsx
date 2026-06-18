@@ -287,7 +287,6 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [compareCount, setCompareCount] = useState(0);
-  const [readingProgress, setReadingProgress] = useState(0);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
