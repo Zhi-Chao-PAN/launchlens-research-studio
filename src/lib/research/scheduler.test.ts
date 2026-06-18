@@ -26,6 +26,14 @@
   bulkResumeSchedules,
   bulkDeleteSchedules,
   getSchedulerStatsExtended,
+  summarizeSchedule,
+  isScheduleDue,
+  validateScheduleOptions,
+  summarizeSchedules,
+  schedulesToCsv,
+  schedulesEqual,
+  emptyScheduleTemplate,
+  countHistoryByStatus,
 } from "@/lib/research/scheduler";
 
 vi.mock("@/lib/research/batch-manager", () => ({
@@ -683,3 +691,108 @@ describe("extended stats (round 130)", () => {
   });
 });
 
+describe("scheduler pure helpers (round 156)", () => {
+  beforeEach(() => _resetScheduler());
+
+  const base = (overrides: any = {}) => ({
+    id: "s1", name: "daily mkt", query: "q", keywords: ["a", "b"],
+    status: "active", interval: "daily", hourOfDay: 9,
+    createdAt: 1_700_000_000_000, updatedAt: 1_700_000_000_000,
+    nextRunAt: 1_700_090_000_000, totalRuns: 10, successRuns: 9, failedRuns: 1,
+    ...overrides,
+  });
+
+  it("summarizeSchedule computes rates, due, missed, health", () => {
+    const sum = summarizeSchedule(base(), 1_700_080_000_000);
+    expect(sum.successRate).toBe(90);
+    expect(sum.isDue).toBe(false);
+    expect(sum.health).toBe("healthy");
+    expect(sum.intervalLabel).toContain("每天");
+
+    const due = summarizeSchedule(base({ nextRunAt: 1_700_089_990_000 }), 1_700_090_000_000);
+    expect(due.isDue).toBe(true);
+    expect(due.health).toBe("due");
+
+    const missed = summarizeSchedule(base({ nextRunAt: 1_700_080_000_000 }), 1_700_080_000_000 + 10 * 60 * 1000);
+    expect(missed.isMissed).toBe(true);
+    expect(missed.health).toBe("missed");
+
+    const paused = summarizeSchedule(base({ status: "paused" }));
+    expect(paused.health).toBe("paused");
+
+    const never = summarizeSchedule(base({ totalRuns: 0, successRuns: 0, failedRuns: 0 }));
+    expect(never.health).toBe("never-run");
+    expect(never.lastRunAgeMs).toBe(-1);
+  });
+
+  it("isScheduleDue respects status and time", () => {
+    const s = base({ nextRunAt: 100 });
+    expect(isScheduleDue(s, 99)).toBe(false);
+    expect(isScheduleDue(s, 100)).toBe(true);
+    expect(isScheduleDue({ ...s, status: "paused" }, 200)).toBe(false);
+  });
+
+  it("validateScheduleOptions trims/clamps and rejects empty query", () => {
+    const v = validateScheduleOptions({ name: "  ", query: "  hi  ", interval: "interval", intervalMinutes: -5 });
+    expect(v.name).toBe("未命名定时研究");
+    expect(v.query).toBe("  hi  ");
+    expect(v.intervalMinutes).toBe(1);
+    expect(v.keywords).toEqual([]);
+    expect(v.query.trim()).toBe("hi");
+    expect(() => validateScheduleOptions({ name: "x", query: "  ", interval: "daily" })).toThrow();
+    const w = validateScheduleOptions({ name: "n", query: "q", interval: "weekly", hourOfDay: 30, dayOfWeek: 20 });
+    expect(w.hourOfDay).toBe(23);
+    expect(w.dayOfWeek).toBe(6);
+  });
+
+  it("summarizeSchedules aggregates across a batch", () => {
+    const arr = [
+      base(),
+      base({ id: "s2", status: "paused", nextRunAt: 0, totalRuns: 5, successRuns: 5, failedRuns: 0 }),
+      base({ id: "s3", nextRunAt: 1_700_000_000_000, totalRuns: 0, successRuns: 0, failedRuns: 0 }),
+    ];
+    const sum = summarizeSchedules(arr, 1_700_080_000_000);
+    expect(sum.total).toBe(3);
+    expect(sum.active).toBe(2);
+    expect(sum.paused).toBe(1);
+    expect(sum.due).toBe(1);
+    expect(sum.neverRun).toBe(1);
+    expect(sum.successRate).toBeGreaterThan(80);
+  });
+
+  it("schedulesToCsv produces header + row per schedule", () => {
+    const csv = schedulesToCsv([base()]);
+    const [header, row] = csv.split("\n");
+    expect(header).toContain("id,name,status,interval");
+    expect(row.startsWith("s1,")).toBe(true);
+    expect(row).toContain("daily mkt");
+  });
+
+  it("schedulesEqual detects identity and field differences", () => {
+    const a = base();
+    expect(schedulesEqual(a, { ...a })).toBe(true);
+    expect(schedulesEqual(a, { ...a, keywords: [...a.keywords, "c"] })).toBe(false);
+    expect(schedulesEqual(a, { ...a, successRuns: 8 })).toBe(false);
+    expect(schedulesEqual(a, { ...a, id: "s2" })).toBe(false);
+  });
+
+  it("emptyScheduleTemplate returns defaults", () => {
+    const t = emptyScheduleTemplate();
+    expect(t.interval).toBe("daily");
+    expect(t.hourOfDay).toBe(9);
+    expect(t.query).toBe("");
+  });
+
+  it("countHistoryByStatus tallies statuses", () => {
+    const c = countHistoryByStatus([
+      { status: "success", id: "1", scheduleId: "s1", startedAt: 1 },
+      { status: "failed", id: "2", scheduleId: "s1", startedAt: 2 },
+      { status: "success", id: "3", scheduleId: "s1", startedAt: 3 },
+      { status: "missed", id: "4", scheduleId: "s1", startedAt: 4 },
+    ]);
+    expect(c.success).toBe(2);
+    expect(c.failed).toBe(1);
+    expect(c.missed).toBe(1);
+    expect(c.skipped).toBe(0);
+  });
+});

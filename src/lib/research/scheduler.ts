@@ -766,3 +766,146 @@ export function recordScheduleResult(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Pure schedule helpers (round 156) — stateless, side-effect free   */
+/* ------------------------------------------------------------------ */
+
+export interface ScheduleSummary {
+  id: string;
+  name: string;
+  status: ScheduleStatus;
+  intervalLabel: string;
+  totalRuns: number;
+  successRate: number;
+  isDue: boolean;
+  isMissed: boolean;
+  msUntilNextRun: number;
+  lastRunAgeMs: number;
+  health: "healthy" | "due" | "missed" | "paused" | "never-run";
+}
+
+export function summarizeSchedule(
+  schedule: ResearchSchedule,
+  nowMs: number = Date.now(),
+): ScheduleSummary {
+  const successRate = schedule.totalRuns > 0
+    ? Math.round((schedule.successRuns / schedule.totalRuns) * 10000) / 100
+    : 0;
+  const msUntilNext = schedule.nextRunAt - nowMs;
+  const isDue = schedule.status === "active" && msUntilNext <= 0;
+  const lastRunAge = schedule.lastRunAt ? nowMs - schedule.lastRunAt : -1;
+  const isMissed = schedule.status === "active" && msUntilNext < -MAX_MISSED_THRESHOLD_MS;
+  let health: ScheduleSummary["health"] = "healthy";
+  if (schedule.status === "paused") health = "paused";
+  else if (schedule.totalRuns === 0) health = "never-run";
+  else if (isMissed) health = "missed";
+  else if (isDue) health = "due";
+  return {
+    id: schedule.id,
+    name: schedule.name,
+    status: schedule.status,
+    intervalLabel: formatScheduleInterval(schedule),
+    totalRuns: schedule.totalRuns,
+    successRate,
+    isDue,
+    isMissed,
+    msUntilNextRun: msUntilNext,
+    lastRunAgeMs: lastRunAge,
+    health,
+  };
+}
+
+/** Returns true if the schedule is active and its nextRunAt is in the past (due or overdue). */
+export function isScheduleDue(schedule: ResearchSchedule, nowMs: number = Date.now()): boolean {
+  return schedule.status === "active" && schedule.nextRunAt <= nowMs;
+}
+
+/** Validate create/update options and return a normalized copy or throw. Does not touch store. */
+export function validateScheduleOptions(opts: CreateScheduleOptions): CreateScheduleOptions {
+  if (!opts.query?.trim()) throw new Error("研究问题不能为空");
+  const name = (opts.name || "").trim() || "未命名定时研究";
+  const keywords = (opts.keywords || []).filter((k) => typeof k === "string" && k.trim().length > 0);
+  const out: CreateScheduleOptions = { ...opts, name, keywords };
+  if (out.interval === "interval") {
+    out.intervalMinutes = Math.max(1, Math.min(out.intervalMinutes ?? 60, 10080));
+  }
+  if (out.interval === "daily" || out.interval === "weekly") {
+    out.hourOfDay = Math.max(0, Math.min(out.hourOfDay ?? 9, 23));
+  }
+  if (out.interval === "weekly") {
+    out.dayOfWeek = Math.max(0, Math.min(out.dayOfWeek ?? 1, 6));
+  }
+  return out;
+}
+
+/** Compute run-state breakdown for a batch of schedules, no I/O. */
+export function summarizeSchedules(schedules: ResearchSchedule[], nowMs: number = Date.now()): {
+  total: number; active: number; paused: number; due: number; missed: number; neverRun: number;
+  nextRunAt?: number; successRate: number;
+} {
+  let active = 0, paused = 0, due = 0, missed = 0, neverRun = 0;
+  let totalRuns = 0, successRuns = 0;
+  let nextRun: number | undefined;
+  for (const s of schedules) {
+    if (s.status === "active") active++; else paused++;
+    if (s.totalRuns === 0) neverRun++;
+    totalRuns += s.totalRuns;
+    successRuns += s.successRuns;
+    if (s.status === "active" && s.nextRunAt <= nowMs) due++;
+    if (s.status === "active" && nowMs - s.nextRunAt > MAX_MISSED_THRESHOLD_MS) missed++;
+    if (s.status === "active") nextRun = nextRun === undefined ? s.nextRunAt : Math.min(nextRun, s.nextRunAt);
+  }
+  return {
+    total: schedules.length, active, paused, due, missed, neverRun,
+    nextRunAt: nextRun,
+    successRate: totalRuns > 0 ? Math.round((successRuns / totalRuns) * 10000) / 100 : 0,
+  };
+}
+
+/** Export schedules to CSV for analytics. */
+export function schedulesToCsv(schedules: ResearchSchedule[]): string {
+  const header = "id,name,status,interval,keywords,totalRuns,successRuns,failedRuns,successRate,nextRunAt,lastRunAt,createdAt";
+  const rows = schedules.map((s) => {
+    const sr = s.totalRuns > 0 ? Math.round((s.successRuns / s.totalRuns) * 10000) / 100 : 0;
+    return [
+      s.id, JSON.stringify(s.name), s.status, formatScheduleInterval(s),
+      JSON.stringify(s.keywords.join("|")), s.totalRuns, s.successRuns, s.failedRuns,
+      sr, s.nextRunAt, s.lastRunAt ?? "", s.createdAt,
+    ].join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
+/** Deep structural equality for two schedules. */
+export function schedulesEqual(a: ResearchSchedule, b: ResearchSchedule): boolean {
+  if (a.id !== b.id) return false;
+  if (a.name !== b.name || a.query !== b.query) return false;
+  if (a.status !== b.status || a.interval !== b.interval) return false;
+  if ((a.intervalMinutes ?? 0) !== (b.intervalMinutes ?? 0)) return false;
+  if ((a.hourOfDay ?? -1) !== (b.hourOfDay ?? -1)) return false;
+  if ((a.dayOfWeek ?? -1) !== (b.dayOfWeek ?? -1)) return false;
+  if (a.totalRuns !== b.totalRuns || a.successRuns !== b.successRuns || a.failedRuns !== b.failedRuns) return false;
+  if ((a.lastRunAt ?? 0) !== (b.lastRunAt ?? 0)) return false;
+  if (a.nextRunAt !== b.nextRunAt) return false;
+  if (a.keywords.length !== b.keywords.length) return false;
+  return a.keywords.every((k, i) => k === b.keywords[i]);
+}
+
+/** Empty/seed schedule row for forms or placeholders. */
+export function emptyScheduleTemplate(): CreateScheduleOptions {
+  return {
+    name: "",
+    query: "",
+    keywords: [],
+    interval: "daily",
+    hourOfDay: 9,
+  };
+}
+
+/** Count runs recorded in history for a given status. */
+export function countHistoryByStatus(history: ScheduleRunRecord[]): Record<ScheduleRunRecord["status"], number> {
+  const out = { success: 0, failed: 0, skipped: 0, missed: 0 };
+  for (const r of history) out[r.status] = (out[r.status] || 0) + 1;
+  return out;
+}
+
