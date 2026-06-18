@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { listResearchRuns, getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns } from "@/lib/research/storage";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 
@@ -66,6 +67,12 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 30, refillIntervalMs: 60000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
+
 
   const url = new URL(request.url);
   const idsParam = url.searchParams.get("ids");

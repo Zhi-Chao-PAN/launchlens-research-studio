@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
@@ -44,6 +45,12 @@ export async function PATCH(
 ) {
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 30, refillIntervalMs: 60000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
+
 
   try {
     const { id } = await params;
@@ -79,6 +86,12 @@ export async function DELETE(
 ) {
   const csrfRejection = verifyCsrf(_request);
   if (csrfRejection) return csrfRejection;
+  const ip = (_request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 20, refillIntervalMs: 60000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
+
 
   const { id } = await params;
   const deleted = deleteSchedule(id);

@@ -60,6 +60,11 @@ export async function POST(request: Request) {
 
 // List shares for a run
 export async function GET(request: Request) {
+  const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
+  const rl = checkRateLimitForIp(ip, { capacity: 60, refillIntervalMs: 60_000 });
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate_limited", retryAfterMs: rl.resetMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } });
+  }
   const url = new URL(request.url);
   const runId = url.searchParams.get("runId");
 
