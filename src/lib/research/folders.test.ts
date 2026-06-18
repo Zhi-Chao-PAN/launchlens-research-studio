@@ -1,4 +1,4 @@
-import {
+﻿import {
   getFolders,
   getFolder,
   createFolder,
@@ -20,7 +20,32 @@ import {
   exportFolders,
   resetFolders,
   getFoldersByRunCount,
+  summarizeFolders,
+  buildRunFolderIndex,
+  foldersContainingAll,
+  foldersContainingAny,
+  uniqueFolderName,
+  foldersToPlainList,
+  foldersToCsv,
+  foldersEqual,
 } from "@/lib/research/folders";
+
+// Deterministic IDs & timestamps to eliminate flakiness from Math.random / Date.now collisions
+const __fakeNow = 1_700_000_000_000;
+let __randCounter = 0;
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(__fakeNow);
+  vi.spyOn(Math, "random").mockImplementation(() => {
+    __randCounter++;
+    // produce a deterministic 8-char base36-looking id fragment
+    return (__randCounter / 1e9);
+  });
+});
+afterAll(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const storage = new Map<string, string>();
 beforeAll(() => {
@@ -48,16 +73,16 @@ describe("research folders", () => {
     it("has starred and archived system folders", () => {
       const folders = getFolders();
       const names = folders.map((f) => f.name);
-      expect(names).toContain("�ղؼ�");
-      expect(names).toContain("�鵵");
+      expect(names).toContain("收藏夹");
+      expect(names).toContain("归档");
     });
   });
 
   describe("createFolder", () => {
     it("creates a new folder", () => {
-      const folder = createFolder({ name: "AI �о�" });
+      const folder = createFolder({ name: "AI 锟叫撅拷" });
       expect(folder.id).toBeTruthy();
-      expect(folder.name).toBe("AI �о�");
+      expect(folder.name).toBe("AI 锟叫撅拷");
       expect(folder.runIds).toEqual([]);
       expect(folder.isSystem).toBeUndefined();
 
@@ -66,21 +91,21 @@ describe("research folders", () => {
     });
 
     it("creates folder with initial runs", () => {
-      const folder = createFolder({ name: "����", runIds: ["run-1", "run-2"] });
+      const folder = createFolder({ name: "锟斤拷锟斤拷", runIds: ["run-1", "run-2"] });
       expect(folder.runIds).toEqual(["run-1", "run-2"]);
     });
 
     it("sets default icon", () => {
-      const folder = createFolder({ name: "����" });
+      const folder = createFolder({ name: "锟斤拷锟斤拷" });
       expect(folder.icon).toBe("??");
     });
   });
 
   describe("getFolder", () => {
     it("finds a folder by id", () => {
-      const created = createFolder({ name: "���Ҳ���" });
+      const created = createFolder({ name: "锟斤拷锟揭诧拷锟斤拷" });
       const found = getFolder(created.id);
-      expect(found?.name).toBe("���Ҳ���");
+      expect(found?.name).toBe("锟斤拷锟揭诧拷锟斤拷");
     });
 
     it("returns undefined for non-existent", () => {
@@ -90,9 +115,9 @@ describe("research folders", () => {
 
   describe("updateFolder", () => {
     it("updates folder name", () => {
-      const folder = createFolder({ name: "������" });
-      const updated = updateFolder(folder.id, { name: "������" });
-      expect(updated?.name).toBe("������");
+      const folder = createFolder({ name: "锟斤拷锟斤拷锟斤拷" });
+      const updated = updateFolder(folder.id, { name: "锟斤拷锟斤拷锟斤拷" });
+      expect(updated?.name).toBe("锟斤拷锟斤拷锟斤拷");
     });
 
     it("returns null for non-existent folder", () => {
@@ -101,7 +126,7 @@ describe("research folders", () => {
 
     it("can't rename system folders", () => {
       const starred = getFolders().find((f) => f.isSystem)!;
-      const updated = updateFolder(starred.id, { name: "������" });
+      const updated = updateFolder(starred.id, { name: "锟斤拷锟斤拷锟斤拷" });
       expect(updated?.name).toBe(starred.name); // unchanged
     });
 
@@ -114,7 +139,7 @@ describe("research folders", () => {
 
   describe("deleteFolder", () => {
     it("deletes a custom folder", () => {
-      const folder = createFolder({ name: "Ҫɾ��" });
+      const folder = createFolder({ name: "要删锟斤拷" });
       const result = deleteFolder(folder.id);
       expect(result).toBe(true);
       expect(getFolders()).toHaveLength(2); // back to defaults
@@ -128,7 +153,7 @@ describe("research folders", () => {
 
   describe("addRunToFolder", () => {
     it("adds a run to a folder", () => {
-      const folder = createFolder({ name: "����" });
+      const folder = createFolder({ name: "锟斤拷锟斤拷" });
       const result = addRunToFolder(folder.id, "run-1");
       expect(result).toBe(true);
 
@@ -137,7 +162,7 @@ describe("research folders", () => {
     });
 
     it("doesn't duplicate runs", () => {
-      const folder = createFolder({ name: "����", runIds: ["run-1"] });
+      const folder = createFolder({ name: "锟斤拷锟斤拷", runIds: ["run-1"] });
       addRunToFolder(folder.id, "run-1");
       const updated = getFolder(folder.id)!;
       expect(updated.runIds).toHaveLength(1);
@@ -150,7 +175,7 @@ describe("research folders", () => {
 
   describe("removeRunFromFolder", () => {
     it("removes a run from a folder", () => {
-      const folder = createFolder({ name: "����", runIds: ["run-1", "run-2"] });
+      const folder = createFolder({ name: "锟斤拷锟斤拷", runIds: ["run-1", "run-2"] });
       removeRunFromFolder(folder.id, "run-1");
 
       const updated = getFolder(folder.id)!;
@@ -175,8 +200,8 @@ describe("research folders", () => {
 
   describe("moveRun", () => {
     it("moves a run between folders", () => {
-      const from = createFolder({ name: "Դ", runIds: ["run-1", "run-2"] });
-      const to = createFolder({ name: "Ŀ��", runIds: ["run-3"] });
+      const from = createFolder({ name: "源", runIds: ["run-1", "run-2"] });
+      const to = createFolder({ name: "目锟斤拷", runIds: ["run-3"] });
 
       const result = moveRun("run-1", from.id, to.id);
       expect(result).toBe(true);
@@ -393,4 +418,91 @@ describe("duplicate and export (round 136)", () => {
     expect(big).toBeLessThan(small);
   });
 });
+describe("folder extensions (round 153)", () => {
+  const mk = (o: any = {}): any => ({
+    id: o.id || "f",
+    name: o.name || "N",
+    description: o.description,
+    icon: o.icon,
+    color: o.color,
+    runIds: o.runIds || [],
+    createdAt: o.createdAt ?? 0,
+    updatedAt: o.updatedAt ?? 0,
+    isSystem: !!o.isSystem,
+    position: o.position,
+  });
 
+  it("summarizeFolders counts system/custom/empty and tracks largest/newest", () => {
+    const folders = [
+      mk({ id: "s1", name: "Starred", isSystem: true, runIds: [], updatedAt: 5 }),
+      mk({ id: "c1", name: "Big", runIds: ["a","b","c"], updatedAt: 10 }),
+      mk({ id: "c2", name: "Empty", runIds: [], updatedAt: 1 }),
+      mk({ id: "c3", name: "Medium", runIds: ["x"], updatedAt: 2 }),
+    ];
+    const s2 = summarizeFolders(folders);
+    expect(s2.total).toBe(4);
+    expect(s2.system).toBe(1);
+    expect(s2.custom).toBe(3);
+    expect(s2.empty).toBe(1);
+    expect(s2.totalRuns).toBe(4);
+    expect(s2.largest?.id).toBe("c1");
+    expect(s2.newest?.id).toBe("c1");
+  });
+
+  it("summarizeFolders is safe on empty input", () => {
+    const s2 = summarizeFolders([]);
+    expect(s2.total).toBe(0);
+    expect(s2.totalRuns).toBe(0);
+    expect(s2.largest).toBeUndefined();
+    expect(s2.newest).toBeUndefined();
+  });
+
+  it("buildRunFolderIndex maps runId -> folderId[]", () => {
+    const folders = [mk({ id: "a", runIds: ["r1","r2"] }), mk({ id: "b", runIds: ["r2","r3"] })];
+    const idx = buildRunFolderIndex(folders);
+    expect(idx.get("r1")).toEqual(["a"]);
+    expect(idx.get("r2")?.sort()).toEqual(["a","b"]);
+    expect(idx.get("r3")).toEqual(["b"]);
+    expect(idx.get("missing")).toBeUndefined();
+  });
+
+  it("foldersContainingAll/Any respect set semantics", () => {
+    const folders = [
+      mk({ id: "a", runIds: ["r1","r2","r3"] }),
+      mk({ id: "b", runIds: ["r1","r2"] }),
+      mk({ id: "c", runIds: ["r4"] }),
+    ];
+    expect(foldersContainingAll(folders, ["r1","r3"]).map(f => f.id)).toEqual(["a"]);
+    expect(foldersContainingAny(folders, ["r1","r4"]).map(f => f.id).sort()).toEqual(["a","b","c"]);
+    expect(foldersContainingAll(folders, ["r1","r4"])).toEqual([]);
+    expect(foldersContainingAny(folders, [])).toEqual([]);
+  });
+
+  it("uniqueFolderName appends (2), (3)... case-insensitively", () => {
+    const folders = [mk({ name: "Alpha" }), mk({ name: "alpha (2)" })];
+    expect(uniqueFolderName(folders, "Alpha")).toBe("Alpha (3)");
+    expect(uniqueFolderName(folders, "Beta")).toBe("Beta");
+  });
+
+  it("foldersToPlainList returns flat records with run counts", () => {
+    const list = foldersToPlainList([mk({ id: "a", name: "A", runIds: ["x","y"], position: 0, isSystem: true })]);
+    expect(list).toEqual([{ id: "a", name: "A", isSystem: true, runCount: 2, position: 0 }]);
+  });
+
+  it("foldersToCsv emits header and CSV-safe quoted names", () => {
+    const csv = foldersToCsv([mk({ id: "a", name: "Hi, there", color: "#fff", runIds: ["r"], createdAt: 1, updatedAt: 2, position: 3 })]);
+    const [header, row] = csv.split("\n");
+    expect(header).toBe("id,name,isSystem,color,runCount,createdAt,updatedAt,position");
+    expect(row).toContain('"Hi, there"');
+    expect(row.startsWith("a,")).toBe(true);
+  });
+
+  it("foldersEqual detects equality ignoring runId order", () => {
+    const a = mk({ id: "a", name: "n", color: "#f", runIds: ["r1","r2"], position: 2 });
+    const b = mk({ id: "a", name: "n", color: "#f", runIds: ["r2","r1"], position: 2 });
+    expect(foldersEqual(a, b)).toBe(true);
+    b.name = "other";
+    expect(foldersEqual(a, b)).toBe(false);
+    expect(foldersEqual(a, mk({ id: "x" }))).toBe(false);
+  });
+});

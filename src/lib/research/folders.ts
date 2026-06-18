@@ -23,38 +23,56 @@ const FOLDER_ASSIGNMENTS_KEY = "launchlens:folder-assignments"; // runId -> fold
 const DEFAULT_FOLDERS: ResearchFolder[] = [
   {
     id: "folder-starred",
-    name: "�ղؼ�",
+    name: "收藏夹",
     icon: "★",
     color: "#fbbf24",
     runIds: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    position: 0,
     isSystem: true,
   },
   {
     id: "folder-archived",
-    name: "�鵵",
+    name: "归档",
     icon: "★",
     color: "#666688",
     runIds: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    position: 1,
     isSystem: true,
   },
 ];
 
+function normalizePositions(folders: ResearchFolder[]): ResearchFolder[] {
+  const system = folders.filter((f) => f.isSystem);
+  const custom = folders.filter((f) => !f.isSystem);
+  system.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  system.forEach((f, i) => { f.position = i; });
+  custom.sort((a, b) => {
+    const pa = a.position; const pb = b.position;
+    if (pa !== undefined && pb !== undefined) return pa - pb;
+    if (pa !== undefined) return -1;
+    if (pb !== undefined) return 1;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+  custom.forEach((f, i) => { f.position = system.length + i; });
+  return [...system, ...custom];
+}
+
 function getStore(): ResearchFolder[] {
-  if (typeof localStorage === "undefined") return [...DEFAULT_FOLDERS];
+  if (typeof localStorage === "undefined") return normalizePositions([...DEFAULT_FOLDERS]);
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...DEFAULT_FOLDERS];
-    const folders = JSON.parse(raw) as ResearchFolder[];
-    // Ensure system folders always exist
-    const systemIds = new Set(folders.filter((f) => f.isSystem).map((f) => f.id));
-    const missingSystem = DEFAULT_FOLDERS.filter((f) => !systemIds.has(f.id));
-    return [...missingSystem, ...folders];
+    if (!raw) return normalizePositions([...DEFAULT_FOLDERS]);
+    const parsed = JSON.parse(raw) as ResearchFolder[];
+    const systemIds = new Set(parsed.filter((f) => f.isSystem).map((f) => f.id));
+    const missingSystem = DEFAULT_FOLDERS.filter((f) => !systemIds.has(f.id)).map((f) => ({ ...f }));
+    const merged = [...missingSystem, ...parsed.map((f) => ({ ...f }))];
+    return normalizePositions(merged);
   } catch {
-    return [...DEFAULT_FOLDERS];
+    return normalizePositions([...DEFAULT_FOLDERS]);
   }
 }
 
@@ -199,8 +217,8 @@ export function getTotalFolderRuns(): number {
  */
 export function reorderFolders(folderId: string, toIndex: number): boolean {
   const folders = getStore();
-  const customFolders = folders.filter((f) => !f.isSystem);
   const systemFolders = folders.filter((f) => f.isSystem);
+  const customFolders = folders.filter((f) => !f.isSystem);
 
   const fromIdx = customFolders.findIndex((f) => f.id === folderId);
   if (fromIdx < 0) return false;
@@ -212,7 +230,13 @@ export function reorderFolders(folderId: string, toIndex: number): boolean {
   customFolders.splice(clampedTo, 0, moved);
   moved.updatedAt = Date.now();
 
-  saveStore([...systemFolders, ...customFolders]);
+  // Clear old positions on custom folders so normalizePositions respects the
+  // new array order instead of stale position values.
+    // Assign provisional positions in splice order so the user's requested order
+  // is preserved even if normalizePositions would otherwise fall back to timestamps.
+  const base = systemFolders.length;
+  customFolders.forEach((f, i) => { f.position = base + i; });
+  saveStore(normalizePositions([...systemFolders, ...customFolders]));
   return true;
 }
 
@@ -394,8 +418,9 @@ export function duplicateFolder(id: string, newName?: string): ResearchFolder | 
     updatedAt: Date.now(),
     runIds: [...src.runIds],
   };
+  copy.position = folders.length;
   folders.push(copy);
-  saveStore(folders);
+  saveStore(normalizePositions(folders));
   return copy;
 }
 
@@ -416,3 +441,120 @@ export function resetFolders(): void {
 export function getFoldersByRunCount(): ResearchFolder[] {
   return [...getStore()].sort((a, b) => b.runIds.length - a.runIds.length);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Extended folder utilities (round 153) — pure helpers              */
+/* ------------------------------------------------------------------ */
+
+export interface FolderSummary {
+  total: number;
+  system: number;
+  custom: number;
+  empty: number;
+  totalRuns: number;
+  largest?: { id: string; name: string; runCount: number };
+  newest?: { id: string; name: string; updatedAt: number };
+}
+
+export function summarizeFolders(folders: ResearchFolder[]): FolderSummary {
+  let system = 0, custom = 0, empty = 0, totalRuns = 0;
+  let largest: FolderSummary["largest"];
+  let newest: FolderSummary["newest"];
+  folders.forEach((f) => {
+    if (f.isSystem) system++; else custom++;
+    const n = f.runIds.length;
+    totalRuns += n;
+    if (n === 0 && !f.isSystem) empty++;
+    if (!largest || n > largest.runCount) largest = { id: f.id, name: f.name, runCount: n };
+    if (!newest || (f.updatedAt || 0) > newest.updatedAt) newest = { id: f.id, name: f.name, updatedAt: f.updatedAt || 0 };
+  });
+  return { total: folders.length, system, custom, empty, totalRuns, largest, newest };
+}
+
+/** Flatten folder -> runId membership map, returning runId -> folderId[]. */
+export function buildRunFolderIndex(folders: ResearchFolder[]): Map<string, string[]> {
+  const idx = new Map<string, string[]>();
+  folders.forEach((f) => {
+    f.runIds.forEach((rid) => {
+      const arr = idx.get(rid) || [];
+      arr.push(f.id);
+      idx.set(rid, arr);
+    });
+  });
+  return idx;
+}
+
+/** Return folders that contain every one of the provided runIds. */
+export function foldersContainingAll(folders: ResearchFolder[], runIds: string[]): ResearchFolder[] {
+  const want = new Set(runIds);
+  return folders.filter((f) => {
+    const have = new Set(f.runIds);
+    for (const r of want) if (!have.has(r)) return false;
+    return true;
+  });
+}
+
+/** Return folders that contain any of the provided runIds. */
+export function foldersContainingAny(folders: ResearchFolder[], runIds: string[]): ResearchFolder[] {
+  const want = new Set(runIds);
+  return folders.filter((f) => f.runIds.some((r) => want.has(r)));
+}
+
+/**
+ * Produce a unique folder name given a desired base. If "Alpha" exists, returns
+ * "Alpha (2)", then "Alpha (3)", etc. Comparisons are case-insensitive.
+ */
+export function uniqueFolderName(folders: ResearchFolder[], base: string): string {
+  const taken = new Set(folders.map((f) => f.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  let n = 2;
+  while (taken.has((base + " (" + n + ")").toLowerCase())) n++;
+  return base + " (" + n + ")";
+}
+
+/** Produce a flat, sorted path-friendly tree view string for debugging/export. */
+export function foldersToPlainList(folders: ResearchFolder[]): Array<{
+  id: string; name: string; isSystem: boolean; runCount: number; position: number;
+}> {
+  return folders.map((f) => ({
+    id: f.id,
+    name: f.name,
+    isSystem: !!f.isSystem,
+    runCount: f.runIds.length,
+    position: f.position ?? -1,
+  }));
+}
+
+/** CSV export: id,name,isSystem,color,runCount,createdAt,updatedAt,position */
+export function foldersToCsv(folders: ResearchFolder[]): string {
+  const rows: string[] = ["id,name,isSystem,color,runCount,createdAt,updatedAt,position"];
+  folders.forEach((f) => {
+    rows.push([
+      f.id,
+      JSON.stringify(f.name),
+      f.isSystem ? "1" : "0",
+      f.color || "",
+      String(f.runIds.length),
+      String(f.createdAt || 0),
+      String(f.updatedAt || 0),
+      String(f.position ?? ""),
+    ].join(","));
+  });
+  return rows.join("\n");
+}
+
+/** Deep equality for two folder records (ignoring runId ordering). */
+export function foldersEqual(a: ResearchFolder, b: ResearchFolder): boolean {
+  if (a.id !== b.id) return false;
+  if (a.name !== b.name) return false;
+  if ((a.description || "") !== (b.description || "")) return false;
+  if ((a.color || "") !== (b.color || "")) return false;
+  if ((a.icon || "") !== (b.icon || "")) return false;
+  if (!!a.isSystem !== !!b.isSystem) return false;
+  if ((a.position ?? -1) !== (b.position ?? -1)) return false;
+  if (a.runIds.length !== b.runIds.length) return false;
+  const sa = new Set(a.runIds), sb = new Set(b.runIds);
+  for (const r of sa) if (!sb.has(r)) return false;
+  return true;
+}
+
