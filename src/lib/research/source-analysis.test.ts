@@ -10,6 +10,15 @@ classifySource,
   assessSourceQuality,
   overallQualityScore,
   analyzeSourceRecency,
+  classifySourcesByType,
+  summarizeSourceHealth,
+  normalizeCountScore,
+  isValidSource,
+  sanitizeSources,
+  sourcesToCsv,
+  typedSourcesEqual,
+  searchSources,
+  formatSourceBreakdown,
 } from "./source-analysis";
 
 describe("source analysis", () => {
@@ -324,5 +333,86 @@ describe("extended source analysis (round 140)", () => {
       const r = analyzeSourceRecency([{ url: "https://example.com/x", title: "About us" }]);
       expect(r.unknown).toBe(1);
     });
+  });
+});
+
+describe("source analysis pure helpers (round 159)", () => {
+  const sources = [
+    { url: "https://www.reuters.com/2024/ai-market", title: "AI market grows in 2024" },
+    { url: "https://arxiv.org/abs/1234.5678", title: "Deep learning paper" },
+    { url: "https://example.com/blog/post", title: "Our 2023 blog post" },
+    { url: "not a url" },
+  ];
+
+  it("summarizeSourceHealth aggregates counts, score, grade", () => {
+    const sum = summarizeSourceHealth(sources);
+    expect(sum.total).toBe(4);
+    expect(sum.withTitle).toBe(3);
+    expect(sum.https).toBe(3);
+    expect(sum.overallScore).toBeGreaterThan(0);
+    expect(["A","B","C","D","F"]).toContain(sum.overallGrade);
+  });
+
+  it("summarizeSourceHealth empty -> F", () => {
+    const e = summarizeSourceHealth([]);
+    expect(e.total).toBe(0);
+    expect(e.overallGrade).toBe("F");
+  });
+
+  it("normalizeCountScore log-scale clamps 0-100", () => {
+    expect(normalizeCountScore(0)).toBe(0);
+    expect(normalizeCountScore(20)).toBe(100);
+    expect(normalizeCountScore(1)).toBeLessThan(50);
+    expect(normalizeCountScore(-1)).toBe(0);
+    expect(normalizeCountScore(1000)).toBe(100);
+  });
+
+  it("isValidSource / sanitizeSources filter bad URLs and trim", () => {
+    expect(isValidSource(null)).toBe(false);
+    expect(isValidSource({})).toBe(false);
+    expect(isValidSource({ url: "  " })).toBe(false);
+    expect(isValidSource({ url: "https://x.com" })).toBe(true);
+    const out = sanitizeSources([
+      { url: "  https://a.com  ", title: " hi " },
+      { url: "" },
+      null,
+      { url: "https://b.com", title: 42 as any },
+    ]);
+    expect(out.length).toBe(1);
+    expect(out[0].url).toBe("https://a.com");
+    expect(out[0].title).toBe("hi");
+  });
+
+  it("sourcesToCsv emits header and rows", () => {
+    const csv = sourcesToCsv([sources[0]]);
+    const [header, row] = csv.split(String.fromCharCode(10));
+    expect(header).toBe("url,domain,type,https,year,reputation,hasTitle");
+    expect(row).toContain("reuters.com");
+    expect(row).toContain("news");
+  });
+
+  it("typedSourcesEqual compares url/type/title", () => {
+    const a = { url: "u", type: "news" as const };
+    expect(typedSourcesEqual(a, { ...a })).toBe(true);
+    expect(typedSourcesEqual(a, { ...a, title: "t" })).toBe(false);
+    expect(typedSourcesEqual(a, { ...a, type: "blog" })).toBe(false);
+  });
+
+  it("searchSources matches url or title", () => {
+    expect(searchSources(sources, "reuters").length).toBe(1);
+    expect(searchSources(sources, "blog").length).toBe(1);
+    expect(searchSources(sources, "   ").length).toBe(sources.length);
+  });
+
+  it("formatSourceBreakdown renders compact summary", () => {
+    const str = formatSourceBreakdown(sources);
+    expect(str).toMatch(/news:/);
+    expect(formatSourceBreakdown([])).toBe("0 sources");
+  });
+
+  it("classifySourcesByType buckets into typed groups", () => {
+    const buckets = classifySourcesByType(sources);
+    expect(buckets.news.length).toBe(1);
+    expect(buckets.academic.length).toBe(1);
   });
 });

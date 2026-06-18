@@ -329,3 +329,99 @@ export function analyzeSourceRecency(sources: { url: string; title?: string }[])
     newestYear: knownYears.length ? Math.max(...knownYears) : undefined,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*  Pure analysis helpers (round 159)                                 */
+/* ------------------------------------------------------------------ */
+
+export interface SourceHealthSummary {
+  total: number;
+  withTitle: number;
+  https: number;
+  recent: number;
+  older: number;
+  unknownYear: number;
+  avgReputation: number;
+  overallScore: number;
+  overallGrade: "A" | "B" | "C" | "D" | "F";
+}
+
+export function summarizeSourceHealth(sources: { url: string; title?: string }[]): SourceHealthSummary {
+  if (sources.length === 0) {
+    return { total: 0, withTitle: 0, https: 0, recent: 0, older: 0, unknownYear: 0, avgReputation: 0, overallScore: 0, overallGrade: "F" };
+  }
+  const q = assessSourceQuality(sources);
+  const r = analyzeSourceRecency(sources);
+  const avg = Math.round(q.reduce((a, s) => a + s.reputationScore, 0) / q.length);
+  const score = overallQualityScore(sources);
+  let grade: SourceHealthSummary["overallGrade"] = "F";
+  if (score >= 85) grade = "A";
+  else if (score >= 70) grade = "B";
+  else if (score >= 55) grade = "C";
+  else if (score >= 40) grade = "D";
+  return {
+    total: sources.length,
+    withTitle: q.filter((s) => s.hasTitle).length,
+    https: q.filter((s) => s.isHttps).length,
+    recent: r.recent,
+    older: r.older,
+    unknownYear: r.unknown,
+    avgReputation: avg,
+    overallScore: score,
+    overallGrade: grade,
+  };
+}
+
+export function normalizeCountScore(n: number, reference: number = 20): number {
+  if (!Number.isFinite(n) || n <= 0 || reference <= 0) return 0;
+  const raw = (Math.log1p(n) / Math.log1p(reference)) * 100;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+export function isValidSource(s: unknown): s is { url: string; title?: string } {
+  if (!s || typeof s !== "object") return false;
+  const v = s as Record<string, unknown>;
+  if (typeof v.url !== "string" || v.url.trim().length === 0) return false;
+  if (v.title !== undefined && typeof v.title !== "string") return false;
+  return true;
+}
+
+export function sanitizeSources(sources: unknown[]): { url: string; title?: string }[] {
+  return sources
+    .filter(isValidSource)
+    .map((s) => ({ url: s.url.trim(), title: typeof s.title === "string" ? s.title.trim() : undefined }))
+    .filter((s) => s.url.length > 0);
+}
+
+export function sourcesToCsv(sources: { url: string; title?: string }[]): string {
+  const header = "url,domain,type,https,year,reputation,hasTitle";
+  const rows = sources.map((src) => {
+    let domain = "unknown";
+    try { domain = new URL(src.url).hostname.replace(/^www\./, ""); } catch {}
+    const type = classifySource(src.url, src.title);
+    let https = 0;
+    try { https = new URL(src.url).protocol === "https:" ? 1 : 0; } catch {}
+    const year = inferSourceYear(src.url, src.title) ?? "";
+    const q = assessSourceQuality([src])[0];
+    return [JSON.stringify(src.url), domain, type, https, year, q.reputationScore, src.title ? 1 : 0].join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
+export function typedSourcesEqual(a: TypedSource, b: TypedSource): boolean {
+  return a.url === b.url && a.type === b.type && (a.title || "") === (b.title || "");
+}
+
+export function searchSources<T extends { url: string; title?: string }>(sources: T[], term: string): T[] {
+  const q = term.trim().toLowerCase();
+  if (!q) return sources.slice();
+  return sources.filter((s) =>
+    s.url.toLowerCase().includes(q) || (s.title || "").toLowerCase().includes(q)
+  );
+}
+
+export function formatSourceBreakdown(sources: { url: string; title?: string }[]): string {
+  const b = getSourceTypeBreakdown(sources);
+  if (b.length === 0) return "0 sources";
+  return b.map((x) => x.type + ":" + x.count + "(" + x.percentage + "%)").join(" ");
+}
