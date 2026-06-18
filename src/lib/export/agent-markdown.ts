@@ -230,3 +230,102 @@ export function generateAgentMarkdown(agentId: AgentId, output: AgentOutput): st
 export function getAgentTitle(agentId: AgentId): string {
   return AGENT_TITLE[agentId];
 }
+
+/* ------------------------------------------------------------------ */
+/*  Pure markdown helpers (round 164)                                 */
+/* ------------------------------------------------------------------ */
+
+export interface MarkdownStats {
+  chars: number;
+  words: number;
+  lines: number;
+  headings: number;
+  citations: number;
+  tables: number;
+}
+
+/** Count words/chars/lines/headings/citations/tables in generated markdown. */
+export function countMarkdown(md: string): MarkdownStats {
+  const lines = md.split(/\r?\n/);
+  const words = md.trim() ? md.trim().split(/\s+/).length : 0;
+  let headings = 0, citations = 0, tables = 0;
+  let inTable = false;
+  for (const l of lines) {
+    if (/^#{1,6}\s/.test(l)) headings++;
+    if (/^\d+\.\s+\[/.test(l)) citations++;
+    if (/^\|.*\|$/.test(l)) {
+      if (!inTable) { tables++; inTable = true; }
+    } else {
+      inTable = false;
+    }
+  }
+  return { chars: md.length, words, lines: lines.length, headings, citations, tables };
+}
+
+/** Extract the top-level H1 title (with leading "# " and emoji stripped). */
+export function extractMarkdownTitle(md: string): string | null {
+  const m = md.match(/^#{1,6}\s+(.+)$/m);
+  if (!m) return null;
+  // strip emoji symbols/whitespace
+  return m[1].replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}]/gu, "").trim();
+}
+
+/** Strip markdown to approximate plain text. */
+export function stripMarkdown(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/\|/g, " ")
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Pull a list of citation titles/URLs out of markdown (best-effort parser). */
+export function extractCitations(md: string): { title: string; url: string }[] {
+  const out: { title: string; url: string }[] = [];
+  const re = /\d+\.\s+\[([^\]]+)\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(md))) {
+    out.push({ title: m[1], url: m[2] });
+  }
+  return out;
+}
+
+/** CSV export for citations. */
+export function citationsToCsv(citations: { title: string; url: string }[]): string {
+  const header = "title,url";
+  const rows = citations.map((c) => [JSON.stringify(c.title), c.url].join(","));
+  return [header, ...rows].join("\n");
+}
+
+/** Truncate markdown to a target char budget without breaking words. */
+export function truncateMarkdown(md: string, maxChars: number): string {
+  if (md.length <= maxChars) return md;
+  const slice = md.slice(0, maxChars);
+  const lastSpace = slice.lastIndexOf(" ");
+  return slice.slice(0, lastSpace > 0 ? lastSpace : maxChars).trimEnd() + "...";
+}
+
+/** Deep structural equality for any two AgentOutputs (shallow compare of common fields). */
+export function agentOutputsEqual(a: AgentOutput, b: AgentOutput): boolean {
+  if (a.agent !== b.agent) return false;
+  if (JSON.stringify(a) === JSON.stringify(b)) return true;
+  return false;
+}
+
+/** Validate minimum shape for an AgentOutput before rendering. */
+export function isValidAgentOutput(o: unknown): o is AgentOutput {
+  if (!o || typeof o !== "object") return false;
+  const v = o as Record<string, unknown>;
+  if (typeof v.agent !== "string") return false;
+  if (typeof (v as any).summary !== "string") return false;
+  return true;
+}
+

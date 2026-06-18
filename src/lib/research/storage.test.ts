@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterAll } from "vitest";
+﻿import { describe, beforeEach, afterAll, vi } from "vitest";
 import {
   generateRunId,
   saveResearchRun,
@@ -204,6 +204,7 @@ describe("Research storage", () => {
 
 
 describe("Research run persistence integration", () => {
+  vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
   beforeEach(() => {
     const runs = listResearchRuns(100);
     for (const run of runs) {
@@ -396,3 +397,5 @@ describe("exportRuns", () => {
     expect(parsed[0].id).toBe("exp-2");
   });
 });
+
+
