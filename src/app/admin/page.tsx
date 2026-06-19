@@ -2,9 +2,11 @@
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/toast/ToastContext";
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
 interface AdminToken {
@@ -47,6 +49,11 @@ function severityClass(severity: string): string {
 }
 
 export default function AdminPage() {
+  const { showToast } = useToast();
+  const [confirm, setConfirm] = useState<{open: boolean; title: string; message?: string; tone?: "danger"|"primary"; onConfirm: () => void} | null>(null);
+  const askConfirm = useCallback((title: string, message: string | undefined, onConfirm: () => void, tone: "danger"|"primary" = "danger") => {
+    setConfirm({ open: true, title, message, tone, onConfirm });
+  }, []);
   const [token, setToken] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("admin_token") || "";
@@ -120,15 +127,17 @@ export default function AdminPage() {
   }
 
   async function deleteRun(id: string) {
-    if (!confirm("Delete this research run?")) return;
-    try {
-      const res = await fetchWithCsrf(`/api/research/runs?ids=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
-      setResearchRuns((prev) => prev.filter((r) => r.id !== id));
-      setResearchTotal((prev) => Math.max(0, prev - 1));
-    } catch (e: unknown) {
-      alert(formatApiError(e, { prefix: "Delete failed:" }));
-    }
+    askConfirm("Delete research run?", "This cannot be undone.", async () => {
+      try {
+        const res = await fetchWithCsrf(`/api/research/runs?ids=${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Delete failed");
+        setResearchRuns((prev) => prev.filter((r) => r.id !== id));
+        setResearchTotal((prev) => Math.max(0, prev - 1));
+        showToast("Research run deleted", "success");
+      } catch (e: unknown) {
+        showToast(formatApiError(e, { prefix: "Delete failed:" }), "error");
+      }
+    });
   }
 
 
@@ -208,31 +217,35 @@ export default function AdminPage() {
   }
 
   async function handleRevoke(hash: string) {
-    if (!confirm("Revoke this token?")) return;
-    try {
-      const res = await apiCall(`/api/admin/tokens/${encodeURIComponent(hash)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        loadAll();
-      } else {
-        setError(`Failed to revoke: ${res.status}`);
+    askConfirm("Revoke this token?", "The token will stop working immediately.", async () => {
+      try {
+        const res = await apiCall(`/api/admin/tokens/${encodeURIComponent(hash)}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          loadAll();
+          showToast("Token revoked", "success");
+        } else {
+          setError(`Failed to revoke: ${res.status}`);
+        }
+      } catch (e: unknown) {
+        setError(formatApiError(e, { prefix: "Revoke failed:" }));
       }
-    } catch (e: unknown) {
-      setError(formatApiError(e, { prefix: "Revoke failed:" }));
-    }
+    });
   }
 
   async function handleClearAlerts() {
-    if (!confirm("Clear all alerts?")) return;
-    try {
-      const res = await apiCall("/api/admin/alerts", { method: "DELETE" });
-      if (res.ok) {
-        loadAll();
+    askConfirm("Clear all alerts?", "This will remove every recorded alert.", async () => {
+      try {
+        const res = await apiCall("/api/admin/alerts", { method: "DELETE" });
+        if (res.ok) {
+          loadAll();
+          showToast("Alerts cleared", "success");
+        }
+      } catch (e: unknown) {
+        setError(formatApiError(e, { prefix: "Clear failed:" }));
       }
-    } catch (e: unknown) {
-      setError(formatApiError(e, { prefix: "Clear failed:" }));
-    }
+    });
   }
 
   if (!token) {

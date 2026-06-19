@@ -1,5 +1,6 @@
 "use client";
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";
@@ -70,6 +71,7 @@ export function ScheduleManager() {
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setSchError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{open: boolean; title: string; message?: string; onConfirm: () => void} | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -179,8 +181,11 @@ export function ScheduleManager() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("确定删除这个定时研究吗？")) return;
+  const handleDelete = (id: string) => {
+    setConfirm({ open: true, title: "Delete scheduled research?", message: "This schedule will stop running permanently.", onConfirm: () => handleDeleteConfirm(id) });
+  };
+  const handleDeleteConfirm = async (id: string) => {
+    setConfirm({ open: true, title: "Delete scheduled research?", message: "This schedule will stop running permanently.", onConfirm: () => handleDeleteConfirm(id) });
     try {
       const res = await fetchWithCsrf(`/api/research/schedules/${id}`, {
         method: "DELETE",
