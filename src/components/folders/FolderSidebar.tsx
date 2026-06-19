@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/toast/ToastContext";
 import {
   getFolders,
   createFolder,
@@ -27,6 +29,8 @@ export function FolderSidebar({
   const [newFolderName, setNewFolderName] = useState("");
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const { showToast } = useToast();
+  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
 
   const refresh = () => setFolders(getFolders());
 
@@ -47,13 +51,12 @@ export function FolderSidebar({
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("ȷ��ɾ������ļ�����������о����ᱻɾ����")) {
+    setConfirmDlg({ open: true, title: "Delete folder?", message: "All runs in the folder will be unfiled but not deleted.", onConfirm: () => {
       deleteFolder(id);
-      if (selectedFolderId === id) {
-        onSelectFolder(null);
-      }
+      if (selectedFolderId === id) onSelectFolder(null);
       refresh();
-    }
+      showToast("Folder deleted", "success");
+    }});
   };
 
   // Drag and drop reordering for folders

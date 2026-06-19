@@ -2,6 +2,7 @@
 ﻿"use client";
 
 import { useState, useCallback } from "react";
+import { useToast } from "@/components/toast/ToastContext";
 import type { AgentId, AgentOutput, SynthesisOutput } from "@/lib/schema/research-schema";
 import { generateMarkdownReport, generateBriefOnly } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
@@ -42,6 +43,7 @@ function downloadMultipleFiles(files: Record<string, string>): void {
 type CopyKind = "brief" | "full-md" | "json" | null;
 
 export function ExportActions({ sessionId, query, keywords, outputs }: ExportActionsProps) {
+  const { showToast } = useToast();
   const [copied, setCopied] = useState<CopyKind>(null);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -69,7 +71,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       flashCopied(kind);
     } catch (err) {
       console.error("Copy failed:", err);
-      alert("Copy failed. Please try downloading instead.");
+      showToast("Copy failed. Please try downloading instead.", "error");
     }
   }, [flashCopied]);
 
@@ -88,7 +90,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       downloadFile(md, `research-report-${sessionId.slice(0, 8)}.md`, "text/markdown;charset=utf-8");
     } catch (err) {
       console.error("Markdown export failed:", err);
-      alert("Markdown export failed.");
+      showToast("Markdown export failed.", "error");
     } finally {
       setIsExporting(false);
     }
@@ -116,7 +118,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       downloadFile(json, `research-report-${sessionId.slice(0, 8)}.json`, "application/json;charset=utf-8");
     } catch (err) {
       console.error("JSON export failed:", err);
-      alert("JSON export failed.");
+      showToast("JSON export failed.", "error");
     } finally {
       setIsExporting(false);
     }
@@ -128,7 +130,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       const bundle = generateCSVBundle({ outputs });
       const fileCount = Object.keys(bundle).length;
       if (fileCount === 0) {
-        alert("No data available to export as CSV.");
+        showToast("No data available to export as CSV.", "error");
         return;
       }
       if (fileCount === 1) {
@@ -139,7 +141,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       }
     } catch (err) {
       console.error("CSV export failed:", err);
-      alert("CSV export failed.");
+      showToast("CSV export failed.", "error");
     } finally {
       setIsExporting(false);
     }
@@ -150,7 +152,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
   const handleCopyBrief = useCallback(() => {
     const synth = outputs["synthesis"] as SynthesisOutput | null;
     if (!synth) {
-      alert("Synthesis report is not yet available.");
+      showToast("Synthesis report is not yet available.", "error");
       return;
     }
     const brief = generateBriefOnly(outputs);

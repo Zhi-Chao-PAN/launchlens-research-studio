@@ -48,6 +48,7 @@ export default function HistoryPage() {
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const { showToast, dismissToast } = useToast();
+  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
   // Undo manager for soft deletes
@@ -236,10 +237,11 @@ export default function HistoryPage() {
     window.location.href = url;
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Delete ${selectedIds.size} selected research run(s)? This cannot be undone.`)) return;
-
+    setConfirmDlg({ open: true, title: `Delete ${selectedIds.size} selected run${selectedIds.size>1?'s':''}?`, message: 'This cannot be undone.', onConfirm: () => performBulkDelete() });
+  };
+  const performBulkDelete = async () => {
     setBulkActionLoading(true);
     try {
       const ids = Array.from(selectedIds).join(",");

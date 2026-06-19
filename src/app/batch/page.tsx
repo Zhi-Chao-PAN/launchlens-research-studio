@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
 import { fetchWithCsrfStrict, formatApiError } from "@/lib/api/csrf-client";
+import { useToast } from "@/components/toast/ToastContext";
 
 interface BatchRun {
   id: string;
@@ -29,6 +30,7 @@ interface BatchInfo {
 }
 
 export default function BatchPage() {
+  const { showToast } = useToast();
   const router = useRouter();
   const [queries, setQueries] = useState("");
   const [keywords, setKeywords] = useState("");

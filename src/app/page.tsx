@@ -37,6 +37,7 @@ export default function Home() {
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && state.error;
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats] = useState<{
@@ -188,7 +189,7 @@ export default function Home() {
       if (e.key === "?" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         // Simple help: print the keyboard shortcuts
-        alert("Keyboard shortcuts:\n\nCtrl/⌘ + Enter — Start research\nEscape — Reset to landing page\nCtrl/⌘ + ? — Show this help");
+        setShowHelp(true);
       }
     };
     window.addEventListener("keydown", onKey);

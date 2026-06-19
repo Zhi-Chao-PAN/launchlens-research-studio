@@ -205,7 +205,7 @@ export function ScheduleManager() {
       });
       if (res.ok) {
         const data = await res.json();
-        alert(`已触发，批次 ID: ${data.batchId}`);
+        showToast(`Triggered, batch ID: ${data.batchId}`, "success");
         await loadSchedules();
       }
     } catch (e) {

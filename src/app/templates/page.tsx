@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -15,11 +15,15 @@ import {
 } from "@/lib/research/templates";
 import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/toast/ToastContext";
 
 type TabType = "gallery" | "my-templates" | "all";
 
 export default function TemplatesPage() {
   const router = useRouter();
+  const { showToast } = useToast();
+  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>("gallery");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -201,7 +205,7 @@ export default function TemplatesPage() {
       try {
         const imported = JSON.parse(e.target?.result as string);
         if (!Array.isArray(imported)) {
-          alert("Invalid template file format");
+          showToast("Invalid template file format", "error");
           return;
         }
         let count = 0;
@@ -217,10 +221,10 @@ export default function TemplatesPage() {
             count++;
           }
         }
-        alert(`Successfully imported ${count} template${count !== 1 ? "s" : ""}`);
+        showToast(`Imported ${count} template${count !== 1 ? "s" : ""} successfully`, "success");
         refresh();
       } catch {
-        alert("Import failed: invalid JSON");
+        showToast("Import failed: invalid JSON", "error");
       }
     };
     reader.readAsText(file);
@@ -470,6 +474,7 @@ export default function TemplatesPage() {
           </div>
         )}
       </main>
+          <ConfirmDialog open={!!confirmDlg?.open} title={confirmDlg?.title||""} message={confirmDlg?.message} tone="danger" confirmLabel="Delete" onConfirm={()=>{const fn=confirmDlg?.onConfirm; setConfirmDlg(null); fn?.();}} onCancel={()=>setConfirmDlg(null)} />
     </div>
   );
 }
