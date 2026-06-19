@@ -1,6 +1,6 @@
 "use client";
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/components/ui/useConfirm";
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";

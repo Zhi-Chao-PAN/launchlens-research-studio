@@ -9,6 +9,7 @@ import { ToastProvider } from "@/components/toast/ToastContext";
 import { NetworkStatus } from "@/components/ui/NetworkStatus";
 import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatsheetGlobal";
 import { FreezeMode } from "@/components/perf/FreezeMode";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Use system fonts instead of Google Fonts for better compatibility in China
 const fontClasses = "font-sans";
@@ -95,7 +96,7 @@ export default function RootLayout({
               <a href="#main-content" className="skip-link">
                 Skip to content
               </a>
-              {children}
+  <ErrorBoundary>{children}</ErrorBoundary>
               <CommandPalette />
               <GlobalCommands />
               <NetworkStatus />
