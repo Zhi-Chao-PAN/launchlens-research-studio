@@ -1,5 +1,5 @@
 "use client";
-import { fetchWithCsrf } from "@/lib/api/csrf-client";
+import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { useState, useRef } from "react";
 import {
@@ -134,7 +134,7 @@ export function DataManager() {
             result.totalRuns = data.total ?? 0;
           }
         } catch (err) {
-          result.errors.push("Run import failed: " + (err instanceof Error ? err.message : String(err)));
+          result.errors.push(formatApiError(err, { prefix: "Run import failed:" }));
         }
       }
 
@@ -180,7 +180,7 @@ export function DataManager() {
             result.totalNotes = count;
           }
         } catch (err) {
-          result.errors.push("Notes import failed: " + (err instanceof Error ? err.message : String(err)));
+          result.errors.push(formatApiError(err, { prefix: "Notes import failed:" }));
         }
       }
 
@@ -191,7 +191,7 @@ export function DataManager() {
           result.imported.folders = imported;
           result.totalFolders = getFolders().length;
         } catch (err) {
-          result.errors.push("Folders import failed: " + (err instanceof Error ? err.message : String(err)));
+          result.errors.push(formatApiError(err, { prefix: "Folders import failed:" }));
         }
       }
 
@@ -202,13 +202,13 @@ export function DataManager() {
           result.imported.templates = imported;
           result.totalTemplates = listTemplates().length;
         } catch (err) {
-          result.errors.push("Templates import failed: " + (err instanceof Error ? err.message : String(err)));
+          result.errors.push(formatApiError(err, { prefix: "Templates import failed:" }));
         }
       }
 
       setImportResult(result);
     } catch (err) {
-      setImportError("Failed to parse file: " + (err instanceof Error ? err.message : String(err)));
+      setImportError(formatApiError(err, { prefix: "Failed to parse file:" }));
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) {

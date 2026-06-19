@@ -17,6 +17,7 @@ import { saveResearchRun } from "@/lib/research/storage";
 // In production this would be backed by a database with proper persistence.
 const sessions = new Map<string, ResearchSession>();
 const cancelledSessions = new Set<string>();
+const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, (event: ResearchEvent) => void>();
 
 function generateId(): string {
@@ -62,6 +63,7 @@ export function createResearchSession(query: string, keywords: string[], agentId
   };
 
   sessions.set(id, session);
+  sessionAborts.set(id, new AbortController());
   return session;
 }
 
@@ -74,6 +76,7 @@ export function cancelSession(id: string): boolean {
   if (!session) return false;
   if (session.status === "completed" || session.status === "error") return false;
   cancelledSessions.add(id);
+  sessionAborts.get(id)?.abort();
   session.status = "cancelled";
   session.updatedAt = new Date().toISOString();
   emitEvent(id, { type: "error", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Session cancelled by user" });
@@ -157,10 +160,12 @@ async function runAgent(
         let telemetryOk = true;
         let telemetryErr: string | undefined;
         try {
+          const ac = sessionAborts.get(session.id);
           output = await provider.generate(agentId, {
             query: session.query,
             keywords: session.keywords,
             upstream: allOutputs,
+            signal: ac?.signal,
             onProgress: (event) => {
               const overall = 80 + Math.round(event.fraction * 19);
               updateAgentState(session, agentId, {
@@ -395,6 +400,8 @@ export async function runResearchSession(
 
     const createdMs = new Date(session.createdAt).getTime();
     const durationMs = createdMs ? Date.now() - createdMs : 0;
+
+  sessionAborts.delete(sessionId);
 
     saveResearchRun({
       id: session.id,

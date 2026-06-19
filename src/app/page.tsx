@@ -239,6 +239,15 @@ export default function Home() {
             <ProviderPill />
             <LanguageSwitcher />
             <ThemeToggle />
+            {hasSession && isRunning && (
+              <button
+                onClick={() => { setSidebarOpen(false); cancel(); }}
+                className="px-4 py-2 text-sm text-rose-700 hover:text-rose-900 hover:bg-rose-50 rounded-lg transition-colors font-medium"
+                aria-label="Stop running research"
+              >
+                Stop
+              </button>
+            )}
             {hasSession && (
               <button
                 onClick={() => { setSidebarOpen(false); reset(); }}

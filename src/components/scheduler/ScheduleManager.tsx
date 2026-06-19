@@ -1,5 +1,5 @@
 "use client";
-import { fetchWithCsrf } from "@/lib/api/csrf-client";
+import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -67,6 +67,7 @@ export function ScheduleManager() {
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setSchError] = useState<string | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -171,8 +172,8 @@ export function ScheduleManager() {
       if (toggleRes.ok) {
         await loadSchedules();
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      setSchError(formatApiError(e, { prefix: "Toggle failed:" }));
     }
   };
 
@@ -185,8 +186,8 @@ export function ScheduleManager() {
       if (res.ok) {
         await loadSchedules();
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      setSchError(formatApiError(e, { prefix: "Delete failed:" }));
     }
   };
 
@@ -200,13 +201,22 @@ export function ScheduleManager() {
         alert(`已触发，批次 ID: ${data.batchId}`);
         await loadSchedules();
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      setSchError(formatApiError(e, { prefix: "Trigger failed:" }));
     }
   };
 
+  // Dismiss error banner
+  const dismissError = () => setSchError(null);
+
   return (
     <div className="schedule-manager">
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg px-3 py-2 mb-3 flex items-center justify-between" role="alert">
+          <span>{error}</span>
+          <button onClick={dismissError} className="text-rose-600 hover:text-rose-900 ml-2" aria-label="Dismiss">x</button>
+        </div>
+      )}
       <div className="sch-header">
         <div className="sch-header-left">
           <h2 className="sch-title">定时研究</h2>

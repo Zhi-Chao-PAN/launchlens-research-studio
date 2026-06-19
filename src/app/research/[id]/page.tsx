@@ -1399,6 +1399,11 @@ async function loadRun() {
                 <p className="research-modal-desc">
                   Generate a public share link for this research report.
                 </p>
+                {shareError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-3 py-2 mb-2" role="alert">
+                    {shareError}
+                  </div>
+                )}
                 <div className="research-modal-actions">
                   <button
                     className="btn btn-secondary"

@@ -1,5 +1,5 @@
 "use client";
-import { fetchWithCsrf } from "@/lib/api/csrf-client";
+import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -113,7 +113,7 @@ export default function AdminPage() {
       setResearchTotal(data.total || 0);
       setResearchError(null);
     } catch (e: unknown) {
-      setResearchError(e instanceof Error ? e.message : "Failed to load");
+      setResearchError(formatApiError(e, { prefix: "Load failed:" }));
     } finally {
       setResearchLoading(false);
     }
@@ -127,7 +127,7 @@ export default function AdminPage() {
       setResearchRuns((prev) => prev.filter((r) => r.id !== id));
       setResearchTotal((prev) => Math.max(0, prev - 1));
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Failed to delete");
+      alert(formatApiError(e, { prefix: "Delete failed:" }));
     }
   }
 
@@ -169,7 +169,7 @@ export default function AdminPage() {
       }
       setError(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setError(formatApiError(e, { prefix: "Load failed:" }));
     }
   }
 
@@ -203,7 +203,7 @@ export default function AdminPage() {
         setError(`Failed to create token: ${res.status}`);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create");
+      setError(formatApiError(e, { prefix: "Create failed:" }));
     }
   }
 
@@ -219,7 +219,7 @@ export default function AdminPage() {
         setError(`Failed to revoke: ${res.status}`);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to revoke");
+      setError(formatApiError(e, { prefix: "Revoke failed:" }));
     }
   }
 
@@ -231,7 +231,7 @@ export default function AdminPage() {
         loadAll();
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to clear");
+      setError(formatApiError(e, { prefix: "Clear failed:" }));
     }
   }
 

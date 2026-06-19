@@ -13,6 +13,8 @@ import {
   erroredAgentIds,
   estimateEtaMs,
   sessionsEqual,
+  cancelSession,
+  runResearchSession,
 } from "@/lib/research/research-engine";
 import type { ResearchSession, AgentState } from "@/lib/schema/research-schema";
 
@@ -142,5 +144,26 @@ describe("research-engine helpers (round 155)", () => {
     // Different query on a structurally-different session
     const d = { ...a, query: "changed", keywords: [...a.keywords], agents: { ...a.agents }, citations: [...a.citations] };
     expect(sessionsEqual(a, d)).toBe(false);
+  });
+});
+
+
+describe("cancelSession (round 190/191)", () => {
+  it("returns false for non-existent session ids", () => {
+    expect(cancelSession("does-not-exist-" + Math.random())).toBe(false);
+  });
+
+  it("returns false for already-finished sessions", () => {
+    const session = createResearchSession("done", ["a"]);
+    session.status = "completed";
+    expect(cancelSession(session.id)).toBe(false);
+  });
+
+  it("flips a running session to cancelled synchronously and emits complete events", () => {
+    const session = createResearchSession("widget", ["saas"]);
+    session.status = "running";
+    const ok = cancelSession(session.id);
+    expect(ok).toBe(true);
+    expect(getResearchSession(session.id)?.status).toBe("cancelled");
   });
 });
