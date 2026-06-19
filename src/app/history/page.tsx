@@ -8,6 +8,7 @@ import { getStarredRunIds, isRunStarred } from "@/lib/research/starred";
 import { HistoryItemSkeleton } from "@/components/skeleton/Skeleton";
 import { getAllTags, getRunTags, getTagDetails, bulkAddTags, bulkRemoveTags, type RunTag } from "@/lib/research/tags";
 import { useToast } from "@/components/toast/ToastContext";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { UndoManager } from "@/lib/utils/undo-manager";
 
 interface HistoryRun {
@@ -48,7 +49,7 @@ export default function HistoryPage() {
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const { showToast, dismissToast } = useToast();
-  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
+  const { askConfirm, dialog: confirmDialog } = useConfirm();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
   // Undo manager for soft deletes
@@ -239,7 +240,7 @@ export default function HistoryPage() {
 
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
-    setConfirmDlg({ open: true, title: `Delete ${selectedIds.size} selected run${selectedIds.size>1?'s':''}?`, message: 'This cannot be undone.', onConfirm: () => performBulkDelete() });
+    askConfirm(`Delete ${selectedIds.size} selected run${selectedIds.size>1?'s':''}?`, 'This cannot be undone.', () => performBulkDelete());
   };
   const performBulkDelete = async () => {
     setBulkActionLoading(true);

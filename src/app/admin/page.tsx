@@ -2,11 +2,11 @@
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useToast } from "@/components/toast/ToastContext";
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
 interface AdminToken {
@@ -51,9 +51,7 @@ function severityClass(severity: string): string {
 export default function AdminPage() {
   const { showToast } = useToast();
   const [confirm, setConfirm] = useState<{open: boolean; title: string; message?: string; tone?: "danger"|"primary"; onConfirm: () => void} | null>(null);
-  const askConfirm = useCallback((title: string, message: string | undefined, onConfirm: () => void, tone: "danger"|"primary" = "danger") => {
-    setConfirm({ open: true, title, message, tone, onConfirm });
-  }, []);
+  const { askConfirm, dialog: confirmDialog } = useConfirm();
   const [token, setToken] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("admin_token") || "";

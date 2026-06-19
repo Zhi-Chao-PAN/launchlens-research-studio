@@ -133,7 +133,7 @@ export function useResearchStudio() {
   const connectSSE = useCallback(
     (sessionId: string) => {
       closeEventSource();
-      const es = new EventSource(`/api/research/${sessionId}/stream`);
+      const es = new EventSource(`/api/research/${sessionId}/stream${reconnectAttemptsRef.current > 0 ? '?reconnect=1' : ''}`);
       eventSourceRef.current = es;
       reconnectAttemptsRef.current = 0;
 

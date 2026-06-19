@@ -15,7 +15,7 @@ import {
 } from "@/lib/research/templates";
 import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useToast } from "@/components/toast/ToastContext";
 
 type TabType = "gallery" | "my-templates" | "all";
@@ -23,7 +23,7 @@ type TabType = "gallery" | "my-templates" | "all";
 export default function TemplatesPage() {
   const router = useRouter();
   const { showToast } = useToast();
-  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
+  const { askConfirm, dialog: confirmDialog } = useConfirm();
   const [templates, setTemplates] = useState<ResearchTemplate[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>("gallery");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -474,7 +474,7 @@ export default function TemplatesPage() {
           </div>
         )}
       </main>
-          <ConfirmDialog open={!!confirmDlg?.open} title={confirmDlg?.title||""} message={confirmDlg?.message} tone="danger" confirmLabel="Delete" onConfirm={()=>{const fn=confirmDlg?.onConfirm; setConfirmDlg(null); fn?.();}} onCancel={()=>setConfirmDlg(null)} />
+          {confirmDialog}
     </div>
   );
 }
