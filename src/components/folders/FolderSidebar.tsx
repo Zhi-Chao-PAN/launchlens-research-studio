@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/components/ui/useConfirm";
 import { useToast } from "@/components/toast/ToastContext";
 import {
   getFolders,
@@ -30,7 +30,7 @@ export function FolderSidebar({
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const { showToast } = useToast();
-  const [confirmDlg, setConfirmDlg] = useState<{open:boolean; title:string; message?:string; onConfirm:()=>void} | null>(null);
+  const { askConfirm, dialog: confirmDialog } = useConfirm();
 
   const refresh = () => setFolders(getFolders());
 
@@ -51,12 +51,12 @@ export function FolderSidebar({
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setConfirmDlg({ open: true, title: "Delete folder?", message: "All runs in the folder will be unfiled but not deleted.", onConfirm: () => {
+    askConfirm("Delete folder?", "All runs in the folder will be unfiled but not deleted.", async () => {
       deleteFolder(id);
       if (selectedFolderId === id) onSelectFolder(null);
       refresh();
       showToast("Folder deleted", "success");
-    }});
+    });
   };
 
   // Drag and drop reordering for folders
@@ -136,7 +136,7 @@ export function FolderSidebar({
 
     return (
       <div className="folders-section">
-        <h3 className="folders-section-title">�����ļ���</h3>
+        <h3 className="folders-section-title">Folders</h3>
         <div className="folders-list">
           {folders.map((folder) => (
             <button
@@ -147,7 +147,7 @@ export function FolderSidebar({
               onClick={() => toggleFolder(folder.id)}
             >
               <span className="folder-icon">{folder.icon}</span>
-              <span className="folder-name">{folder.name}</span>
+              <span className="folder-name">All runs</span>
               <span className="folder-count">{folder.runIds.length}</span>
             </button>
           ))}
@@ -158,11 +158,11 @@ export function FolderSidebar({
               type="text"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
-              placeholder="�ļ�������..."
+              placeholder="Folder name..."
               autoFocus
             />
             <button type="submit" className="btn btn-sm btn-primary">
-              ����
+              Create
             </button>
           </form>
         ) : (
@@ -170,7 +170,7 @@ export function FolderSidebar({
             className="folder-new-btn"
             onClick={() => setShowNewInput(true)}
           >
-            + �½��ļ���
+            + New folder
           </button>
         )}
       </div>
@@ -181,7 +181,7 @@ export function FolderSidebar({
   return (
     <aside className="folders-sidebar">
       <div className="folders-sidebar-header">
-        <h2>?? �ļ���</h2>
+        <h2>Folders</h2>
       </div>
 
       <div className="folders-list">
@@ -189,8 +189,8 @@ export function FolderSidebar({
           className={"folder-item " + (!selectedFolderId ? "active" : "")}
           onClick={() => onSelectFolder(null)}
         >
-          <span className="folder-icon">??</span>
-          <span className="folder-name">ȫ���о�</span>
+          <span className="folder-icon">🗂</span>
+          <span className="folder-name">All runs</span>
         </button>
 
         {folders.map((folder) => (
@@ -218,7 +218,7 @@ export function FolderSidebar({
               <button
                 className="folder-delete-btn"
                 onClick={(e) => handleDelete(folder.id, e)}
-                aria-label={"ɾ�� " + folder.name}
+                aria-label={"Delete " + folder.name}
               >
                 ?
               </button>
@@ -233,11 +233,11 @@ export function FolderSidebar({
             type="text"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
-            placeholder="�ļ�������..."
+            placeholder="Folder name..."
             autoFocus
           />
           <button type="submit" className="btn btn-sm btn-primary">
-            ����
+              Create
           </button>
         </form>
       ) : (
@@ -245,7 +245,7 @@ export function FolderSidebar({
           className="folder-new-btn"
           onClick={() => setShowNewInput(true)}
         >
-          + �½��ļ���
+            + New folder
         </button>
       )}
     </aside>

@@ -17,7 +17,7 @@ export interface ToastItem {
 
 interface ToastContextValue {
   toasts: ToastItem[];
-  showToast: (message: string, type?: ToastType, options?: { duration?: number; action?: ToastItem["action"] }) => string;
+  showToast: (message: string, type?: ToastType, options?: { duration?: number; action?: ToastItem["action"]; key?: string }) => string;
   dismissToast: (id: string) => void;
   clearAll: () => void;
 }
@@ -44,7 +44,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = "info", options?: { duration?: number; action?: ToastItem["action"] }) => {
+    (message: string, type: ToastType = "info", options?: { duration?: number; action?: ToastItem["action"]; key?: string }) => {
       const id = generateId();
       const duration = options?.duration ?? (type === "error" ? 5000 : 3000);
 
@@ -56,7 +56,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         action: options?.action,
       };
 
-      setToasts((prev) => [...prev, toast]);
+      setToasts((prev) => {
+        // Dedup by key if provided
+        if (options?.key && prev.some((t) => (t as any)._key === options.key)) return prev;
+        const entry = { ...toast, ...(options?.key ? { _key: options.key } : {}) };
+        return [...prev, entry];
+      });
 
       if (duration > 0) {
         const timer = setTimeout(() => {

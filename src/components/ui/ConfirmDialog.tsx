@@ -8,6 +8,7 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "danger" | "primary";
+  pending?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   tone = "primary",
+  pending = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -58,16 +60,21 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+            disabled={pending}
+            className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
-            onClick={() => { onConfirm(); }}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium ${confirmCls}`}
+            onClick={onConfirm}
+            disabled={pending}
+            className={`px-3 py-1.5 text-sm rounded-lg font-medium inline-flex items-center gap-1.5 ${confirmCls} disabled:opacity-70 disabled:cursor-not-allowed`}
             autoFocus
           >
+            {pending && (
+              <span className="inline-block w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" aria-hidden />
+            )}
             {confirmLabel}
           </button>
         </div>
