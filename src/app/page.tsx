@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 ﻿"use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
@@ -36,6 +36,7 @@ export default function Home() {
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && state.error;
+  const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats] = useState<{
@@ -161,6 +162,17 @@ export default function Home() {
     // but the cached outputs may include user-specific state).
     startResearch(cached.query, cached.keywords);
   }, [startResearch]);
+
+  // Track user-initiated cancellation so we can surface a non-error banner.
+  const prevStatusRef = useRef(state.status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    if ((prev === "running" || prev === "loading") && state.status === "idle") {
+      setCancelledNotice("Research stopped.");
+    }
+    if (state.status === "completed" || state.status === "error") setCancelledNotice(null);
+    prevStatusRef.current = state.status;
+  }, [state.status]);
 
   // Keyboard shortcut: ⌘/Ctrl + Enter submits the query
   useEffect(() => {

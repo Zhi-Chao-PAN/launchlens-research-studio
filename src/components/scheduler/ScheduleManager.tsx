@@ -2,6 +2,7 @@
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useToast } from "@/components/toast/ToastContext";
 
 type ScheduleInterval = "hourly" | "daily" | "weekly" | "interval";
 type ScheduleStatus = "active" | "paused";
@@ -63,6 +64,7 @@ const statusClass = (s: ScheduleStatus): string =>
   s === "active" ? "sch-status-active" : "sch-status-paused";
 
 export function ScheduleManager() {
+  const { showToast } = useToast();
   const [schedules, setSchedules] = useState<ResearchSchedule[]>([]);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -142,7 +144,7 @@ export function ScheduleManager() {
         await loadSchedules();
       } else {
         const err = await res.json();
-        alert(err.error || "创建失败");
+        showToast(err.error || "Create failed", "error");
       }
     } finally {
       setLoading(false);

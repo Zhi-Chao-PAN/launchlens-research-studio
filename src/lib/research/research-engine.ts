@@ -18,7 +18,9 @@ import { saveResearchRun } from "@/lib/research/storage";
 const sessions = new Map<string, ResearchSession>();
 const cancelledSessions = new Set<string>();
 const sessionAborts = new Map<string, AbortController>();
-const eventListeners = new Map<string, (event: ResearchEvent) => void>();
+const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
+const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const SSE_IDLE_GRACE_MS = 4000;
 
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -87,13 +89,10 @@ export function cancelSession(id: string): boolean {
 function isCancelled(id: string): boolean { return cancelledSessions.has(id); }
 
 function emitEvent(sessionId: string, event: ResearchEvent): void {
-  const listener = eventListeners.get(sessionId);
-  if (listener) {
-    try {
-      listener(event);
-    } catch (err) {
-      console.error(`[research] listener for ${sessionId} threw:`, err);
-    }
+  const listeners = eventListeners.get(sessionId);
+  if (!listeners) return;
+  for (const l of Array.from(listeners)) {
+    try { l(event); } catch (err) { console.error(`[research] listener for ${sessionId} threw:`, err); }
   }
 }
 
@@ -433,15 +432,36 @@ export async function runResearchSession(
   return session;
 }
 
-// Event stream subscription for SSE
+
+/** Subscribe to session events. Returns an unsubscribe function. */
 export function subscribeToSession(
   sessionId: string,
   listener: (event: ResearchEvent) => void,
 ): () => void {
-  eventListeners.set(sessionId, listener);
+  let set = eventListeners.get(sessionId);
+  if (!set) { set = new Set(); eventListeners.set(sessionId, set); }
+  set.add(listener);
+  const pending = sseIdleTimers.get(sessionId);
+  if (pending) { clearTimeout(pending); sseIdleTimers.delete(sessionId); }
   return () => {
-    if (eventListeners.get(sessionId) === listener) {
+    const set = eventListeners.get(sessionId);
+    if (!set) return;
+    set.delete(listener);
+    if (set.size === 0) {
       eventListeners.delete(sessionId);
+      const cur = sessions.get(sessionId);
+      if (cur && (cur.status === "running" || cur.status === "pending")) {
+        const existing = sseIdleTimers.get(sessionId);
+        if (existing) clearTimeout(existing);
+        const t = setTimeout(() => {
+          sseIdleTimers.delete(sessionId);
+          const live = sessions.get(sessionId);
+          if (live && (live.status === "running" || live.status === "pending")) {
+            cancelSession(sessionId);
+          }
+        }, SSE_IDLE_GRACE_MS);
+        sseIdleTimers.set(sessionId, t);
+      }
     }
   };
 }
