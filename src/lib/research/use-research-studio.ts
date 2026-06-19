@@ -327,10 +327,17 @@ export function useResearchStudio() {
     setState((prev) => ({ ...prev, activeAgentTab: agentId }));
   }, []);
 
-  const cancel = useCallback(() => {
+  const cancel = useCallback(async () => {
+    const sid = sessionIdRef.current;
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
     closeEventSource();
+    if (sid) {
+      // Best-effort: tell the server to abort agents immediately instead of
+      // waiting for the SSE idle grace to expire. keepalive lets it complete
+      // even if the user navigates away mid-request.
+      try { fetchWithCsrfStrict(`/api/research/${sid}/cancel`, { method: "POST", keepalive: true }).catch(() => {}); } catch {}
+    }
     sessionIdRef.current = null;
     setState((prev) => ({ ...prev, status: "idle", error: null }));
   }, [closeEventSource]);

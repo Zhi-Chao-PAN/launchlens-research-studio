@@ -89,21 +89,23 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className={`${fontClasses} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-50">
-        <WebVitalsReporter />
-        <LocaleProvider>
-          <ToastProvider>
-            <CommandPaletteProvider>
-              <a href="#main-content" className="skip-link">
-                Skip to content
-              </a>
-  <ErrorBoundary>{children}</ErrorBoundary>
-              <CommandPalette />
-              <GlobalCommands />
-              <NetworkStatus />
-              <KeyboardCheatsheetGlobal />
-            </CommandPaletteProvider>
-          </ToastProvider>
-        </LocaleProvider>
+        <ErrorBoundary>
+          <WebVitalsReporter />
+          <LocaleProvider>
+            <ToastProvider>
+              <CommandPaletteProvider>
+                <a href="#main-content" className="skip-link">
+                  Skip to content
+                </a>
+                {children}
+                <CommandPalette />
+                <GlobalCommands />
+                <NetworkStatus />
+                <KeyboardCheatsheetGlobal />
+              </CommandPaletteProvider>
+            </ToastProvider>
+          </LocaleProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
