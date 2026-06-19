@@ -8,6 +8,10 @@ import { useEffect } from "react";
 export function WebVitalsReporter() {
   useEffect(() => {
     if (typeof window === "undefined" || typeof PerformanceObserver === "undefined") return;
+    // Idempotency guard so StrictMode / ErrorBoundary remounts do not double-register observers.
+    const w = window as unknown as { __llVitalsInstalled?: boolean };
+    if (w.__llVitalsInstalled) return;
+    w.__llVitalsInstalled = true;
 
     const send = (name: string, value: number, extra: Record<string, unknown> = {}) => {
       const payload = { name, value, ...extra, ts: Date.now() };

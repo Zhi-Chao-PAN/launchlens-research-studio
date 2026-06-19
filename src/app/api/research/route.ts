@@ -1,6 +1,7 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
 import { checkRateLimit, checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
+import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
@@ -131,7 +132,7 @@ export async function POST(request: NextRequest) {
   for (const [k, v] of Object.entries(cors.headers)) {
     response.headers.set(k, v);
   }
-  return response;
+  return rotateCsrf(response);
 }
 
 export async function GET() {

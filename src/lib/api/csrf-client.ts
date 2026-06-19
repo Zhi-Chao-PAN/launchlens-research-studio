@@ -56,7 +56,14 @@ export async function fetchWithCsrf(
     headers.set("X-CSRF-Token", token);
   }
 
-  return fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers });
+  // Rotate: if server handed back a fresh token, swap cachedToken so the
+  // next request uses the new value. Also accept it on successful GETs
+  // (the /api/csrf endpoint hands the token in body, which already sets
+  // cachedToken). Works even on error responses to avoid desync.
+  const rotated = res.headers.get(CSRF_HEADER);
+  if (rotated) cachedToken = rotated;
+  return res;
 }
 
 /* ------------------------------------------------------------------ */
@@ -174,6 +181,7 @@ export async function fetchWithCsrfStrict(
 ): Promise<Response> {
   const { throwOnRateLimit, ...rest } = options;
   const res = await fetchWithCsrf(url, rest);
+  // fetchWithCsrf already processed rotation header, no-op here
   if (throwOnRateLimit && res.status === 429) {
     const info = parseRateLimit(res);
     // Attempt to read JSON error body

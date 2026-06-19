@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import type { NextRequest } from "next/server";
 import { z } from "zod";

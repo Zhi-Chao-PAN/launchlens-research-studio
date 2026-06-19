@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { cancelSession, getResearchSession } from "@/lib/research/research-engine";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 
@@ -23,5 +24,5 @@ export async function POST(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
   const ok = cancelSession(sessionId);
-  return NextResponse.json({ ok, sessionId, status: "cancelled" });
+  return rotateCsrf(NextResponse.json({ ok, sessionId, status: "cancelled" }));
 }

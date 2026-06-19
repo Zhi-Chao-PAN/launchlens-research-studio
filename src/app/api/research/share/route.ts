@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { createShareToken, getSharesForRun, revokeShareToken } from "@/lib/research/share-tokens";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { getResearchRun } from "@/lib/research/storage";
