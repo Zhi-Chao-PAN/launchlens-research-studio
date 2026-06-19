@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchWithCsrfStrict, RateLimitError, fetchWithCsrf } from "@/lib/api/csrf-client";
@@ -59,7 +59,13 @@ const ALL_AGENT_IDS: AgentId[] = [
   "synthesis",
 ];
 
-function parseApiError(body: unknown, status: number): string {
+function parseApiError(body: unknown, status: number, response?: Response | null): string {
+  const retryAfter = response?.headers?.get("Retry-After");
+  const bodyReset = body && typeof body === "object" && "resetMs" in body ? (body as { resetMs?: number }).resetMs : undefined;
+  const waitSec = retryAfter ? parseInt(retryAfter, 10) : bodyReset ? Math.ceil(bodyReset / 1000) : NaN;
+  if (status === 429 && waitSec && waitSec > 0) {
+    return `Too many requests. Please wait ${waitSec}s before trying again.`;
+  }
   if (body && typeof body === "object" && "error" in body && typeof (body as { error: unknown }).error === "string") {
     const err = (body as { error: string; field?: string; details?: string }).error;
     const details = (body as { details?: string }).details;
@@ -141,7 +147,7 @@ export function useResearchStudio() {
         if (sessionIdRef.current !== sessionId) return;
         const attempts = reconnectAttemptsRef.current;
         if (attempts >= 3) {
-          // Give up — fall back to polling the session state
+          // Give up 鈥?fall back to polling the session state
           fetchSessionData(sessionId);
           return;
         }
@@ -245,6 +251,22 @@ export function useResearchStudio() {
       };
 
       es.addEventListener("complete", finalize);
+      es.addEventListener("terminal", (e: MessageEvent) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.reason === "not-found") {
+            setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "error", error: "Session expired or not found. Please start a new research." } : prev);
+          } else if (d.reason === "cancelled") {
+            // user cancelled elsewhere; treat as idle
+            if (sessionIdRef.current === sessionId) {
+              setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "idle", error: null } : prev);
+            }
+          } else if (d.message) {
+            setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "error", error: d.message } : prev);
+          }
+        } catch {}
+        closeEventSource();
+      });
       es.onerror = () => {
         // EventSource will auto-reconnect, but if it errors after the session
         // completed, we should finalize. If session is still running and we
@@ -285,7 +307,7 @@ export function useResearchStudio() {
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(parseApiError(body, res.status));
+          throw new Error(parseApiError(body, res.status, res));
         }
 
         const data = await res.json();
@@ -487,3 +509,4 @@ export const STUDIO_CONSTANTS = {
   maxKeywords: 10,
   maxKeywordLength: 60,
 };
+

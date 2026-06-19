@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
         status: 429,
         headers: {
           "X-RateLimit-Remaining": String(rate.remaining),
-          "X-RateLimit-Reset-Ms": String(rate.resetMs),
+          "X-RateLimit-Reset-Ms": String(rate.resetMs), "Retry-After": String(Math.ceil(rate.resetMs / 1000)),
         },
       },
     );

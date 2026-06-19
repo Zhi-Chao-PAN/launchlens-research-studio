@@ -21,7 +21,20 @@ export async function GET(
 
   const session = getResearchSession(sessionId);
   if (!session) {
-    return jsonError("Session not found.", 404, { sessionId });
+    const notFoundStream = new TransformStream();
+    const nfw = notFoundStream.writable.getWriter();
+    const nfe = new TextEncoder();
+    nfw.write(nfe.encode("event: terminal\n"));
+    nfw.write(nfe.encode("data: " + JSON.stringify({ reason: "not-found", message: "Session not found." }) + "\n\n"));
+    nfw.close().catch(() => {});
+    return new Response(notFoundStream.readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
   }
 
   const stream = new TransformStream();
@@ -82,6 +95,9 @@ export async function GET(
   if (session.status === "completed") {
     writeEvent("complete", JSON.stringify({ message: "Research complete" }));
     setTimeout(safeClose, 200);
+  } else if (session.status === "cancelled" || session.status === "error") {
+    writeEvent("terminal", JSON.stringify({ reason: session.status, message: "Session " + session.status }));
+    setTimeout(safeClose, 200);
     return new Response(stream.readable, {
       headers: {
         "Content-Type": "text/event-stream",
@@ -105,6 +121,9 @@ export async function GET(
       writeEvent("agent-status", JSON.stringify({ agentId: event.agentId, message: event.message }));
     } else if (event.type === "error") {
       writeEvent("agent-error", JSON.stringify({ agentId: event.agentId, message: event.message }));
+    } else if (event.type === "cancelled") {
+      writeEvent("terminal", JSON.stringify({ reason: "cancelled", message: event.message ?? "Research cancelled" }));
+      setTimeout(safeClose, 200);
     }
   });
 

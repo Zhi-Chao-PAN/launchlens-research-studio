@@ -20,7 +20,7 @@ const cancelledSessions = new Set<string>();
 const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
 const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const SSE_IDLE_GRACE_MS = 4000;
+const SSE_IDLE_GRACE_MS = 12000;
 
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);

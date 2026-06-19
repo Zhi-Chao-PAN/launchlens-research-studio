@@ -188,8 +188,8 @@ export interface ResearchSession {
 }
 
 export interface ResearchEvent {
-  type: "status" | "progress" | "step" | "output" | "error" | "complete";
-  agentId: AgentId;
+  type: "status" | "progress" | "step" | "output" | "error" | "complete" | "cancelled";
+  agentId?: AgentId;
   timestamp: string;
   data?: unknown;
   message?: string;
