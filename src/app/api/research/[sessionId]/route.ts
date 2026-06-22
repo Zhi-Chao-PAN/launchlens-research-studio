@@ -1,24 +1,30 @@
-﻿import { NextResponse } from "next/server";
-import { getResearchSession } from "@/lib/research/research-engine";
-import { jsonError } from "@/lib/api/validation";
+import { NextResponse, NextRequest } from "next/server";
+import { getResearchSession, deleteSession } from "@/lib/research/research-engine";
+import { jsonError, jsonErrorLocalized } from "@/lib/api/validation";
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const { sessionId } = await params;
 
   if (!sessionId || !SESSION_ID_PATTERN.test(sessionId)) {
-    return jsonError("Invalid session id format.", 400);
+    return jsonErrorLocalized(request, "errors.badRequest", 400, undefined, {
+      field: "sessionId",
+    });
   }
 
   const session = getResearchSession(sessionId);
   if (!session) {
-    return jsonError("Session not found. It may have expired (sessions are in-memory and lost on server restart).", 404, {
-      sessionId,
-    });
+    return jsonErrorLocalized(
+      request,
+      "errors.notFound",
+      404,
+      undefined,
+      { sessionId },
+    );
   }
 
   return NextResponse.json({
@@ -31,4 +37,23 @@ export async function GET(
     agents: session.agents,
     citations: session.citations,
   });
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ sessionId: string }> },
+) {
+  const { sessionId } = await params;
+
+  if (!sessionId || !SESSION_ID_PATTERN.test(sessionId)) {
+    return jsonErrorLocalized(request, "errors.badRequest", 400, undefined, {
+      field: "sessionId",
+    });
+  }
+
+  const existed = deleteSession(sessionId);
+  if (!existed) {
+    return jsonErrorLocalized(request, "errors.notFound", 404, undefined, { sessionId });
+  }
+  return NextResponse.json({ ok: true, deleted: sessionId });
 }

@@ -45,7 +45,7 @@ export function ProviderPill() {
   }, []);
 
   if (!health || !health.provider) return null;
-  const breaker = health.breakers["provider:" + health.provider.id];
+  const breaker = health.breakers?.["provider:" + health.provider.id];
   const breakerOpen = !!breaker?.open;
   const isMock = health.provider.isMock;
 

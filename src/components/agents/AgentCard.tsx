@@ -13,6 +13,9 @@ interface AgentCardProps {
   isActive?: boolean;
   onClick?: () => void;
   error?: string;
+  /** When the enclosing session has been cancelled, hide per-agent error details
+   *  so the UI does not flash spurious red badges for user-initiated cancels. */
+  cancelled?: boolean;
 }
 
 const statusColors: Record<string, string> = {
@@ -29,7 +32,7 @@ const statusLabel: Record<string, string> = {
   error: "Error",
 };
 
-function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardProps) {
+function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: AgentCardProps) {
   const { t } = useLocale();
   const baseMeta = AGENT_METADATA[agentId];
   const meta = {
@@ -37,6 +40,11 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
     name: t(("agent." + agentId + ".name") as any, baseMeta.name),
     description: t(("agent." + agentId + ".description") as any, baseMeta.description),
   };
+
+  // Suppress per-agent error chrome on cancelled sessions — cancels are an
+  // explicit user action, not a failure.
+  const showError = !!error && !cancelled && state.status !== "idle";
+  const badgeStatus = showError ? "error" : state.status;
 
   return (
     <button
@@ -56,10 +64,10 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-semibold text-slate-800 text-sm truncate">{meta.name}</h3>
             <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[state.status] || statusColors.idle}`}
-              style={state.status === "running" && !error ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
+              className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[badgeStatus] || statusColors.idle}`}
+              style={badgeStatus === "running" ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
             >
-              {error ? t("agent.status.error") : t(("agent.status." + state.status) as any, statusLabel[state.status] || state.status)}
+              {showError ? t("agent.status.error") : t(("agent.status." + badgeStatus) as any, statusLabel[badgeStatus] || badgeStatus)}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>
@@ -95,14 +103,15 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
             </div>
           )}
 
-          {error && (
-            <p
-              className="text-xs text-rose-600 mt-1.5 truncate"
-              title={error}
+          {showError && (
+            <div
+              role="alert"
+              className="text-xs text-rose-700 mt-1.5 rounded-md bg-rose-50 border border-rose-200 px-2 py-1 break-words"
               style={{ animation: 'agent-shake 0.4s ease-in-out' }}
             >
-              {error}
-            </p>
+              <span className="font-medium">Error: </span>
+              <span className="text-rose-600">{error}</span>
+            </div>
           )}
         </div>
       </div>
@@ -115,6 +124,7 @@ export const AgentCard = memo(AgentCardImpl, (prev, next) => {
     prev.agentId === next.agentId &&
     prev.isActive === next.isActive &&
     prev.error === next.error &&
+    prev.cancelled === next.cancelled &&
     prev.onClick === next.onClick &&
     prev.state.status === next.state.status &&
     bucketProgress(prev.state.progress) === bucketProgress(next.state.progress) &&

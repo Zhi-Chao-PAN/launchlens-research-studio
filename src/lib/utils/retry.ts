@@ -1,6 +1,9 @@
 // Retry an async operation with exponential backoff and jitter.
 // Designed for transient provider failures (HTTP 5xx, timeouts, parse).
 // The caller decides which errors are retriable via the shouldRetry hook.
+// Backoff waits are abortable via `signal` so cancellation is prompt.
+
+import { sleep } from "@/lib/utils/sleep";
 
 export interface RetryOptions {
   maxAttempts?: number;
@@ -23,7 +26,7 @@ export async function retryWithBackoff<T>(
   let lastErr: unknown = new Error("retry never ran");
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (opts.signal?.aborted) {
-      throw new Error("retry aborted");
+      throw new DOMException("The operation was aborted.", "AbortError");
     }
     try {
       opts.onAttempt?.(attempt, null);
@@ -36,7 +39,7 @@ export async function retryWithBackoff<T>(
       }
       const exp = Math.min(cap, base * 2 ** (attempt - 1));
       const jitter = Math.random() * exp * 0.25;
-      await new Promise((resolve) => setTimeout(resolve, exp + jitter));
+      await sleep(exp + jitter, { signal: opts.signal });
     }
   }
   throw lastErr;

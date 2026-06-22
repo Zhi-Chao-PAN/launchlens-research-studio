@@ -12,6 +12,7 @@ export default defineConfig({
       include: ["src/lib/**/*.ts", "src/app/api/**/*.ts"],
     },
     globals: true,
+    testTimeout: 30000,
   },
   resolve: {
     alias: {

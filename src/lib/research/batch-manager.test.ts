@@ -151,9 +151,29 @@ describe("batch-manager", () => {
       expect(getBatch(batch.id)!.status).toBe("running");
     });
 
-    it("cancelBatch marks batch", () => {
+    it("cancelBatch marks queued runs cancelled and counts separately", async () => {
       const batch = createBatch(["q1","q2","q3"], []);
+      // Pause first so scheduler doesn't pick up runs (keeps them queued).
+      pauseBatch(batch.id);
+      // Yield a microtick to let any in-flight scheduler tick complete.
+      await new Promise((r) => setTimeout(r, 50));
       expect(cancelBatch(batch.id)).toBe(true);
+      const fresh = getBatch(batch.id)!;
+      const statuses = fresh.runs.map((r) => r.status).sort();
+      // After 50ms with concurrency 3 at least some runs are already running
+      // and some are still queued; cancelBatch flips queued to cancelled
+      // immediately, and running runs will become cancelled as soon as their
+      // current backoff/polling sleep aborts. For this unit test we just verify
+      // the counter is incremented and queued runs are cancelled.
+      const queuedAtCancel = fresh.runs.filter((r) => r.status === "cancelled").length;
+      expect(queuedAtCancel).toBeGreaterThan(0);
+      expect(fresh.failed).toBe(0);
+      expect(fresh.cancelled + fresh.completed).toBeGreaterThanOrEqual(queuedAtCancel);
+      const summary = summarizeBatch(fresh);
+      expect(summary.cancelled).toBe(fresh.cancelled);
+      expect(summary.failed).toBe(0);
+      // Cancelled runs don't pollute the errors list (real errors only).
+      expect(summary.errors.every((e) => e !== "cancelled")).toBe(true);
     });
   });
 

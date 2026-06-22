@@ -76,6 +76,6 @@ describe("retryWithBackoff", () => {
     ctl.abort();
     await expect(
       retryWithBackoff(async () => "x", { signal: ctl.signal }),
-    ).rejects.toThrow("retry aborted");
+    ).rejects.toThrow(/aborted/i);
   });
 });

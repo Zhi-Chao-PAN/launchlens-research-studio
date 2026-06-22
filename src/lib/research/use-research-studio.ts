@@ -15,6 +15,15 @@ export interface ResearchStudioState {
   error: string | null;
   /** Per-agent error message if the engine reported a failure. */
   agentErrors: Partial<Record<AgentId, string>>;
+  /** Wall-clock time (ms) at which a rate-limit cooldown ends. */
+  rateLimitUntilMs: number | null;
+  /** Bumped when the rate-limit cooldown expires — focuses the submit button. */
+  retryReadyPulse: number;
+  /** Wall-clock time (ms) at which the next SSE reconnect attempt fires. */
+  reconnectUntilMs: number | null;
+  /** Current polling interval in ms while in SSE fallback; null when not polling.
+   *  Interval grows with exponential backoff up to a cap to reduce server load. */
+  pollingIntervalMs: number | null;
 }
 
 const initialAgentState = {
@@ -48,6 +57,10 @@ const initialState: ResearchStudioState = {
   activeAgentTab: "market-sizer",
   error: null,
   agentErrors: {},
+  rateLimitUntilMs: null,
+  retryReadyPulse: 0,
+  reconnectUntilMs: null,
+  pollingIntervalMs: null,
 };
 
 const ALL_AGENT_IDS: AgentId[] = [
@@ -79,35 +92,56 @@ export function useResearchStudio() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingIntervalRef = useRef<number>(2000);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const closeEventSource = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
+  const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
   }, []);
 
+  const clearPolling = useCallback(() => {
+    if (pollingTimerRef.current) {
+      clearTimeout(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+  }, []);
+
+  const closeEventSource = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    clearReconnectTimer();
+    clearPolling();
+    reconnectAttemptsRef.current = 0;
+    setState((prev) =>
+      prev.reconnectUntilMs || prev.pollingIntervalMs
+        ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: null }
+        : prev,
+    );
+  }, [clearReconnectTimer, clearPolling]);
+
   const fetchSessionData = useCallback(async (sessionId: string) => {
     try {
       const res = await fetch(`/api/research/${sessionId}`);
       if (!res.ok) {
         if (res.status === 404) {
-          // Session expired (server restart). Surface to user.
+          clearPolling();
           setState((prev) =>
             prev.sessionId === sessionId
-              ? { ...prev, status: "error", error: "Session expired. Please start a new research." }
+              ? { ...prev, status: "error", error: "Session expired. Please start a new research.", reconnectUntilMs: null, pollingIntervalMs: null }
               : prev,
           );
         }
         return;
       }
       const data = await res.json();
+      let terminal = false;
       setState((prev) => {
         if (prev.sessionId !== sessionId) return prev;
         const newAgentOutputs = { ...prev.agentOutputs };
@@ -124,17 +158,30 @@ export function useResearchStudio() {
             newAgentOutputs[agentId] = agentState.output;
           }
         }
+        const nextStatus =
+          data.status === "completed" || data.status === "cancelled"
+            ? "completed"
+            : data.status === "error"
+              ? "error"
+              : prev.status;
+        terminal = data.status === "completed" || data.status === "cancelled" || data.status === "error";
         return {
           ...prev,
-          status: data.status === "completed" ? "completed" : prev.status,
+          status: nextStatus,
           agents: newAgents,
           agentOutputs: newAgentOutputs,
+          reconnectUntilMs: terminal ? null : prev.reconnectUntilMs,
+          pollingIntervalMs: terminal ? null : prev.pollingIntervalMs,
         };
       });
+      if (terminal) {
+        clearPolling();
+        clearReconnectTimer();
+      }
     } catch (err) {
       console.error("Failed to fetch session data:", err);
     }
-  }, []);
+  }, [clearPolling, clearReconnectTimer]);
 
   const connectSSE = useCallback(
     (sessionId: string) => {
@@ -142,18 +189,138 @@ export function useResearchStudio() {
       const es = new EventSource(`/api/research/${sessionId}/stream${reconnectAttemptsRef.current > 0 ? '?reconnect=1' : ''}`);
       eventSourceRef.current = es;
       reconnectAttemptsRef.current = 0;
+      // (Re)connected — clear reconnect/polling banners.
+      setState((prev) =>
+        prev.sessionId === sessionId && (prev.reconnectUntilMs || prev.pollingIntervalMs)
+          ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: null }
+          : prev,
+      );
+
+      // Polling fallback: exponential backoff 2s → 4s → 8s → 16s (cap 16s).
+      // Each fetch that reaches a non-terminal state schedules the next poll.
+      // Periodically we probe the SSE endpoint to see if the connection can be
+      // restored. On repeated probe failures we back off the probe cadence too
+      // (every 4 → 8 → 16 polls, cap 16) so long outages don't waste requests.
+      const POLL_BASE = 2000;
+      const POLL_CAP = 16000;
+      const POLL_BACKOFF = 2;
+      const POLL_RECONNECT_EVERY_START = 4;
+      const POLL_RECONNECT_EVERY_MAX = 16;
+      let pollInterval = POLL_BASE;
+      let pollAttempts = 0;
+      let probeFailures = 0;
+      let probeEs: EventSource | null = null;
+
+      const closeProbe = () => {
+        if (probeEs) {
+          probeEs.close();
+          probeEs = null;
+        }
+      };
+
+      const attemptSseProbe = () => {
+        if (sessionIdRef.current !== sessionId) return;
+        if (probeEs) return; // probe already in flight
+        const probe = new EventSource(`/api/research/${sessionId}/stream`);
+        probeEs = probe;
+        const cleanup = () => {
+          if (probeEs === probe) probeEs = null;
+          probe.close();
+        };
+        const onState = () => {
+          // SSE is alive — rebuild a proper EventSource connection with full
+          // handlers (which will also clear polling state).
+          if (sessionIdRef.current !== sessionId) return cleanup();
+          cleanup();
+          // Reset probe-failure counter so the next time we fall back to
+          // polling we start probing again quickly.
+          probeFailures = 0;
+          connectSSE(sessionId);
+        };
+        const onError = () => {
+          probeFailures = Math.min(probeFailures + 1, 8); // cap at 2^8=256x (unreachable with cap=16)
+          cleanup();
+        };
+        probe.addEventListener("state", onState, { once: true });
+        probe.addEventListener("error", onError);
+        // Probe times out after 3s — keep polling if the endpoint is still dead.
+        setTimeout(() => {
+          if (probeEs === probe) {
+            probeFailures = Math.min(probeFailures + 1, 8);
+            cleanup();
+          }
+        }, 3000);
+      };
+
+      /** Number of polls between SSE probes. Doubles each time a probe
+       *  fails/expires; resets to the starting cadence when a probe succeeds. */
+      const probeEvery = () => {
+        const mult = 2 ** Math.min(probeFailures, 4); // cap at 16 polls = ~4 min at 16s cap
+        return Math.min(POLL_RECONNECT_EVERY_START * mult, POLL_RECONNECT_EVERY_MAX);
+      };
+
+      const scheduleNextPoll = () => {
+        if (sessionIdRef.current !== sessionId) return;
+        clearPolling();
+        // Exponential backoff with small jitter to avoid herd thundering.
+        const jitter = pollInterval * 0.1 * Math.random();
+        const interval = Math.min(POLL_CAP, pollInterval + jitter);
+        pollInterval = Math.min(POLL_CAP, pollInterval * POLL_BACKOFF);
+        pollAttempts += 1;
+        setState((prev) =>
+          prev.sessionId === sessionId ? { ...prev, pollingIntervalMs: interval } : prev,
+        );
+        pollingTimerRef.current = setTimeout(() => {
+          pollingTimerRef.current = null;
+          if (sessionIdRef.current !== sessionId) return;
+          void fetchSessionData(sessionId).then(() => {
+            if (sessionIdRef.current !== sessionId) return;
+            // Periodically probe whether SSE has come back so we can return to
+            // realtime updates instead of staying on polling indefinitely.
+            // Cadence backs off with each failed probe to reduce load.
+            if (pollAttempts >= probeEvery()) {
+              pollAttempts = 0;
+              attemptSseProbe();
+            }
+            scheduleNextPoll();
+          });
+        }, interval);
+      };
+
+      const beginPolling = () => {
+        if (sessionIdRef.current !== sessionId) return;
+        clearReconnectTimer();
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        closeProbe();
+        pollInterval = POLL_BASE;
+        pollAttempts = 0;
+        setState((prev) =>
+          prev.sessionId === sessionId
+            ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: POLL_BASE }
+            : prev,
+        );
+        // Immediate first fetch, then back off.
+        void fetchSessionData(sessionId).then(() => scheduleNextPoll());
+      };
 
       const scheduleReconnect = () => {
         if (sessionIdRef.current !== sessionId) return;
         const attempts = reconnectAttemptsRef.current;
         if (attempts >= 3) {
-          // Give up 鈥?fall back to polling the session state
-          fetchSessionData(sessionId);
+          beginPolling();
           return;
         }
         const delay = Math.min(2000 * Math.pow(2, attempts), 8000);
         reconnectAttemptsRef.current = attempts + 1;
+        const until = Date.now() + delay;
+        setState((prev) =>
+          prev.sessionId === sessionId ? { ...prev, reconnectUntilMs: until } : prev,
+        );
         reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
           if (sessionIdRef.current === sessionId) {
             connectSSE(sessionId);
           }
@@ -163,16 +330,23 @@ export function useResearchStudio() {
       es.addEventListener("state", (e: MessageEvent) => {
         try {
           const stateData = JSON.parse(e.data);
+          const terminal =
+            stateData.status === "completed" ||
+            stateData.status === "cancelled" ||
+            stateData.status === "error";
           setState((prev) =>
             prev.sessionId === sessionId
               ? {
                   ...prev,
                   status: stateData.status === "completed" ? "completed" : "running",
                   agents: { ...prev.agents, ...stateData.agents },
+                  reconnectUntilMs: terminal ? null : prev.reconnectUntilMs,
+                  pollingIntervalMs: null, // SSE is healthy if we receive state events
                 }
               : prev,
           );
           if (stateData.status === "completed") {
+            clearPolling();
             fetchSessionData(sessionId);
           }
         } catch (err) {
@@ -244,33 +418,67 @@ export function useResearchStudio() {
 
       const finalize = () => {
         if (sessionIdRef.current === sessionId) {
-          setState((prev) => (prev.sessionId === sessionId ? { ...prev, status: "completed" } : prev));
+          setState((prev) =>
+            prev.sessionId === sessionId
+              ? { ...prev, status: "completed", reconnectUntilMs: null, pollingIntervalMs: null }
+              : prev,
+          );
           fetchSessionData(sessionId);
         }
         closeEventSource();
       };
 
       es.addEventListener("complete", finalize);
+      es.addEventListener("cancelled", () => {
+        if (sessionIdRef.current === sessionId) {
+          setState((prev) =>
+            prev.sessionId === sessionId
+              ? { ...prev,
+                  status: "idle",
+                  error: null,
+                  agentErrors: {},
+                  reconnectUntilMs: null,
+                  pollingIntervalMs: null }
+              : prev,
+          );
+        }
+        closeEventSource();
+      });
       es.addEventListener("terminal", (e: MessageEvent) => {
         try {
           const d = JSON.parse(e.data);
           if (d.reason === "not-found") {
-            setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "error", error: "Session expired or not found. Please start a new research." } : prev);
-          } else if (d.reason === "cancelled") {
-            // user cancelled elsewhere; treat as idle
+            setState((prev) =>
+              prev.sessionId === sessionId
+                ? { ...prev, status: "error", error: "Session expired or not found. Please start a new research.", reconnectUntilMs: null, pollingIntervalMs: null }
+                : prev,
+            );
+          } else if (d.reason === "cancelled" || d.reason === "deleted") {
             if (sessionIdRef.current === sessionId) {
-              setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "idle", error: null } : prev);
+              setState((prev) =>
+                prev.sessionId === sessionId
+                  ? { ...prev,
+                      status: "idle",
+                      sessionId: d.reason === "deleted" ? null : prev.sessionId,
+                      error: null,
+                      agentErrors: {},
+                      reconnectUntilMs: null,
+                      pollingIntervalMs: null }
+                  : prev,
+              );
+              if (d.reason === "deleted") sessionIdRef.current = null;
             }
           } else if (d.message) {
-            setState((prev) => prev.sessionId === sessionId ? { ...prev, status: "error", error: d.message } : prev);
+            setState((prev) =>
+              prev.sessionId === sessionId
+                ? { ...prev, status: "error", error: d.message, reconnectUntilMs: null, pollingIntervalMs: null }
+                : prev,
+            );
           }
         } catch {}
         closeEventSource();
       });
       es.onerror = () => {
-        // EventSource will auto-reconnect, but if it errors after the session
-        // completed, we should finalize. If session is still running and we
-        // hit too many errors, we fall back to polling.
         if (sessionIdRef.current !== sessionId) {
           closeEventSource();
           return;
@@ -281,7 +489,8 @@ export function useResearchStudio() {
             if (prev.status === "completed") {
               closeEventSource();
               fetchSessionData(sessionId);
-            } else {
+            } else if (eventSourceRef.current === es) {
+              // Only schedule if nobody replaced the ES (e.g. a fresh connectSSE).
               scheduleReconnect();
             }
             return prev;
@@ -289,14 +498,22 @@ export function useResearchStudio() {
         }, 100);
       };
     },
-    [closeEventSource, fetchSessionData],
+    [closeEventSource, fetchSessionData, clearPolling, clearReconnectTimer],
   );
 
   const startResearch = useCallback(
     async (query: string, keywords: string[]) => {
       closeEventSource();
       sessionIdRef.current = null;
-      setState({ ...initialState, query, keywords, status: "loading" });
+      setState((prev) => ({
+        ...initialState,
+        query,
+        keywords,
+        status: "loading",
+        // Preserve any active rate-limit cooldown so a spammed submit can't
+        // race past the server-side bucket.
+        rateLimitUntilMs: prev.rateLimitUntilMs,
+      }));
 
       try {
         const res = await fetchWithCsrfStrict("/api/research", {
@@ -313,11 +530,39 @@ export function useResearchStudio() {
         const data = await res.json();
         const sessionId = data.sessionId;
         sessionIdRef.current = sessionId;
-        setState((prev) => ({ ...prev, sessionId, status: "running" }));
+        setState((prev) => ({
+          ...prev,
+          sessionId,
+          status: "running",
+          rateLimitUntilMs: null,
+          error: null,
+          agentErrors: {},
+          reconnectUntilMs: null,
+          pollingIntervalMs: null,
+        }));
         connectSSE(sessionId);
       } catch (err) {
+        if (err instanceof RateLimitError) {
+          const until = Date.now() + Math.max(1000, err.retryAfterMs);
+          setState((prev) => ({
+            ...prev,
+            status: "idle",
+            error: null, // rendered via i18n interpolation in the UI
+            rateLimitUntilMs: until,
+            reconnectUntilMs: null,
+            pollingIntervalMs: null,
+          }));
+          return;
+        }
         const message = err instanceof Error ? err.message : "Failed to start research.";
-        setState((prev) => ({ ...prev, status: "error", error: message }));
+        setState((prev) => ({
+          ...prev,
+          status: "error",
+          error: message,
+          rateLimitUntilMs: null,
+          reconnectUntilMs: null,
+          pollingIntervalMs: null,
+        }));
       }
     },
     [closeEventSource, connectSSE],
@@ -339,7 +584,15 @@ export function useResearchStudio() {
       try { fetchWithCsrfStrict(`/api/research/${sid}/cancel`, { method: "POST", keepalive: true }).catch(() => {}); } catch {}
     }
     sessionIdRef.current = null;
-    setState((prev) => ({ ...prev, status: "idle", error: null }));
+    setState((prev) => ({
+      ...prev,
+      status: "idle",
+      error: null,
+      agentErrors: {},
+      rateLimitUntilMs: null,
+      reconnectUntilMs: null,
+      pollingIntervalMs: null,
+    }));
   }, [closeEventSource]);
 
   const reset = useCallback(() => {
@@ -355,6 +608,37 @@ export function useResearchStudio() {
       closeEventSource();
     };
   }, [closeEventSource]);
+
+  // Cooldown tick: runs at ~4Hz while any deadline is active.
+  // - rate-limit deadline → clear deadline + bump retryReadyPulse
+  // - reconnect deadline → clear after 2s of being past-due (defensive)
+  const hasActiveCooldown = !!(state.rateLimitUntilMs || state.reconnectUntilMs);
+  useEffect(() => {
+    if (!hasActiveCooldown) return;
+    const tick = () => {
+      setState((prev) => {
+        const now = Date.now();
+        let next = prev;
+        if (prev.rateLimitUntilMs && prev.rateLimitUntilMs - now <= 0) {
+          next = {
+            ...next,
+            rateLimitUntilMs: null,
+            error: null,
+            retryReadyPulse: next.retryReadyPulse + 1,
+          };
+        }
+        if (prev.reconnectUntilMs && prev.reconnectUntilMs - now <= 0) {
+          if (now - prev.reconnectUntilMs > 2000) {
+            next = { ...next, reconnectUntilMs: null };
+          }
+        }
+        return next;
+      });
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [hasActiveCooldown]);
 
   return {
     state,
@@ -449,6 +733,10 @@ export function studioStateEqual(a: ResearchStudioState, b: ResearchStudioState)
   if (a.activeAgentTab !== b.activeAgentTab) return false;
   if (a.keywords.length !== b.keywords.length) return false;
   if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
+  if (a.rateLimitUntilMs !== b.rateLimitUntilMs) return false;
+  if (a.retryReadyPulse !== b.retryReadyPulse) return false;
+  if (a.reconnectUntilMs !== b.reconnectUntilMs) return false;
+  if (a.pollingIntervalMs !== b.pollingIntervalMs) return false;
   for (const id of ALL_AGENT_IDS) {
     const x = a.agents[id], y = b.agents[id];
     if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput || x.currentStep !== y.currentStep) return false;

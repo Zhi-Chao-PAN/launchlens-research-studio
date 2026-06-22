@@ -2,12 +2,14 @@
 ﻿import { NextResponse } from "next/server";
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
 import { jsonError } from "@/lib/api/validation";
+import { sleep } from "@/lib/utils/sleep";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 const HEARTBEAT_INTERVAL_MS = 15000;
+const CLOSE_FLUSH_DELAY_MS = 200;
 
 export async function GET(
   request: Request,
@@ -40,16 +42,23 @@ export async function GET(
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
+  const ac = new AbortController();
 
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  // unsubscribe is assigned after subscribeToSession below; safeClose is only
+  // invoked asynchronously (via events/heartbeat/timeouts/abort signal), so the
+  // binding is always initialised by the time it fires.
+  let unsubscribe: () => void = () => {};
 
   const safeClose = () => {
     if (closed) return;
     closed = true;
+    ac.abort();
     if (heartbeat) clearInterval(heartbeat);
     unsubscribe();
-    writer.close().catch(() => {});
+    // Give the client a tiny window to receive the final event bytes.
+    sleep(CLOSE_FLUSH_DELAY_MS).finally(() => writer.close().catch(() => {}));
   };
 
   const writeEvent = (event: string, data: string) => {
@@ -58,7 +67,6 @@ export async function GET(
       writer.write(encoder.encode(`event: ${event}\n`));
       writer.write(encoder.encode(`data: ${data}\n\n`));
     } catch {
-      // If the writer is closed/aborted, stop trying.
       safeClose();
     }
   };
@@ -94,25 +102,19 @@ export async function GET(
 
   if (session.status === "completed") {
     writeEvent("complete", JSON.stringify({ message: "Research complete" }));
-    setTimeout(safeClose, 200);
+    safeClose();
+    return new Response(stream.readable, sseHeaders());
   } else if (session.status === "cancelled" || session.status === "error") {
     writeEvent("terminal", JSON.stringify({ reason: session.status, message: "Session " + session.status }));
-    setTimeout(safeClose, 200);
-    return new Response(stream.readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      },
-    });
+    safeClose();
+    return new Response(stream.readable, sseHeaders());
   }
 
-  const unsubscribe = subscribeToSession(sessionId, (event) => {
+  unsubscribe = subscribeToSession(sessionId, (event) => {
     if (closed) return;
     if (event.type === "complete") {
       writeEvent("complete", JSON.stringify({ message: event.message }));
-      setTimeout(safeClose, 200);
+      safeClose();
     } else if (event.type === "output") {
       writeEvent("agent-output", JSON.stringify({ agentId: event.agentId, output: event.data }));
     } else if (event.type === "progress") {
@@ -123,18 +125,26 @@ export async function GET(
       writeEvent("agent-error", JSON.stringify({ agentId: event.agentId, message: event.message }));
     } else if (event.type === "cancelled") {
       writeEvent("terminal", JSON.stringify({ reason: "cancelled", message: event.message ?? "Research cancelled" }));
-      setTimeout(safeClose, 200);
+      safeClose();
+    } else if (event.type === "closed") {
+      // Server-side eviction (e.g. DELETE /api/research/:id): tell the client
+      // this stream is gone and don't auto-reconnect.
+      writeEvent("terminal", JSON.stringify({ reason: (event.reason as "deleted" | undefined) ?? "deleted", message: event.message ?? "Session closed" }));
+      safeClose();
     }
   });
 
-  request.signal.addEventListener("abort", safeClose);
+  request.signal.addEventListener("abort", safeClose, { once: true });
 
-  return new Response(stream.readable, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new Response(stream.readable, { headers: sseHeaders() });
 }
+
+function sseHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  };
+}
+

@@ -188,11 +188,13 @@ export interface ResearchSession {
 }
 
 export interface ResearchEvent {
-  type: "status" | "progress" | "step" | "output" | "error" | "complete" | "cancelled";
+  type: "status" | "progress" | "step" | "output" | "error" | "complete" | "cancelled" | "closed";
   agentId?: AgentId;
   timestamp: string;
   data?: unknown;
   message?: string;
+  /** Optional machine-readable reason for terminal/closed events. */
+  reason?: "completed" | "cancelled" | "error" | "deleted" | "not-found";
 }
 
 export const AGENT_METADATA: Record<AgentId, { name: string; icon: string; description: string; order: number }> = {

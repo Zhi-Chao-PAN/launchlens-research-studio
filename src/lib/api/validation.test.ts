@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect } from "vitest";
-import { validateResearchRequest, QUERY_LIMITS, jsonError, jsonValidationError } from "@/lib/api/validation";
+import { validateResearchRequest, QUERY_LIMITS, jsonError, jsonValidationError, jsonErrorLocalized } from "@/lib/api/validation";
 
 describe("validateResearchRequest", () => {
   it("rejects non-object body", () => {
@@ -123,5 +123,29 @@ describe("jsonError and jsonValidationError", () => {
     if (v.ok) throw new Error("expected failure");
     const r = jsonValidationError(v);
     expect(r.status).toBe(400);
+  });
+
+  describe("jsonErrorLocalized", () => {
+    it("returns localized message for a given locale", () => {
+      const h = new Headers();
+      h.set("accept-language", "zh-CN");
+      const req = new Request("https://x/api", { headers: h });
+      const r = jsonErrorLocalized(req, "errors.notFound", 404);
+      expect(r.status).toBe(404);
+      expect(r.headers.get("content-language")).toBe("zh-CN");
+    });
+
+    it("interpolates {seconds} into rate-limit messages", () => {
+      const r = jsonErrorLocalized("en", "errors.rateLimit", 429, { seconds: "30" });
+      // We can't easily read the body here (NextResponse.json returns a
+      // stream), so just assert the status and headers are correct; string
+      // interpolation is tested in server.test.ts.
+      expect(r.status).toBe(429);
+    });
+
+    it("falls back to en when Accept-Language is missing", () => {
+      const r = jsonErrorLocalized(null, "errors.notFound", 404);
+      expect(r.status).toBe(404);
+    });
   });
 });

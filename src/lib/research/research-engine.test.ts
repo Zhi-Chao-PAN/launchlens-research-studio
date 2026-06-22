@@ -14,6 +14,8 @@ import {
   estimateEtaMs,
   sessionsEqual,
   cancelSession,
+  deleteSession,
+  subscribeToSession,
   runResearchSession,
 } from "@/lib/research/research-engine";
 import type { ResearchSession, AgentState } from "@/lib/schema/research-schema";
@@ -148,7 +150,7 @@ describe("research-engine helpers (round 155)", () => {
 });
 
 
-describe("cancelSession (round 190/191)", () => {
+describe("cancelSession (round 190/191 + R48)", () => {
   it("returns false for non-existent session ids", () => {
     expect(cancelSession("does-not-exist-" + Math.random())).toBe(false);
   });
@@ -159,11 +161,53 @@ describe("cancelSession (round 190/191)", () => {
     expect(cancelSession(session.id)).toBe(false);
   });
 
-  it("flips a running session to cancelled synchronously and emits complete events", () => {
+  it("flips a running session to cancelled synchronously and quiesces in-flight agents to idle", () => {
     const session = createResearchSession("widget", ["saas"]);
     session.status = "running";
+    // Simulate agents mid-flight
+    session.agents["market-sizer"].status = "running";
+    session.agents["market-sizer"].progress = 45;
+    session.agents["competitor-analyst"].status = "running";
+    session.agents["competitor-analyst"].progress = 20;
+    // One agent already finished before cancel — should keep its done state.
+    session.agents["pricing-scout"].status = "done";
+    session.agents["pricing-scout"].progress = 100;
     const ok = cancelSession(session.id);
     expect(ok).toBe(true);
-    expect(getResearchSession(session.id)?.status).toBe("cancelled");
+    const fresh = getResearchSession(session.id);
+    expect(fresh?.status).toBe("cancelled");
+    // In-flight agents returned to idle; not marked error.
+    expect(fresh?.agents["market-sizer"].status).toBe("idle");
+    expect(fresh?.agents["market-sizer"].progress).toBe(0);
+    expect(fresh?.agents["competitor-analyst"].status).toBe("idle");
+    expect(fresh?.agents["pricing-scout"].status).toBe("done");
+    expect(fresh?.agents["pricing-scout"].progress).toBe(100);
+  });
+
+  it("does not emit agent-error on cancel (so UI shows no red badges)", () => {
+    const session = createResearchSession("widget", ["saas"]);
+    session.status = "running";
+    const events: Array<{ type: string; agentId?: string }> = [];
+    const unsub = subscribeToSession(session.id, (ev) => {
+      events.push({ type: ev.type, agentId: ev.agentId });
+    });
+    cancelSession(session.id);
+    unsub();
+    const errorEvents = events.filter((e) => e.type === "error");
+    expect(errorEvents).toEqual([]);
+    // Must emit exactly one cancelled terminal event so SSE closes cleanly.
+    const cancelled = events.filter((e) => e.type === "cancelled");
+    expect(cancelled.length).toBe(1);
+  });
+});
+
+describe("deleteSession (R47/R48)", () => {
+  it("removes session from store and releases resources", () => {
+    const s = createResearchSession("to-delete", ["x"]);
+    expect(getResearchSession(s.id)).toBeDefined();
+    expect(deleteSession(s.id)).toBe(true);
+    expect(getResearchSession(s.id)).toBeUndefined();
+    expect(listSessions()).not.toContain(s.id);
+    expect(deleteSession(s.id)).toBe(false);
   });
 });

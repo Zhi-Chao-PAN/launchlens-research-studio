@@ -12,13 +12,14 @@
 
 import { createResearchSession } from "@/lib/research/research-engine";
 import { saveResearchRun } from "@/lib/research/storage";
+import { sleep } from "@/lib/utils/sleep";
 
 export type BatchPriority = "high" | "normal" | "low";
 
 export interface BatchRun {
   id: string;
   query: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   priority: BatchPriority;
   startedAt?: number;
   completedAt?: number;
@@ -31,6 +32,9 @@ export interface Batch {
   total: number;
   completed: number;
   failed: number;
+  /** Explicit user/API cancels — counted separately from hard failures so
+   *  the telemetry/error-rate math isn't polluted by intentional stops. */
+  cancelled: number;
   status: "running" | "completed" | "paused";
   runs: BatchRun[];
   createdAt: number;
@@ -70,6 +74,7 @@ declare global {
   var __activeRuns: number;
   var __schedulerRunning: boolean;
   var __schedulerQueue: Array<{ batchId: string; runIndex: number; priority: BatchPriority; resolve: () => void }>;
+  var __batchAborts: Map<string, AbortController> | undefined;
 }
 
 const DEFAULT_GLOBAL_CONCURRENCY = 3;
@@ -82,6 +87,7 @@ export function _resetBatchManager(): void {
   global.__batchStore = undefined;
   global.__activeRuns = 0;
   global.__schedulerRunning = false;
+  global.__batchAborts = undefined;
   __sequenceCounter = 0;
 }
 
@@ -90,6 +96,13 @@ function getStore(): Map<string, Batch> {
     global.__batchStore = new Map();
   }
   return global.__batchStore;
+}
+
+function getAborts(): Map<string, AbortController> {
+  if (!global.__batchAborts) {
+    global.__batchAborts = new Map();
+  }
+  return global.__batchAborts;
 }
 
 function getGlobalConcurrency(): number {
@@ -182,6 +195,7 @@ export function createBatch(
     total: queries.length,
     completed: 0,
     failed: 0,
+    cancelled: 0,
     status: "running",
     runs,
     createdAt: now,
@@ -194,6 +208,10 @@ export function createBatch(
 
   getStore().set(id, batch);
 
+  // Per-batch abort controller so cancelBatch can interrupt in-flight
+  // backoff/polling sleeps immediately rather than waiting for timeouts.
+  getAborts().set(id, new AbortController());
+
   // Kick off batch processing
   void processBatch(id, queries, keywords, options);
 
@@ -205,7 +223,7 @@ export function getBatch(id: string): Batch | null {
   const batch = getStore().get(id);
   if (!batch) return null;
 
-  const done = batch.completed + batch.failed;
+  const done = batch.completed + batch.failed + batch.cancelled;
   const progress = batch.total > 0 ? Math.round((done / batch.total) * 100) : 0;
 
   // Compute ETA if we have active runs
@@ -257,26 +275,41 @@ export function resumeBatch(id: string): boolean {
   return true;
 }
 
-/** Cancel a batch (same as pause + mark all queued as failed). */
+/** Cancel a batch (same as pause + mark all queued as failed).
+ *  Also aborts the per-batch AbortController so any in-flight backoff/
+ *  polling sleeps resolve immediately instead of waiting for timeouts. */
 export function cancelBatch(id: string): boolean {
   const batch = getStore().get(id);
   if (!batch) return false;
   batch.status = "paused";
   for (const run of batch.runs) {
     if (run.status === "queued") {
-      run.status = "failed";
+      run.status = "cancelled";
       run.error = "cancelled";
-      batch.failed++;
+      batch.cancelled++;
     }
   }
+  // Interrupt in-flight retry/polling loops; executeRun's AbortError handler
+  // will mark running runs as "cancelled" too.
+  getAborts().get(id)?.abort();
+
   // If nothing is running, mark completed
   const running = batch.runs.filter((r) => r.status === "running").length;
   if (running === 0) {
     batch.status = "completed";
     batch.completedAt = Date.now();
+    finalizeBatch(id);
   }
   getStore().set(id, { ...batch });
   return true;
+}
+
+function finalizeBatch(id: string): void {
+  const ctl = getAborts().get(id);
+  if (ctl) {
+    // No need to signal again; just drop the controller reference.
+    getAborts().delete(id);
+  }
 }
 
 /**
@@ -374,6 +407,7 @@ async function executeRun(batchId: string, runIndex: number): Promise<void> {
   const batch = store.get(batchId);
   if (!batch) return;
   const run = batch.runs[runIndex];
+  const signal = getAborts().get(batchId)?.signal;
 
   // Find the query - use the run index to match (queries are in order)
   const query = run.query;
@@ -382,11 +416,16 @@ async function executeRun(batchId: string, runIndex: number): Promise<void> {
   const maxAttempts = batch.retriesPerRun + 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // If batch was cancelled mid-backoff/mid-run, bail out immediately.
+    if (signal?.aborted) {
+      lastError = "cancelled";
+      break;
+    }
     try {
       if (attempt > 0) {
         run.retryCount = attempt;
-        // Exponential backoff on retry
-        await new Promise((res) => setTimeout(res, 100 * Math.pow(2, attempt - 1)));
+        // Exponential backoff on retry (abort-safe sleep)
+        await sleep(100 * Math.pow(2, attempt - 1), { signal });
       }
 
       const agentId = batch._agent || (batch.priority === "high" ? "analyst" : undefined);
@@ -394,12 +433,21 @@ async function executeRun(batchId: string, runIndex: number): Promise<void> {
       run.id = session.id;
 
       // Poll for completion
-      await waitForCompletion(session.id);
+      await waitForCompletion(session.id, signal);
+
+      if (signal?.aborted) {
+        lastError = "cancelled";
+        break;
+      }
 
       // Get final state
       const finalRun = getFinalRun(session.id);
       if (finalRun && finalRun.status === "failed") {
         throw new Error("research run failed");
+      }
+      if (finalRun && finalRun.status === "cancelled") {
+        lastError = "cancelled";
+        break;
       }
 
       // Success
@@ -409,46 +457,65 @@ async function executeRun(batchId: string, runIndex: number): Promise<void> {
       lastError = undefined;
       break;
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        lastError = "cancelled";
+        break;
+      }
       lastError = err instanceof Error ? err.message : String(err);
     }
   }
 
   if (lastError) {
-    run.status = "failed";
+    const isCancelled = lastError === "cancelled";
+    run.status = isCancelled ? "cancelled" : "failed";
     run.error = lastError;
-    batch.failed++;
+    if (isCancelled) {
+      batch.cancelled++;
+    } else {
+      batch.failed++;
+    }
     run.completedAt = Date.now();
   }
 
-  // Check if batch is done
-  const allDone = batch.runs.every((r) => r.status === "completed" || r.status === "failed");
+  // Check if batch is done (all runs reached a terminal state).
+  const allDone = batch.runs.every(
+    (r) => r.status === "completed" || r.status === "failed" || r.status === "cancelled",
+  );
   if (allDone) {
     batch.status = "completed";
     batch.completedAt = Date.now();
+    finalizeBatch(batchId);
   }
 
   store.set(batchId, { ...batch });
 }
 
-function waitForCompletion(sessionId: string): Promise<void> {
-  return new Promise((resolve) => {
-    const maxWait = 60000;
-    const start = Date.now();
+function waitForCompletion(sessionId: string, signal?: AbortSignal): Promise<void> {
+  // Abortable polling loop — resolves when the run reaches a terminal state
+  // (completed/failed/cancelled), the max-wait elapses, or the batch's AbortSignal fires.
+  const maxWait = 60000;
+  const start = Date.now();
 
-    const check = () => {
+  // Initial wait before first check (give the engine time to start).
+  return sleep(2000, { signal })
+    .then(async function poll(): Promise<void> {
       const stored = getFinalRun(sessionId);
-      if (stored && (stored.status === "completed" || stored.status === "failed")) {
-        resolve();
-        return;
+      if (stored && (stored.status === "completed" || stored.status === "failed" || stored.status === "cancelled")) return;
+      if (Date.now() - start > maxWait) return;
+      if (signal?.aborted) {
+        throw new DOMException("aborted", "AbortError");
       }
-      if (Date.now() - start > maxWait) {
-        resolve(); // timeout
-        return;
+      await sleep(1000, { signal });
+      return poll();
+    })
+    .catch((err) => {
+      // Normalise AbortError so callers can just check lastError === "cancelled".
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw err;
       }
-      setTimeout(check, 1000);
-    };
-    setTimeout(check, 2000);
-  });
+      // Any other error (e.g. storage layer missing on timeout) — resolve to
+      // preserve previous best-effort semantics.
+    });
 }
 
 function getFinalRun(id: string): { id: string; status: string; [key: string]: unknown } | null {
@@ -483,6 +550,7 @@ export interface BatchSummary {
   total: number;
   completed: number;
   failed: number;
+  cancelled: number;
   queued: number;
   running: number;
   progress: number;
@@ -497,19 +565,21 @@ export interface BatchSummary {
 export function summarizeBatch(batch: Batch): BatchSummary {
   const queued = batch.runs.filter((r) => r.status === "queued").length;
   const running = batch.runs.filter((r) => r.status === "running").length;
-  const done = batch.completed + batch.failed;
+  const done = batch.completed + batch.failed + batch.cancelled;
   const progress = batch.total > 0 ? Math.round((done / batch.total) * 100) : 0;
   const durationMs = batch.completedAt && batch.createdAt
     ? batch.completedAt - batch.createdAt
     : undefined;
+  // Only surface real errors (not 'cancelled' markers) in the summary error list.
   const errors: string[] = [];
-  batch.runs.forEach((r) => { if (r.error) errors.push(r.error); });
+  batch.runs.forEach((r) => { if (r.error && r.error !== "cancelled") errors.push(r.error); });
   return {
     batchId: batch.id,
     status: batch.status,
     total: batch.total,
     completed: batch.completed,
     failed: batch.failed,
+    cancelled: batch.cancelled,
     queued,
     running,
     progress,
@@ -530,10 +600,11 @@ export function summarizeAllBatches(batches: Batch[]): {
   totalRuns: number;
   totalCompleted: number;
   totalFailed: number;
+  totalCancelled: number;
   aggregateProgress: number;
 } {
   let running = 0, paused = 0, completed = 0;
-  let totalRuns = 0, totalCompleted = 0, totalFailed = 0;
+  let totalRuns = 0, totalCompleted = 0, totalFailed = 0, totalCancelled = 0;
   batches.forEach((b) => {
     if (b.status === "running") running++;
     else if (b.status === "paused") paused++;
@@ -541,11 +612,12 @@ export function summarizeAllBatches(batches: Batch[]): {
     totalRuns += b.total;
     totalCompleted += b.completed;
     totalFailed += b.failed;
+    totalCancelled += b.cancelled;
   });
   const aggregateProgress = totalRuns > 0
-    ? Math.round(((totalCompleted + totalFailed) / totalRuns) * 100)
+    ? Math.round(((totalCompleted + totalFailed + totalCancelled) / totalRuns) * 100)
     : 0;
-  return { total: batches.length, running, paused, completed, totalRuns, totalCompleted, totalFailed, aggregateProgress };
+  return { total: batches.length, running, paused, completed, totalRuns, totalCompleted, totalFailed, totalCancelled, aggregateProgress };
 }
 
 export function filterBatchesByStatus(batches: Batch[], status: Batch["status"]): Batch[] {
@@ -567,13 +639,15 @@ export interface EstimateInput {
   total: number;
   completed: number;
   failed: number;
+  cancelled?: number;
   avgRunDuration: number;
   concurrency: number;
 }
 
 export function estimateRemainingMs(input: EstimateInput): number | null {
   if (input.total <= 0 || input.concurrency <= 0) return null;
-  const remaining = input.total - input.completed - input.failed;
+  const cancelled = input.cancelled ?? 0;
+  const remaining = input.total - input.completed - input.failed - cancelled;
   if (remaining <= 0) return 0;
   if (!input.avgRunDuration || input.avgRunDuration <= 0) return null;
   const effective = Math.min(input.concurrency, remaining);
@@ -590,21 +664,24 @@ export function failRun(batchId: string, runIndex: number, error: string): boole
   if (!batch) return false;
   const run = batch.runs[runIndex];
   if (!run) return false;
-  if (run.status === "failed" || run.status === "completed") return false;
+  if (run.status === "failed" || run.status === "completed" || run.status === "cancelled") return false;
   run.status = "failed";
   run.error = error;
   run.completedAt = Date.now();
   batch.failed++;
-  const allDone = batch.runs.every((r) => r.status === "completed" || r.status === "failed");
+  const allDone = batch.runs.every(
+    (r) => r.status === "completed" || r.status === "failed" || r.status === "cancelled",
+  );
   if (allDone) {
     batch.status = "completed";
     batch.completedAt = Date.now();
+    finalizeBatch(batchId);
   }
   store.set(batchId, { ...batch });
   return true;
 }
 
-/** Force-mark a queued or failed run back to completed (manual override). */
+/** Force-mark a queued, failed, or cancelled run back to completed (manual override). */
 export function forceCompleteRun(batchId: string, runIndex: number): boolean {
   const store = getStore();
   const batch = store.get(batchId);
@@ -617,11 +694,15 @@ export function forceCompleteRun(batchId: string, runIndex: number): boolean {
   run.completedAt = Date.now();
   run.error = undefined;
   if (prev === "failed") batch.failed = Math.max(0, batch.failed - 1);
+  if (prev === "cancelled") batch.cancelled = Math.max(0, batch.cancelled - 1);
   batch.completed++;
-  const allDone = batch.runs.every((r) => r.status === "completed" || r.status === "failed");
+  const allDone = batch.runs.every(
+    (r) => r.status === "completed" || r.status === "failed" || r.status === "cancelled",
+  );
   if (allDone) {
     batch.status = "completed";
     batch.completedAt = Date.now();
+    finalizeBatch(batchId);
   }
   store.set(batchId, { ...batch });
   return true;

@@ -3,7 +3,11 @@
  *
  * Usage:
  *   const data = await retryFetch("/api/foo", { retries: 3 });
+ *
+ * Backoff waits honour the caller's AbortSignal so cancellation is prompt.
  */
+
+import { sleep } from "@/lib/utils/sleep";
 
 export interface RetryOptions extends RequestInit {
   retries?: number;
@@ -15,10 +19,6 @@ export interface RetryOptions extends RequestInit {
 
 const DEFAULT_RETRY_STATUS = [408, 429, 500, 502, 503, 504];
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function retryFetch(
   input: string | URL | Request,
   options: RetryOptions = {}
@@ -29,45 +29,49 @@ export async function retryFetch(
     backoffMultiplier = 2,
     retryOn = DEFAULT_RETRY_STATUS,
     timeoutMs = 30000,
+    signal: callerSignal,
     ...fetchOptions
   } = options;
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (callerSignal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+
+    // Compose the per-request timeout signal with the caller's signal.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(new DOMException("Request timed out.", "TimeoutError")), timeoutMs);
+    const abortOn = (src: AbortSignal | null | undefined) => {
+      if (!src) return;
+      if (src.aborted) controller.abort();
+      else src.addEventListener("abort", () => controller.abort(), { once: true, signal: controller.signal });
+    };
+    abortOn(callerSignal);
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-      const signal = fetchOptions.signal
-        ? (() => {
-            const combined = new AbortController();
-            fetchOptions.signal.addEventListener("abort", () => combined.abort());
-            controller.signal.addEventListener("abort", () => combined.abort());
-            return combined.signal;
-          })()
-        : controller.signal;
-
-      const res = await fetch(input, { ...fetchOptions, signal });
-      clearTimeout(timeoutId);
-
+      const res = await fetch(input, { ...fetchOptions, signal: controller.signal });
       if (res.ok || attempt >= retries || !retryOn.includes(res.status)) {
         return res;
       }
-
-      // Retry-able status
+      // Retry-able status — backoff and retry.
       const delay = retryDelay * Math.pow(backoffMultiplier, attempt);
-      // Add jitter (0-20%)
       const jitter = delay * (Math.random() * 0.2);
-      await wait(delay + jitter);
+      await sleep(delay + jitter, { signal: callerSignal });
     } catch (e: unknown) {
       lastError = e;
-      if (attempt >= retries) {
-        throw e;
+      // Surface abort immediately rather than retrying.
+      if (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) {
+        if (callerSignal?.aborted && e.name !== "TimeoutError") throw e;
+        if (attempt >= retries) throw e;
       }
+      if (attempt >= retries) throw e;
       const delay = retryDelay * Math.pow(backoffMultiplier, attempt);
       const jitter = delay * (Math.random() * 0.2);
-      await wait(delay + jitter);
+      await sleep(delay + jitter, { signal: callerSignal });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 

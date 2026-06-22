@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getBatch } from "@/lib/research/batch-manager";
+import { jsonErrorLocalized } from "@/lib/api/validation";
 
 // GET /api/research/batch/[batchId] — get batch status
 export async function GET(
@@ -11,7 +12,7 @@ export async function GET(
   const batch = getBatch(batchId);
 
   if (!batch) {
-    return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+    return jsonErrorLocalized(request, "errors.notFound", 404, undefined, { batchId });
   }
 
   return NextResponse.json(batch);

@@ -9,6 +9,7 @@ import { ToastProvider } from "@/components/toast/ToastContext";
 import { NetworkStatus } from "@/components/ui/NetworkStatus";
 import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatsheetGlobal";
 import { FreezeMode } from "@/components/perf/FreezeMode";
+import { ThemeProvider } from "next-themes";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 // Use system fonts instead of Google Fonts for better compatibility in China
@@ -67,6 +68,13 @@ export const metadata: Metadata = {
       },
     ],
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "LaunchLens Research Studio",
+    description: SITE_DESCRIPTION,
+    images: ["/og.svg"],
+    creator: "@launchlens",
+  },
   icons: {
     icon: [
       { url: "/logo.svg", type: "image/svg+xml" },
@@ -86,25 +94,53 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "LaunchLens Research Studio",
+    url: SITE_URL,
+    description: SITE_DESCRIPTION,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Any",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+    inLanguage: ["en", "zh-CN", "ja", "ko"],
+    browserRequirements: "Requires JavaScript. Requires HTML5.",
+  };
   return (
     <html lang="zh-CN" className={`${fontClasses} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-50">
+        <script
+          type="application/ld+json"
+          // JSON-LD is a static schema.org object; safe to inject verbatim.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <ErrorBoundary>
-          <WebVitalsReporter />
-          <LocaleProvider>
-            <ToastProvider>
-              <CommandPaletteProvider>
-                <a href="#main-content" className="skip-link">
-                  Skip to content
-                </a>
-                {children}
-                <CommandPalette />
-                <GlobalCommands />
-                <NetworkStatus />
-                <KeyboardCheatsheetGlobal />
-              </CommandPaletteProvider>
-            </ToastProvider>
-          </LocaleProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <WebVitalsReporter />
+            <LocaleProvider>
+              <ToastProvider>
+                <CommandPaletteProvider>
+                  <a href="#main-content" className="skip-link">
+                    Skip to content
+                  </a>
+                  {children}
+                  <CommandPalette />
+                  <GlobalCommands />
+                  <NetworkStatus />
+                  <KeyboardCheatsheetGlobal />
+                </CommandPaletteProvider>
+              </ToastProvider>
+            </LocaleProvider>
+          </ThemeProvider>
         </ErrorBoundary>
       </body>
     </html>

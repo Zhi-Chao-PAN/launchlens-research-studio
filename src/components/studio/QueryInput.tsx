@@ -11,6 +11,13 @@ interface QueryInputProps {
   isLoading: boolean;
   defaultQuery?: string;
   defaultKeywords?: string[];
+  /** If set, the submit button is disabled until this wall-clock time (ms).
+   *  Used to enforce client-side rate-limit cooldowns signalled by the server
+   *  via Retry-After. */
+  disabledUntilMs?: number | null;
+  /** Monotonically increasing counter bumped by the parent the moment a
+   *  rate-limit cooldown expires — triggers focus + aria-live announcement. */
+  retryReadyPulse?: number;
 }
 
 const EXAMPLE_QUERIES = [
@@ -29,13 +36,24 @@ const QUERY_LIMITS = {
   MAX_KEYWORD_LENGTH: 40,
 };
 
-export function QueryInput({ onSubmit, onCancel, isLoading, defaultQuery = "", defaultKeywords = [] }: QueryInputProps) {
+export function QueryInput({
+  onSubmit,
+  onCancel,
+  isLoading,
+  defaultQuery = "",
+  defaultKeywords = [],
+  disabledUntilMs = null,
+  retryReadyPulse = 0,
+}: QueryInputProps) {
   const [query, setQuery] = useState(defaultQuery);
   const [keywordInput, setKeywordInput] = useState(defaultKeywords.join(", "));
   const [showExamples, setShowExamples] = useState(false);
   const [autocompleteOpen, setAutocompleteOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [cooldownSecs, setCooldownSecs] = useState(0);
+  const [announcement, setAnnouncement] = useState<string | null>(null);
   const queryInputRef = useRef<HTMLTextAreaElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const { history: rawHistory, hydrated } = useResearchHistory();
 
   // Convert history to the format autocomplete expects (numeric timestamps)
@@ -158,6 +176,33 @@ export function QueryInput({ onSubmit, onCancel, isLoading, defaultQuery = "", d
 
   const shouldShowAutocomplete = hydrated && autocompleteOpen && !isLoading;
 
+  // Live countdown for client-side rate-limit cooldown. Keeps the button
+  // disabled and the label in sync with wall-clock time.
+  useEffect(() => {
+    if (!disabledUntilMs) {
+      setCooldownSecs(0);
+      return;
+    }
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((disabledUntilMs - Date.now()) / 1000));
+      setCooldownSecs(remaining);
+    };
+    update();
+    const id = setInterval(update, 250);
+    return () => clearInterval(id);
+  }, [disabledUntilMs]);
+
+  // When the parent bumps retryReadyPulse the server-side cooldown has
+  // expired; move focus back to the submit button and announce it to
+  // assistive tech so keyboard/screen-reader users can immediately retry.
+  useEffect(() => {
+    if (retryReadyPulse <= 0) return;
+    setAnnouncement("Ready to retry — you can submit again.");
+    submitButtonRef.current?.focus();
+    const t = setTimeout(() => setAnnouncement(null), 2000);
+    return () => clearTimeout(t);
+  }, [retryReadyPulse]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div className="flex items-center gap-2 mb-4">
@@ -269,14 +314,22 @@ export function QueryInput({ onSubmit, onCancel, isLoading, defaultQuery = "", d
 
         <div className="flex gap-2">
           <button
+            ref={submitButtonRef}
             type="submit"
-            disabled={isLoading || !isValid}
+            disabled={isLoading || !isValid || cooldownSecs > 0}
+            aria-busy={isLoading}
+            aria-disabled={isLoading || !isValid || cooldownSecs > 0}
             className="flex-1 py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-violet-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 <span>Starting research…</span>
+              </>
+            ) : cooldownSecs > 0 ? (
+              <>
+                <span aria-hidden>⏳</span>
+                <span>Please wait {cooldownSecs}s…</span>
               </>
             ) : (
               <>
@@ -296,6 +349,10 @@ export function QueryInput({ onSubmit, onCancel, isLoading, defaultQuery = "", d
             </button>
           )}
         </div>
+
+        {announcement && (
+          <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
+        )}
       </form>
 
       <div className="mt-4 pt-4 border-t border-slate-100">

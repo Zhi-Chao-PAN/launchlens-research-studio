@@ -35,11 +35,33 @@ export default function Home() {
   const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
-  const hasError = state.status === "error" && state.error;
+  const hasError = state.status === "error" && !!state.error;
+  const nowMs = Date.now();
+  const rateLimitRemainingSec = state.rateLimitUntilMs
+    ? Math.max(0, Math.ceil((state.rateLimitUntilMs - nowMs) / 1000))
+    : 0;
+  const isRateLimited = state.rateLimitUntilMs !== null && rateLimitRemainingSec > 0;
+  const reconnectRemainingSec = state.reconnectUntilMs
+    ? Math.max(0, Math.ceil((state.reconnectUntilMs - nowMs) / 1000))
+    : 0;
+  const isReconnecting = state.reconnectUntilMs !== null && reconnectRemainingSec > 0;
+  const isPollingFallback = state.pollingIntervalMs !== null;
+  const pollingSecs = state.pollingIntervalMs
+    ? Math.max(1, Math.round(state.pollingIntervalMs / 1000))
+    : 0;
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, setTick] = useState(0);
+  // Re-render at ~2Hz while any countdown/polling state is visible so the
+  // seconds labels in aria-live/banner text stay in sync with wall-clock.
+  useEffect(() => {
+    const needTick = isRateLimited || isReconnecting || isPollingFallback;
+    if (!needTick) return;
+    const id = setInterval(() => setTick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, [isRateLimited, isReconnecting, isPollingFallback]);
   const [stats, setStats] = useState<{
     totalRuns: number;
     starredCount: number;
@@ -292,12 +314,45 @@ export default function Home() {
         </div>
       )}
 
+      {/* Visible transient-status banners. All non-error states (rate limit,
+          reconnect, polling) share the same aria-live region so screen readers
+          announce the countdowns as they update. */}
+      {(isRateLimited || isReconnecting || isPollingFallback) && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className={
+              "rounded-xl p-3 flex items-center gap-3 border text-sm " +
+              (isRateLimited
+                ? "bg-amber-50 border-amber-200 text-amber-800"
+                : "bg-sky-50 border-sky-200 text-sky-800")
+            }
+          >
+            <span className="text-base flex-shrink-0" aria-hidden>
+              {isRateLimited ? "⏳" : isReconnecting ? "🔌" : "📡"}
+            </span>
+            <span className="flex-1">
+              {isRateLimited && t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
+              {!isRateLimited && isReconnecting &&
+                t("status.reconnectingIn", { seconds: String(reconnectRemainingSec) })}
+              {!isRateLimited && !isReconnecting && isPollingFallback && t("status.pollingEvery", { seconds: String(pollingSecs) })}
+            </span>
+          </div>
+        </div>
+      )}
+
       <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.status === "loading" && t("status.loading")}
-          {state.status === "running" && t("status.running")}
+          {state.status === "running" && !isReconnecting && !isPollingFallback && t("status.running")}
           {state.status === "completed" && t("status.completed")}
           {state.status === "error" && (state.error || t("status.error"))}
+          {isRateLimited && t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
+          {isReconnecting && t("status.reconnectingIn", { seconds: String(reconnectRemainingSec) })}
+          {isPollingFallback && t("status.polling")}
+          {state.rateLimitUntilMs !== null && rateLimitRemainingSec === 0 && t("status.readyToRetry")}
         </div>
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
@@ -309,7 +364,10 @@ export default function Home() {
                 {t("hero.subtitle")}
               </p>
             </div>
-            <QueryInput onSubmit={handleSubmit} onCancel={cancel} isLoading={isRunning} />
+            <QueryInput onSubmit={handleSubmit} onCancel={cancel} isLoading={isRunning}
+              disabledUntilMs={state.rateLimitUntilMs}
+              retryReadyPulse={state.retryReadyPulse}
+            />
 
             {stats && (
               <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -436,6 +494,8 @@ export default function Home() {
                 isLoading={isRunning}
                 defaultQuery={state.query}
                 defaultKeywords={state.keywords}
+                disabledUntilMs={state.rateLimitUntilMs}
+                retryReadyPulse={state.retryReadyPulse}
               />
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">

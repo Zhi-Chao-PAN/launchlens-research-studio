@@ -12,6 +12,7 @@ import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { saveResearchRun } from "@/lib/research/storage";
+import { sleep } from "@/lib/utils/sleep";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -81,8 +82,59 @@ export function cancelSession(id: string): boolean {
   sessionAborts.get(id)?.abort();
   session.status = "cancelled";
   session.updatedAt = new Date().toISOString();
-  emitEvent(id, { type: "error", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Session cancelled by user" });
-  emitEvent(id, { type: "complete", agentId: "synthesis", timestamp: new Date().toISOString() });
+
+  // Quiesce per-agent state so that GET after cancel doesn't return agents
+  // stuck at "running". Agents that already finished keep their done/error;
+  // in-flight ones are returned to idle (AgentStatus has no "cancelled"
+  // variant and we deliberately do NOT mark them as error — cancelling is a
+  // user action, not a failure).
+  for (const [aid, st] of Object.entries(session.agents)) {
+    if (st.status === "running" || st.status === "idle") {
+      session.agents[aid as AgentId] = {
+        ...st,
+        status: "idle",
+        progress: 0,
+        currentStep: "Cancelled",
+      };
+    }
+  }
+
+  // Single terminal event — do NOT emit an agent-error, otherwise cancelled
+  // runs show up as red error badges on the synthesis card.
+  emitEvent(id, { type: "cancelled", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Research cancelled" });
+  return true;
+}
+
+/** Hard-delete a session from the in-memory store. Aborts any running work
+ *  and releases SSE listeners. Used by DELETE /api/research/:id so clients
+ *  (and tests) can deterministically clean up. Returns true if the session
+ *  existed. */
+export function deleteSession(id: string): boolean {
+  const session = sessions.get(id);
+  if (!session) return false;
+  // Emit a 'closed' terminal event *before* we tear listeners down so any
+  // connected SSE streams can close their writers cleanly and signal the
+  // client EventSource to stop retrying.
+  emitEvent(id, {
+    type: "closed",
+    agentId: "synthesis",
+    timestamp: new Date().toISOString(),
+    reason: "deleted",
+    message: "Session deleted",
+  });
+  // Cancel any in-flight agent work and tear down listeners before evicting.
+  if (!cancelledSessions.has(id) && session.status !== "completed" && session.status !== "error") {
+    cancelledSessions.add(id);
+    sessionAborts.get(id)?.abort();
+  }
+  const listeners = eventListeners.get(id);
+  if (listeners) listeners.clear();
+  eventListeners.delete(id);
+  const pending = sseIdleTimers.get(id);
+  if (pending) { clearTimeout(pending); sseIdleTimers.delete(id); }
+  sessionAborts.delete(id);
+  cancelledSessions.delete(id);
+  sessions.delete(id);
   return true;
 }
 
@@ -129,8 +181,13 @@ async function runAgent(
   });
 
   try {
+    const ac = sessionAborts.get(session.id);
     for (let i = 0; i < steps.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, stepDelayMs));
+      await sleep(stepDelayMs, { signal: ac?.signal });
+
+      if (isCancelled(session.id)) {
+        throw new DOMException("Aborted", "AbortError");
+      }
 
       const progress = Math.round(((i + 1) / steps.length) * 80);
       updateAgentState(session, agentId, {
@@ -226,6 +283,15 @@ async function runAgent(
 
     return output;
   } catch (err) {
+    const isAbort =
+      isCancelled(session.id) ||
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error && err.name === "AbortError");
+    if (isAbort) {
+      // Cancellation is signalled once from cancelSession(); don't double-emit
+      // an error event or overwrite the terminal 'cancelled' status.
+      throw err;
+    }
     const message = err instanceof Error ? err.message : String(err);
     updateAgentState(session, agentId, {
       status: "error",

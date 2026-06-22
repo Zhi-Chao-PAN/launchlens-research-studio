@@ -63,6 +63,10 @@ export type DictionaryKey =
   | "crash.tryAgain"
   | "errors.dismiss"
   | "errors.startFailed"
+  | "errors.rateLimit"
+  | "errors.serviceUnavailable"
+  | "errors.notFound"
+  | "errors.badRequest"
   | "export.copied"
   | "export.copy"
   | "export.download"
@@ -124,6 +128,11 @@ export type DictionaryKey =
   | "status.error"
   | "status.loading"
   | "status.running"
+  | "status.retryingIn"
+  | "status.readyToRetry"
+  | "status.reconnectingIn"
+  | "status.polling"
+  | "status.pollingEvery"
   | "studio.poweredBy"
   | "studio.researchAgents"
   | "studio.tipReset"
@@ -143,10 +152,19 @@ const en: Dict = {
   "hero.subtitle": "6 specialized AI agents work in parallel to give you a complete market intelligence report. No API keys required.",
   "errors.startFailed": "Research failed to start",
   "errors.dismiss": "Dismiss",
+  "errors.rateLimit": "Too many requests. Please wait {seconds}s before trying again.",
+  "errors.serviceUnavailable": "Service temporarily unavailable. Please try again later.",
+  "errors.notFound": "Not found.",
+  "errors.badRequest": "Invalid request.",
   "status.loading": "Starting research session",
   "status.running": "Research agents are running",
   "status.completed": "Research complete",
   "status.error": "Research failed",
+  "status.retryingIn": "Rate limited — please wait {seconds}s before trying again.",
+  "status.readyToRetry": "Ready to retry — you can submit again.",
+  "status.reconnectingIn": "Connection lost — reconnecting in {seconds}s…",
+  "status.polling": "Reconnected via polling — updates may be delayed.",
+  "status.pollingEvery": "Polling every {seconds}s — updates may be delayed.",
   "language.label": "Language",
   "agent.market-sizer.name": "Market Sizer",
   "agent.market-sizer.description": "TAM/SAM/SOM estimates, growth trends, market segments",
@@ -263,10 +281,19 @@ const zhCN: Dict = {
   "hero.subtitle": "6 个专业 AI 智能体并行工作，为你输出一份完整的市场情报报告，无需任何 API 密钥。",
   "errors.startFailed": "调研启动失败",
   "errors.dismiss": "关闭",
+  "errors.rateLimit": "请求过于频繁，请等待 {seconds} 秒后再试。",
+  "errors.serviceUnavailable": "服务暂时不可用，请稍后重试。",
+  "errors.notFound": "未找到。",
+  "errors.badRequest": "请求无效。",
   "status.loading": "正在启动调研会话",
   "status.running": "调研智能体运行中",
   "status.completed": "调研完成",
   "status.error": "调研失败",
+  "status.retryingIn": "触发限流，请等待 {seconds} 秒后再试。",
+  "status.readyToRetry": "可以重新提交了。",
+  "status.reconnectingIn": "连接中断，{seconds} 秒后尝试重连…",
+  "status.polling": "已切换为轮询模式，结果更新可能有延迟。",
+  "status.pollingEvery": "已切换为轮询模式，每 {seconds} 秒刷新一次。",
   "language.label": "语言",
   "agent.market-sizer.name": "市场规模分析师",
   "agent.market-sizer.description": "TAM/SAM/SOM 估算、增长趋势、市场细分",
@@ -383,10 +410,19 @@ const ja: Dict = {
   "hero.subtitle": "6 つの専門 AI エージェントが並列で動作し、完全な市場インテリジェンスレポートを生成します。API キーは不要です。",
   "errors.startFailed": "リサーチを開始できませんでした",
   "errors.dismiss": "閉じる",
+  "errors.rateLimit": "リクエストが多すぎます。{seconds}秒後に再試行してください。",
+  "errors.serviceUnavailable": "サービスが一時的に利用できません。しばらくしてから再試行してください。",
+  "errors.notFound": "見つかりません。",
+  "errors.badRequest": "無効なリクエストです。",
   "status.loading": "リサーチセッションを開始しています",
   "status.running": "リサーチエージェントが実行中です",
   "status.completed": "リサーチ完了",
   "status.error": "リサーチに失敗しました",
+  "status.retryingIn": "レート制限中です。{seconds}秒後に再試行できます。",
+  "status.readyToRetry": "再試行できます。",
+  "status.reconnectingIn": "接続が切断されました。{seconds}秒後に再接続します…",
+  "status.polling": "ポーリングにフォールバックしました。更新の反映に少し時間がかかることがあります。",
+  "status.pollingEvery": "ポーリング中です。{seconds}秒ごとに更新します。",
   "language.label": "言語",
   "agent.market-sizer.name": "マーケットサイザー",
   "agent.market-sizer.description": "TAM/SAM/SOM 推計、成長トレンド、市場セグメント",
@@ -512,14 +548,14 @@ const ko: Dict = {
   "agent.status.running": "리서치 중",
   "agent.synthesis.description": "에이전트 간 검증, 실행 가능한 요약, 공유 가능한 브리프",
   "agent.synthesis.name": "종합 분석",
-  "commandPalette.all": "All",
-  "commandPalette.category.action": "Actions",
-  "commandPalette.category.navigation": "Navigation",
-  "commandPalette.category.setting": "Settings",
-  "commandPalette.category.template": "Templates",
-  "commandPalette.noResults": "No commands found",
-  "commandPalette.placeholder": "Type a command or search...",
-  "commandPalette.tryDifferent": "Try a different search term",
+  "commandPalette.all": "전체",
+  "commandPalette.category.action": "작업",
+  "commandPalette.category.navigation": "탐색",
+  "commandPalette.category.setting": "설정",
+  "commandPalette.category.template": "템플릿",
+  "commandPalette.noResults": "명령을 찾을 수 없습니다",
+  "commandPalette.placeholder": "명령 또는 검색어를 입력하세요...",
+  "commandPalette.tryDifferent": "다른 검색어로 시도해 보세요",
   "common.back": "뒤로",
   "common.cancel": "취소",
   "common.close": "닫기",
@@ -540,57 +576,61 @@ const ko: Dict = {
   "common.templates": "템플릿",
   "crash.body": "예기치 않은 오류가 발생했습니다. 작업 내용은 손실되지 않았습니다.",
   "crash.copied": "복사됨",
-  "crash.copyTrace": "Copy error details",
-  "crash.goHome": "Go home",
+  "crash.copyTrace": "오류 세부 정보 복사",
+  "crash.goHome": "홈으로 이동",
   "crash.title": "문제가 발생했습니다",
-  "crash.tryAgain": "Try again",
+  "crash.tryAgain": "다시 시도",
   "errors.dismiss": "닫기",
-  "errors.startFailed": "Research failed to start",
+  "errors.startFailed": "리서치를 시작하지 못했습니다",
+  "errors.rateLimit": "요청이 너무 많습니다. {seconds}초 후 다시 시도해 주세요.",
+  "errors.serviceUnavailable": "서비스가 일시적으로 사용 불가능합니다. 나중에 다시 시도해 주세요.",
+  "errors.notFound": "찾을 수 없습니다.",
+  "errors.badRequest": "잘못된 요청입니다.",
   "export.copied": "복사됨!",
   "export.copy": "복사",
   "export.download": "다운로드",
   "export.json": "JSON",
-  "export.markdown": "Markdown",
+  "export.markdown": "마크다운",
   "export.pdf": "PDF / 인쇄",
   "export.title": "보고서 내보내기",
   "folder.delete": "폴더 삭제",
-  "folder.dragToReorder": "Drag to reorder",
+  "folder.dragToReorder": "드래그하여 순서 변경",
   "folder.empty": "폴더가 없습니다",
   "folder.new": "새 폴더",
   "folder.rename": "이름 변경",
   "footer.tagline": "LaunchLens Research Studio - launchlens-ai 오픈소스 프로젝트",
-  "header.newResearch": "New Research",
-  "header.researchComplete": "Research complete",
+  "header.newResearch": "새 리서치",
+  "header.researchComplete": "리서치 완료",
   "header.share": "공유",
   "header.subtitle": "제품 아이디어를 위한 멀티 에이전트 시장 인사이트",
   "hero.subtitle": "6개의 전문 AI 에이전트가 병렬로 작업하여 완전한 시장 인텔리전스 보고서를 제공합니다. API 키가 필요 없습니다.",
   "hero.title": "몇 분 만에 모든 시장을 리서치하세요",
-  "history.clearSelection": "Clear selection",
-  "history.confirmDelete": "Are you sure you want to delete these runs?",
-  "history.deleteSelected": "Delete selected",
+  "history.clearSelection": "선택 해제",
+  "history.confirmDelete": "선택한 실행을 정말 삭제하시겠습니까?",
+  "history.deleteSelected": "선택 항목 삭제",
   "history.empty": "리서치가 없습니다",
-  "history.emptyDesc": "Start your first research to see it here",
-  "history.exportSelected": "Export selected",
-  "history.filterAll": "All",
-  "history.filterCompleted": "Completed",
-  "history.filterFailed": "Failed",
-  "history.searchPlaceholder": "Search research...",
-  "history.selectAll": "Select all",
+  "history.emptyDesc": "첫 리서치를 시작하면 여기에 표시됩니다",
+  "history.exportSelected": "선택 항목 내보내기",
+  "history.filterAll": "전체",
+  "history.filterCompleted": "완료됨",
+  "history.filterFailed": "실패함",
+  "history.searchPlaceholder": "리서치 검색...",
+  "history.selectAll": "전체 선택",
   "history.selected": "개 선택됨",
-  "history.sortNewest": "Newest first",
-  "history.sortOldest": "Oldest first",
-  "history.sortQuery": "Query A-Z",
+  "history.sortNewest": "최신순",
+  "history.sortOldest": "오래된순",
+  "history.sortQuery": "쿼리 A-Z",
   "history.title": "리서치 기록",
   "language.label": "언어",
-  "notFound.backHome": "Back to Research Studio",
-  "notFound.body": "The page you're looking for doesn't exist or has moved.",
-  "notFound.title": "Page not found",
-  "provider.breakerOpen": "Provider breaker open",
+  "notFound.backHome": "리서치 스튜디오로 돌아가기",
+  "notFound.body": "찾으시는 페이지가 존재하지 않거나 이동되었습니다.",
+  "notFound.title": "페이지를 찾을 수 없습니다",
+  "provider.breakerOpen": "프로바이더 차단기 열림",
   "provider.mock": "목업 모델",
   "provider.streaming": "스트리밍",
   "search.matchCount": "of",
   "search.next": "다음",
-  "search.noMatches": "No matches",
+  "search.noMatches": "일치하는 항목 없음",
   "search.placeholder": "보고서에서 검색...",
   "search.prev": "이전",
   "settings.dark": "다크",
@@ -599,19 +639,24 @@ const ko: Dict = {
   "settings.system": "시스템 따름",
   "settings.theme": "테마",
   "settings.title": "설정",
-  "shortcuts.noResults": "No shortcuts found",
-  "shortcuts.searchPlaceholder": "Search shortcuts...",
+  "shortcuts.noResults": "단축키를 찾을 수 없습니다",
+  "shortcuts.searchPlaceholder": "단축키 검색...",
   "shortcuts.title": "키보드 단축키",
   "shortcuts.total": "개의 단축키",
   "status.completed": "리서치 완료",
   "status.error": "리서치 실패",
   "status.loading": "리서치 세션 시작 중",
   "status.running": "리서치 에이전트 실행 중",
-  "studio.poweredBy": "Powered by 6 research agents:",
-  "studio.researchAgents": "Research Agents",
-  "studio.tipReset": "to reset",
-  "studio.tipStart": "to start",
-  "toc.readingProgress": "read",
+  "status.retryingIn": "요청이 제한되었습니다. {seconds}초 후 다시 시도해 주세요.",
+  "status.readyToRetry": "다시 시도할 수 있습니다.",
+  "status.reconnectingIn": "연결이 끊겼습니다. {seconds}초 후에 다시 연결합니다…",
+  "status.polling": "폴링으로 전환되었습니다. 업데이트가 약간 지연될 수 있습니다.",
+  "status.pollingEvery": "폴링 중입니다. {seconds}초마다 업데이트합니다.",
+  "studio.poweredBy": "6개의 리서치 에이전트가 함께합니다:",
+  "studio.researchAgents": "리서치 에이전트",
+  "studio.tipReset": "초기화",
+  "studio.tipStart": "시작하려면",
+  "toc.readingProgress": "읽는 중",
   "toc.title": "목차",
 };
 export const DICTIONARIES: Record<Locale, Dict> = {
@@ -621,8 +666,20 @@ export const DICTIONARIES: Record<Locale, Dict> = {
   "ko": ko,
 };
 
-export function translate(locale: Locale, key: DictionaryKey | string, fallback?: string): string {
+export function translate(
+  locale: Locale,
+  key: DictionaryKey | string,
+  fallback?: string,
+  params?: Record<string, string | number>,
+): string {
   const dict = DICTIONARIES[locale] || DICTIONARIES[DEFAULT_LOCALE];
   const k = key as DictionaryKey;
-  return dict[k] || DICTIONARIES[DEFAULT_LOCALE][k] || fallback || (typeof key === "string" ? key : "");
+  let raw = dict[k] || DICTIONARIES[DEFAULT_LOCALE][k] || fallback;
+  if (!raw) return typeof key === "string" ? key : "";
+  if (params) {
+    for (const [name, val] of Object.entries(params)) {
+      raw = raw.replace(new RegExp(`\\{\\s*${name}\\s*\\}`, "g"), String(val));
+    }
+  }
+  return raw;
 }

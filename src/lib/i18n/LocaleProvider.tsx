@@ -14,7 +14,7 @@ import {
 interface LocaleContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  t: (key: DictionaryKey | string, fallback?: string) => string;
+  t: (key: DictionaryKey | string, fallbackOrParams?: string | Record<string, string | number>, params?: Record<string, string | number>) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
@@ -53,7 +53,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: DictionaryKey | string, fallback?: string) => translateFn(locale, key, fallback),
+    (key: DictionaryKey | string, fallbackOrParams?: string | Record<string, string | number>, maybeParams?: Record<string, string | number>) => {
+      const fallback = typeof fallbackOrParams === "string" ? fallbackOrParams : undefined;
+      const params = maybeParams ?? (typeof fallbackOrParams === "object" ? fallbackOrParams : undefined);
+      return translateFn(locale, key, fallback, params);
+    },
     [locale],
   );
 
@@ -69,7 +73,11 @@ export function useLocale(): LocaleContextValue {
     return {
       locale: DEFAULT_LOCALE,
       setLocale: () => {},
-      t: (key: DictionaryKey | string, fallback?: string) => translateFn(DEFAULT_LOCALE, key, fallback),
+      t: (key: DictionaryKey | string, fallbackOrParams?: string | Record<string, string | number>, maybeParams?: Record<string, string | number>) => {
+        const fallback = typeof fallbackOrParams === "string" ? fallbackOrParams : undefined;
+        const params = maybeParams ?? (typeof fallbackOrParams === "object" ? fallbackOrParams : undefined);
+        return translateFn(DEFAULT_LOCALE, key, fallback, params);
+      },
     };
   }
   return ctx;

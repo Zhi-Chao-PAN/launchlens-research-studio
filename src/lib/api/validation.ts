@@ -3,6 +3,8 @@
 // Centralized so the rules and error shapes are consistent across endpoints.
 
 import { NextResponse } from "next/server";
+import { createServerI18n, type LocaleSource } from "@/lib/i18n/server";
+import type { DictionaryKey } from "@/lib/i18n/dictionaries";
 
 export const QUERY_LIMITS = {
   MIN_QUERY_LENGTH: 3,
@@ -97,13 +99,43 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
   return { ok: true, value: { query: trimmed, keywords: cleanKeywords } };
 }
 
-export function jsonError(message: string, status: number, extra?: Record<string, unknown>): NextResponse {
-  return NextResponse.json({ error: message, ...(extra || {}) }, { status });
+export function jsonError(
+  message: string,
+  status: number,
+  extra?: Record<string, unknown>,
+  localeSource?: LocaleSource,
+): NextResponse {
+  const { locale } = localeSource ? createServerI18n(localeSource) : { locale: undefined as string | undefined };
+  const headers: Record<string, string> = {};
+  if (locale) headers["Content-Language"] = locale;
+  return NextResponse.json({ error: message, ...(extra || {}) }, { status, headers });
 }
 
 export function jsonValidationError(result: ValidationError): NextResponse {
   return jsonError(result.body.error, result.status, {
     field: result.body.field,
     details: result.body.details,
+  });
+}
+
+/** Localized JSON error response.
+ *
+ * Picks a message from the dictionary via `createServerI18n(request)`,
+ * interpolates any `{name}` params, and returns a NextResponse with the
+ * correct status code, Content-Language header, and optional `details`/`field`.
+ */
+export function jsonErrorLocalized(
+  source: LocaleSource,
+  messageKey: DictionaryKey | string,
+  status: number,
+  params?: Record<string, string | number>,
+  extra?: Record<string, unknown>,
+): NextResponse<{ error: string; [key: string]: unknown }> {
+  const { locale, t } = createServerI18n(source);
+  const message = t(messageKey, undefined, params);
+  const body: { error: string; [key: string]: unknown } = { error: message, ...extra };
+  return NextResponse.json(body, {
+    status,
+    headers: { "Content-Language": locale },
   });
 }

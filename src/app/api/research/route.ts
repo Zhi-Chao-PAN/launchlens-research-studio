@@ -6,6 +6,7 @@ import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import { checkCors, handleOptions } from "@/lib/api/cors";
+import { createServerI18n } from "@/lib/i18n/server";
 import {
   createResearchSession,
   runResearchSession,
@@ -57,13 +58,18 @@ export async function POST(request: NextRequest) {
       ipHash: hashIp(ip),
       detail: "research endpoint",
     });
+    const { t } = createServerI18n(request);
+    const retrySeconds = Math.ceil(rate.resetMs / 1000);
+    const message = t("errors.rateLimit", { seconds: String(retrySeconds) });
     return NextResponse.json(
-      { error: "Rate limit exceeded. Please retry shortly.", resetMs: rate.resetMs },
+      { error: message, resetMs: rate.resetMs },
       {
         status: 429,
         headers: {
           "X-RateLimit-Remaining": String(rate.remaining),
-          "X-RateLimit-Reset-Ms": String(rate.resetMs), "Retry-After": String(Math.ceil(rate.resetMs / 1000)),
+          "X-RateLimit-Reset-Ms": String(rate.resetMs),
+          "Retry-After": String(retrySeconds),
+          "Content-Language": createServerI18n(request).locale,
         },
       },
     );

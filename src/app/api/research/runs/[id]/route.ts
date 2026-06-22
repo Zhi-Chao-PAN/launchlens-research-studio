@@ -1,18 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { getResearchRun } from "@/lib/research/storage";
+import { jsonErrorLocalized } from "@/lib/api/validation";
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const run = getResearchRun(id);
-  
+
   if (!run) {
-    return NextResponse.json(
-      { error: "Research run not found" },
-      { status: 404 },
-    );
+    return jsonErrorLocalized(request, "errors.notFound", 404, undefined, { id });
   }
 
   return NextResponse.json(run);
