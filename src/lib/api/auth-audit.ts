@@ -14,7 +14,8 @@ export type AuthAuditEventType =
   | "auth_failed"
   | "csrf_failed"
   | "rate_limited"
-  | "admin_action";
+  | "admin_action"
+  | "cors_rejected";
 
 export interface AuthAuditEvent {
   id: number;

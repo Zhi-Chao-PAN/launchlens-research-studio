@@ -41,14 +41,16 @@ export async function POST(request: NextRequest) {
     const { queries, keywords, provider, model } = parsed.data;
     const batch = createBatch(queries, keywords, { provider, model });
 
-    return NextResponse.json(
-      {
-        batchId: batch.id,
-        total: batch.total,
-        status: batch.status,
-        runs: batch.runs.map((r) => ({ query: r.query, status: r.status })),
-      },
-      { status: 202 },
+    return rotateCsrf(
+      NextResponse.json(
+        {
+          batchId: batch.id,
+          total: batch.total,
+          status: batch.status,
+          runs: batch.runs.map((r) => ({ query: r.query, status: r.status })),
+        },
+        { status: 202 },
+      ),
     );
   } catch (e: unknown) {
     return NextResponse.json(

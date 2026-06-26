@@ -1,22 +1,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { extractBearerToken, getTokenInfo } from "@/lib/api/bypass-tokens";
 import { getResearchStorageInfo, listResearchRuns } from "@/lib/research/storage";
 import { getShareStats } from "@/lib/research/share-tokens";
 import { getAlerts } from "@/lib/api/auth-alerts";
+import { requireAdmin } from "@/lib/api/require-admin";
 
 // Admin stats endpoint — aggregated system metrics.
-// Requires admin-scope bearer token.
+// Requires admin-scope bearer token. Authentication, rate limiting, and
+// audit logging are handled by requireAdmin(); this handler just aggregates.
 export async function GET(request: NextRequest) {
-  const auth = request.headers.get("authorization");
-  const token = extractBearerToken(auth);
-  if (!token) {
-    return NextResponse.json({ error: "missing-auth" }, { status: 401 });
-  }
-  const info = getTokenInfo(token);
-  if (!info || info.scope !== "admin") {
-    return NextResponse.json({ error: "insufficient-scope" }, { status: 403 });
-  }
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
 
   try {
     const storageInfo = getResearchStorageInfo();

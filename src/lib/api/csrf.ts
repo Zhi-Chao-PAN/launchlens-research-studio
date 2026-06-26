@@ -28,7 +28,7 @@ export function generateCsrfToken(): string {
 
 export function checkCsrfToken(
   request: NextRequest,
-  strict: boolean = process.env.LAUNCHLENS_CSRF_STRICT === "1",
+  strict: boolean = process.env.LAUNCHLENS_CSRF_STRICT !== "0",
 ): CsrfCheckResult {
   const cookieToken = request.cookies.get(CSRF_COOKIE_NAME)?.value;
   const headerToken = request.headers.get(CSRF_HEADER_NAME);

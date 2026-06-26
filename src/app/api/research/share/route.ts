@@ -48,12 +48,14 @@ export async function POST(request: Request) {
 
     const share = createShareToken(runId, { expiresInMs: expiresMs, maxViews: maxViewsN });
 
-    return NextResponse.json({
-      token: share.token,
-      expiresAt: share.expiresAt,
-      maxViews: share.maxViews,
-      createdAt: share.createdAt,
-    });
+    return rotateCsrf(
+      NextResponse.json({
+        token: share.token,
+        expiresAt: share.expiresAt,
+        maxViews: share.maxViews,
+        createdAt: share.createdAt,
+      }),
+    );
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
@@ -95,5 +97,5 @@ export async function DELETE(request: Request) {
   }
 
   const revoked = revokeShareToken(token);
-  return NextResponse.json({ revoked });
+  return rotateCsrf(NextResponse.json({ revoked }));
 }

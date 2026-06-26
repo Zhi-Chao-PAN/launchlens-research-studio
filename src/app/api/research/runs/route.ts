@@ -1,11 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
+import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { listResearchRuns, getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns } from "@/lib/research/storage";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
+import { requireAdmin } from "@/lib/api/require-admin";
 
-// Public list endpoint — returns recent runs (no full content)
-export async function GET(request: Request) {
+// List/search/export runs.
+// Requires an admin-scope bearer token — run summaries expose query text,
+// keywords, provider ids, and timestamps, and exports dump the full store.
+// Prior to R202 this endpoint was unauthenticated.
+export async function GET(request: NextRequest) {
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
   const url = new URL(request.url);
   const format = url.searchParams.get("format");
   const q = url.searchParams.get("q") || "";
@@ -83,5 +90,5 @@ export async function DELETE(request: Request) {
   }
 
   const deleted = bulkDeleteRuns(ids);
-  return NextResponse.json({ deleted, total: ids.length });
+  return rotateCsrf(NextResponse.json({ deleted, total: ids.length }));
 }

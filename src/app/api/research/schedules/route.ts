@@ -55,17 +55,19 @@ export async function POST(request: NextRequest) {
     const schedule = createSchedule(parsed.data);
     ensurePollerRunning();
 
-    return NextResponse.json(
-      {
-        id: schedule.id,
-        name: schedule.name,
-        query: schedule.query,
-        status: schedule.status,
-        interval: schedule.interval,
-        nextRunAt: schedule.nextRunAt,
-        totalRuns: schedule.totalRuns,
-      },
-      { status: 201 },
+    return rotateCsrf(
+      NextResponse.json(
+        {
+          id: schedule.id,
+          name: schedule.name,
+          query: schedule.query,
+          status: schedule.status,
+          interval: schedule.interval,
+          nextRunAt: schedule.nextRunAt,
+          totalRuns: schedule.totalRuns,
+        },
+        { status: 201 },
+      ),
     );
   } catch (e: unknown) {
     return NextResponse.json(

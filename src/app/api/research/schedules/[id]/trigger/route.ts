@@ -27,9 +27,11 @@ export async function POST(
       return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
     }
 
-    return NextResponse.json(
-      { batchId: result.batchId, triggered: true },
-      { status: 202 },
+    return rotateCsrf(
+      NextResponse.json(
+        { batchId: result.batchId, triggered: true },
+        { status: 202 },
+      ),
     );
   } catch (e: unknown) {
     return NextResponse.json(

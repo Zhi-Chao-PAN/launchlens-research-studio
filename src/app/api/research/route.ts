@@ -27,7 +27,10 @@ export async function POST(request: NextRequest) {
   const ua = (request.headers.get("user-agent") || "").slice(0, 80);
   const cors = checkCors(request);
   if (!cors.allowed && cors.response) {
-    recordAuthAudit("csrf_failed", {
+    // R202: CORS rejections were previously mis-bucketed as csrf_failed,
+    // polluting the CSRF alerting signal. Now recorded with a dedicated
+    // event type so the two signals stay clean.
+    recordAuthAudit("cors_rejected", {
       ipHash: hashIp(ip),
       detail: "cors-blocked: " + (request.headers.get("origin") || "unknown"),
     });

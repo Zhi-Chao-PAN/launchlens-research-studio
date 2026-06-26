@@ -71,7 +71,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ schedule: updated });
+    return rotateCsrf(NextResponse.json({ schedule: updated }));
   } catch (e: unknown) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Internal error" },
@@ -101,5 +101,5 @@ export async function DELETE(
     return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true });
+  return rotateCsrf(NextResponse.json({ success: true }));
 }

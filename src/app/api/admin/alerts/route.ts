@@ -1,8 +1,7 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { isAdminToken, extractBearerToken, getTokenInfo } from "@/lib/api/bypass-tokens";
 import { getAlerts, alertConfig, clearAlerts, getWebhookQueueStats } from "@/lib/api/auth-alerts";
-import { hashIp } from "@/lib/telemetry/request-log";
+import { requireAdmin } from "@/lib/api/require-admin";
 
 // Admin endpoint for security alerts.
 // Requires admin-scope token.
@@ -11,31 +10,9 @@ import { hashIp } from "@/lib/telemetry/request-log";
 //   GET  /api/admin/alerts?config=1 — returns alert config
 //   DELETE /api/admin/alerts        — clear all alerts
 
-function getIp(request: NextRequest): string {
-  return (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
-}
-
-function authAdmin(request: NextRequest): { ok: boolean; error?: string; tokenHash?: string } {
-  const auth = request.headers.get("authorization");
-  const tok = extractBearerToken(auth);
-  if (!tok) return { ok: false, error: "missing-auth" };
-
-  const info = getTokenInfo(tok);
-  if (!info) return { ok: false, error: "invalid-token" };
-  if (info.scope !== "admin") return { ok: false, error: "insufficient-scope" };
-
-  isAdminToken(tok, getIp(request));
-  return { ok: true, tokenHash: info.hash };
-}
-
 export async function GET(request: NextRequest) {
-  const auth = authAdmin(request);
-  if (!auth.ok) {
-    return NextResponse.json(
-      { error: "Unauthorized: " + auth.error },
-      { status: 401 },
-    );
-  }
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
 
@@ -64,13 +41,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = authAdmin(request);
-  if (!auth.ok) {
-    return NextResponse.json(
-      { error: "Unauthorized: " + auth.error },
-      { status: 401 },
-    );
-  }
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
 
   clearAlerts();
 

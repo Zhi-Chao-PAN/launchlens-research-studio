@@ -1,30 +1,14 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { isAdminToken, extractBearerToken, getTokenInfo } from "@/lib/api/bypass-tokens";
 import { snapshotAuthAudit, recordAuthAudit } from "@/lib/api/auth-audit";
 import { checkCors, handleOptions } from "@/lib/api/cors";
+import { requireAdmin } from "@/lib/api/require-admin";
+import { hashIp } from "@/lib/telemetry/request-log";
 
 // Auth audit log endpoint.
 // Requires an admin-scoped token.
 //   GET /api/admin/audit       — returns recent audit events (default 50)
 //   GET /api/admin/audit?limit=N — returns up to N events (max 100)
-
-function getIp(request: NextRequest): string {
-  return (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
-}
-
-function authAdmin(request: NextRequest): { ok: boolean; error?: string; tokenHash?: string } {
-  const auth = request.headers.get("authorization");
-  const tok = extractBearerToken(auth);
-  if (!tok) return { ok: false, error: "missing-auth" };
-
-  const info = getTokenInfo(tok);
-  if (!info) return { ok: false, error: "invalid-token" };
-  if (info.scope !== "admin") return { ok: false, error: "insufficient-scope" };
-
-  isAdminToken(tok, getIp(request));
-  return { ok: true, tokenHash: info.hash };
-}
 
 function escapeCsv(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -56,10 +40,8 @@ function eventsToCsv(events: ReturnType<typeof snapshotAuthAudit>): string {
 export async function GET(request: NextRequest) {
   const cors = checkCors(request);
   if (!cors.allowed && cors.response) return cors.response;
-  const auth = authAdmin(request);
-  if (!auth.ok) {
-    return NextResponse.json({ error: "Unauthorized: " + auth.error }, { status: 401 });
-  }
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
   const limitParam = url.searchParams.get("limit");
@@ -86,7 +68,7 @@ export async function GET(request: NextRequest) {
   // Log the export action
   if (format !== "json") {
     recordAuthAudit("admin_action", {
-      ipHash: getIp(request),
+      ipHash: hashIp(auth.ip),
       tokenHash: auth.tokenHash,
       detail: `audit_export:${format}`,
     });
