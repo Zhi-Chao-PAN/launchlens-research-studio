@@ -172,6 +172,18 @@ export interface AgentState {
   completedAt?: string;
   error?: string;
   output?: AgentOutput;
+  /** R203: which provider actually produced this agent's output. Differs from
+   *  the requested provider when the breaker flipped to mock or the real
+   *  provider call failed. UI uses this to surface a "demo data" badge. */
+  resolvedProviderId?: string;
+  /** R203: true if the real provider was bypassed and the output is
+   *  illustrative (mock or breaker-fallback). The data is still useful for
+   *  demos, but the user should know it's not authoritative. */
+  degraded?: boolean;
+  /** R203: short human-readable reason for the degradation, e.g.
+   *  "provider_fallback" (real provider failed) or "breaker_open" (circuit
+   *  breaker was open for the real provider). */
+  degradedReason?: "provider_fallback" | "breaker_open";
 }
 
 export interface ResearchSession {
@@ -180,6 +192,12 @@ export interface ResearchSession {
   keywords: string[];
   /** Persona/agent style ID that shapes all research outputs */
   personaId?: string;
+  /** Provider id used for the run ("mock", "openai", "anthropic").
+   *  Captured at run start so history records the actual provider, not a
+   *  hardcoded "mock" placeholder. */
+  providerId?: string;
+  /** Model id used by the provider, when the provider exposes one. */
+  providerModel?: string;
   createdAt: string;
   updatedAt: string;
   status: "pending" | "running" | "completed" | "error" | "cancelled";

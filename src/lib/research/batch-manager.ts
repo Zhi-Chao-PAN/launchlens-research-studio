@@ -204,6 +204,11 @@ export function createBatch(
     concurrency,
     retriesPerRun,
     progress: 0,
+    // R203: persist the requested agent/persona on the batch so executeRun
+    // can forward it to createResearchSession. Previously this field was
+    // read (line ~431) but never written, so batch runs always ran with
+    // the default persona.
+    ...(agent ? { _agent: agent } : {}),
   };
 
   getStore().set(id, batch);

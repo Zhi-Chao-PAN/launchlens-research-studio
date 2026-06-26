@@ -36,7 +36,7 @@ function createInitialAgentState(id: AgentId): AgentState {
   };
 }
 
-export function createResearchSession(query: string, keywords: string[], agentId?: string): ResearchSession {
+export function createResearchSession(query: string, keywords: string[], personaId?: string): ResearchSession {
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -49,15 +49,28 @@ export function createResearchSession(query: string, keywords: string[], agentId
     "channel-scout",
   ];
 
-  for (const agentId of researchAgentIds) {
-    agents[agentId] = createInitialAgentState(agentId);
+  for (const researchAgentId of researchAgentIds) {
+    agents[researchAgentId] = createInitialAgentState(researchAgentId);
   }
   agents["synthesis"] = createInitialAgentState("synthesis");
+
+  // R203: capture the actual provider at session creation. The previous
+  // hardcoded "mock"/"mock-model" at saveResearchRun time made real-LLM
+  // runs look like mock runs in history. We record the provider the run
+  // is *attempting*; the per-call telemetry in runAgent still captures
+  // the resolved provider when the breaker flips to mock.
+  const provider = selectProvider();
 
   const session: ResearchSession = {
     id,
     query,
     keywords,
+    // R203: the 3rd parameter is now properly named (was `agentId` which
+    // shadowed the loop variable and was always undefined). The persona
+    // flows from the API/batch path all the way to provider context.
+    ...(personaId ? { personaId } : {}),
+    // R203: record real provider so history is accurate.
+    providerId: provider.id,
     createdAt: now,
     updatedAt: now,
     status: "pending",
@@ -211,6 +224,12 @@ async function runAgent(
         // operators can see the breaker engaging.
         const breakerOpen = !selected.isMock && breakerIsOpen("provider:" + selected.id);
         const provider = breakerOpen ? mockResearchProvider : selected;
+        // R203: track per-agent whether we resolved to the real provider or
+        // fell back to mock (so the UI can show a "demo data" badge).
+        // isDegradedHere is `let` because the catch block below can flip it
+        // when a real provider call throws.
+        const resolvedProviderId = provider.id;
+        let isDegradedHere = provider.id !== selected.id;
         let output;
         const t0 = Date.now();
         let telemetryOk = true;
@@ -244,6 +263,9 @@ async function runAgent(
           telemetryOk = false;
           telemetryErr = e instanceof Error ? e.message : String(e);
           output = applyPersona(generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs), session.personaId);
+          // R203: the real provider failed — flag the agent's output as
+          // degraded so the UI can show a "demo data" badge.
+          isDegradedHere = true;
         } finally {
           if (!selected.isMock) {
             if (telemetryOk) breakerRecordSuccess("provider:" + selected.id);
@@ -272,6 +294,10 @@ async function runAgent(
       currentStep: "Complete",
       completedAt: new Date().toISOString(),
       output,
+      resolvedProviderId,
+      ...(isDegradedHere
+        ? { degraded: true, degradedReason: breakerOpen ? "breaker_open" : "provider_fallback" as const }
+        : {}),
     });
 
     emitEvent(session.id, {
@@ -473,8 +499,11 @@ export async function runResearchSession(
       query: session.query,
       keywords: session.keywords,
       result: resultText,
-      provider: "mock",
-      model: "mock-model",
+      // R203: record the actual provider that ran (or attempted to run) the
+      // session, not a hardcoded "mock". The session was annotated with
+      // providerId at createResearchSession time.
+      provider: session.providerId ?? "mock",
+      model: session.providerModel ?? session.providerId ?? "default",
       createdAt: createdMs,
       durationMs,
       status: "completed",

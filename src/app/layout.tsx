@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { WebVitalsReporter } from "@/components/perf/WebVitalsReporter";
 import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
@@ -11,6 +12,7 @@ import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatshe
 import { FreezeMode } from "@/components/perf/FreezeMode";
 import { ThemeProvider } from "next-themes";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { resolveLocaleFromHeaders } from "@/lib/i18n/server";
 
 // Use system fonts instead of Google Fonts for better compatibility in China
 const fontClasses = "font-sans";
@@ -89,11 +91,16 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // R203: derive the SSR <html lang> from Accept-Language instead of
+  // hardcoding "zh-CN". The client LocaleProvider refines from localStorage
+  // on mount, but the SSR value is what crawlers and no-JS clients see.
+  const hdrs = await headers();
+  const ssrLocale = resolveLocaleFromHeaders(hdrs);
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -111,7 +118,7 @@ export default function RootLayout({
     browserRequirements: "Requires JavaScript. Requires HTML5.",
   };
   return (
-    <html lang="zh-CN" className={`${fontClasses} h-full antialiased`}>
+    <html lang={ssrLocale} className={`${fontClasses} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-50">
         <script
           type="application/ld+json"

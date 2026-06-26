@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createServerI18n } from "./server";
+import { createServerI18n, resolveLocaleFromHeaders } from "./server";
 
 function makeRequest(acceptLanguage?: string): Request {
   const headers = new Headers();
@@ -44,5 +44,30 @@ describe("createServerI18n", () => {
     const { locale, t } = createServerI18n(makeRequest("ko-KR"));
     expect(locale).toBe("ko");
     expect(t("errors.rateLimit", { seconds: "10" })).toContain("10");
+  });
+});
+
+describe("resolveLocaleFromHeaders (round 203)", () => {
+  it("resolves en when no Accept-Language header is present", () => {
+    const h = new Headers();
+    expect(resolveLocaleFromHeaders(h)).toBe("en");
+  });
+
+  it("resolves ko from a Korean Accept-Language header", () => {
+    const h = new Headers();
+    h.set("accept-language", "ko-KR,ko;q=0.9,en;q=0.5");
+    expect(resolveLocaleFromHeaders(h)).toBe("ko");
+  });
+
+  it("resolves zh-CN from a zh-TW header via primary-subtag match", () => {
+    const h = new Headers();
+    h.set("accept-language", "zh-TW");
+    expect(resolveLocaleFromHeaders(h)).toBe("zh-CN");
+  });
+
+  it("falls back to en for an unsupported language", () => {
+    const h = new Headers();
+    h.set("accept-language", "fr-FR");
+    expect(resolveLocaleFromHeaders(h)).toBe("en");
   });
 });

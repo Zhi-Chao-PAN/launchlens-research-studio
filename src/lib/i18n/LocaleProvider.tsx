@@ -29,6 +29,9 @@ function detectInitialLocale(): Locale {
   const nav = window.navigator.language;
   if (nav?.startsWith("zh")) return "zh-CN";
   if (nav?.startsWith("ja")) return "ja";
+  // R203: Korean was fully translated but never auto-detected, so a
+  // Korean-locale browser fell back to English. Match ko now.
+  if (nav?.startsWith("ko")) return "ko";
   return DEFAULT_LOCALE;
 }
 

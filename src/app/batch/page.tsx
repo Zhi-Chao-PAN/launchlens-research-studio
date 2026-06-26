@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
 import { fetchWithCsrfStrict, formatApiError } from "@/lib/api/csrf-client";
 import { useToast } from "@/components/toast/ToastContext";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface BatchRun {
   id: string;
@@ -32,6 +33,7 @@ interface BatchInfo {
 export default function BatchPage() {
   const { showToast } = useToast();
   const router = useRouter();
+  const { t } = useLocale();
   const [queries, setQueries] = useState("");
   const [keywords, setKeywords] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -135,11 +137,13 @@ export default function BatchPage() {
   }, [loadRecent]);
 
   const statusLabel = (status: string) => {
+    // R203: was hardcoded Chinese ("等待中"/"运行中"/"完成"/"失败") which
+    // was neither English nor i18n-aware. Now pulled from the dictionary.
     switch (status) {
-      case "queued": return "等待中";
-      case "running": return "运行中";
-      case "completed": return "完成";
-      case "failed": return "失败";
+      case "queued": return t("batch.status.queued", "Queued");
+      case "running": return t("batch.status.running", "Running");
+      case "completed": return t("batch.status.completed", "Done");
+      case "failed": return t("batch.status.failed", "Failed");
       default: return status;
     }
   };

@@ -125,3 +125,15 @@ export function createServerI18n(source: LocaleSource): ServerI18n {
   };
   return { locale, t };
 }
+
+/**
+ * R203: resolve the locale from the incoming request's Accept-Language
+ * header, for use as the server-rendered `<html lang>` attribute. The
+ * client LocaleProvider will refine this from localStorage on mount, but
+ * getting the SSR attribute right avoids a flash of the wrong `lang` and
+ * is correct for no-JS / crawler views. Previously this was hardcoded to
+ * `zh-CN`, which was wrong for the default `en` locale.
+ */
+export function resolveLocaleFromHeaders(headers: Headers): Locale {
+  return resolveLocale({ headers });
+}

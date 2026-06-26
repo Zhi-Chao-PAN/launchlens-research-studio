@@ -345,17 +345,27 @@ export async function triggerScheduleNow(id: string): Promise<{ batchId: string 
   const s = getSchedule(id);
   if (!s) return null;
 
-  const batch = await createBatch(
-    [s.query],
-    s.keywords,
-    { agent: s.agent, priority: "high" }
-  );
+  try {
+    const batch = await createBatch(
+      [s.query],
+      s.keywords,
+      { agent: s.agent, priority: "high" }
+    );
 
-  const updated = { ...s, updatedAt: Date.now(), lastRunAt: Date.now(), lastRunId: batch.id };
-  getStore().set(id, updated);
-  persistSchedule(updated);
-
-  return { batchId: batch.id };
+    // R203: record success/failure via the shared helper so the counters
+    // stay accurate. (Previously triggerScheduleNow only updated lastRunAt
+    // / lastRunId and never touched successRuns/failedRuns.)
+    recordScheduleResult(id, batch.id, "success");
+    return { batchId: batch.id };
+  } catch (err) {
+    recordScheduleResult(
+      id,
+      "failed-" + Date.now(),
+      "failed",
+      err instanceof Error ? err.message : String(err),
+    );
+    throw err;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -382,26 +392,35 @@ export async function tickSchedules(): Promise<number> {
         { agent: schedule.agent, priority: "normal" }
       );
 
-      const updated: ResearchSchedule = {
+      // R203: advance nextRunAt so we don't re-fire on the next tick, then
+      // record the result via the shared helper so success/failed counters
+      // stay accurate. (Previously totalRuns was bumped inline and failedRuns
+      // was never incremented.)
+      const advanced: ResearchSchedule = {
         ...schedule,
-        lastRunAt: now,
-        lastRunId: batch.id,
-        totalRuns: schedule.totalRuns + 1,
         nextRunAt: calculateNextRun(schedule, now),
         updatedAt: now,
       };
-
-      store.set(schedule.id, updated);
-      persistSchedule(updated);
+      store.set(schedule.id, advanced);
+      persistSchedule(advanced);
+      recordScheduleResult(schedule.id, batch.id, "success");
       triggered++;
-    } catch {
-      const updated: ResearchSchedule = {
+    } catch (err) {
+      // Advance nextRunAt even on failure so a broken schedule doesn't
+      // hammer the poller, and record the failure for accounting.
+      const advanced: ResearchSchedule = {
         ...schedule,
         nextRunAt: calculateNextRun(schedule, now),
         updatedAt: now,
       };
-      store.set(schedule.id, updated);
-      persistSchedule(updated);
+      store.set(schedule.id, advanced);
+      persistSchedule(advanced);
+      recordScheduleResult(
+        schedule.id,
+        "failed-" + Date.now(),
+        "failed",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -906,4 +925,41 @@ export function countHistoryByStatus(history: ScheduleRunRecord[]): Record<Sched
   for (const r of history) out[r.status] = (out[r.status] || 0) + 1;
   return out;
 }
+
+/* ------------------------------------------------------------------ */
+/*  R203: startup bootstrap                                            */
+/* ------------------------------------------------------------------ */
+//
+// Previously the poller was only started when a schedule was created, so a
+// process restart left all persisted schedules dormant until someone
+// created a new one (or hit the manual trigger endpoint). We now start the
+// poller at module load and catch up any schedules that were overdue by
+// more than MAX_MISSED_THRESHOLD_MS while the server was down.
+//
+// The bootstrap is wrapped in a try/catch and guarded by a global flag so
+// it runs exactly once per process (Next.js dev HMR re-imports modules, so
+// the guard prevents duplicate pollers). Both calls are best-effort: a
+// failure here must never prevent the module from loading.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __scheduleBootstrapped: boolean | undefined;
+}
+
+function bootstrapScheduler(): void {
+  if (global.__scheduleBootstrapped) return;
+  global.__scheduleBootstrapped = true;
+  try {
+    ensurePollerRunning();
+    // Catch up missed schedules without blocking module load.
+    void catchUpMissedSchedules().catch(() => {
+      // Best-effort: a failure to catch up is logged but non-fatal. The
+      // poller will still tick on its normal cadence.
+    });
+  } catch {
+    // Swallow — the poller can be started later via ensurePollerRunning.
+  }
+}
+
+bootstrapScheduler();
 

@@ -27,6 +27,11 @@ export type DictionaryKey =
   | "agent.status.error"
   | "agent.status.idle"
   | "agent.status.running"
+  | "agent.degraded"
+  | "batch.status.completed"
+  | "batch.status.failed"
+  | "batch.status.queued"
+  | "batch.status.running"
   | "agent.synthesis.description"
   | "agent.synthesis.name"
   | "commandPalette.all"
@@ -182,6 +187,11 @@ const en: Dict = {
   "agent.status.running": "Researching",
   "agent.status.done": "Complete",
   "agent.status.error": "Error",
+  "agent.degraded": "demo",
+  "batch.status.queued": "Queued",
+  "batch.status.running": "Running",
+  "batch.status.completed": "Done",
+  "batch.status.failed": "Failed",
   "studio.researchAgents": "Research Agents",
   "studio.poweredBy": "Powered by 6 research agents:",
   "studio.tipStart": "to start",
@@ -311,6 +321,11 @@ const zhCN: Dict = {
   "agent.status.running": "调研中",
   "agent.status.done": "已完成",
   "agent.status.error": "出错",
+  "agent.degraded": "示例",
+  "batch.status.queued": "等待中",
+  "batch.status.running": "运行中",
+  "batch.status.completed": "完成",
+  "batch.status.failed": "失败",
   "studio.researchAgents": "调研智能体",
   "studio.poweredBy": "由 6 个调研智能体驱动：",
   "studio.tipStart": "开始调研",
@@ -440,6 +455,11 @@ const ja: Dict = {
   "agent.status.running": "リサーチ中",
   "agent.status.done": "完了",
   "agent.status.error": "エラー",
+  "agent.degraded": "デモ",
+  "batch.status.queued": "待機中",
+  "batch.status.running": "実行中",
+  "batch.status.completed": "完了",
+  "batch.status.failed": "失敗",
   "studio.researchAgents": "リサーチエージェント",
   "studio.poweredBy": "6 つのリサーチエージェントで動作:",
   "studio.tipStart": "開始",
@@ -544,6 +564,11 @@ const ko: Dict = {
   "agent.pricing-scout.name": "가격 탐색정",
   "agent.status.done": "완료",
   "agent.status.error": "오류",
+  "agent.degraded": "데모",
+  "batch.status.queued": "대기 중",
+  "batch.status.running": "실행 중",
+  "batch.status.completed": "완료",
+  "batch.status.failed": "실패",
   "agent.status.idle": "대기 중",
   "agent.status.running": "리서치 중",
   "agent.synthesis.description": "에이전트 간 검증, 실행 가능한 요약, 공유 가능한 브리프",

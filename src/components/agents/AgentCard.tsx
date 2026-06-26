@@ -9,7 +9,7 @@ import { AGENT_METADATA } from "@/lib/schema/research-schema";
 
 interface AgentCardProps {
   agentId: AgentId;
-  state: Pick<AgentState, "status" | "progress" | "currentStep">;
+  state: Pick<AgentState, "status" | "progress" | "currentStep" | "degraded" | "degradedReason">;
   isActive?: boolean;
   onClick?: () => void;
   error?: string;
@@ -63,12 +63,25 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-semibold text-slate-800 text-sm truncate">{meta.name}</h3>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[badgeStatus] || statusColors.idle}`}
-              style={badgeStatus === "running" ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
-            >
-              {showError ? t("agent.status.error") : t(("agent.status." + badgeStatus) as any, statusLabel[badgeStatus] || badgeStatus)}
-            </span>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {/* R203: when the real provider failed and the output is
+                  illustrative mock data, surface a small amber badge so the
+                  user knows the numbers are a demo, not authoritative. */}
+              {state.degraded && (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200"
+                  title={state.degradedReason === "breaker_open" ? "Provider circuit breaker open — showing demo data" : "Provider failed — showing demo data"}
+                >
+                  {t("agent.degraded" as any, "demo")}
+                </span>
+              )}
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[badgeStatus] || statusColors.idle}`}
+                style={badgeStatus === "running" ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
+              >
+                {showError ? t("agent.status.error") : t(("agent.status." + badgeStatus) as any, statusLabel[badgeStatus] || badgeStatus)}
+              </span>
+            </div>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>
 

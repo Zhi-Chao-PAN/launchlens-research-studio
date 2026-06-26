@@ -3,6 +3,7 @@
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
 import { jsonError } from "@/lib/api/validation";
 import { sleep } from "@/lib/utils/sleep";
+import type { AgentId } from "@/lib/schema/research-schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -116,7 +117,16 @@ export async function GET(
       writeEvent("complete", JSON.stringify({ message: event.message }));
       safeClose();
     } else if (event.type === "output") {
-      writeEvent("agent-output", JSON.stringify({ agentId: event.agentId, output: event.data }));
+      // R203: forward the per-agent degraded marker so the client can show a
+      // "demo data" badge when the real provider was bypassed. The marker
+      // lives on the agent state, not on the output payload itself.
+      const ag = session?.agents[event.agentId as AgentId];
+      const payload: Record<string, unknown> = { agentId: event.agentId, output: event.data };
+      if (ag?.degraded) {
+        payload.degraded = true;
+        payload.degradedReason = ag.degradedReason;
+      }
+      writeEvent("agent-output", JSON.stringify(payload));
     } else if (event.type === "progress") {
       writeEvent("agent-progress", JSON.stringify({ agentId: event.agentId, ...((event.data as object) || {}) }));
     } else if (event.type === "status") {

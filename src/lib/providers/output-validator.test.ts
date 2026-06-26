@@ -2,6 +2,9 @@
 import { describe, it, expect } from "vitest";
 import { validateAgentOutput, ValidationError } from "./output-validator";
 
+/** Minimal valid citation with the R203-required snippet field. */
+const cite = (id = "c1") => ({ id, title: "t", snippet: "evidence excerpt" });
+
 describe("validateAgentOutput", () => {
   it("accepts a complete market-sizer payload", () => {
     const out = validateAgentOutput("market-sizer", {
@@ -10,7 +13,7 @@ describe("validateAgentOutput", () => {
       marketSize: { tam: 1, sam: 1, som: 1, currency: "USD", growthRate: 5 },
       keyTrends: [],
       targetSegments: [],
-      citations: [{ id: "c1", title: "t" }],
+      citations: [cite()],
     });
     expect(out.agent).toBe("market-sizer");
   });
@@ -20,14 +23,14 @@ describe("validateAgentOutput", () => {
       agent: "wrong",
       summary: "ok",
       priceBands: [],
-      citations: [],
+      citations: [cite()],
     });
     expect(out.agent).toBe("pricing-scout");
   });
 
   it("throws on missing required field", () => {
     expect(() =>
-      validateAgentOutput("competitor-analyst", { summary: "ok" })
+      validateAgentOutput("competitor-analyst", { summary: "ok", citations: [cite()] })
     ).toThrow(ValidationError);
   });
 
@@ -36,7 +39,7 @@ describe("validateAgentOutput", () => {
     expect(() => validateAgentOutput("synthesis", null)).toThrow(ValidationError);
   });
 
-  it("throws when citations malformed", () => {
+  it("throws when citations malformed (missing snippet — R203)", () => {
     expect(() =>
       validateAgentOutput("pain-detective", {
         summary: "ok",
@@ -46,11 +49,58 @@ describe("validateAgentOutput", () => {
     ).toThrow(ValidationError);
   });
 
-  it("defaults missing citations to empty array", () => {
-    const out = validateAgentOutput("channel-scout", {
+  it("R203: throws when citations array is empty (uncited claims rejected)", () => {
+    expect(() =>
+      validateAgentOutput("channel-scout", {
+        summary: "ok",
+        channels: [],
+        citations: [],
+      })
+    ).toThrow(ValidationError);
+  });
+
+  it("R203: rejects out-of-range opportunityScore", () => {
+    expect(() =>
+      validateAgentOutput("synthesis", {
+        summary: "ok",
+        keyInsights: [],
+        opportunityScore: 150,
+        riskScore: 50,
+        citations: [cite()],
+      })
+    ).toThrow(ValidationError);
+  });
+
+  it("R203: rejects negative marketSize.tam", () => {
+    expect(() =>
+      validateAgentOutput("market-sizer", {
+        summary: "ok",
+        marketSize: { tam: -100, sam: 1, som: 1 },
+        keyTrends: [],
+        targetSegments: [],
+        citations: [cite()],
+      })
+    ).toThrow(ValidationError);
+  });
+
+  it("R203: accepts in-range scores", () => {
+    const out = validateAgentOutput("synthesis", {
       summary: "ok",
-      channels: [],
+      keyInsights: [],
+      opportunityScore: 72,
+      riskScore: 58,
+      citations: [cite()],
     });
-    expect(out.citations).toEqual([]);
+    expect(out.agent).toBe("synthesis");
+  });
+
+  it("R203: defaults missing citations to empty array but still rejects (uncited)", () => {
+    // Missing citations → treated as [] → rejected by the at-least-one rule.
+    expect(() =>
+      validateAgentOutput("channel-scout", {
+        summary: "ok",
+        channels: [],
+      })
+    ).toThrow(ValidationError);
   });
 });
