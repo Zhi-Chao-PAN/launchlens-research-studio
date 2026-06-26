@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { Component, type ReactNode, type ErrorInfo } from "react";
+import Link from "next/link";
 
 interface Props {
   children: ReactNode;
@@ -47,7 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </pre>
           )}
           <div className="mt-5 flex gap-2 justify-end">
-            <a href="/" className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Go home</a>
+            <Link href="/" className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Go home</Link>
             <button onClick={() => { this.reset(); window.location.reload(); }} className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium">Reload</button>
           </div>
         </div>

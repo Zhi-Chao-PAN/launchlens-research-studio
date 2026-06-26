@@ -60,8 +60,8 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
 
   // Filter and rank commands
   const filtered = useMemo(() => {
-    let source = activeCategory === "all" 
-      ? commands 
+    const source = activeCategory === "all"
+      ? commands
       : commands.filter((c) => c.category === activeCategory);
     const ranked = rankCommands(source, query, historyMap);
     return ranked.slice(0, 12);

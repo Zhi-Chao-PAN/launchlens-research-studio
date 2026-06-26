@@ -13,9 +13,29 @@
 // Requires: production build at .next/ and Playwright + chromium installed.
 
 const { spawn } = require("node:child_process");
-const { chromium } = require("C:/Users/22304/.agents/skills/playwright-skill/node_modules/playwright-core");
 const path = require("node:path");
 const fs = require("node:fs");
+
+// Load playwright-core from a few well-known locations so this e2e script
+// works both in CI (after `npm ci` + `npx playwright install`) and on a
+// developer machine that has the local playwright-skill install. The CI
+// workflow installs Playwright's bundled chromium via the official package.
+let chromium;
+const requireResolve = (mod) => {
+  try { return require.resolve(mod); } catch { return null; }
+};
+const candidates = [
+  requireResolve("playwright-core"),
+  requireResolve("playwright"),
+  requireResolve("C:/Users/22304/.agents/skills/playwright-skill/node_modules/playwright-core"),
+  requireResolve(`${process.env.HOME || ""}/.agents/skills/playwright-skill/node_modules/playwright-core`),
+].filter(Boolean);
+if (candidates.length === 0) {
+  console.error("playwright-core not found. Install via `npm i -D playwright-core` or `npx playwright install`.");
+  process.exit(1);
+}
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+({ chromium } = require(candidates[0]));
 
 const PROJECT_DIR = path.resolve(__dirname, "..");
 const PORT = process.env.E2E_PORT || "3020";

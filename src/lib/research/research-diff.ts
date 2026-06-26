@@ -907,8 +907,8 @@ export function diffsEqual(a: ResearchDiff, b: ResearchDiff): boolean {
   if (!sameStrings(a.insights.added, b.insights.added)) return false;
   if (!sameStrings(a.insights.removed, b.insights.removed)) return false;
   if (a.insights.modified.length !== b.insights.modified.length) return false;
-  const keyOf = (o: any) => JSON.stringify(o);
-  const sameObj = (x: any[], y: any[]) => {
+  const keyOf = (o: unknown) => JSON.stringify(o);
+  const sameObj = (x: unknown[], y: unknown[]) => {
     if (x.length !== y.length) return false;
     const sx = new Set(x.map(keyOf));
     for (const o of y) if (!sx.has(keyOf(o))) return false;

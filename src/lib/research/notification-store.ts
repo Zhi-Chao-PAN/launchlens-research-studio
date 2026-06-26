@@ -226,7 +226,9 @@ export function notificationsEqual(a: AppNotification, b: AppNotification): bool
   const bk = Object.keys(b.metadata || {}).sort().join(",");
   if (ak !== bk) return false;
   for (const k of a.metadata ? Object.keys(a.metadata) : []) {
-    if ((a.metadata as any)[k] !== (b.metadata as any)[k]) return false;
+    const am = a.metadata as Record<string, unknown>;
+    const bm = b.metadata as Record<string, unknown>;
+    if (am[k] !== bm[k]) return false;
   }
   return true;
 }

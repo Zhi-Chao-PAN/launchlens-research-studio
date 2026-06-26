@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { fetchWithCsrfStrict, RateLimitError, fetchWithCsrf } from "@/lib/api/csrf-client";
+import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 
 export interface ResearchStudioState {
@@ -9,7 +9,7 @@ export interface ResearchStudioState {
   query: string;
   keywords: string[];
   status: "idle" | "loading" | "running" | "completed" | "error" | "cancelling";
-  agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>;
+  agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean; degraded?: boolean; degradedReason?: "provider_fallback" | "breaker_open" }>;
   agentOutputs: Record<AgentId, AgentOutput | null>;
   activeAgentTab: AgentId;
   error: string | null;
@@ -93,7 +93,6 @@ export function useResearchStudio() {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollingIntervalRef = useRef<number>(2000);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -153,6 +152,10 @@ export function useResearchStudio() {
             progress: agentState.progress,
             currentStep: agentState.currentStep,
             hasOutput: !!agentState.output,
+            // R203: preserve the degraded marker on the polling fallback path.
+            ...(agentState.degraded
+              ? { degraded: true, degradedReason: agentState.degradedReason }
+              : {}),
           };
           if (agentState.output) {
             newAgentOutputs[agentId] = agentState.output;
@@ -183,9 +186,16 @@ export function useResearchStudio() {
     }
   }, [clearPolling, clearReconnectTimer]);
 
-  const connectSSE = useCallback(
-    (sessionId: string) => {
-      closeEventSource();
+  // The SSE setup is split out and held in a ref so the body can reference
+  // itself (the inner `attemptSseProbe` calls back into setup on a successful
+  // probe) without hitting a temporal-dead-zone error on a `const` wrapper.
+  // A plain useCallback for setupSse would also TDZ on its own definition;
+  // a ref is the canonical pattern for self-referential event handlers. The
+  // function body is assigned in a useEffect so we never write to a ref
+  // during render (the react-hooks/refs rule).
+  const setupSseRef = useRef<(sessionId: string) => void>(() => {});
+  useEffect(() => {
+    setupSseRef.current = (sessionId: string) => {
       const es = new EventSource(`/api/research/${sessionId}/stream${reconnectAttemptsRef.current > 0 ? '?reconnect=1' : ''}`);
       eventSourceRef.current = es;
       reconnectAttemptsRef.current = 0;
@@ -235,7 +245,7 @@ export function useResearchStudio() {
           // Reset probe-failure counter so the next time we fall back to
           // polling we start probing again quickly.
           probeFailures = 0;
-          connectSSE(sessionId);
+          setupSseRef.current(sessionId);
         };
         const onError = () => {
           probeFailures = Math.min(probeFailures + 1, 8); // cap at 2^8=256x (unreachable with cap=16)
@@ -322,7 +332,7 @@ export function useResearchStudio() {
         reconnectTimerRef.current = setTimeout(() => {
           reconnectTimerRef.current = null;
           if (sessionIdRef.current === sessionId) {
-            connectSSE(sessionId);
+            setupSseRef.current(sessionId);
           }
         }, delay);
       };
@@ -390,6 +400,9 @@ export function useResearchStudio() {
                       status: "done",
                       progress: 100,
                       hasOutput: true,
+                      // R203: capture the degraded marker forwarded by the
+                      // stream route so AgentCard can show a "demo data" badge.
+                      ...(d.degraded ? { degraded: true, degradedReason: d.degradedReason } : {}),
                     },
                   },
                   agentOutputs: {
@@ -497,8 +510,23 @@ export function useResearchStudio() {
           });
         }, 100);
       };
+    };
+    // We intentionally bind this exactly once per mount: the function reads
+    // everything via refs (sessionIdRef, eventSourceRef, reconnectAttemptsRef)
+    // and stable useCallbacks (closeEventSource, fetchSessionData, clearPolling,
+    // clearReconnectTimer) so a re-bind on every render would only churn refs
+    // for no behavioural change. Re-running on dep change would also create a
+    // brief window where setupSseRef.current still points at the old closure
+    // — acceptable for a self-referential polling/SSE handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const connectSSE = useCallback(
+    (sessionId: string) => {
+      closeEventSource();
+      setupSseRef.current(sessionId);
     },
-    [closeEventSource, fetchSessionData, clearPolling, clearReconnectTimer],
+    [closeEventSource],
   );
 
   const startResearch = useCallback(
@@ -740,6 +768,8 @@ export function studioStateEqual(a: ResearchStudioState, b: ResearchStudioState)
   for (const id of ALL_AGENT_IDS) {
     const x = a.agents[id], y = b.agents[id];
     if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput || x.currentStep !== y.currentStep) return false;
+    // R203: degraded flag affects the AgentCard badge, so include it.
+    if (!!x.degraded !== !!y.degraded) return false;
     if ((a.agentOutputs[id] != null) !== (b.agentOutputs[id] != null)) return false;
     if ((a.agentErrors[id] || "") !== (b.agentErrors[id] || "")) return false;
   }

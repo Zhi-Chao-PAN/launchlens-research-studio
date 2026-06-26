@@ -635,7 +635,7 @@ export function summarizeShares(shares: ShareToken[], nowMs: number = Date.now()
 
 /** Validate create options without writing state. Throws on invalid input. */
 export function validateShareOptions(opts: { expiresInMs?: number; maxViews?: number; name?: string } = {}): { expiresInMs?: number; maxViews?: number; name?: string } {
-  const o: any = { ...opts };
+  const o: { expiresInMs?: number; maxViews?: number; name?: string } = { ...opts };
   if (o.expiresInMs !== undefined) {
     if (typeof o.expiresInMs !== "number" || !Number.isFinite(o.expiresInMs) || o.expiresInMs <= 0) {
       throw new Error("expiresInMs must be a positive number");
@@ -674,12 +674,12 @@ export function sharesEqual(a: ShareToken, b: ShareToken): boolean {
   if ((a.description || "") !== (b.description || "")) return false;
   if (isFolderShare(a) !== isFolderShare(b)) return false;
   if (isFolderShare(a) && isFolderShare(b)) {
-    if ((a as any).folderId !== (b as any).folderId) return false;
-    if ((a as any).includeNotes !== (b as any).includeNotes) return false;
+    if (a.folderId !== b.folderId) return false;
+    if (a.includeNotes !== b.includeNotes) return false;
   }
   if (isPasswordProtected(a) !== isPasswordProtected(b)) return false;
   if (isPasswordProtected(a) && isPasswordProtected(b)) {
-    if ((a as any).passwordHash !== (b as any).passwordHash) return false;
+    if (a.passwordHash !== b.passwordHash) return false;
   }
   return true;
 }
@@ -697,7 +697,10 @@ export function searchShares(shares: ShareToken[], term: string): ShareToken[] {
 
 /** Returns true if a share is safe to expose in a list view (hides password hash). */
 export function toPublicShareView(share: ShareToken): Omit<ShareToken, "passwordHash"> {
-  const { passwordHash: _ph, ...rest } = share as any;
+  // passwordHash only exists on PasswordProtectedShareToken; spread the
+  // optional field out so it is never serialised even when present.
+  const { passwordHash: _ph, ...rest } = share as ShareToken & { passwordHash?: string };
+  void _ph;
   return rest;
 }
 

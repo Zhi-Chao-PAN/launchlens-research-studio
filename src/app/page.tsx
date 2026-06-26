@@ -36,7 +36,10 @@ export default function Home() {
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && !!state.error;
-  const nowMs = Date.now();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    setNowMs(Date.now());
+  }, []);
   const rateLimitRemainingSec = state.rateLimitUntilMs
     ? Math.max(0, Math.ceil((state.rateLimitUntilMs - nowMs) / 1000))
     : 0;
@@ -530,6 +533,9 @@ export default function Home() {
                         status: state.agents[agentId].status as any,
                         progress: state.agents[agentId].progress,
                         currentStep: state.agents[agentId].currentStep,
+                        ...(state.agents[agentId].degraded
+                          ? { degraded: true, degradedReason: state.agents[agentId].degradedReason }
+                          : {}),
                       }}
                       isActive={state.activeAgentTab === agentId}
                       onClick={() => setActiveAgentTab(agentId)}

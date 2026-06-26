@@ -84,7 +84,7 @@ export function normalizeMethod(method: string | undefined): string {
 
 /** True for safe (idempotent, non-mutating) methods that do not need a CSRF token. */
 export function isCsrfSafeMethod(method: string | undefined): boolean {
-  return CSRF_SAFE_METHODS.includes(normalizeMethod(method) as any);
+  return (CSRF_SAFE_METHODS as readonly string[]).includes(normalizeMethod(method));
 }
 
 /** Merge CSRF header into existing headers, preserving user values when present. */

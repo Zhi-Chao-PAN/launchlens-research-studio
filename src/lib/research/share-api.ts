@@ -197,7 +197,7 @@ export function summarizeShareInfo(shares: ShareInfo[], nowMs: number = Date.now
 
 /** Validate options for share creation (expiresInMs, maxViews); returns normalized or throws. */
 export function validateShareCreateOptions(opts: { expiresInMs?: number; maxViews?: number; runId?: string } = {}): { expiresInMs?: number; maxViews?: number; runId?: string } {
-  const out: any = { ...opts };
+  const out: { expiresInMs?: number; maxViews?: number; runId?: string } = { ...opts };
   if (out.runId !== undefined && (typeof out.runId !== "string" || !out.runId.trim())) {
     throw new Error("runId is required");
   }

@@ -18,12 +18,22 @@ describe("csrf-guard (round 176)", () => {
     expect(verifyCsrf(makeReq("OPTIONS"))).toBeNull();
   });
 
-  it("soft-mode allows POST with neither cookie nor header (legacy compat)", () => {
+  it("R202: default mode is strict — POST with neither cookie nor header is rejected", () => {
+    // R202 flipped the default to strict: a request with no CSRF token at all
+    // is rejected with 403. The legacy soft behaviour is only available
+    // behind LAUNCHLENS_CSRF_STRICT=0 (see the next test).
     delete process.env.LAUNCHLENS_CSRF_STRICT;
+    const res = verifyCsrf(makeReq("POST"));
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(403);
+  });
+
+  it("LAUNCHLENS_CSRF_STRICT=0 restores legacy soft-mode (POST with no token allowed)", () => {
+    process.env.LAUNCHLENS_CSRF_STRICT = "0";
     expect(verifyCsrf(makeReq("POST"))).toBeNull();
   });
 
-  it("strict mode rejects POST with no token", () => {
+  it("LAUNCHLENS_CSRF_STRICT=1 explicitly opts into strict mode", () => {
     process.env.LAUNCHLENS_CSRF_STRICT = "1";
     const res = verifyCsrf(makeReq("POST"));
     expect(res).not.toBeNull();

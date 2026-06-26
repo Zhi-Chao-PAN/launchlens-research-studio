@@ -112,7 +112,7 @@ export default function DiagnosticsPage() {
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <h2 className="text-lg font-semibold text-slate-800 mb-3">Upcoming schedules</h2>
             <ul className="divide-y divide-slate-100 text-sm">
-              {schedules.map((sch: any) => (
+              {schedules.map((sch) => (
                 <li key={sch.id} className="py-2 flex items-center justify-between">
                   <span className="font-medium text-slate-700">{sch.name}</span>
                   <span className="text-slate-500 text-xs">

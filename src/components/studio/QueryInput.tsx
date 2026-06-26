@@ -178,8 +178,16 @@ export function QueryInput({
 
   // Live countdown for client-side rate-limit cooldown. Keeps the button
   // disabled and the label in sync with wall-clock time.
+  //
+  // The setState calls inside this effect mirror the external (wall-clock)
+  // state of `disabledUntilMs` into React — that is exactly what the
+  // exhaustive-deps rule is for, and the cascading-render warning is a false
+  // positive: we want the immediate "reset to 0" / "set initial value" sync
+  // when the prop changes, not a derived render-time value (the latter would
+  // not tick every 250ms).
   useEffect(() => {
     if (!disabledUntilMs) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCooldownSecs(0);
       return;
     }
@@ -187,6 +195,7 @@ export function QueryInput({
       const remaining = Math.max(0, Math.ceil((disabledUntilMs - Date.now()) / 1000));
       setCooldownSecs(remaining);
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     update();
     const id = setInterval(update, 250);
     return () => clearInterval(id);
@@ -197,6 +206,9 @@ export function QueryInput({
   // assistive tech so keyboard/screen-reader users can immediately retry.
   useEffect(() => {
     if (retryReadyPulse <= 0) return;
+    // Imperative DOM focus + announcement in response to an external pulse;
+    // not a render-driven state set, so the effect is the right place.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAnnouncement("Ready to retry — you can submit again.");
     submitButtonRef.current?.focus();
     const t = setTimeout(() => setAnnouncement(null), 2000);

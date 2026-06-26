@@ -27,4 +27,22 @@ describe("rotateCsrf helper (round 200)", () => {
     const b = rotateCsrf(NextResponse.json({}));
     expect(a.headers.get(CSRF_HEADER_NAME)).not.toBe(b.headers.get(CSRF_HEADER_NAME));
   });
+
+  it("preserves the original response body and status after rotation", async () => {
+    const resp = NextResponse.json({ ok: true, items: [1, 2, 3] }, { status: 201 });
+    const rotated = rotateCsrf(resp);
+    expect(rotated.status).toBe(201);
+    const text = await rotated.text();
+    expect(JSON.parse(text)).toEqual({ ok: true, items: [1, 2, 3] });
+    expect(rotated.headers.get(CSRF_HEADER_NAME)).toBeTruthy();
+  });
+
+  it("cookie is httpOnly so client-side JS cannot read it (defence-in-depth)", () => {
+    const rotated = rotateCsrf(NextResponse.json({}));
+    const setCookie = rotated.headers.getSetCookie
+      ? rotated.headers.getSetCookie().find((c) => c.startsWith("csrf_token="))
+      : null;
+    expect(setCookie).toBeTruthy();
+    expect(setCookie).toContain("HttpOnly");
+  });
 });

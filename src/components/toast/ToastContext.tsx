@@ -13,6 +13,9 @@ export interface ToastItem {
     label: string;
     onClick: () => void;
   };
+  /** Optional dedup key — when two toasts with the same key are shown in
+   *  quick succession, the second is dropped. Not part of the rendered UI. */
+  _key?: string;
 }
 
 interface ToastContextValue {
@@ -58,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       setToasts((prev) => {
         // Dedup by key if provided
-        if (options?.key && prev.some((t) => (t as any)._key === options.key)) return prev;
+        if (options?.key && prev.some((t) => t._key === options.key)) return prev;
         const entry = { ...toast, ...(options?.key ? { _key: options.key } : {}) };
         return [...prev, entry];
       });

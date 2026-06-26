@@ -29,7 +29,6 @@ describe("ConfirmDialog pending state (round 195)", () => {
 
 describe("useConfirm (round 195)", () => {
   it("closes after sync onConfirm", () => {
-    let captured: (() => void) | null = null;
     function Host() {
       const { askConfirm, dialog } = useConfirm();
       useEffect(() => {

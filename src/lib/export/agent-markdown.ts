@@ -325,7 +325,7 @@ export function isValidAgentOutput(o: unknown): o is AgentOutput {
   if (!o || typeof o !== "object") return false;
   const v = o as Record<string, unknown>;
   if (typeof v.agent !== "string") return false;
-  if (typeof (v as any).summary !== "string") return false;
+  if (typeof v.summary !== "string") return false;
   return true;
 }
 
