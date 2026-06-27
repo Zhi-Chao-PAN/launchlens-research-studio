@@ -22,9 +22,43 @@ const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
 const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const SSE_IDLE_GRACE_MS = 12000;
+const DEFAULT_AGENT_TIMEOUT_MS = 120_000;
+const MIN_AGENT_TIMEOUT_MS = 1000;
+
+// R216: per-agent wall-clock timeout. A real LLM call or retrieval query
+// can hang on a flaky network or a slow upstream; without a budget the
+// session sits in "running" forever and only an explicit user-cancel
+// recovers it. Default 120s, env-overridable for ops.
+//
+// Read on every invocation so test setups that mutate process.env between
+// cases see the updated value, and so ops can change the budget without a
+// restart in dev.
+function readAgentTimeoutMs(): number {
+  const raw = process.env.LAUNCHLENS_AGENT_TIMEOUT_MS;
+  if (!raw) return DEFAULT_AGENT_TIMEOUT_MS;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= MIN_AGENT_TIMEOUT_MS
+    ? parsed
+    : DEFAULT_AGENT_TIMEOUT_MS;
+}
 
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+// R216: detect a timeout-triggered abort vs an external (cancel) abort.
+// We need the distinction so we can label the agent as degraded rather
+// than erroring out the whole session.
+function isTimeoutAbort(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const err = e as { name?: string; message?: string };
+  if (err.name === "AbortError") return true;
+  if (typeof err.message === "string" && err.message.includes("agent timeout")) return true;
+  return false;
+}
+
+export function getAgentTimeoutMs(): number {
+  return readAgentTimeoutMs();
 }
 
 function createInitialAgentState(id: AgentId): AgentState {
@@ -298,13 +332,39 @@ async function runAgent(
         const t0 = Date.now();
         let telemetryOk = true;
         let telemetryErr: string | undefined;
+        // R216: timeout controller + handle must live outside the inner
+        // try block so the finally below can clear the timer. (The
+        // JS scoping rule: a finally clause cannot see const/let declared
+        // inside its own try.)
+        const timeoutController = new AbortController();
+        const agentTimeoutMs = readAgentTimeoutMs();
+        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+        // Snapshot whether the per-session cancel was already fired so
+        // we can distinguish a user cancel (don't degrade) from a
+        // timeout-induced abort (do degrade) later on.
+        const acEarly = sessionAborts.get(session.id);
+        const userCancelledBeforeCall = !!(acEarly && acEarly.signal.aborted);
         try {
           const ac = sessionAborts.get(session.id);
+          // Combine the per-session cancel signal with a per-agent
+          // wall-clock budget. Either side aborts the LLM call. The
+          // timeout controller is cleaned up in finally so a slow call
+          // doesn't leak an active AbortController into the next attempt.
+          timeoutTimer = setTimeout(() => {
+            timeoutController.abort(new Error(`agent timeout after ${agentTimeoutMs}ms`));
+          }, agentTimeoutMs);
+          // Combine signals safely: AbortSignal.any requires all entries to
+          // be AbortSignal instances, so guard against undefined or null
+          // (no per-session cancel signal in some test paths).
+          const combinedSignal =
+            ac && ac.signal
+              ? AbortSignal.any([ac.signal, timeoutController.signal])
+              : timeoutController.signal;
           output = await provider.generate(agentId, {
             query: session.query,
             keywords: session.keywords,
             upstream: allOutputs,
-            signal: ac?.signal,
+            signal: combinedSignal,
             onProgress: (event) => {
               const overall = 80 + Math.round(event.fraction * 19);
               updateAgentState(session, agentId, {
@@ -344,10 +404,39 @@ async function runAgent(
           telemetryOk = false;
           telemetryErr = e instanceof Error ? e.message : String(e);
           output = applyPersona(generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs), session.personaId);
-          // R203: the real provider failed — flag the agent's output as
-          // degraded so the UI can show a "demo data" badge.
-          isDegradedHere = true;
+          // R203/R216: provider.generate() fell into its outer catch and
+          // returned mock. The agent ran on demo data, not on the real
+          // provider's output, so we must flag it degraded so the UI shows
+          // a "demo data" badge. The pre-existing onFallback path also
+          // flips these flags; this block catches the case where the
+          // provider silently absorbed the error without calling onFallback
+          // (e.g. a timeout abort that the provider's outer try-catch saw
+          // as a clean cancel).
+          if (!isDegradedHere && provider !== selected) {
+            // Breaker had pre-routed us to mock — already degraded, no
+            // extra reason needed (the engine sets breaker_open elsewhere).
+          } else if (!isDegradedHere) {
+            isDegradedHere = true;
+            degradedReasonCaptured = isTimeoutAbort(e)
+              ? "network_error"
+              : "http_error";
+          }
         } finally {
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          // R216: if the call returned *without* throwing but the timeout
+          // controller fired, the provider silently swallowed the abort and
+          // returned mock. We still need to mark the agent degraded so the
+          // user sees the real provider never produced output. (Cancel paths
+          // are detected via isCancelled() in the outer catch.)
+          if (
+            !isDegradedHere &&
+            provider === selected &&
+            timeoutController.signal.aborted &&
+            !userCancelledBeforeCall
+          ) {
+            isDegradedHere = true;
+            degradedReasonCaptured = "network_error";
+          }
           if (!selected.isMock) {
             if (telemetryOk) breakerRecordSuccess("provider:" + selected.id);
             else breakerRecordFailure("provider:" + selected.id);
@@ -363,7 +452,7 @@ async function runAgent(
         }
 
     // Merge citations
-    for (const citation of output.citations) {
+    for (const citation of (output?.citations ?? [])) {
       if (!session.citations.find((c) => c.id === citation.id)) {
         session.citations.push(citation);
       }

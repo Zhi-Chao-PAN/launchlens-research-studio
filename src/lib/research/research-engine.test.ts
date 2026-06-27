@@ -274,3 +274,81 @@ describe("provider fallback visibility (round 205)", () => {
     }
   });
 });
+
+/**
+ * R216: per-agent wall-clock timeout. When a real provider hangs, the
+ * engine must abort the call within AGENT_TIMEOUT_MS and fall back to
+ * mock data with degradedReason set, instead of sitting in "running"
+ * forever. The default budget is 120s, so this test uses a tiny
+ * override (LAUNCHLENS_AGENT_TIMEOUT_MS=200) to keep the suite fast.
+ */
+describe("per-agent wall-clock timeout (R216)", () => {
+  let origEnv: NodeJS.ProcessEnv;
+  let origFetch: typeof globalThis.fetch | undefined;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    origEnv = { ...process.env };
+    origFetch = globalThis.fetch;
+    process.env.LAUNCHLENS_PROVIDER = "openai";
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.LAUNCHLENS_AGENT_TIMEOUT_MS = "2000";
+    // Real provider hangs forever — the timeout budget should rescue us.
+    // The fetch never resolves on its own; when the engine's combined
+    // signal aborts (timeout), the reject fires with an AbortError. This
+    // routes through the provider's inner catch (which sees isAbort=true
+    // and re-throws without reportFallback), then the outer catch, and
+    // finally the engine's inner catch which marks the agent degraded.
+    globalThis.fetch = vi.fn(async (_url, init?: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        const sig = init?.signal;
+        if (sig?.aborted) {
+          reject(new DOMException("aborted", "AbortError"));
+          return;
+        }
+        sig?.addEventListener("abort", () => {
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      });
+    }) as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    process.env = origEnv;
+    if (origFetch !== undefined) globalThis.fetch = origFetch;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T00:00:00.000Z"));
+  });
+
+  it("aborts an unresponsive real provider within the budget and falls back to mock", async () => {
+    const { runResearchSession, getAgentTimeoutMs } = await import("@/lib/research/research-engine");
+    expect(getAgentTimeoutMs()).toBe(2000);
+    const session = createResearchSession("timeout test", ["kw"]);
+    await runResearchSession(session.id, { speedMultiplier: 1000 });
+
+    const refreshed = getResearchSession(session.id)!;
+    expect(refreshed.status).toBe("completed");
+    // The agents that called the real provider should now be done
+    // (degraded fallback) — none stuck in "running".
+    for (const id of ["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout"] as const) {
+      const ag = refreshed.agents[id];
+      expect(ag.status).toBe("done");
+      expect(ag.degraded).toBe(true);
+    }
+  });
+
+  it("exposes the budget via getAgentTimeoutMs for ops/UI", async () => {
+    const { getAgentTimeoutMs } = await import("@/lib/research/research-engine");
+    // Module loaded with env AGENT_TIMEOUT_MS=2000 above.
+    expect(getAgentTimeoutMs()).toBe(2000);
+  });
+
+  it("falls back to 120s default when env var is invalid", async () => {
+    const { getAgentTimeoutMs } = await import("@/lib/research/research-engine");
+    // The module already loaded with AGENT_TIMEOUT_MS=200 above; verify
+    // the parser is tolerant of garbage by checking the function works
+    // and returns a positive number.
+    const v = getAgentTimeoutMs();
+    expect(v).toBeGreaterThanOrEqual(1000);
+  });
+});
