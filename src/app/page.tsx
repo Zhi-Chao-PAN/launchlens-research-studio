@@ -28,7 +28,11 @@ import { AGENT_METADATA } from "@/lib/schema/research-schema";
 export default function Home() {
   useFreezeMode();
   const { t } = useLocale();
-  const { state, startResearch, cancel, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
+  // R219: split the hook into `session` (long-lived) and `transient`
+  // (rate-limit / reconnect / polling) so the rate-limit pill and
+  // connection banner can subscribe to transient without dragging the
+  // agent card tree through a re-render every second.
+  const { session: state, transient, startResearch, cancel, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
   const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
@@ -43,17 +47,17 @@ export default function Home() {
   useEffect(() => {
     setNowMs(Date.now());
   }, []);
-  const rateLimitRemainingSec = state.rateLimitUntilMs
-    ? Math.max(0, Math.ceil((state.rateLimitUntilMs - nowMs) / 1000))
+  const rateLimitRemainingSec = transient.rateLimitUntilMs
+    ? Math.max(0, Math.ceil((transient.rateLimitUntilMs - nowMs) / 1000))
     : 0;
-  const isRateLimited = state.rateLimitUntilMs !== null && rateLimitRemainingSec > 0;
-  const reconnectRemainingSec = state.reconnectUntilMs
-    ? Math.max(0, Math.ceil((state.reconnectUntilMs - nowMs) / 1000))
+  const isRateLimited = transient.rateLimitUntilMs !== null && rateLimitRemainingSec > 0;
+  const reconnectRemainingSec = transient.reconnectUntilMs
+    ? Math.max(0, Math.ceil((transient.reconnectUntilMs - nowMs) / 1000))
     : 0;
-  const isReconnecting = state.reconnectUntilMs !== null && reconnectRemainingSec > 0;
-  const isPollingFallback = state.pollingIntervalMs !== null;
-  const pollingSecs = state.pollingIntervalMs
-    ? Math.max(1, Math.round(state.pollingIntervalMs / 1000))
+  const isReconnecting = transient.reconnectUntilMs !== null && reconnectRemainingSec > 0;
+  const isPollingFallback = transient.pollingIntervalMs !== null;
+  const pollingSecs = transient.pollingIntervalMs
+    ? Math.max(1, Math.round(transient.pollingIntervalMs / 1000))
     : 0;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -355,7 +359,7 @@ export default function Home() {
           {isRateLimited && t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
           {isReconnecting && t("status.reconnectingIn", { seconds: String(reconnectRemainingSec) })}
           {isPollingFallback && t("status.polling")}
-          {state.rateLimitUntilMs !== null && rateLimitRemainingSec === 0 && t("status.readyToRetry")}
+          {transient.rateLimitUntilMs !== null && rateLimitRemainingSec === 0 && t("status.readyToRetry")}
         </div>
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
@@ -368,8 +372,8 @@ export default function Home() {
               </p>
             </div>
             <QueryInput onSubmit={handleSubmit} onCancel={cancel} isLoading={isRunning}
-              disabledUntilMs={state.rateLimitUntilMs}
-              retryReadyPulse={state.retryReadyPulse}
+              disabledUntilMs={transient.rateLimitUntilMs}
+              retryReadyPulse={transient.retryReadyPulse}
             />
 
             {stats && (
@@ -497,8 +501,8 @@ export default function Home() {
                 isLoading={isRunning}
                 defaultQuery={state.query}
                 defaultKeywords={state.keywords}
-                disabledUntilMs={state.rateLimitUntilMs}
-                retryReadyPulse={state.retryReadyPulse}
+                disabledUntilMs={transient.rateLimitUntilMs}
+                retryReadyPulse={transient.retryReadyPulse}
               />
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">

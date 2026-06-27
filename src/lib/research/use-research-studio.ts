@@ -669,7 +669,23 @@ export function useResearchStudio() {
   }, [hasActiveCooldown]);
 
   return {
-    state,
+    /**
+     * R219: split the returned state so consumers can subscribe to just
+     * the long-lived session fields (query, agents, agentOutputs, etc.)
+     * without re-rendering on every transient tick (rate-limit cooldown,
+     * reconnect deadline, polling interval). The studio page, the agent
+     * cards, and the report view bind to `session`. The rate-limit pill
+     * and the connection-status banner bind to `transient`. Without the
+     * split, a single `state` object caused every consumer to re-render
+     * on every tick.
+     */
+    session: state,
+    transient: {
+      rateLimitUntilMs: state.rateLimitUntilMs,
+      retryReadyPulse: state.retryReadyPulse,
+      reconnectUntilMs: state.reconnectUntilMs,
+      pollingIntervalMs: state.pollingIntervalMs,
+    },
     startResearch,
     cancel,
     setActiveAgentTab,
