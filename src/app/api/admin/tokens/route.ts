@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const auth = requireAdmin(request);
   if (!auth.ok) return auth.response;
 
-  let body: { label?: string; scope?: string } = {};
+  let body: { label?: string; scope?: string; ttlMs?: number } = {};
   try {
     body = await request.json();
   } catch {
@@ -40,7 +40,13 @@ export async function POST(request: NextRequest) {
 
   // Only allow "bypass" or "admin" scope
   const scope = body.scope === "admin" ? "admin" : "bypass";
-  const token = createBypassToken(scope, body.label);
+  // R227: optional TTL (ms). Clamp to [0, 365 days]; 0 / omitted means use the
+  // env default (LAUNCHLENS_TOKEN_DEFAULT_TTL_MS) or never-expire.
+  const rawTtl = typeof body.ttlMs === "number" ? body.ttlMs : undefined;
+  const ttlMs = rawTtl !== undefined
+    ? Math.max(0, Math.min(365 * 24 * 60 * 60 * 1000, Math.floor(rawTtl)))
+    : undefined;
+  const token = createBypassToken(scope, body.label, ttlMs);
 
   recordAuthAudit("admin_action", {
     ipHash: hashIp(auth.ip),

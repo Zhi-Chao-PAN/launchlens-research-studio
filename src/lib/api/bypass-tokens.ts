@@ -32,10 +32,28 @@ export interface BypassTokenInfo {
   lastUsedAt?: number;
   lastIp?: string;
   usageCount: number;
+  /** R227: wall-clock time (ms epoch) at which the token expires. Undefined =
+   *  never expires (the pre-R227 default, and what env-provisioned tokens get).
+   *  Set at creation via the ttlMs parameter / LAUNCHLENS_TOKEN_DEFAULT_TTL_MS. */
+  expiresAt?: number;
 }
 
 let cached: Record<string, BypassTokenInfo> | null = null;
 let envTokensLoaded = false;
+
+/**
+ * R227: default TTL applied to newly created tokens when no explicit ttlMs is
+ * passed. Set LAUNCHLENS_TOKEN_DEFAULT_TTL_MS (ms) to give every API-created
+ * token a finite lifetime; 0 / unset means tokens never expire by default
+ * (preserving the pre-R227 behavior for env-provisioned and existing tokens).
+ * Reads at call time so tests/env changes take effect without a restart.
+ */
+function getDefaultTtlMs(): number {
+  const raw = process.env.LAUNCHLENS_TOKEN_DEFAULT_TTL_MS;
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -88,13 +106,40 @@ function persist(tokens: Record<string, BypassTokenInfo>): void {
 }
 
 /**
+ * R227: has the token expired? True only when expiresAt is set and in the past.
+ */
+function isExpired(entry: BypassTokenInfo, now: number = Date.now()): boolean {
+  return typeof entry.expiresAt === "number" && now >= entry.expiresAt;
+}
+
+/**
+ * R227: lazily evict expired tokens from the store. Called on read paths so
+ * expired tokens self-clean without a cron. Returns the (possibly pruned) map.
+ */
+function pruneExpired(tokens: Record<string, BypassTokenInfo>, now: number = Date.now()): Record<string, BypassTokenInfo> {
+  let changed = false;
+  for (const h of Object.keys(tokens)) {
+    if (isExpired(tokens[h], now)) {
+      delete tokens[h];
+      changed = true;
+    }
+  }
+  if (changed) {
+    cached = tokens;
+    persist(tokens);
+  }
+  return tokens;
+}
+
+/**
  * Get full token info (without recording usage).
- * Returns null if the token is invalid.
+ * Returns null if the token is invalid or expired (R227). Expired tokens are
+ * evicted lazily on read.
  */
 export function getTokenInfo(token: string): BypassTokenInfo | null {
   if (!token) return null;
   const h = hashToken(token);
-  const tokens = load();
+  const tokens = pruneExpired(load());
   const entry = tokens[h];
   return entry || null;
 }
@@ -106,11 +151,22 @@ export function getTokenInfo(token: string): BypassTokenInfo | null {
 export function isBypassToken(token: string, ip?: string): boolean {
   if (!token) return false;
   const h = hashToken(token);
-  const tokens = load();
+  const tokens = pruneExpired(load());
   const entry = tokens[h];
   if (!entry) {
     if (token && ip) {
       recordAuthAudit("auth_failed", { ipHash: ip, detail: "invalid token" });
+    }
+    return false;
+  }
+  // R227: an expired token is treated as invalid (it was already pruned from
+  // the store by pruneExpired, but guard defensively in case of clock skew).
+  if (isExpired(entry)) {
+    delete tokens[h];
+    cached = tokens;
+    persist(tokens);
+    if (ip) {
+      recordAuthAudit("auth_failed", { ipHash: ip, tokenHash: h, detail: "expired token" });
     }
     return false;
   }
@@ -158,16 +214,25 @@ export function extractBearerToken(authHeader: string | null): string | null {
 /**
  * Create a new token with the given scope and label.
  * Returns the plaintext token (only shown once).
+ *
+ * R227: an optional ttlMs (milliseconds) sets an expiry. When omitted, the
+ * LAUNCHLENS_TOKEN_DEFAULT_TTL_MS env var supplies a default; if that is also
+ * unset the token never expires (pre-R227 behavior). ttlMs <= 0 forces
+ * no-expiry even when a default TTL is configured.
  */
 export function createBypassToken(
   scope: TokenScope = "bypass",
   label?: string,
+  ttlMs?: number,
 ): string {
   const token = randomBytes(32).toString("base64url");
   const h = hashToken(token);
   const now = Date.now();
+  // Resolve the effective TTL: explicit arg > env default > never.
+  const effectiveTtl = typeof ttlMs === "number" ? ttlMs : getDefaultTtlMs();
+  const expiresAt = effectiveTtl > 0 ? now + effectiveTtl : undefined;
   const tokens = load();
-  tokens[h] = { hash: h, scope, label, createdAt: now, usageCount: 0 };
+  tokens[h] = { hash: h, scope, label, createdAt: now, usageCount: 0, ...(expiresAt !== undefined ? { expiresAt } : {}) };
   cached = tokens;
   persist(tokens);
   recordAuthAudit("token_created", {
@@ -179,10 +244,11 @@ export function createBypassToken(
 }
 
 /**
- * List all tokens (hashes only, no plaintext).
+ * List all tokens (hashes only, no plaintext). R227: expired tokens are
+ * pruned first so the admin list reflects only currently-valid tokens.
  */
 export function listBypassTokens(): BypassTokenInfo[] {
-  const tokens = load();
+  const tokens = pruneExpired(load());
   return Object.values(tokens).sort((a, b) => b.createdAt - a.createdAt);
 }
 

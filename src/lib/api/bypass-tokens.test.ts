@@ -135,4 +135,68 @@ describe("bypass-tokens", () => {
       expect(resultWithoutHash.allowed).toBe(true);
     });
   });
+
+  describe("TTL + auto-expiry (R227)", () => {
+    beforeEach(() => {
+      clearBypassTokens();
+      delete process.env.LAUNCHLENS_TOKEN_DEFAULT_TTL_MS;
+    });
+
+    it("creates a token with no expiry when ttlMs is omitted and no env default", () => {
+      const tok = createBypassToken("bypass", "no-ttl");
+      const info = getTokenInfo(tok);
+      expect(info?.expiresAt).toBeUndefined();
+      expect(isBypassToken(tok)).toBe(true);
+    });
+
+    it("sets expiresAt from an explicit ttlMs", () => {
+      const tok = createBypassToken("bypass", "ttl-1h", 3600_000);
+      const info = getTokenInfo(tok);
+      expect(info?.expiresAt).toBeDefined();
+      expect(typeof info?.expiresAt).toBe("number");
+      // expiresAt should be ~now + 1h
+      expect(info!.expiresAt!).toBeGreaterThan(Date.now());
+    });
+
+    it("rejects an expired token via isBypassToken", async () => {
+      // Create a token with a 1ms TTL, then wait for it to expire.
+      const tok = createBypassToken("bypass", "expired", 1);
+      expect(isBypassToken(tok)).toBe(true); // still valid immediately
+      await new Promise((r) => setTimeout(r, 10));
+      // After the TTL elapses, the token is rejected and pruned.
+      expect(isBypassToken(tok)).toBe(false);
+    });
+
+    it("evicts expired tokens from listBypassTokens", async () => {
+      createBypassToken("bypass", "alive");
+      createBypassToken("bypass", "dead", 1);
+      await new Promise((r) => setTimeout(r, 10));
+      const list = listBypassTokens();
+      // The expired one is pruned, only the alive token remains.
+      expect(list).toHaveLength(1);
+      expect(list[0].label).toBe("alive");
+    });
+
+    it("applies LAUNCHLENS_TOKEN_DEFAULT_TTL_MS when no explicit ttlMs", () => {
+      process.env.LAUNCHLENS_TOKEN_DEFAULT_TTL_MS = "7200000"; // 2h
+      const tok = createBypassToken("bypass", "env-ttl");
+      const info = getTokenInfo(tok);
+      expect(info?.expiresAt).toBeDefined();
+      expect(info!.expiresAt!).toBeGreaterThan(Date.now() + 3_600_000);
+    });
+
+    it("explicit ttlMs=0 forces no-expiry even with an env default", () => {
+      process.env.LAUNCHLENS_TOKEN_DEFAULT_TTL_MS = "7200000";
+      const tok = createBypassToken("bypass", "force-never", 0);
+      const info = getTokenInfo(tok);
+      expect(info?.expiresAt).toBeUndefined();
+      expect(isBypassToken(tok)).toBe(true);
+    });
+
+    it("a non-expired TTL token still validates", () => {
+      const tok = createBypassToken("bypass", "valid-ttl", 3600_000);
+      expect(isBypassToken(tok)).toBe(true);
+      expect(isAdminToken(tok)).toBe(false);
+    });
+  });
 });

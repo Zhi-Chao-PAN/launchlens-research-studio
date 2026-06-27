@@ -15,6 +15,7 @@ interface AdminToken {
   scope: "admin" | "bypass";
   createdAt: number;
   lastUsed?: number;
+  expiresAt?: number;
 }
 
 interface AuditEvent {
@@ -90,6 +91,9 @@ export default function AdminPage() {
   } | null>(null);
   const [newLabel, setNewLabel] = useState("");
   const [newScope, setNewScope] = useState<"admin" | "bypass">("bypass");
+  // R227: optional TTL in hours for newly created tokens. Empty = never expire
+  // (or use LAUNCHLENS_TOKEN_DEFAULT_TTL_MS server default).
+  const [newTtlHours, setNewTtlHours] = useState<string>("");
   const [newToken, setNewToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -242,14 +246,23 @@ export default function AdminPage() {
 
   async function handleCreateToken() {
     try {
+      // R227: convert hours to ms; empty/0 means "no explicit TTL" (server
+      // applies its env default or never-expire).
+      const hours = parseFloat(newTtlHours);
+      const ttlMs = Number.isFinite(hours) && hours > 0 ? Math.round(hours * 3600_000) : 0;
       const res = await apiCall("/api/admin/tokens", {
         method: "POST",
-        body: JSON.stringify({ label: newLabel || "unnamed", scope: newScope }),
+        body: JSON.stringify({
+          label: newLabel || "unnamed",
+          scope: newScope,
+          ...(ttlMs > 0 ? { ttlMs } : {}),
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         setNewToken(data.token);
         setNewLabel("");
+        setNewTtlHours("");
         loadAll();
       } else {
         setError(`Failed to create token: ${res.status}`);
@@ -484,6 +497,16 @@ export default function AdminPage() {
                 <option value="bypass">bypass</option>
                 <option value="admin">admin</option>
               </select>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={newTtlHours}
+                onChange={(e) => setNewTtlHours(e.target.value)}
+                placeholder="TTL (hours, blank=never)"
+                className="admin-input"
+                title="Token lifetime in hours. Leave blank for no expiry (or server default)."
+              />
               <button onClick={handleCreateToken} className="admin-btn primary">
                 Create
               </button>
@@ -507,6 +530,7 @@ export default function AdminPage() {
                     <th>Scope</th>
                     <th>Hash</th>
                     <th>Created</th>
+                    <th>Expires</th>
                     <th>Last used</th>
                     <th></th>
                   </tr>
@@ -516,9 +540,10 @@ export default function AdminPage() {
                     <tr key={t.hash}>
                       <td>{t.label}</td>
                       <td><span className={`admin-scope admin-scope-${t.scope}`}>{t.scope}</span></td>
-                      <td><code className="admin-hash">{t.hash.slice(0, 16)}?</code></td>
+                      <td><code className="admin-hash">{t.hash.slice(0, 16)}…</code></td>
                       <td>{formatTime(t.createdAt)}</td>
-                      <td>{t.lastUsed ? formatTime(t.lastUsed) : "?"}</td>
+                      <td>{t.expiresAt ? formatTime(t.expiresAt) : "Never"}</td>
+                      <td>{t.lastUsed ? formatTime(t.lastUsed) : "—"}</td>
                       <td>
                         <button
                           onClick={() => handleRevoke(t.hash)}
@@ -530,7 +555,7 @@ export default function AdminPage() {
                     </tr>
                   ))}
                   {tokens.length === 0 && (
-                    <tr><td colSpan={6} className="admin-empty">No tokens</td></tr>
+                    <tr><td colSpan={7} className="admin-empty">No tokens</td></tr>
                   )}
                 </tbody>
               </table>
