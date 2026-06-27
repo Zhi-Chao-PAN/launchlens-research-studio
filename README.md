@@ -188,6 +188,46 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full architecture d
 
 ---
 
+## ☁️ Deploy to Vercel
+
+A `vercel.json` ships with this repo (R230): the `/api/research/[id]/stream` SSE route is configured for `maxDuration=60s` and the `setInterval`-based scheduler is replaced by a Vercel Cron entry that POSTs to `/api/cron/scheduler` every minute.
+
+**One-time setup**
+
+1. In Vercel, **Import Project** → pick this GitHub repo. Vercel auto-detects Next.js; the included `vercel.json` will be picked up without further config.
+2. Configure environment variables (Project Settings → Environment Variables). At minimum:
+
+   | Variable | Why |
+   |----------|-----|
+   | `OPENAI_API_KEY` *(or* `ANTHROPIC_API_KEY`*)* | Real LLM provider (otherwise the mock provider runs). At least one of the two is required for non-mock research. |
+   | `LAUNCHLENS_CRON_SECRET` | Required for `POST /api/cron/scheduler`. The endpoint refuses every call when this is unset. Generate one with `openssl rand -hex 32`. |
+   | `TAVILY_API_KEY` *(optional)* | Enables Tavily-backed retrieval / RAG grounding (R215). Without it, retrieval silently falls back to mock. |
+
+   A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
+3. Deploy. Vercel will run `next build` (the project pins `engines.node = "20.x"` in `package.json`), bind the cron, and expose the preview URL.
+
+**Post-deploy verification checklist**
+
+- `curl https://<your-url>/api/health` returns ok.
+- From the studio UI, start a **mock** research run; confirm SSE delivers every `agent-output` and a terminal `complete` event.
+- With a real `OPENAI_API_KEY`, start a live research run. If the platform severs the stream at ~60s (Pro plan) or ~10s (Hobby), the run was over-budget — see *Known serverless constraints* below.
+- Tail Vercel logs while a run is in flight; check whether multiple function instances are involved (each cold start = a new module-level session map).
+
+**Known serverless constraints** *(R198 / R212 / R216 / R217 / R230)*
+
+- **In-memory session map is per-instance.** `src/lib/research/research-engine.ts` keeps `Map<sessionId, ResearchSession>` at module scope. On Vercel, a subsequent request for the same `sessionId` may land on a different lambda, which will see an empty map. The first sign of trouble is a successful `POST /api/research` followed by `GET /api/research/[id]` returning `404` on the new instance.
+- **Disk writes are per-instance.** `LAUNCHLENS_STORAGE_DIR` only persists within one lambda invocation; `/tmp` is wiped between cold starts. So even if a session is fully run, a later `GET` from a different instance won't see it via the disk fallback.
+- **SSE lifetime cap.** `maxDuration=60` on the stream route (Pro plan) means a 6-agent live-LLM run that exceeds 60s gets its stream severed by the platform. The agent work may still complete in-process; the client just stops receiving events.
+- **In-process `setInterval` does not fire.** Already documented in `.env.example`. The `vercel.json` cron entry is the only reliable way to drive scheduled runs on serverless.
+
+**Decide whether to wire a real session store**
+
+The `npm run probe:serverless` script simulates the cross-instance scenario locally: it forks two Node child processes, has one create a session, and asks the other to look it up. The expected output (`undefined`) confirms that any post-deploy surprise on Vercel is structural, not a misconfiguration. If post-deploy verification shows cross-instance lookup failing, the next round (R231) will wire `src/lib/research/research-engine.ts` through `src/lib/storage/storage.ts`'s pluggable `StorageBackend` interface — adding a Redis/Vercel KV backend without touching the rest of the engine.
+
+See [`docs/HANDOFF-NEXT-STAGE.md`](./docs/HANDOFF-NEXT-STAGE.md) §2 for the full deployment context, the three possible Vercel outcomes, and what each implies for the next round.
+
+---
+
 ## 🔌 Real LLM Providers
 
 The app runs on a deterministic **mock provider** by default, so the demo works with zero configuration. To run real research with a live LLM, add an API key to `.env.local`:
