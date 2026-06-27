@@ -7,6 +7,192 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Batch + scheduler full i18n, last hardcoded Chinese eliminated (round 228)** —
+  the batch page and the `ScheduleManager` component were the final two
+  surfaces still rendering Chinese regardless of the active locale.
+  `src/lib/i18n/dictionaries.ts` gains ~70 `batch.*` and `schedule.*`
+  `DictionaryKey` entries across all four locales (en/zh-CN added in the
+  prior round, ja and ko completed this round), so the key-parity test
+  now passes for all four locales. Japanese gains バッチリサーチ /
+  スケジュールリサーチ titles, frequency labels (毎時/毎日/毎週/カスタム),
+  day-of-week abbreviations (日月火水木金土), parameterized interval strings
+  (毎日 {hh}:00 · {day} {hh}:00 · {minutes} 分ごと), and the full set of
+  status/trigger/pause/resume/delete labels plus the delete-confirm body.
+  Korean gains 일괄 리서치 / 예약 리서치 titles, frequency labels
+  (매시간/매일/매주/사용자 지정), day abbreviations (일월화수목금토), and the
+  parameterized intervals (매일 {hh}:00 · {minutes}분마다).
+  `src/app/batch/page.tsx` now destructures `{ t, locale }` from
+  `useLocale`; `formatTime()` uses the active locale for
+  `toLocaleTimeString` instead of the hard-coded `zh-CN`; every Chinese
+  string (header, queries/keywords labels + placeholders, submit/
+  submitting, maxQueries alert, progress title/done/success/failed,
+  view-run link, history title/count unit) is replaced with `t()` calls
+  carrying English fallbacks. `src/components/scheduler/ScheduleManager.tsx`
+  adds `useLocale` and moves `formatInterval`/`formatTime`/`statusLabel`
+  from module scope into the component so they can call `t()`;
+  `formatInterval` now emits localized short interval strings via the
+  `schedule.interval*Short` keys plus a `dayKeys[]` lookup for weekly day
+  names, and all header stats, form labels/placeholders, frequency/
+  interval/hour/day selects, cancel/create/creating buttons, empty-state
+  copy, card meta labels, and trigger/pause/resume/delete actions route
+  through `t()`. Both files verified free of Han characters via grep.
+  93 test files / 1529 tests pass, tsc and next build clean.
+- **Bypass-token TTL + lazy auto-expiry (round 227)** — admin-issued
+  bypass tokens can now self-expire instead of living forever. `BypassTokenInfo`
+  gains an optional `expiresAt`, the mint endpoint accepts a `ttlMs` body
+  field (clamped to [0, 365 days], 0 = never-expire), and `getDefaultTtlMs()`
+  reads `LAUNCHLENS_TOKEN_DEFAULT_TTL_MS` for an env-driven default. Expired
+  tokens are evicted lazily on read paths via `pruneExpired()` so no cron is
+  needed — the token store self-cleans the next time any read happens. The
+  admin UI gains a TTL input and an Expires column. SHA-256 hashing in
+  storage is unchanged. 7 new TTL tests cover clamp bounds, never-expire,
+  expiry detection, and lazy pruning. tsc and build clean.
+- **Admin telemetry endpoint + System-tab surfacing (round 226)** —
+  `/api/telemetry` (admin-gated) now returns a richer payload: rate-limit
+  config (capacity/refill/window), request summary, circuit-breaker states,
+  storage stats, and dashboard aggregates. The admin System tab renders all
+  of it, giving operators a single live view of breaker health, request
+  volume, rate-limit posture, and storage footprint. 4 new telemetry route
+  tests. tsc and build clean.
+- **Env-tunable research rate-limit + retry-count surfaced in UI (round 225)** —
+  the research POST rate limit was hard-coded to 10 requests / 60s.
+  `getResearchRateLimitConfig()` / `checkResearchRateLimit()` now read
+  `LAUNCHLENS_RATE_LIMIT_CAPACITY` and `LAUNCHLENS_RATE_LIMIT_REFILL_MS`
+  with clamping that prevents disabling rate limiting or setting sub-second
+  windows. Trusted IPs still bypass. The rate-limit error banner now shows
+  the current `retryCount` so users can see repeated backoffs. 5 new
+  rate-limit env-config tests. tsc and build clean.
+- **Server-aggregated dashboard stats endpoint (round 224)** — the dashboard
+  was computing totals by fetching `/api/research/runs?limit=500`, but the
+  runs route silently caps `limit` to 100, so `totalRuns` was wrong past 100
+  runs. New `getDashboardStats(sinceMs)` aggregates server-side over the
+  in-memory run cache, and the lightweight `/api/research/stats` endpoint
+  returns a tiny pre-aggregated payload (`totalRuns`, `recentRuns`,
+  `totalDurationMs`, `byStatus`). The home page now fetches stats from the
+  dedicated endpoint. 4 new stats route tests + 4 new `getDashboardStats`
+  storage tests. tsc and build clean.
+- **Actionable error states with recovery actions (round 223)** — the home
+  page and the `research/[id]` page now surface errors through a reusable
+  `ActionableError` banner (icon + title + detail + action buttons,
+  error/warning/info variants) instead of plain red text. The home page
+  wires a Retry action into the rate-limit / provider-error banner and
+  shows the current `retryCount`; the `research/[id]` page maps not-found
+  and failed-run states to `ActionableError` with "Back to home" / "View
+  history" actions. Also fixed the `/research` (404) link on the detail page
+  to point at `/history`. 7 new `ActionableError` tests. tsc and build clean.
+- **Delete dead legacy command-palette UI cluster (round 222)** — removed
+  the orphan `ui/CommandPalette.tsx`, `ui/CommandPaletteProvider.tsx`,
+  `ui/ShortcutsHelp.tsx`, and `ui/GlobalCommands.tsx` files, which formed a
+  self-contained dead cluster that only imported each other. The active
+  versions live in `command-palette/`. `use-hotkey.ts` (singular) is kept
+  because `NotesPanel.tsx` still uses it. tsc, lint, and build clean.
+- **Chord (sequence) keyboard shortcuts now actually work (round 221)** —
+  the `useChord` hook was redesigned: `ChordMap = Record<string, string[]>`
+  (multiple second keys per first key), a 1.5s window, input-skipping, and
+  modifier-chord ignoring. `GlobalCommands` now wires `G then H/S/T/B/C` for
+  home/stats/templates/batch/compare navigation, fixed the `/research` →
+  `/history` 404, and added batch/compare chords. The keyboard cheatsheet
+  wording changed from "G + H" to "G then H" and gained the G-then-C entry.
+  10 new `use-chord` tests using `renderHook` + fake timers. tsc and build
+  clean.
+- **Split research/[id] page + loading fallback (round 220)** — split the
+  monolithic `research/[id]/page.tsx` into focused primitives (header, agent
+  grid, report tabs, share/export actions) and added a `loading.tsx` route
+  fallback so navigating to a research run shows an instant skeleton instead
+  of a blank frame while the route segment streams. Improves perceived
+  performance and reduces the chance of a white-screen on slow connections.
+  tsc and build clean.
+- **Split useResearchStudio state into session + transient (round 219)** —
+  `useResearchStudio()` now returns `{ session, transient, ...actions }` so
+  long-lived session fields (agents, citations, results) are isolated from
+  frequently-changing transient fields (rateLimitUntilMs, retryReadyPulse,
+  retryCount, reconnectUntilMs, pollingIntervalMs). A memo equality function
+  (`studioStateEqual`) controls re-renders, cutting re-render storms during
+  SSE streaming and rate-limit backoff. tsc and build clean.
+- **/api/research/smoke admin-gated 6-agent end-to-end probe (round 218)** —
+  new admin-gated endpoint that runs the full 6-agent pipeline (5 research +
+  synthesis) against the configured provider and reports per-agent status,
+  latency, and fallback reason. Lets operators verify the whole stack
+  end-to-end from the admin UI without starting a real research session. 3
+  new smoke-route tests. tsc and build clean.
+- **Session map eviction + clearer terminal events (round 217)** — the
+  in-memory session map now evicts terminal sessions older than 30 minutes
+  via `pruneStaleSessions()` on read paths, preventing unbounded growth.
+  The SSE stream route emits distinct terminal events with reason `expired`
+  | `not-found` | `cancelled` so the client can distinguish a permanently
+  dead session from a transient blip and stop exponential-reconnecting.
+  Restart behavior no longer resurrects evicted sessions. tsc and build
+  clean.
+- **Per-agent wall-clock timeout + stalled-session protection (round 216)** —
+  each research agent now runs under a per-agent wall-clock timeout; a
+  stalled session (no agent progress within a grace window) is detected and
+  marked failed instead of hanging forever. Closes the "research never
+  finishes" failure mode where a single slow/hung LLM call blocked the whole
+  session. tsc and build clean.
+- **Tavily retrieval adapter + registry + URL verification + agent-prompt
+  injection (round 215)** — the first RAG grounding layer. New
+  `RetrievalProvider` interface (parallel to `ResearchProvider`) with a
+  deterministic zero-result `mock-retrieval-provider` and a full
+  `tavily-retrieval-provider` (POST `api.tavily.com/search`, Bearer auth,
+  12s timeout, AbortSignal propagation, deterministic FNV-1a citation IDs,
+  graceful degradation on every failure mode). `retrieval-registry.ts`
+  mirrors the LLM registry's override semantics
+  (`LAUNCHLENS_SEARCH_PROVIDER=mock|tavily`, auto-pick on `TAVILY_API_KEY`).
+  `filterCitationsAgainstRetrieved()` drops citation URLs not in the
+  retrieved set and deduplicates by URL/id, so invented URLs are silently
+  dropped. `buildUserPrompt` now appends a "Verified web sources" block and
+  the system prompt coaches the model to prefer those URLs. New
+  `/api/retrieval/test` probe endpoint mirrors `/api/provider/test`. 24 new
+  tests across the adapter/registry/validator/prompts. 88 files / 1478 tests
+  pass, tsc and build clean. End-to-end Tavily verification requires the user
+  to set `TAVILY_API_KEY`; without a key the registry returns mock retrieval
+  and every run behaves exactly as before R215.
+- **Per-element string coercion, growthTrend enum, rec.period, finite guards
+  (round 214)** — `output-normalize.ts` gains `asStringArray()` and routes
+  every rendered string-array field (competitor strengths/weaknesses, pain
+  userSegments, persona goals/frustrations, pricing features/examples,
+  channel audience/keyPlatforms, insight supportingAgents, marketSize
+  sources) through it, so objects/numbers/null smuggled in by a real LLM
+  no longer render as `[object Object]`/`null`. `marketSize.growthTrend` is
+  enum-coerced (accelerating|stable|declining);
+  `recommendations[].period` added to the schema ('monthly'|'yearly'|
+  'one-time'|'usage') and `PricingScoutReport` renders a real period label
+  instead of always "per user / month". `Meter`/`Donut`/`CompetitorAnalyst`
+  `formatPrice` all gained `Number.isFinite` guards so non-finite input
+  renders 0 / '—' / '?' instead of `NaN`. 15 new tests. 85 files / 1454
+  tests pass, tsc and build clean.
+- **Compare page i18n + real full-report bulk export (round 213)** —
+  `/compare` now routes every user-visible string through `t()`; previously
+  it hardcoded Chinese in ~50 places. 50 new `compare.*` keys added across
+  all four locales with parameter substitution ({count}, {a}/{b}, {pct},
+  {status}). History bulk export was a stub emitting only summary rows;
+  R213 rewrites `handleBulkExport` to fetch the full run from
+  `/api/research/runs/[id]` for every selected id, parse the synthesis, and
+  concatenate per-run markdown reports via the shared
+  `generateMarkdownReport()`. Each fetch failure degrades gracefully with a
+  "Failed to fetch full run" note. 84 files / 1439 tests pass, tsc and build
+  clean.
+- **Cron trigger endpoint + cancelled/failed run persistence + history
+  cancelled filter (round 212)** — `/api/cron/scheduler` (GET + POST) is a
+  serverless-friendly external trigger for schedules that the in-process
+  `setInterval` can't fire on Vercel; authorised by `LAUNCHLENS_CRON_SECRET`
+  in constant time, refused entirely when unset. `ResearchRun.status`
+  widens to 'completed' | 'failed' | 'cancelled' so cancelled sessions no
+  longer vanish on restart; `cancelSession()` and both cancel branches in
+  `runResearchSession` now persist a 'cancelled' row carrying whatever
+  partial agent output existed. `/history` exposes a 'Cancelled' filter
+  and status glyphs distinguish all four states. 7 new cron tests + cancel
+  persistence tests. 84 files / 1439 tests pass, tsc and build clean.
+- **Restore public list endpoint, gate export + import behind admin (round
+  211)** — `/api/research/runs` GET (list/search) dropped its `requireAdmin`
+  gate; same-origin CSRF cookie is sufficient for non-sensitive summary rows,
+  restoring pre-R202 behavior so `/history`, dashboard stats, `RelatedRuns`,
+  and `DataManager.fetchRuns` render. Bulk export (`format=json|csv|jsonl`)
+  and `/api/data/import` (destructive) remain admin-only;
+  `DataManager` now exposes an inline admin-token input (saved to
+  localStorage) so users can authorize server-side restore from the
+  data-management UI. New route tests cover the auth split. 83 files / 1429
+  tests pass, tsc and build clean.
 - **Nested-field robustness / output normalization (round 210)** — closed the
   real-LLM crash risk that the round-209 audit exposed. The output validator
   only checks top-level field presence and a couple of deep checks
