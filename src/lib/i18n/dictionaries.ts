@@ -128,6 +128,7 @@ export type DictionaryKey =
   | "errors.badRequest"
   | "errors.unauthorized"
   | "errors.cronNotConfigured"
+  | "errors.sessionExpired"
   | "export.copied"
   | "export.copy"
   | "export.download"
@@ -227,6 +228,7 @@ const en: Dict = {
   "errors.badRequest": "Invalid request.",
   "errors.unauthorized": "Unauthorized.",
   "errors.cronNotConfigured": "Scheduled-task endpoint is not configured. Set LAUNCHLENS_CRON_SECRET.",
+  "errors.sessionExpired": "Live engine session expired. The completed report is still available in History.",
   "status.loading": "Starting research session",
   "status.running": "Research agents are running",
   "status.completed": "Research complete",
@@ -425,6 +427,7 @@ const zhCN: Dict = {
   "errors.badRequest": "请求无效。",
   "errors.unauthorized": "未授权。",
   "errors.cronNotConfigured": "定时任务端点未配置，请设置 LAUNCHLENS_CRON_SECRET。",
+  "errors.sessionExpired": "实时引擎会话已过期，完整报告仍可在历史记录中查看。",
   "status.loading": "正在启动调研会话",
   "status.running": "调研智能体运行中",
   "status.completed": "调研完成",
@@ -623,6 +626,7 @@ const ja: Dict = {
   "errors.badRequest": "無効なリクエストです。",
   "errors.unauthorized": "認証されていません。",
   "errors.cronNotConfigured": "スケジュールタスクのエンドポイントが設定されていません。LAUNCHLENS_CRON_SECRET を設定してください。",
+  "errors.sessionExpired": "ライブエンジンセッションの有効期限が切れました。完成したレポートは履歴から引き続き閲覧できます。",
   "status.loading": "リサーチセッションを開始しています",
   "status.running": "リサーチエージェントが実行中です",
   "status.completed": "リサーチ完了",
@@ -923,6 +927,7 @@ const ko: Dict = {
   "errors.badRequest": "잘못된 요청입니다.",
   "errors.unauthorized": "인증되지 않았습니다.",
   "errors.cronNotConfigured": "예약 작업 엔드포인트가 구성되지 않았습니다. LAUNCHLENS_CRON_SECRET을 설정하세요.",
+  "errors.sessionExpired": "실시간 엔진 세션이 만료되었습니다. 완료된 리포트는 기록에서 계속 확인할 수 있습니다.",
   "export.copied": "복사됨!",
   "export.copy": "복사",
   "export.download": "다운로드",

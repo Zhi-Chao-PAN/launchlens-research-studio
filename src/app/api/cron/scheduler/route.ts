@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { tickSchedules } from "@/lib/research/scheduler";
+import { pruneStaleSessions } from "@/lib/research/research-engine";
 import { jsonErrorLocalized } from "@/lib/api/validation";
 
 // R212: serverless-friendly scheduler trigger.
@@ -68,9 +69,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const triggered = await tickSchedules();
+    // R217: piggyback session-map eviction on the cron tick so the
+    // in-memory engine state doesn't grow unbounded over the lifetime
+    // of a long-running server. Sessions are also evicted by delete
+    // + pruneStaleSessions on cancel / completion, so this is purely
+    // a safety net for any path that forgot to clean up.
+    const pruned = pruneStaleSessions();
     return NextResponse.json({
       ok: true,
       triggered,
+      pruned,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

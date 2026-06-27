@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { getResearchSession, deleteSession } from "@/lib/research/research-engine";
+import { getResearchRun } from "@/lib/research/storage";
 import { jsonErrorLocalized } from "@/lib/api/validation";
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
@@ -18,12 +19,17 @@ export async function GET(
 
   const session = getResearchSession(sessionId);
   if (!session) {
+    // R217: distinguish "the live engine session was evicted" (the
+    // completed run is still on disk and renderable) from a true
+    // not-found. The client uses the `expired` reason to redirect the
+    // user to /history instead of showing a generic 404.
+    const persisted = getResearchRun(sessionId);
     return jsonErrorLocalized(
       request,
-      "errors.notFound",
-      404,
+      persisted ? "errors.sessionExpired" : "errors.notFound",
+      persisted ? 410 : 404,
       undefined,
-      { sessionId },
+      { sessionId, persistedRunId: persisted?.id },
     );
   }
 

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
+import { getResearchRun } from "@/lib/research/storage";
 import { jsonError } from "@/lib/api/validation";
 import { sleep } from "@/lib/utils/sleep";
 import type { AgentId } from "@/lib/schema/research-schema";
@@ -23,11 +24,21 @@ export async function GET(
 
   const session = getResearchSession(sessionId);
   if (!session) {
+    // R217: distinguish "the id is wrong / never existed" from "the live
+    // engine session expired but the run is on disk". The former gets a
+    // not-found terminal; the latter gets an "expired" terminal so the
+    // client can route the user to /research/[id] which loads from
+    // storage and renders the completed report.
+    const persisted = getResearchRun(sessionId);
+    const reason = persisted ? "expired" : "not-found";
+    const message = persisted
+      ? "Live engine session expired. The completed report is still available in History."
+      : "Session not found.";
     const notFoundStream = new TransformStream();
     const nfw = notFoundStream.writable.getWriter();
     const nfe = new TextEncoder();
     nfw.write(nfe.encode("event: terminal\n"));
-    nfw.write(nfe.encode("data: " + JSON.stringify({ reason: "not-found", message: "Session not found." }) + "\n\n"));
+    nfw.write(nfe.encode("data: " + JSON.stringify({ reason, message, persistedRunId: persisted?.id }) + "\n\n"));
     nfw.close().catch(() => {});
     return new Response(notFoundStream.readable, {
       headers: {

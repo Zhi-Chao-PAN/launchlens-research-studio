@@ -25,6 +25,18 @@ const SSE_IDLE_GRACE_MS = 12000;
 const DEFAULT_AGENT_TIMEOUT_MS = 120_000;
 const MIN_AGENT_TIMEOUT_MS = 1000;
 
+// R217: cap how long a terminal (completed/cancelled/errored) session
+// stays in the in-memory map. Sessions hold AbortController closures
+// and listener Sets; without eviction, a long-running server leaks
+// unbounded memory. 30 minutes is well past any reasonable SSE idle
+// window and covers a user who navigates away from the page mid-run.
+const SESSION_RETENTION_MS = (() => {
+  const raw = process.env.LAUNCHLENS_SESSION_RETENTION_MS;
+  if (!raw) return 30 * 60 * 1000;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 60_000 ? parsed : 30 * 60 * 1000;
+})();
+
 // R216: per-agent wall-clock timeout. A real LLM call or retrieval query
 // can hang on a flaky network or a slow upstream; without a budget the
 // session sits in "running" forever and only an explicit user-cancel
@@ -59,6 +71,33 @@ function isTimeoutAbort(e: unknown): boolean {
 
 export function getAgentTimeoutMs(): number {
   return readAgentTimeoutMs();
+}
+
+/**
+ * R217: sweep terminal sessions older than SESSION_RETENTION_MS from
+ * the in-memory map. Returns the number of sessions evicted. Safe to
+ * call from a setInterval or on demand. Run on a fixed cadence (every
+ * 5 minutes) so the map never grows unbounded.
+ */
+export function pruneStaleSessions(now: number = Date.now()): number {
+  let evicted = 0;
+  for (const [id, session] of sessions) {
+    if (
+      (session.status === "completed" ||
+        session.status === "cancelled" ||
+        session.status === "error") &&
+      now - new Date(session.updatedAt).getTime() > SESSION_RETENTION_MS
+    ) {
+      deleteSession(id);
+      evicted++;
+    }
+  }
+  return evicted;
+}
+
+/** R217: read the current retention budget (ms). */
+export function getSessionRetentionMs(): number {
+  return SESSION_RETENTION_MS;
 }
 
 function createInitialAgentState(id: AgentId): AgentState {

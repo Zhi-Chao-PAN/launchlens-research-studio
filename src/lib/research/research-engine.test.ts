@@ -352,3 +352,65 @@ describe("per-agent wall-clock timeout (R216)", () => {
     expect(v).toBeGreaterThanOrEqual(1000);
   });
 });
+
+/**
+ * R217: in-memory session map eviction. The map holds AbortController
+ * closures and listener Sets; without periodic pruning, a long-running
+ * server leaks. The cron route + a future setInterval call
+ * pruneStaleSessions() to keep the map bounded.
+ */
+describe("session map eviction (R217)", () => {
+  it("evicts terminal sessions older than the retention budget", async () => {
+    const { pruneStaleSessions, getSessionRetentionMs } = await import(
+      "@/lib/research/research-engine"
+    );
+    // Use the default budget so the test isn't sensitive to env changes.
+    const retention = getSessionRetentionMs();
+    expect(retention).toBeGreaterThanOrEqual(60_000);
+
+    // Create a terminal session, then back-date its updatedAt to "old".
+    const { createResearchSession, getResearchSession } = await import(
+      "@/lib/research/research-engine"
+    );
+    const s = createResearchSession("evict me", ["kw"]);
+    s.status = "completed";
+    s.updatedAt = new Date(Date.now() - retention - 60_000).toISOString();
+
+    const evicted = pruneStaleSessions();
+    expect(evicted).toBeGreaterThanOrEqual(1);
+    expect(getResearchSession(s.id)).toBeUndefined();
+  });
+
+  it("keeps terminal sessions within the retention window", async () => {
+    const { pruneStaleSessions, createResearchSession, getResearchSession } = await import(
+      "@/lib/research/research-engine"
+    );
+    const s = createResearchSession("keep me", ["kw"]);
+    s.status = "completed";
+    s.updatedAt = new Date().toISOString();
+
+    const evicted = pruneStaleSessions();
+    expect(getResearchSession(s.id)).toBeDefined();
+    // evicted is per-call; we don't assert == 0 because other tests in
+    // the file may have left old terminal sessions in the map.
+    expect(evicted).toBeGreaterThanOrEqual(0);
+  });
+
+  it("does not evict in-flight sessions", async () => {
+    const { pruneStaleSessions, createResearchSession, getResearchSession } = await import(
+      "@/lib/research/research-engine"
+    );
+    const s = createResearchSession("still running", ["kw"]);
+    s.status = "running";
+    s.updatedAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1d old
+    pruneStaleSessions();
+    // Running sessions are not eligible for pruning — we only reap
+    // terminal ones.
+    expect(getResearchSession(s.id)).toBeDefined();
+  });
+
+  it("exposes the retention budget via getSessionRetentionMs", async () => {
+    const { getSessionRetentionMs } = await import("@/lib/research/research-engine");
+    expect(getSessionRetentionMs()).toBeGreaterThanOrEqual(60_000);
+  });
+});
