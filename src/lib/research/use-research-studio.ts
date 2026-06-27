@@ -19,6 +19,11 @@ export interface ResearchStudioState {
   rateLimitUntilMs: number | null;
   /** Bumped when the rate-limit cooldown expires — focuses the submit button. */
   retryReadyPulse: number;
+  /** R225: number of consecutive rate-limited attempts for the current query.
+   *  Incremented each time the server returns 429; reset to 0 on a successful
+   *  start or an explicit reset. Surfaced in the rate-limit banner so the user
+   *  knows how many retries they've burned. */
+  retryCount: number;
   /** Wall-clock time (ms) at which the next SSE reconnect attempt fires. */
   reconnectUntilMs: number | null;
   /** Current polling interval in ms while in SSE fallback; null when not polling.
@@ -59,6 +64,7 @@ const initialState: ResearchStudioState = {
   agentErrors: {},
   rateLimitUntilMs: null,
   retryReadyPulse: 0,
+  retryCount: 0,
   reconnectUntilMs: null,
   pollingIntervalMs: null,
 };
@@ -563,6 +569,7 @@ export function useResearchStudio() {
           sessionId,
           status: "running",
           rateLimitUntilMs: null,
+          retryCount: 0,
           error: null,
           agentErrors: {},
           reconnectUntilMs: null,
@@ -577,6 +584,7 @@ export function useResearchStudio() {
             status: "idle",
             error: null, // rendered via i18n interpolation in the UI
             rateLimitUntilMs: until,
+            retryCount: prev.retryCount + 1,
             reconnectUntilMs: null,
             pollingIntervalMs: null,
           }));
@@ -683,6 +691,7 @@ export function useResearchStudio() {
     transient: {
       rateLimitUntilMs: state.rateLimitUntilMs,
       retryReadyPulse: state.retryReadyPulse,
+      retryCount: state.retryCount,
       reconnectUntilMs: state.reconnectUntilMs,
       pollingIntervalMs: state.pollingIntervalMs,
     },
@@ -779,6 +788,7 @@ export function studioStateEqual(a: ResearchStudioState, b: ResearchStudioState)
   if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
   if (a.rateLimitUntilMs !== b.rateLimitUntilMs) return false;
   if (a.retryReadyPulse !== b.retryReadyPulse) return false;
+  if (a.retryCount !== b.retryCount) return false;
   if (a.reconnectUntilMs !== b.reconnectUntilMs) return false;
   if (a.pollingIntervalMs !== b.pollingIntervalMs) return false;
   for (const id of ALL_AGENT_IDS) {

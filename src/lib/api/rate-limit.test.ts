@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { checkRateLimit, checkRateLimitForIp, clearRateLimits } from "./rate-limit";
+import { checkRateLimit, checkRateLimitForIp, clearRateLimits, getResearchRateLimitConfig, refreshResearchRateLimitConfig, checkResearchRateLimit } from "./rate-limit";
 
 vi.mock("./trusted-ips", () => ({ isTrustedIp: (ip: string) => ip === "10.0.0.1" }));
 
@@ -92,5 +92,55 @@ describe("clearRateLimits", () => {
     expect(checkRateLimit("k1").allowed).toBe(false);
     clearRateLimits();
     expect(checkRateLimit("k1").allowed).toBe(true);
+  });
+});
+
+describe("research rate-limit env config (R225)", () => {
+  beforeEach(() => {
+    clearRateLimits();
+    delete process.env.LAUNCHLENS_RATE_LIMIT_CAPACITY;
+    delete process.env.LAUNCHLENS_RATE_LIMIT_REFILL_MS;
+    refreshResearchRateLimitConfig();
+  });
+
+  it("defaults to 10 capacity / 60000ms when env unset", () => {
+    const cfg = getResearchRateLimitConfig();
+    expect(cfg.capacity).toBe(10);
+    expect(cfg.refillIntervalMs).toBe(60_000);
+  });
+
+  it("reads capacity + refill from env", () => {
+    process.env.LAUNCHLENS_RATE_LIMIT_CAPACITY = "3";
+    process.env.LAUNCHLENS_RATE_LIMIT_REFILL_MS = "5000";
+    refreshResearchRateLimitConfig();
+    const cfg = getResearchRateLimitConfig();
+    expect(cfg.capacity).toBe(3);
+    expect(cfg.refillIntervalMs).toBe(5000);
+  });
+
+  it("clamps capacity to >= 1 and refill to >= 1000ms", () => {
+    process.env.LAUNCHLENS_RATE_LIMIT_CAPACITY = "0";
+    process.env.LAUNCHLENS_RATE_LIMIT_REFILL_MS = "100";
+    refreshResearchRateLimitConfig();
+    const cfg = getResearchRateLimitConfig();
+    expect(cfg.capacity).toBe(1);
+    expect(cfg.refillIntervalMs).toBe(1000);
+  });
+
+  it("ignores non-numeric env values and falls back to defaults", () => {
+    process.env.LAUNCHLENS_RATE_LIMIT_CAPACITY = "abc";
+    process.env.LAUNCHLENS_RATE_LIMIT_REFILL_MS = "";
+    refreshResearchRateLimitConfig();
+    const cfg = getResearchRateLimitConfig();
+    expect(cfg.capacity).toBe(10);
+    expect(cfg.refillIntervalMs).toBe(60_000);
+  });
+
+  it("checkResearchRateLimit applies the env-tuned config", () => {
+    process.env.LAUNCHLENS_RATE_LIMIT_CAPACITY = "2";
+    refreshResearchRateLimitConfig();
+    expect(checkResearchRateLimit("99.99.99.99").allowed).toBe(true);
+    expect(checkResearchRateLimit("99.99.99.99").allowed).toBe(true);
+    expect(checkResearchRateLimit("99.99.99.99").allowed).toBe(false);
   });
 });

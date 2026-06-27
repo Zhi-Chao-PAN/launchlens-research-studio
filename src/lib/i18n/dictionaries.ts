@@ -213,6 +213,7 @@ export type DictionaryKey =
   | "status.reconnectingIn"
   | "status.polling"
   | "status.pollingEvery"
+  | "status.retryCount"
   | "studio.poweredBy"
   | "studio.researchAgents"
   | "studio.tipReset"
@@ -258,6 +259,7 @@ const en: Dict = {
   "status.reconnectingIn": "Connection lost — reconnecting in {seconds}s…",
   "status.polling": "Reconnected via polling — updates may be delayed.",
   "status.pollingEvery": "Polling every {seconds}s — updates may be delayed.",
+  "status.retryCount": "Retry attempt #{count}",
   "language.label": "Language",
   "agent.market-sizer.name": "Market Sizer",
   "agent.market-sizer.description": "TAM/SAM/SOM estimates, growth trends, market segments",
@@ -467,6 +469,7 @@ const zhCN: Dict = {
   "status.reconnectingIn": "连接中断，{seconds} 秒后尝试重连…",
   "status.polling": "已切换为轮询模式，结果更新可能有延迟。",
   "status.pollingEvery": "已切换为轮询模式，每 {seconds} 秒刷新一次。",
+  "status.retryCount": "第 {count} 次重试",
   "language.label": "语言",
   "agent.market-sizer.name": "市场规模分析师",
   "agent.market-sizer.description": "TAM/SAM/SOM 估算、增长趋势、市场细分",
@@ -676,6 +679,7 @@ const ja: Dict = {
   "status.reconnectingIn": "接続が切断されました。{seconds}秒後に再接続します…",
   "status.polling": "ポーリングにフォールバックしました。更新の反映に少し時間がかかることがあります。",
   "status.pollingEvery": "ポーリング中です。{seconds}秒ごとに更新します。",
+  "status.retryCount": "再試行 {count} 回目",
   "language.label": "言語",
   "agent.market-sizer.name": "マーケットサイザー",
   "agent.market-sizer.description": "TAM/SAM/SOM 推計、成長トレンド、市場セグメント",
@@ -1052,6 +1056,7 @@ const ko: Dict = {
   "status.reconnectingIn": "연결이 끊겼습니다. {seconds}초 후에 다시 연결합니다…",
   "status.polling": "폴링으로 전환되었습니다. 업데이트가 약간 지연될 수 있습니다.",
   "status.pollingEvery": "폴링 중입니다. {seconds}초마다 업데이트합니다.",
+  "status.retryCount": "재시도 {count}회차",
   "studio.poweredBy": "6개의 리서치 에이전트가 함께합니다:",
   "studio.researchAgents": "리서치 에이전트",
   "studio.tipReset": "초기화",

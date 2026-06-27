@@ -327,7 +327,16 @@ export default function Home() {
               {isRateLimited ? "⏳" : isReconnecting ? "🔌" : "📡"}
             </span>
             <span className="flex-1">
-              {isRateLimited && t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
+              {isRateLimited && (
+                <>
+                  {t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
+                  {transient.retryCount > 0 && (
+                    <span className="ml-2 text-xs opacity-75">
+                      {t("status.retryCount", { count: String(transient.retryCount) })}
+                    </span>
+                  )}
+                </>
+              )}
               {!isRateLimited && isReconnecting &&
                 t("status.reconnectingIn", { seconds: String(reconnectRemainingSec) })}
               {!isRateLimited && !isReconnecting && isPollingFallback && t("status.pollingEvery", { seconds: String(pollingSecs) })}

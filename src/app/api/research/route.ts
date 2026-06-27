@@ -1,5 +1,5 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
-import { checkRateLimitForIp } from "@/lib/api/rate-limit";
+import { checkResearchRateLimit } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";
@@ -51,10 +51,13 @@ export async function POST(request: NextRequest) {
   const bearerToken = extractBearerToken(authHeader);
   const hasBypass = bearerToken ? isBypassToken(bearerToken, ip) : false;
 
-  // Rate limit check (skipped for bypass tokens and trusted IPs)
+  // Rate limit check (skipped for bypass tokens and trusted IPs).
+  // R225: uses the env-tuned config (LAUNCHLENS_RATE_LIMIT_CAPACITY /
+  // LAUNCHLENS_RATE_LIMIT_REFILL_MS) so operators can throttle without a
+  // code change; defaults remain 10 requests / 60s.
   const rate = hasBypass
     ? { allowed: true, remaining: Infinity, resetMs: 0 }
-    : checkRateLimitForIp(ip);
+    : checkResearchRateLimit(ip);
   if (!rate.allowed) {
     logRequest(429, false);
     recordAuthAudit("rate_limited", {
