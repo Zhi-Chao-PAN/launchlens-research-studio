@@ -67,6 +67,44 @@ function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// R231: throttle how often a session is re-mirrored to Redis during a run.
+// emitEvent fires on every agent progress step (potentially dozens per run),
+// and each storeSession is an HTTP round-trip to Upstash. Coalescing to at
+// most one write per MIRROR_INTERVAL_MS keeps Redis load bounded while still
+// ensuring a reconnecting instance sees a reasonably fresh session (worst
+// case staleness = MIRROR_INTERVAL_MS). Terminal events bypass the throttle.
+const REDIS_MIRROR_INTERVAL_MS = 2000;
+const redisMirrorPending = new Set<string>();
+const redisMirrorLastFlush = new Map<string, number>();
+
+/**
+ * Best-effort, throttled mirror of the live session into Redis so a
+ * reconnecting SSE client on a different instance hydrates a *current* session
+ * (status + agent progress) instead of the stale "pending" snapshot written at
+ * creation time. No-op when Redis is not configured (storeSession returns
+ * immediately). `force` bypasses the throttle for terminal transitions.
+ */
+function mirrorSessionToRedis(session: ResearchSession, force = false): void {
+  if (!session) return;
+  const id = session.id;
+  if (!force && redisMirrorPending.has(id)) return;
+  const now = Date.now();
+  if (!force) {
+    const last = redisMirrorLastFlush.get(id) ?? 0;
+    if (now - last < REDIS_MIRROR_INTERVAL_MS) return;
+  }
+  redisMirrorLastFlush.set(id, now);
+  redisMirrorPending.add(id);
+  // Fire-and-forget: must never block the agent loop. Re-fetch the session
+  // from the local map at flush time so we mirror its latest state, not a
+  // potentially stale closure capture.
+  setTimeout(() => {
+    redisMirrorPending.delete(id);
+    const live = sessions.get(id);
+    if (live) void storeSession(live);
+  }, force ? 0 : REDIS_MIRROR_INTERVAL_MS);
+}
+
 // R216: detect a timeout-triggered abort vs an external (cancel) abort.
 // We need the distinction so we can label the agent as degraded rather
 // than erroring out the whole session.
@@ -332,6 +370,11 @@ export function deleteSession(id: string): boolean {
   sessionAborts.delete(id);
   cancelledSessions.delete(id);
   sessions.delete(id);
+  // R231: clear the Redis-mirror throttle bookkeeping so a reused id (very
+  // unlikely given random ids, but cheap to be correct) doesn't inherit a
+  // stale throttle window.
+  redisMirrorPending.delete(id);
+  redisMirrorLastFlush.delete(id);
   // Cross-instance: remove from Redis so deleted sessions don't resurface
   // on a future instance. Best-effort.
   void removeSession(id);
@@ -372,6 +415,15 @@ function emitEvent(sessionId: string, event: ResearchEvent): void {
   // Cross-instance fan-out via Redis Pub/Sub — fire-and-forget so the
   // engine loop is never blocked by a Redis publish.
   publishEvent(sessionId, event);
+  // R231: keep the Redis session snapshot fresh so a reconnecting instance
+  // hydrates current progress/status rather than the stale creation snapshot.
+  // Terminal events (complete/cancelled) flush immediately; progress/status
+  // events are coalesced by the throttle.
+  const session = sessions.get(sessionId);
+  if (session) {
+    const isTerminal = event.type === "complete" || event.type === "cancelled";
+    mirrorSessionToRedis(session, isTerminal);
+  }
 }
 
 function updateAgentState(
@@ -707,6 +759,10 @@ export async function runResearchSession(
 
   session.status = "running";
   session.updatedAt = new Date().toISOString();
+  // R231: immediately mirror the "running" transition to Redis (force-flush,
+  // bypassing the throttle) so a reconnecting instance sees the run has
+  // started rather than the stale "pending" creation snapshot.
+  void storeSession(session);
 
   const stepDelay = 300 / (options?.speedMultiplier || 1);
 

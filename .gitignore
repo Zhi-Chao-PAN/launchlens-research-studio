@@ -19,6 +19,8 @@
 
 # production
 /build
+# default output filename of `vercel env pull` — contains secrets, never commit
+/production
 
 # misc
 .DS_Store
