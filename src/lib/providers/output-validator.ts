@@ -85,8 +85,18 @@ const REQUIRED_FIELDS: Record<AgentId, { kind: "string" | "number" | "array" | "
     { key: "channels", kind: "array" },
   ],
   "synthesis": [
-    { key: "summary", kind: "string" },
+    // R209 fix: this previously required a non-existent `summary` field, so
+    // every real synthesis output failed validation and fell back to mock —
+    // the synthesis agent could never return real data. The actual
+    // SynthesisOutput schema uses execSummary, not summary.
+    { key: "execSummary", kind: "string" },
+    { key: "opportunityScore", kind: "number" },
+    { key: "riskScore", kind: "number" },
     { key: "keyInsights", kind: "array" },
+    { key: "topThreeOpportunities", kind: "array" },
+    { key: "topThreeRisks", kind: "array" },
+    { key: "recommendedNextStep", kind: "string" },
+    { key: "launchlensBrief", kind: "string" },
   ],
 };
 

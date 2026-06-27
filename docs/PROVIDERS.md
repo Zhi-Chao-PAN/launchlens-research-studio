@@ -78,6 +78,7 @@ If a real call fails — network error, malformed JSON, or validation failure �
 
 Because the OpenAI adapter targets `{baseUrl}/chat/completions` with a bearer token, it works with any OpenAI-compatible endpoint:
 
+- **MiniMax** *(verified end-to-end, round 209)* — set `OPENAI_BASE_URL=https://api.minimaxi.com/v1`, `OPENAI_MODEL=MiniMax-M3`, and your MiniMax key as `OPENAI_API_KEY`. MiniMax-M3 is a reasoning model that wraps its JSON in `<think>…</think>` blocks; the adapter's `extractJsonObject` strips these automatically, so structured output validates cleanly. MiniMax also offers an Anthropic-compatible gateway at `https://api.minimaxi.com/anthropic` (set `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY`) if you prefer that path.
 - **Azure OpenAI** — set `OPENAI_BASE_URL` to your deployment endpoint and `OPENAI_MODEL` to the deployment name.
 - **Local models** (Ollama, LM Studio, vLLM) — set `OPENAI_BASE_URL=http://localhost:11434/v1` (for Ollama) and any non-empty `OPENAI_API_KEY`.
 

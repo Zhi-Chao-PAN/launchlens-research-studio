@@ -15,6 +15,7 @@ import type { ProviderContext, ProviderFallbackReason, ResearchProvider } from "
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
+import { extractJsonObject } from "@/lib/providers/json-extract";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseOpenAiSse } from "@/lib/utils/sse-reconnect";
 
@@ -148,7 +149,10 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
         }
         let parsed: unknown;
         try {
-          parsed = JSON.parse(text);
+          // Reasoning models (MiniMax-M3, DeepSeek-R1, o1-style) wrap their
+          // JSON in <think>…</think> blocks and/or fences; a bare JSON.parse
+          // would fail on that scaffolding and silently degrade to mock.
+          parsed = extractJsonObject(text);
         } catch {
           reportFallback("parse_error");
           throw new Error("provider returned non-JSON");

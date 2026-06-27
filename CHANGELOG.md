@@ -7,6 +7,30 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **MiniMax provider + reasoning-model JSON extraction + synthesis validator fix (round 209)** —
+  the first real-LLM end-to-end validation. Wired MiniMax (MiniMax-M3) via
+  the OpenAI-compatible adapter and discovered two blockers that made every
+  real call degrade to mock: (1) MiniMax-M3 is a reasoning model that wraps
+  its JSON in `<think>…</think>` blocks, so a bare `JSON.parse` always failed;
+  (2) the output validator required a phantom `summary` field on synthesis
+  output that doesn't exist in the `SynthesisOutput` schema, so every real
+  synthesis call failed validation. New shared `src/lib/providers/json-extract.ts`
+  (`extractJsonObject`) strips `<think>` blocks, fenced code blocks, and
+  trailing prose, scans for the first balanced `{…}`, and tolerates trailing
+  commas — used by both providers before parsing. Fixed the synthesis
+  `REQUIRED_FIELDS` to match the actual schema (execSummary, opportunityScore,
+  riskScore, keyInsights, topThreeOpportunities, topThreeRisks,
+  recommendedNextStep, launchlensBrief). End-to-end verified against the live
+  MiniMax-M3 API: market-sizer and synthesis both return real structured
+  data (trends, segments, citations with real URLs, opportunity/risk scores,
+  launchlensBrief) with `fallback: null` — no mock degradation. `.env.local`
+  added (gitignored) with the MiniMax key; `.env.example` documents the
+  MiniMax wiring (`OPENAI_BASE_URL=https://api.minimaxi.com/v1`,
+  `OPENAI_MODEL=MiniMax-M3`). `docs/PROVIDERS.md` gains a MiniMax section.
+  Tests: 15 `json-extract.test.ts` cases (think blocks, fences, trailing
+  prose, nested braces, escaped quotes, trailing commas, unclosed think) +
+  1 synthesis validator case asserting the real required field. 80 files /
+  1395 tests pass (+16), tsc and build clean, lint 0.
 - **Streaming fallback fix + provider test-connection (round 208)** — closed a
   round-205 gap and added the last major usability affordance. The streaming
   path (taken whenever `onProgress` is set, i.e. every real research run)

@@ -16,6 +16,7 @@ import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconnect";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
+import { extractJsonObject } from "@/lib/providers/json-extract";
 
 export interface AnthropicProviderConfig {
   apiKey: string;
@@ -153,7 +154,11 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
         }
         let parsed: unknown;
         try {
-          parsed = JSON.parse(text);
+          // Reasoning models (MiniMax-M3 via the Anthropic-compatible
+          // gateway, DeepSeek-R1, o1-style) wrap their JSON in
+          // <think>…</think> blocks and/or fences; a bare JSON.parse would
+          // fail on that scaffolding and silently degrade to mock.
+          parsed = extractJsonObject(text);
         } catch {
           reportFallback("parse_error");
           throw new Error("provider returned non-JSON");
