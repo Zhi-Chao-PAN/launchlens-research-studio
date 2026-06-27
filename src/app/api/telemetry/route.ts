@@ -3,6 +3,8 @@ import { getRecentTelemetry, summarizeTelemetry } from "@/lib/telemetry/telemetr
 import { snapshotBreakers } from "@/lib/utils/circuit-breaker";
 import { getRecentRequests } from "@/lib/telemetry/request-log";
 import { requireAdmin } from "@/lib/api/require-admin";
+import { getResearchRateLimitConfig } from "@/lib/api/rate-limit";
+import { getResearchStorageInfo, getDashboardStats } from "@/lib/research/storage";
 
 /**
  * GET /api/telemetry
@@ -11,6 +13,10 @@ import { requireAdmin } from "@/lib/api/require-admin";
  * (FNV-1a of caller IP), UA snippets, request latencies, and circuit-breaker
  * state — all of which is operationally sensitive. Prior to R202 the
  * endpoint was fully open.
+ *
+ * R226: also surfaces the env-tuned rate-limit config + storage/dashboard
+ * stats so the admin System tab can render a complete operational picture
+ * from a single authenticated call.
  */
 export async function GET(request: NextRequest) {
   const auth = requireAdmin(request);
@@ -22,6 +28,9 @@ export async function GET(request: NextRequest) {
     breakers: snapshotBreakers(),
     recent: getRecentTelemetry(limit),
     requests: getRecentRequests(Math.min(limit, 100)),
+    rateLimit: getResearchRateLimitConfig(),
+    storage: getResearchStorageInfo(),
+    dashboard: getDashboardStats(),
   });
 }
 

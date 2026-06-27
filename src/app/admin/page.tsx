@@ -78,6 +78,16 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "tokens" | "audit" | "alerts" | "system" | "research">("dashboard");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string>("");
   const [webhookStats, setWebhookStats] = useState<{ pending: number; maxRetries: number; initialDelayMs: number; maxQueueSize: number } | null>(null);
+  // R226: operational telemetry surfaced in the System tab. Fetched lazily
+  // when the tab is first opened, then refreshed on a 10s interval while it
+  // stays active (slower than the 5s admin poll to avoid hammering telemetry).
+  const [telemetry, setTelemetry] = useState<{
+    summary: { total: number; successRate: number; averageMs: number; byProvider: Record<string, { count: number; ok: number }>; byAgent: Record<string, { count: number; ok: number }> };
+    breakers: Record<string, { failures: number; open: boolean; openedAt: number | null }>;
+    rateLimit: { capacity: number; refillIntervalMs: number };
+    storage: { enabled: boolean; inMemoryCount: number; maxMemoryRuns: number };
+    dashboard: { totalRuns: number; recentRuns: number; totalDurationMs: number; byStatus: { completed: number; failed: number; cancelled: number } };
+  } | null>(null);
   const [newLabel, setNewLabel] = useState("");
   const [newScope, setNewScope] = useState<"admin" | "bypass">("bypass");
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -103,6 +113,28 @@ export default function AdminPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadResearchRuns closes over filters; re-run on filter change only
   }, [activeTab, researchSearch, researchStatusFilter]);
+
+  // R226: load operational telemetry when the System tab is opened, and
+  // refresh on a 10s interval while it stays active. Telemetry is admin-only
+  // and heavier than the list endpoints, so it gets its own slower cadence.
+  useEffect(() => {
+    if (activeTab !== "system" || !token) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await apiCall("/api/telemetry?limit=50");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setTelemetry(data);
+      } catch {
+        // Telemetry is best-effort; leave the previous snapshot in place.
+      }
+    };
+    void load();
+    const interval = setInterval(load, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, token]);
 
   async function loadResearchRuns() {
     try {
@@ -634,6 +666,104 @@ export default function AdminPage() {
             <div className="admin-info-note">
               Trusted IP list is server-side only and not exposed via the API for security reasons.
               Check your deployment environment to see the configured list.
+            </div>
+
+            {/* R226: operational telemetry — rate-limit config, request summary,
+                circuit breakers, and storage/dashboard stats from /api/telemetry. */}
+            <h2>Rate limit</h2>
+            <div className="admin-status-card">
+              <div className="admin-status-row">
+                <span className="admin-status-label">Capacity (requests / window)</span>
+                <span className="admin-status-value">
+                  {telemetry ? telemetry.rateLimit.capacity : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Refill window</span>
+                <span className="admin-status-value">
+                  {telemetry ? (telemetry.rateLimit.refillIntervalMs / 1000) + "s" : "—"}
+                </span>
+              </div>
+            </div>
+            <p className="admin-section-desc">
+              Tunable via <code>LAUNCHLENS_RATE_LIMIT_CAPACITY</code> and{" "}
+              <code>LAUNCHLENS_RATE_LIMIT_REFILL_MS</code>.
+            </p>
+
+            <h2>Request telemetry</h2>
+            <div className="admin-status-card">
+              <div className="admin-status-row">
+                <span className="admin-status-label">Tracked requests</span>
+                <span className="admin-status-value">
+                  {telemetry ? telemetry.summary.total : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Success rate</span>
+                <span className="admin-status-value">
+                  {telemetry ? Math.round(telemetry.summary.successRate * 100) + "%" : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Avg duration</span>
+                <span className="admin-status-value">
+                  {telemetry ? Math.round(telemetry.summary.averageMs) + "ms" : "—"}
+                </span>
+              </div>
+            </div>
+
+            <h2>Circuit breakers</h2>
+            {telemetry && Object.keys(telemetry.breakers).length > 0 ? (
+              <div className="admin-status-card">
+                {Object.entries(telemetry.breakers).map(([key, b]) => (
+                  <div className="admin-status-row" key={key}>
+                    <span className="admin-status-label">{key}</span>
+                    <span className="admin-status-value">
+                      {b.open ? "🔴 Open" : "🟢 Closed"} ({b.failures} failures)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="admin-section-desc">
+                {telemetry ? "No circuit breakers tripped." : "Loading…"}
+              </p>
+            )}
+
+            <h2>Storage &amp; runs</h2>
+            <div className="admin-status-card">
+              <div className="admin-status-row">
+                <span className="admin-status-label">Disk persistence</span>
+                <span className="admin-status-value">
+                  {telemetry ? (telemetry.storage.enabled ? "Enabled" : "In-memory only") : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Runs in memory</span>
+                <span className="admin-status-value">
+                  {telemetry ? `${telemetry.storage.inMemoryCount} / ${telemetry.storage.maxMemoryRuns}` : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Total runs</span>
+                <span className="admin-status-value">
+                  {telemetry ? telemetry.dashboard.totalRuns : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">This week</span>
+                <span className="admin-status-value">
+                  {telemetry ? telemetry.dashboard.recentRuns : "—"}
+                </span>
+              </div>
+              <div className="admin-status-row">
+                <span className="admin-status-label">Status breakdown</span>
+                <span className="admin-status-value">
+                  {telemetry
+                    ? `✓ ${telemetry.dashboard.byStatus.completed} · ✗ ${telemetry.dashboard.byStatus.failed} · ⊘ ${telemetry.dashboard.byStatus.cancelled}`
+                    : "—"}
+                </span>
+              </div>
             </div>
           </section>
         )}
