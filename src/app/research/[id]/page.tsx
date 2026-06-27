@@ -11,6 +11,8 @@ import { parseSynthesis } from "@/lib/research/synthesis-parser";
 import { isRunStarred, toggleStar } from "@/lib/research/starred";
 import { listTemplates, createTemplate } from "@/lib/research/templates";
 import { DetailHeaderSkeleton, CardSkeleton } from "@/components/skeleton/Skeleton";
+import { ActionableError } from "@/components/ui/ActionableError";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { RelatedRuns } from "@/components/related/RelatedRuns";
 import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
@@ -174,6 +176,7 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const [shareError, setShareError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const router = useRouter();
+  const { t } = useLocale();
   const [isRunning, setIsRunning] = useState(false);
   const queryId = params.id;
 
@@ -731,7 +734,7 @@ async function loadRun() {
         shortcut: "b",
         category: "navigation",
         keywords: ["back", "history", "list"],
-        action: () => router.push("/research"),
+        action: () => router.push("/history"),
       },
     ]);
 
@@ -743,7 +746,7 @@ async function loadRun() {
   useHotkeys("r", handleRerun, { ignoreInputs: true, scope: "detail", enabled: !!run && !isRunning });
   useHotkeys("e", () => handleExport("md"), { ignoreInputs: true, scope: "detail", enabled: !!run });
   useHotkeys("c", handleCopyMarkdown, { ignoreInputs: true, scope: "detail", enabled: !!run });
-  useHotkeys("b", () => router.push("/research"), { ignoreInputs: true, scope: "detail" });
+  useHotkeys("b", () => router.push("/history"), { ignoreInputs: true, scope: "detail" });
 
   // Compute reverse citation map
   const sourceCitationMap = useMemo(() => {
@@ -874,9 +877,21 @@ async function loadRun() {
     return (
       <div className="research-detail">
         <div className="research-detail-inner">
-          <div className="error-banner">{error}</div>
-          <p><Link href="/history">← Back to history</Link></p>
-          <p><Link href="/">← Back to studio</Link></p>
+          <ActionableError
+            variant="info"
+            role="status"
+            title={t("errors.notFoundTitle")}
+            detail={
+              <>
+                <p>{error}</p>
+                <p className="mt-1 opacity-90">{t("errors.notFoundHint")}</p>
+              </>
+            }
+            actions={[
+              { label: t("common.backToHistory"), onClick: () => router.push("/history") },
+              { label: t("common.backToStudio"), onClick: () => router.push("/"), variant: "secondary" },
+            ]}
+          />
         </div>
       </div>
     );
@@ -1042,9 +1057,21 @@ async function loadRun() {
 
         <main className="research-detail-main">
         {run?.status === "failed" && run.error && (
-          <div className="research-error">
-            <strong>Error:</strong> {run.error}
-          </div>
+          <ActionableError
+            variant="error"
+            className="mb-4"
+            title={t("errors.failedRunTitle")}
+            detail={
+              <>
+                <p>{run.error}</p>
+                <p className="mt-1 opacity-90">{t("errors.failedRunHint")}</p>
+              </>
+            }
+            actions={[
+              { label: t("common.retry"), onClick: handleRerun },
+              { label: t("common.startNew"), onClick: () => router.push("/"), variant: "secondary" },
+            ]}
+          />
         )}
 
         {synthesis && (

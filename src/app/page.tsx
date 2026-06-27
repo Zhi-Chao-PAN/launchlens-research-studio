@@ -18,6 +18,7 @@ import { ShareButton } from "@/components/report/ShareButton";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { ProviderPill } from "@/components/ui/ProviderPill";
+import { ActionableError } from "@/components/ui/ActionableError";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { useFreezeMode } from "@/lib/perf/use-freeze-mode";
 import { getStarredRunIds } from "@/lib/research/starred";
@@ -280,19 +281,29 @@ export default function Home() {
 
       {hasError && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
-            <span className="text-rose-500 text-xl flex-shrink-0" aria-hidden>⚠️</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-rose-800">{t("errors.startFailed")}</p>
-              <p className="text-xs text-rose-600 mt-0.5 break-words">{state.error}</p>
-            </div>
-            <button
-              onClick={reset}
-              className="text-xs text-rose-700 hover:text-rose-900 font-medium px-2 py-1 rounded hover:bg-rose-100 flex-shrink-0"
-            >
-              Dismiss
-            </button>
-          </div>
+          <ActionableError
+            variant="error"
+            title={t("errors.retryTitle")}
+            detail={
+              <>
+                <p>{state.error}</p>
+                <p className="mt-1 opacity-90">{t("errors.retryHint")}</p>
+              </>
+            }
+            actions={[
+              {
+                label: t("errors.tryAgain"),
+                onClick: () => {
+                  if (state.query) startResearch(state.query, state.keywords ?? []);
+                },
+              },
+              {
+                label: t("errors.dismiss"),
+                onClick: reset,
+                variant: "secondary",
+              },
+            ]}
+          />
         </div>
       )}
 

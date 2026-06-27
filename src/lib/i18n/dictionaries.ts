@@ -129,6 +129,16 @@ export type DictionaryKey =
   | "errors.unauthorized"
   | "errors.cronNotConfigured"
   | "errors.sessionExpired"
+  | "errors.retryTitle"
+  | "errors.retryHint"
+  | "errors.notFoundTitle"
+  | "errors.notFoundHint"
+  | "errors.failedRunTitle"
+  | "errors.failedRunHint"
+  | "errors.tryAgain"
+  | "common.backToHistory"
+  | "common.backToStudio"
+  | "common.startNew"
   | "export.copied"
   | "export.copy"
   | "export.download"
@@ -229,6 +239,16 @@ const en: Dict = {
   "errors.unauthorized": "Unauthorized.",
   "errors.cronNotConfigured": "Scheduled-task endpoint is not configured. Set LAUNCHLENS_CRON_SECRET.",
   "errors.sessionExpired": "Live engine session expired. The completed report is still available in History.",
+  "errors.retryTitle": "Research could not run",
+  "errors.retryHint": "The research session failed to start or recover. Check your connection and try again.",
+  "errors.notFoundTitle": "Research not found",
+  "errors.notFoundHint": "This research may have expired or been deleted. Recent completed reports are still in History.",
+  "errors.failedRunTitle": "This research failed",
+  "errors.failedRunHint": "The run did not complete. Re-run it with the same query, or start a new research.",
+  "errors.tryAgain": "Try again",
+  "common.backToHistory": "Back to history",
+  "common.backToStudio": "Back to studio",
+  "common.startNew": "Start new research",
   "status.loading": "Starting research session",
   "status.running": "Research agents are running",
   "status.completed": "Research complete",
@@ -428,6 +448,16 @@ const zhCN: Dict = {
   "errors.unauthorized": "未授权。",
   "errors.cronNotConfigured": "定时任务端点未配置，请设置 LAUNCHLENS_CRON_SECRET。",
   "errors.sessionExpired": "实时引擎会话已过期，完整报告仍可在历史记录中查看。",
+  "errors.retryTitle": "调研无法运行",
+  "errors.retryHint": "调研会话启动或恢复失败，请检查网络连接后重试。",
+  "errors.notFoundTitle": "未找到该调研",
+  "errors.notFoundHint": "该调研可能已过期或被删除，最近完成的报告仍可在历史记录中查看。",
+  "errors.failedRunTitle": "该调研失败",
+  "errors.failedRunHint": "本次运行未完成，可使用相同查询重新运行，或开始新的调研。",
+  "errors.tryAgain": "重试",
+  "common.backToHistory": "返回历史记录",
+  "common.backToStudio": "返回工作室",
+  "common.startNew": "开始新调研",
   "status.loading": "正在启动调研会话",
   "status.running": "调研智能体运行中",
   "status.completed": "调研完成",
@@ -627,6 +657,16 @@ const ja: Dict = {
   "errors.unauthorized": "認証されていません。",
   "errors.cronNotConfigured": "スケジュールタスクのエンドポイントが設定されていません。LAUNCHLENS_CRON_SECRET を設定してください。",
   "errors.sessionExpired": "ライブエンジンセッションの有効期限が切れました。完成したレポートは履歴から引き続き閲覧できます。",
+  "errors.retryTitle": "リサーチを実行できませんでした",
+  "errors.retryHint": "リサーチセッションを開始または復元できませんでした。接続を確認して再試行してください。",
+  "errors.notFoundTitle": "リサーチが見つかりません",
+  "errors.notFoundHint": "このリサーチは期限切れまたは削除された可能性があります。最近の完了レポートは履歴に残っています。",
+  "errors.failedRunTitle": "このリサーチは失敗しました",
+  "errors.failedRunHint": "実行が完了しませんでした。同じクエリで再実行するか、新しいリサーチを開始してください。",
+  "errors.tryAgain": "再試行",
+  "common.backToHistory": "履歴に戻る",
+  "common.backToStudio": "スタジオに戻る",
+  "common.startNew": "新しいリサーチを開始",
   "status.loading": "リサーチセッションを開始しています",
   "status.running": "リサーチエージェントが実行中です",
   "status.completed": "リサーチ完了",
@@ -928,6 +968,16 @@ const ko: Dict = {
   "errors.unauthorized": "인증되지 않았습니다.",
   "errors.cronNotConfigured": "예약 작업 엔드포인트가 구성되지 않았습니다. LAUNCHLENS_CRON_SECRET을 설정하세요.",
   "errors.sessionExpired": "실시간 엔진 세션이 만료되었습니다. 완료된 리포트는 기록에서 계속 확인할 수 있습니다.",
+  "errors.retryTitle": "리서치를 실행할 수 없습니다",
+  "errors.retryHint": "리서치 세션을 시작하거나 복구하지 못했습니다. 연결을 확인한 후 다시 시도해 주세요.",
+  "errors.notFoundTitle": "리서치를 찾을 수 없습니다",
+  "errors.notFoundHint": "이 리서치는 만료되었거나 삭제되었을 수 있습니다. 최근 완료된 리포트는 기록에서 확인할 수 있습니다.",
+  "errors.failedRunTitle": "이 리서치는 실패했습니다",
+  "errors.failedRunHint": "실행이 완료되지 않았습니다. 동일한 쿼리로 다시 실행하거나 새 리서치를 시작하세요.",
+  "errors.tryAgain": "다시 시도",
+  "common.backToHistory": "기록으로 돌아가기",
+  "common.backToStudio": "스튜디오로 돌아가기",
+  "common.startNew": "새 리서치 시작",
   "export.copied": "복사됨!",
   "export.copy": "복사",
   "export.download": "다운로드",
