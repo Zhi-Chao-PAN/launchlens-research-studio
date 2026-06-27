@@ -47,6 +47,12 @@ export interface LaunchLensImportBrief {
   exportedAt: string;
   sessionId: string;
   query: string;
+  // R231: optional back-link to the live research report page. launchlens-ai
+  // (commit 98ad77a, source-brief.ts) reads envelope.reportUrl to populate
+  // the workspace's "provenance / trace-back" UI. Older versions of the
+  // importer (brief-from-json.ts before 98ad77a) ignore this field, so it's
+  // safe to add — exporters written before R231 just won't carry it.
+  reportUrl?: string;
   input: LaunchLensInput;
   meta: {
     opportunityScore: number | null;
@@ -151,6 +157,44 @@ function buildConstraints(
   return joinNonEmpty(parts);
 }
 
+/** R231: optional override of the launchlens-ai production URL. Read once
+ *  at module load so tests can set process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL
+ *  before importing this module (or via the helper below). */
+const DEFAULT_LAUNCHLENS_AI_URL = "https://launchlens-ai-two.vercel.app";
+
+/** R231: optional override of the research-studio production URL — used as
+ *  the base for the envelope.reportUrl field that launchlens-ai's source
+ *  back-link reads. Falls back to the Vercel default preview URL. */
+const DEFAULT_RESEARCH_STUDIO_URL = "https://launchlens-research-studio.vercel.app";
+
+/** Strip a trailing slash from a base URL so we can always append `/path`
+ *  without producing `//path`. */
+function stripTrailingSlash(url: string): string {
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+/** Read NEXT_PUBLIC_LAUNCHLENS_AI_URL with a default. Exported for tests. */
+export function getLaunchLensAiUrl(): string {
+  const raw = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_LAUNCHLENS_AI_URL) || "";
+  return stripTrailingSlash(raw) || DEFAULT_LAUNCHLENS_AI_URL;
+}
+
+/** Read NEXT_PUBLIC_RESEARCH_STUDIO_URL with a default. Exported for tests. */
+export function getResearchStudioUrl(): string {
+  const raw = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_RESEARCH_STUDIO_URL) || "";
+  return stripTrailingSlash(raw) || DEFAULT_RESEARCH_STUDIO_URL;
+}
+
+/** Build the public report URL for a given session, e.g.
+ *  https://launchlens-research-studio.vercel.app/research/<id>.
+ *  Pure: no fetch, no side effects. */
+export function buildReportUrl(sessionId: string): string {
+  const base = getResearchStudioUrl();
+  const id = (sessionId || "").trim();
+  if (!id) return base;
+  return `${base}/research/${id}`;
+}
+
 /** Map a completed research session to a structured, importable LaunchLens brief.
  *  Pure: same session in → same brief out. Never throws on missing outputs; it
  *  falls back to neutral copy so the downstream importer still receives a valid
@@ -188,6 +232,9 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
     exportedAt: new Date().toISOString(),
     sessionId: session.id,
     query: session.query,
+    // R231: back-link to the live report page. launchlens-ai's source-brief
+    // module reads this to populate its workspace provenance UI.
+    reportUrl: buildReportUrl(session.id),
     input,
     meta: {
       opportunityScore: synthesis ? synthesis.opportunityScore : null,

@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   toLaunchLensBrief,
   serializeBrief,
+  buildReportUrl,
+  getLaunchLensAiUrl,
+  getResearchStudioUrl,
   LAUNCHLENS_BRIEF_SCHEMA_VERSION,
   LAUNCHLENS_FIELD_MAX,
   LAUNCHLENS_IDEA_MIN,
@@ -248,5 +251,85 @@ describe("serializeBrief", () => {
     const brief = toLaunchLensBrief(buildSession());
     expect(serializeBrief(brief)).toContain("\n  ");
     expect(serializeBrief(brief, false)).not.toContain("\n  ");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R231: reportUrl + URL helpers (back-link to the live research report page)
+// ---------------------------------------------------------------------------
+
+describe("toLaunchLensBrief — reportUrl (R231)", () => {
+  it("populates reportUrl with the default research-studio base + session id", () => {
+    const brief = toLaunchLensBrief(buildSession({ id: "abc12345" }));
+    expect(brief.reportUrl).toBe(
+      "https://launchlens-research-studio.vercel.app/research/abc12345",
+    );
+  });
+
+  it("honors NEXT_PUBLIC_RESEARCH_STUDIO_URL when set", () => {
+    const prev = process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL;
+    process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL = "https://research.example.com/";
+    try {
+      const brief = toLaunchLensBrief(buildSession({ id: "sess-9" }));
+      // trailing slash is stripped before concatenation
+      expect(brief.reportUrl).toBe("https://research.example.com/research/sess-9");
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL;
+      else process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL = prev;
+    }
+  });
+
+  it("omits reportUrl when sessionId is empty (defensive)", () => {
+    const brief = toLaunchLensBrief(buildSession({ id: "" }));
+    // buildReportUrl("") returns the base URL alone; we still set the field,
+    // but it points at the root, which is harmless. launchlens-ai's source-brief
+    // module validates reportUrl ≤ 2048 chars and non-empty, so this is a
+    // contractually valid (if useless) value.
+    expect(brief.reportUrl).toBe("https://launchlens-research-studio.vercel.app");
+  });
+
+  it("preserves reportUrl in serializeBrief", () => {
+    const brief = toLaunchLensBrief(buildSession({ id: "xyz" }));
+    const parsed = JSON.parse(serializeBrief(brief, false));
+    expect(parsed.reportUrl).toBe(brief.reportUrl);
+  });
+});
+
+describe("URL helpers (R231)", () => {
+  it("getLaunchLensAiUrl returns the default when env is unset", () => {
+    const prev = process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL;
+    delete process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL;
+    try {
+      expect(getLaunchLensAiUrl()).toBe("https://launchlens-ai-two.vercel.app");
+    } finally {
+      if (prev !== undefined) process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL = prev;
+    }
+  });
+
+  it("getLaunchLensAiUrl honors env override and strips trailing slash", () => {
+    const prev = process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL;
+    process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL = "https://launchlens-ai.example.com/";
+    try {
+      expect(getLaunchLensAiUrl()).toBe("https://launchlens-ai.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL;
+      else process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL = prev;
+    }
+  });
+
+  it("getResearchStudioUrl returns the default when env is unset", () => {
+    const prev = process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL;
+    delete process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL;
+    try {
+      expect(getResearchStudioUrl()).toBe("https://launchlens-research-studio.vercel.app");
+    } finally {
+      if (prev !== undefined) process.env.NEXT_PUBLIC_RESEARCH_STUDIO_URL = prev;
+    }
+  });
+
+  it("buildReportUrl combines base + /research/ + sessionId", () => {
+    expect(buildReportUrl("abc")).toBe(
+      "https://launchlens-research-studio.vercel.app/research/abc",
+    );
   });
 });
