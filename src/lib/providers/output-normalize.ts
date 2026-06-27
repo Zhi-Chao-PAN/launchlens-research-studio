@@ -35,6 +35,17 @@ function asArray<T = unknown>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }
 
+/**
+ * R214: coerce every element of an array to a string. Real LLMs sometimes
+ * smuggle objects, numbers, or `null` into string-typed arrays; without this
+ * the UI renders `[object Object]` or `null` verbatim. Plain `asArray<string>`
+ * only checks Array.isArray — it doesn't touch the elements.
+ */
+function asStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => (typeof x === "string" ? x : x == null ? "" : String(x)));
+}
+
 function asObject<T = Record<string, unknown>>(v: unknown): T {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as T) : ({} as T);
 }
@@ -91,9 +102,14 @@ function normalizeMarketSizer(o: Record<string, unknown>) {
       som: Math.min(asNumber(ms.som), asNumber(ms.sam) || Number.POSITIVE_INFINITY),
       currency: asString(ms.currency, "USD"),
       growthRate: asNumber(ms.growthRate),
-      growthTrend: asString(ms.growthTrend, "stable"),
+      // R214: enum-coerce growthTrend (was a free-form string before, which
+      // could yield "Growing" rendering or a missed colour branch).
+      growthTrend:
+        ms.growthTrend === "accelerating" || ms.growthTrend === "stable" || ms.growthTrend === "declining"
+          ? ms.growthTrend
+          : "stable",
       unit: asString(ms.unit, "USD"),
-      sources: asArray<string>(ms.sources),
+      sources: asStringArray(ms.sources),
       confidence: coerceConfidence(ms.confidence),
     },
     keyTrends: asArray(o.keyTrends).map((t) => {
@@ -130,8 +146,8 @@ function normalizeCompetitorAnalyst(o: Record<string, unknown>) {
         name: asString(x.name, "Unnamed competitor"),
         tagline: asString(x.tagline),
         ...(typeof x.url === "string" && x.url ? { url: x.url } : {}),
-        strengths: asArray<string>(x.strengths),
-        weaknesses: asArray<string>(x.weaknesses),
+        strengths: asStringArray(x.strengths),
+        weaknesses: asStringArray(x.weaknesses),
         pricing: {
           min: asNumber(pr.min),
           max: asNumber(pr.max),
@@ -191,8 +207,8 @@ function normalizePainDetective(o: Record<string, unknown>) {
           text: asString(q.text),
           source: asString(q.source),
         })),
-        userSegments: asArray<string>(x.userSegments),
-        citations: asArray<string>(x.citations),
+        userSegments: asStringArray(x.userSegments),
+        citations: asStringArray(x.citations),
       };
     }),
     unmetNeeds: asArray(o.unmetNeeds).map((n) => {
@@ -208,8 +224,8 @@ function normalizePainDetective(o: Record<string, unknown>) {
       return {
         name: asString(x.name, "Unnamed persona"),
         role: asString(x.role),
-        goals: asArray<string>(x.goals),
-        frustrations: asArray<string>(x.frustrations),
+        goals: asStringArray(x.goals),
+        frustrations: asStringArray(x.frustrations),
       };
     }),
     citations: asArray(o.citations).map(normalizeCitation),
@@ -245,7 +261,7 @@ function normalizePricingScout(o: Record<string, unknown>) {
               period === "monthly" || period === "yearly" || period === "one-time" || period === "usage"
                 ? period
                 : "monthly",
-            features: asArray<string>(y.features),
+            features: asStringArray(y.features),
             target: asString(y.target),
           };
         }),
@@ -256,7 +272,7 @@ function normalizePricingScout(o: Record<string, unknown>) {
       return {
         model: asString(x.model, "Unknown model"),
         prevalence: asNumber(x.prevalence),
-        examples: asArray<string>(x.examples),
+        examples: asStringArray(x.examples),
       };
     }),
     willingnessToPay: asArray(o.willingnessToPay).map((w) => {
@@ -269,10 +285,20 @@ function normalizePricingScout(o: Record<string, unknown>) {
     }),
     recommendations: asArray(o.recommendations).map((r) => {
       const x = asObject<Record<string, unknown>>(r);
+      const period = x.period;
       return {
         tier: asString(x.tier, "Tier"),
         price: asNumber(x.price),
         rationale: asString(x.rationale),
+        // R214: the PricingScoutReport.tsx UI reads `rec.period` to label
+        // its pricing line ("per user / month" etc.) but the schema had no
+        // `period` field on recommendations. The schema is the contract;
+        // we mirror the competitor-tier period enum here so the UI label
+        // becomes meaningful for real runs.
+        period:
+          period === "monthly" || period === "yearly" || period === "one-time" || period === "usage"
+            ? period
+            : "monthly",
       };
     }),
     citations: asArray(o.citations).map(normalizeCitation),
@@ -307,7 +333,7 @@ function normalizeChannelScout(o: Record<string, unknown>) {
             ? effectiveness
             : "unknown",
         audience: asString(x.audience),
-        keyPlatforms: asArray<string>(x.keyPlatforms),
+        keyPlatforms: asStringArray(x.keyPlatforms),
         notes: asString(x.notes),
       };
     }),
@@ -361,7 +387,7 @@ function normalizeSynthesis(o: Record<string, unknown>) {
       const x = asObject<Record<string, unknown>>(k);
       return {
         insight: asString(x.insight),
-        supportingAgents: asArray<string>(x.supportingAgents),
+        supportingAgents: asStringArray(x.supportingAgents),
         confidence: coerceConfidence(x.confidence),
       };
     }),

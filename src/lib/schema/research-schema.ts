@@ -111,7 +111,16 @@ export interface PricingScoutOutput {
   competitorPricing: { competitor: string; tiers: PricePoint[] }[];
   monetizationModels: { model: string; prevalence: number; examples: string[] }[];
   willingnessToPay: { segment: string; estimate: number; confidence: ConfidenceLevel }[];
-  recommendations: { tier: string; price: number; rationale: string }[];
+  recommendations: {
+    tier: string;
+    price: number;
+    rationale: string;
+    // R214: PricingScoutReport reads `rec.period` to label the price line
+    // (e.g. "per user / month"). Previously the field existed only in the
+    // UI; the schema didn't expose it and the normalizer didn't produce it,
+    // so every run fell through to the hardcoded "per user / month" label.
+    period?: "monthly" | "yearly" | "one-time" | "usage";
+  }[];
   citations: SourceCitation[];
 }
 

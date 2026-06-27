@@ -22,7 +22,16 @@ const DIFFICULTY_STYLE = {
 
 function formatPrice(min: number, max: number, currency: string): string {
   const sym = currency === "USD" ? "$" : currency + " ";
-  return `${sym}${min}–${sym}${max}`;
+  // R214: defend against non-finite prices. The schema requires numbers but
+  // historical runs in storage may have NaN if a malformed LLM response
+  // bypassed validation; the prior version rendered "$NaN–$NaN". Match the
+  // R210 MarketSizer / PricingScout pattern: coerce to finite, fall back to
+  // a question mark when both bounds are non-finite.
+  const safeMin = typeof min === "number" && Number.isFinite(min) ? min : NaN;
+  const safeMax = typeof max === "number" && Number.isFinite(max) ? max : NaN;
+  const lo = Number.isFinite(safeMin) ? String(safeMin) : "?";
+  const hi = Number.isFinite(safeMax) ? String(safeMax) : "?";
+  return `${sym}${lo}–${sym}${hi}`;
 }
 
 export function CompetitorAnalystReport({ output }: { output: any }) {

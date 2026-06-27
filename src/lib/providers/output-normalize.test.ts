@@ -283,3 +283,121 @@ describe("normalizeAgentOutput (R210 defensive backstop)", () => {
     expect(() => normalizeAgentOutput("market-sizer", [1, 2, 3])).not.toThrow();
   });
 });
+
+/**
+ * R214: stronger element coercion in string-typed arrays, enum-coerced
+ * growthTrend, and rec.period surfaced from schema into normalizer.
+ */
+describe("normalizeAgentOutput (R214 string-array + enum + period)", () => {
+  it("coerces non-string elements in competitor.strengths to strings", () => {
+    const out = asAny(normalizeAgentOutput("competitor-analyst", {
+      agent: "competitor-analyst",
+      competitors: [
+        {
+          id: "c1",
+          name: "X",
+          strengths: ["ok", { tag: "fast" }, 42, null],
+          weaknesses: [{}, "missing"],
+          pricing: { min: 1, max: 2, model: "saas" },
+          positioning: "mid-market",
+        },
+      ],
+    })) as {
+      competitors: Array<{ strengths: string[]; weaknesses: string[] }>;
+    };
+    // Every element must be a string (no [object Object], no null).
+    expect(out.competitors[0].strengths).toEqual(["ok", "[object Object]", "42", ""]);
+    expect(out.competitors[0].weaknesses).toEqual(["[object Object]", "missing"]);
+    for (const s of out.competitors[0].strengths) {
+      expect(typeof s).toBe("string");
+    }
+  });
+
+  it("coerces non-string elements in pain-detective.userSegments / goals / frustrations", () => {
+    const out = asAny(normalizeAgentOutput("pain-detective", {
+      agent: "pain-detective",
+      painPoints: [
+        {
+          id: "p1",
+          pain: "slow",
+          userSegments: ["devs", { role: "ops" }, 99],
+        },
+      ],
+      userPersonas: [
+        {
+          name: "Alice",
+          goals: ["ship", { q: "fast" }],
+          frustrations: [null, "wai\u0301t"],
+        },
+      ],
+    })) as {
+      painPoints: Array<{ userSegments: string[] }>;
+      userPersonas: Array<{ goals: string[]; frustrations: string[] }>;
+    };
+    expect(out.painPoints[0].userSegments).toEqual(["devs", "[object Object]", "99"]);
+    expect(out.userPersonas[0].goals).toEqual(["ship", "[object Object]"]);
+    expect(out.userPersonas[0].frustrations).toEqual(["", "wai\u0301t"]);
+  });
+
+  it("enum-coerces marketSize.growthTrend (R214)", () => {
+    const valid = asAny(normalizeAgentOutput("market-sizer", {
+      agent: "market-sizer",
+      marketSize: { tam: 1, sam: 1, som: 1, growthTrend: "accelerating" },
+    })) as { marketSize: { growthTrend: string } };
+    expect(valid.marketSize.growthTrend).toBe("accelerating");
+
+    const invalid = asAny(normalizeAgentOutput("market-sizer", {
+      agent: "market-sizer",
+      marketSize: { tam: 1, sam: 1, som: 1, growthTrend: "growing" },
+    })) as { marketSize: { growthTrend: string } };
+    expect(invalid.marketSize.growthTrend).toBe("stable");
+  });
+
+  it("normalizer produces rec.period enum (R214)", () => {
+    const out = asAny(normalizeAgentOutput("pricing-scout", {
+      agent: "pricing-scout",
+      recommendations: [
+        { tier: "Free", price: 0, period: "monthly" },
+        { tier: "Pro", price: 49, period: "yearly" },
+        { tier: "Custom", price: 9999 }, // no period → default monthly
+        { tier: "API", price: 0.01, period: "bogus" }, // bad period → monthly
+      ],
+    })) as {
+      recommendations: Array<{ tier: string; period: string }>;
+    };
+    expect(out.recommendations[0].period).toBe("monthly");
+    expect(out.recommendations[1].period).toBe("yearly");
+    expect(out.recommendations[2].period).toBe("monthly");
+    expect(out.recommendations[3].period).toBe("monthly");
+  });
+
+  it("coerces non-string elements in synthesis.supportingAgents", () => {
+    const out = asAny(normalizeAgentOutput("synthesis", {
+      agent: "synthesis",
+      opportunityScore: 50,
+      riskScore: 30,
+      keyInsights: [
+        { insight: "x", supportingAgents: ["market-sizer", { id: "pain-detective" }, 7] },
+      ],
+    })) as { keyInsights: Array<{ supportingAgents: string[] }> };
+    expect(out.keyInsights[0].supportingAgents).toEqual([
+      "market-sizer",
+      "[object Object]",
+      "7",
+    ]);
+  });
+
+  it("coerces non-string elements in channel-scout.keyPlatforms", () => {
+    const out = asAny(normalizeAgentOutput("channel-scout", {
+      agent: "channel-scout",
+      channels: [
+        {
+          name: "Twitter",
+          audience: "devs",
+          keyPlatforms: ["web", { v: "ios" }, null],
+        },
+      ],
+    })) as { channels: Array<{ keyPlatforms: string[] }> };
+    expect(out.channels[0].keyPlatforms).toEqual(["web", "[object Object]", ""]);
+  });
+});

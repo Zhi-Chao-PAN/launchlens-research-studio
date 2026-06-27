@@ -94,11 +94,22 @@ export function PricingScoutReport({ output }: { output: any }) {
         <div className={`grid gap-3 ${data.recommendations.length === 1 ? "grid-cols-1" : data.recommendations.length === 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
           {data.recommendations.map((rec: any, i: number) => {
             const grad = TIER_COLOR[i % TIER_COLOR.length];
+            // R214: route rec.price through formatPrice so a NaN price renders
+            // as "—" instead of "$NaN"; surface the period enum the normalizer
+            // produces, with a clear label per period.
+            const periodLabels: Record<string, string> = {
+              monthly: "per user / month",
+              yearly: "per user / year",
+              "one-time": "one-time",
+              usage: "per usage",
+            };
+            const periodLabel = periodLabels[rec.period] || "per user / month";
+            const currency = rec.currency || "USD";
             return (
               <div key={i} className={`p-4 bg-gradient-to-br ${grad} rounded-xl text-white shadow-md`}>
                 <p className="text-xs uppercase tracking-wide font-semibold opacity-90">{rec.tier}</p>
-                <p className="text-3xl font-bold mt-1">${rec.price}</p>
-                <p className="text-xs opacity-90 mt-1">{rec.period || "per user / month"}</p>
+                <p className="text-3xl font-bold mt-1">{formatPrice(rec.price, currency)}</p>
+                <p className="text-xs opacity-90 mt-1">{periodLabel}</p>
                 <p className="text-xs opacity-80 mt-2 italic">{rec.rationale}</p>
               </div>
             );

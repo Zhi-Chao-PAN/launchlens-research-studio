@@ -21,7 +21,12 @@ const COLOR_BG: Record<NonNullable<MeterProps["color"]>, string> = {
 };
 
 export function Meter({ value, max = 5, label, color = "emerald", size = "sm", showValue = true }: MeterProps) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  // R214: defend against non-finite inputs (NaN, undefined cast to number)
+  // so the bar width CSS never collapses to "NaN%". Math.max/min already
+  // coerces undefined to NaN here, so the extra Number.isFinite gate is
+  // necessary.
+  const safe = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const pct = Math.max(0, Math.min(100, (safe / max) * 100));
   const heights = { sm: "h-1.5", md: "h-2", lg: "h-3" };
 
   return (
@@ -71,7 +76,13 @@ export function Donut({ value, label, color, size = 96 }: DonutProps) {
   const stroke = 8;
   const radius = (size - stroke) / 2;
   const circ = 2 * Math.PI * radius;
-  const offset = circ - (Math.max(0, Math.min(100, value)) / 100) * circ;
+  // R214: SynthesisReport passes opportunityScore / riskScore directly into
+  // Donut. The normalizer clamps to 0-100, but if a future provider bypasses
+  // normalization (mock variants, persona mutations, etc.) we still don't
+  // want a NaN donut centre. Coerce to finite and clamp here.
+  const safe = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const clamped = Math.max(0, Math.min(100, safe));
+  const offset = circ - (clamped / 100) * circ;
 
   return (
     <div className="flex flex-col items-center">
@@ -99,7 +110,7 @@ export function Donut({ value, label, color, size = 96 }: DonutProps) {
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xl font-bold text-slate-800">{Math.round(value)}</span>
+          <span className="text-xl font-bold text-slate-800">{Math.round(clamped)}</span>
         </div>
       </div>
       <p className="text-xs text-slate-500 mt-1 font-medium">{label}</p>
