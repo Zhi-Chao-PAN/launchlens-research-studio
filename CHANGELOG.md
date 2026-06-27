@@ -7,6 +7,17 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Degraded-data session banner (round 207)** — the round-205 per-agent
+  "demo" badge only showed during the run; a user reading the completed
+  report had no session-level indication that some sections were
+  illustrative mock data rather than authoritative. Added an amber banner
+  at the top of the report view that appears when a completed run has any
+  degraded agents, naming the count and explaining the cause + remedy
+  (check API key / provider config, re-run). Fully translated across all
+  four locales (en/zh-CN/ja/ko) via new `report.degradedBanner.title` and
+  `report.degradedBanner.body` dictionary keys. The banner is gated on
+  `!isRunning && degradedCount > 0` so it never appears mid-run. 79 files
+  / 1377 tests pass, tsc and build clean, lint 0.
 - **Synthesis upstream integrity + model capture (round 206)** — fixed a
   silent data-corruption bug in the synthesis agent's user prompt. The
   previous `buildUserPrompt` stringified the entire five-agent upstream

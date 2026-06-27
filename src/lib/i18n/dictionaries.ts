@@ -114,6 +114,8 @@ export type DictionaryKey =
   | "provider.breakerOpen"
   | "provider.mock"
   | "provider.streaming"
+  | "report.degradedBanner.body"
+  | "report.degradedBanner.title"
   | "search.matchCount"
   | "search.next"
   | "search.noMatches"
@@ -200,6 +202,8 @@ const en: Dict = {
   "provider.mock": "Mock provider",
   "provider.breakerOpen": "Provider breaker open",
   "provider.streaming": "stream",
+  "report.degradedBanner.title": "{count} agent(s) showing demo data",
+  "report.degradedBanner.body": "Some agents could not reach the real LLM provider and fell back to illustrative mock data. Check your API key and provider configuration, then re-run for authoritative results.",
   "crash.title": "Something went wrong",
   "crash.body": "An unexpected error occurred. Your work hasn't been lost.",
   "crash.tryAgain": "Try again",
@@ -334,6 +338,8 @@ const zhCN: Dict = {
   "provider.mock": "模拟模型",
   "provider.breakerOpen": "提供方熔断已开启",
   "provider.streaming": "流式",
+  "report.degradedBanner.title": "{count} 个智能体显示示例数据",
+  "report.degradedBanner.body": "部分智能体无法连接真实 LLM 提供方，已回退到示例数据。请检查 API 密钥与提供方配置后重新运行以获取权威结果。",
   "crash.title": "出错了",
   "crash.body": "发生了意外错误。你的工作并未丢失。",
   "crash.tryAgain": "重试",
@@ -468,6 +474,8 @@ const ja: Dict = {
   "provider.mock": "モックプロバイダ",
   "provider.breakerOpen": "プロバイダ遮断中",
   "provider.streaming": "ストリーム",
+  "report.degradedBanner.title": "{count} 個のエージェントがデモデータを表示中",
+  "report.degradedBanner.body": "一部のエージェントが実際の LLM プロバイダに接続できず、例示用のモックデータにフォールバックしました。API キーとプロバイダ設定を確認し、信頼できる結果を得るために再実行してください。",
   "crash.title": "エラーが発生しました",
   "crash.body": "予期しないエラーが発生しました。作業は失われていません。",
   "crash.tryAgain": "再試行",
@@ -653,6 +661,8 @@ const ko: Dict = {
   "provider.breakerOpen": "프로바이더 차단기 열림",
   "provider.mock": "목업 모델",
   "provider.streaming": "스트리밍",
+  "report.degradedBanner.title": "{count}개 에이전트가 데모 데이터 표시 중",
+  "report.degradedBanner.body": "일부 에이전트가 실제 LLM 프로바이더에 연결하지 못해 예시용 목업 데이터로 폴백했습니다. API 키와 프로바이더 설정을 확인한 뒤 신뢰할 수 있는 결과를 위해 다시 실행하세요.",
   "search.matchCount": "of",
   "search.next": "다음",
   "search.noMatches": "일치하는 항목 없음",

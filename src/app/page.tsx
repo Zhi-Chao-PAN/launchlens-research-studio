@@ -33,6 +33,12 @@ export default function Home() {
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
   const hasError = state.status === "error" && !!state.error;
+  // R205: count agents whose real-provider call degraded to mock, so the
+  // completed report can surface a session-level "demo data" banner. Without
+  // this a user reading the final report would have no idea some sections
+  // are illustrative rather than authoritative.
+  const degradedAgentIds = allAgentIds.filter((id) => state.agents[id]?.degraded);
+  const degradedCount = degradedAgentIds.length;
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     setNowMs(Date.now());
@@ -316,6 +322,31 @@ export default function Home() {
       )}
 
       <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {/* R205: when the completed run has agents that degraded to demo data,
+            surface a session-level banner so a reader of the report knows some
+            sections are illustrative. Per-agent "demo" badges exist on the
+            AgentCards during the run, but the final report view would otherwise
+            hide that context. */}
+        {!isRunning && degradedCount > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3"
+          >
+            <span className="text-amber-500 text-lg flex-shrink-0" aria-hidden>⚠️</span>
+            <div className="flex-1 min-w-0 text-sm text-amber-800">
+              <p className="font-medium">
+                {t("report.degradedBanner.title", "{count} agent(s) showing demo data", { count: String(degradedCount) })}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {t(
+                  "report.degradedBanner.body",
+                  "Some agents could not reach the real LLM provider and fell back to illustrative mock data. Check your API key and provider configuration, then re-run for authoritative results.",
+                )}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.status === "loading" && t("status.loading")}
           {state.status === "running" && !isReconnecting && !isPollingFallback && t("status.running")}
