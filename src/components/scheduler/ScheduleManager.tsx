@@ -4,6 +4,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 type ScheduleInterval = "hourly" | "daily" | "weekly" | "interval";
 type ScheduleStatus = "active" | "paused";
@@ -37,36 +38,13 @@ interface SchedulerStats {
   totalRuns: number;
 }
 
-const formatInterval = (s: ResearchSchedule): string => {
-  switch (s.interval) {
-    case "hourly": return "每小时";
-    case "daily": return `每天 ${String(s.hourOfDay ?? 9).padStart(2, "0")}:00`;
-    case "weekly": {
-      const days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-      return `${days[s.dayOfWeek ?? 1]} ${String(s.hourOfDay ?? 9).padStart(2, "0")}:00`;
-    }
-    case "interval": return `每 ${s.intervalMinutes ?? 60} 分钟`;
-    default: return "未知";
-  }
-};
-
-const formatTime = (ts?: number): string => {
-  if (!ts) return "—";
-  return new Date(ts).toLocaleString("zh-CN", {
-    month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  });
-};
-
-const statusLabel = (s: ScheduleStatus): string =>
-  s === "active" ? "运行中" : "已暂停";
-
 const statusClass = (s: ScheduleStatus): string =>
   s === "active" ? "sch-status-active" : "sch-status-paused";
 
 export function ScheduleManager() {
   const { showToast } = useToast();
   const { askConfirm, dialog: confirmDialog } = useConfirm();
+  const { t, locale } = useLocale();
   const [schedules, setSchedules] = useState<ResearchSchedule[]>([]);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -81,6 +59,36 @@ export function ScheduleManager() {
   const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [hourOfDay, setHourOfDay] = useState(9);
   const [dayOfWeek, setDayOfWeek] = useState(1);
+
+  const dayKeys = [
+    "schedule.daySun", "schedule.dayMon", "schedule.dayTue",
+    "schedule.dayWed", "schedule.dayThu", "schedule.dayFri", "schedule.daySat",
+  ];
+
+  const formatInterval = (s: ResearchSchedule): string => {
+    const hh = String(s.hourOfDay ?? 9).padStart(2, "0");
+    switch (s.interval) {
+      case "hourly": return t("schedule.intervalHourlyShort", "Hourly");
+      case "daily": return t("schedule.intervalDailyShort", "Daily at {hh}:00", { hh });
+      case "weekly": {
+        const day = t(dayKeys[s.dayOfWeek ?? 1], dayKeys[s.dayOfWeek ?? 1]);
+        return t("schedule.intervalWeeklyShort", "{day} {hh}:00", { day, hh });
+      }
+      case "interval": return t("schedule.intervalMinutesShort", "Every {minutes} min", { minutes: String(s.intervalMinutes ?? 60) });
+      default: return t("schedule.intervalUnknown", "Unknown");
+    }
+  };
+
+  const formatTime = (ts?: number): string => {
+    if (!ts) return "—";
+    return new Date(ts).toLocaleString(locale, {
+      month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  const statusLabel = (s: ScheduleStatus): string =>
+    s === "active" ? t("schedule.statusActive", "Active") : t("schedule.statusPaused", "Paused");
 
   const loadSchedules = useCallback(async () => {
     try {
@@ -131,7 +139,7 @@ export function ScheduleManager() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim() || "未命名定时研究",
+          name: name.trim() || t("schedule.untitled", "Untitled schedule"),
           query: query.trim(),
           keywords: kwList,
           interval,
@@ -174,8 +182,8 @@ export function ScheduleManager() {
 
   const handleDelete = (id: string) => {
     askConfirm(
-      "Delete scheduled research?",
-      "This schedule will stop running permanently.",
+      t("schedule.deleteConfirmTitle", "Delete scheduled research?"),
+      t("schedule.deleteConfirmBody", "This schedule will stop running permanently."),
       () => handleDeleteConfirm(id),
     );
   };
@@ -220,22 +228,22 @@ export function ScheduleManager() {
       )}
       <div className="sch-header">
         <div className="sch-header-left">
-          <h2 className="sch-title">定时研究</h2>
-          <p className="sch-subtitle">设置周期性自动研究，持续跟踪变化</p>
+          <h2 className="sch-title">{t("schedule.title", "Scheduled research")}</h2>
+          <p className="sch-subtitle">{t("schedule.subtitle", "Set up recurring automatic research to track changes over time.")}</p>
         </div>
         {stats && (
           <div className="sch-stats">
             <span className="sch-stat">
-              <strong>{stats.total}</strong> 总计
+              <strong>{stats.total}</strong> {t("schedule.statTotal", "Total")}
             </span>
             <span className="sch-stat sch-stat-active">
-              <strong>{stats.active}</strong> 运行中
+              <strong>{stats.active}</strong> {t("schedule.statActive", "Active")}
             </span>
             <span className="sch-stat sch-stat-paused">
-              <strong>{stats.paused}</strong> 已暂停
+              <strong>{stats.paused}</strong> {t("schedule.statPaused", "Paused")}
             </span>
             <span className="sch-stat sch-stat-runs">
-              <strong>{stats.totalRuns}</strong> 累计运行
+              <strong>{stats.totalRuns}</strong> {t("schedule.statRuns", "Total runs")}
             </span>
           </div>
         )}
@@ -246,18 +254,18 @@ export function ScheduleManager() {
           className="btn btn-secondary sch-new-btn"
           onClick={() => setShowForm(true)}
         >
-          + 新建定时研究
+          {t("schedule.new", "+ New schedule")}
         </button>
       ) : (
         <form className="sch-form" onSubmit={handleCreate}>
           <div className="sch-form-row">
             <div className="form-group">
-              <label>名称</label>
+              <label>{t("schedule.nameLabel", "Name")}</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="每日市场扫描"
+                placeholder={t("schedule.namePlaceholder", "Daily market scan")}
                 className="form-input"
                 maxLength={120}
               />
@@ -265,12 +273,12 @@ export function ScheduleManager() {
           </div>
 
           <div className="form-group">
-            <label>研究问题</label>
+            <label>{t("schedule.queryLabel", "Research query")}</label>
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="AI 行业最新动态"
+              placeholder={t("schedule.queryPlaceholder", "Latest AI industry trends")}
               className="form-input"
               maxLength={500}
               required
@@ -278,34 +286,34 @@ export function ScheduleManager() {
           </div>
 
           <div className="form-group">
-            <label>关键词（逗号分隔，可选）</label>
+            <label>{t("schedule.keywordsLabel", "Keywords (comma-separated, optional)")}</label>
             <input
               type="text"
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
-              placeholder="市场趋势, 竞争格局"
+              placeholder={t("schedule.keywordsPlaceholder", "market trends, competitive landscape")}
               className="form-input"
             />
           </div>
 
           <div className="sch-form-row">
             <div className="form-group">
-              <label>频率</label>
+              <label>{t("schedule.frequencyLabel", "Frequency")}</label>
               <select
                 value={interval}
                 onChange={(e) => setInterval(e.target.value as ScheduleInterval)}
                 className="form-select"
               >
-                <option value="hourly">每小时</option>
-                <option value="daily">每天</option>
-                <option value="weekly">每周</option>
-                <option value="interval">自定义（分钟）</option>
+                <option value="hourly">{t("schedule.intervalHourly", "Hourly")}</option>
+                <option value="daily">{t("schedule.intervalDaily", "Daily")}</option>
+                <option value="weekly">{t("schedule.intervalWeekly", "Weekly")}</option>
+                <option value="interval">{t("schedule.intervalCustom", "Custom (minutes)")}</option>
               </select>
             </div>
 
             {interval === "interval" && (
               <div className="form-group">
-                <label>间隔（分钟）</label>
+                <label>{t("schedule.intervalMinutesLabel", "Interval (minutes)")}</label>
                 <input
                   type="number"
                   min={1}
@@ -319,7 +327,7 @@ export function ScheduleManager() {
 
             {(interval === "daily" || interval === "weekly") && (
               <div className="form-group">
-                <label>时间（时）</label>
+                <label>{t("schedule.hourLabel", "Time (hour)")}</label>
                 <input
                   type="number"
                   min={0}
@@ -333,19 +341,19 @@ export function ScheduleManager() {
 
             {interval === "weekly" && (
               <div className="form-group">
-                <label>星期</label>
+                <label>{t("schedule.dayOfWeekLabel", "Day of week")}</label>
                 <select
                   value={dayOfWeek}
                   onChange={(e) => setDayOfWeek(parseInt(e.target.value))}
                   className="form-select"
                 >
-                  <option value={0}>周日</option>
-                  <option value={1}>周一</option>
-                  <option value={2}>周二</option>
-                  <option value={3}>周三</option>
-                  <option value={4}>周四</option>
-                  <option value={5}>周五</option>
-                  <option value={6}>周六</option>
+                  <option value={0}>{t("schedule.daySun", "Sun")}</option>
+                  <option value={1}>{t("schedule.dayMon", "Mon")}</option>
+                  <option value={2}>{t("schedule.dayTue", "Tue")}</option>
+                  <option value={3}>{t("schedule.dayWed", "Wed")}</option>
+                  <option value={4}>{t("schedule.dayThu", "Thu")}</option>
+                  <option value={5}>{t("schedule.dayFri", "Fri")}</option>
+                  <option value={6}>{t("schedule.daySat", "Sat")}</option>
                 </select>
               </div>
             )}
@@ -358,14 +366,14 @@ export function ScheduleManager() {
               onClick={resetForm}
               disabled={loading}
             >
-              取消
+              {t("schedule.cancel", "Cancel")}
             </button>
             <button
               type="submit"
               className="btn btn-primary"
               disabled={loading || !query.trim()}
             >
-              {loading ? "创建中..." : "创建定时研究"}
+              {loading ? t("schedule.creating", "Creating...") : t("schedule.create", "Create schedule")}
             </button>
           </div>
         </form>
@@ -375,8 +383,8 @@ export function ScheduleManager() {
       <div className="sch-list">
         {schedules.length === 0 ? (
           <div className="sch-empty">
-            <p>还没有定时研究</p>
-            <p className="sch-empty-hint">创建一个，让研究自动跑起来</p>
+            <p>{t("schedule.empty", "No scheduled research yet")}</p>
+            <p className="sch-empty-hint">{t("schedule.emptyHint", "Create one and let research run automatically.")}</p>
           </div>
         ) : (
           schedules.map((s) => (
@@ -393,26 +401,26 @@ export function ScheduleManager() {
 
               <div className="sch-card-meta">
                 <div className="sch-meta-item">
-                  <span className="sch-meta-label">频率</span>
+                  <span className="sch-meta-label">{t("schedule.metaFrequency", "Frequency")}</span>
                   <span className="sch-meta-value">{formatInterval(s)}</span>
                 </div>
                 <div className="sch-meta-item">
-                  <span className="sch-meta-label">下次运行</span>
+                  <span className="sch-meta-label">{t("schedule.metaNextRun", "Next run")}</span>
                   <span className="sch-meta-value">{formatTime(s.nextRunAt)}</span>
                 </div>
                 <div className="sch-meta-item">
-                  <span className="sch-meta-label">上次运行</span>
+                  <span className="sch-meta-label">{t("schedule.metaLastRun", "Last run")}</span>
                   <span className="sch-meta-value">{formatTime(s.lastRunAt)}</span>
                 </div>
                 <div className="sch-meta-item">
-                  <span className="sch-meta-label">累计</span>
+                  <span className="sch-meta-label">{t("schedule.metaTotal", "Total")}</span>
                   <span className="sch-meta-value">
-                    {s.totalRuns} 次
+                    {s.totalRuns} {t("schedule.runsUnit", "runs")}
                     {s.successRuns > 0 && (
-                      <span className="sch-success"> · {s.successRuns}成功</span>
+                      <span className="sch-success"> · {s.successRuns} {t("schedule.successSuffix", "succeeded")}</span>
                     )}
                     {s.failedRuns > 0 && (
-                      <span className="sch-fail"> · {s.failedRuns}失败</span>
+                      <span className="sch-fail"> · {s.failedRuns} {t("schedule.failedSuffix", "failed")}</span>
                     )}
                   </span>
                 </div>
@@ -422,21 +430,21 @@ export function ScheduleManager() {
                 <button
                   className="btn btn-sm btn-secondary"
                   onClick={() => handleTrigger(s.id)}
-                  title="立即运行一次"
+                  title={t("schedule.triggerTitle", "Run once immediately")}
                 >
-                  ▶ 立即运行
+                  {t("schedule.trigger", "▶ Run now")}
                 </button>
                 <button
                   className="btn btn-sm btn-ghost"
                   onClick={() => handleToggle(s.id)}
                 >
-                  {s.status === "active" ? "⏸ 暂停" : "▶ 启用"}
+                  {s.status === "active" ? t("schedule.pause", "⏸ Pause") : t("schedule.resume", "▶ Resume")}
                 </button>
                 <button
                   className="btn btn-sm btn-danger-ghost"
                   onClick={() => handleDelete(s.id)}
                 >
-                  删除
+                  {t("schedule.delete", "Delete")}
                 </button>
               </div>
             </div>

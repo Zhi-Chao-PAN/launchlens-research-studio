@@ -32,6 +32,79 @@ export type DictionaryKey =
   | "batch.status.failed"
   | "batch.status.queued"
   | "batch.status.running"
+  | "batch.title"
+  | "batch.subtitle"
+  | "batch.backHome"
+  | "batch.queriesLabel"
+  | "batch.queriesPlaceholder"
+  | "batch.queryCount"
+  | "batch.keywordsLabel"
+  | "batch.keywordsPlaceholder"
+  | "batch.submit"
+  | "batch.submitting"
+  | "batch.maxQueries"
+  | "batch.progressTitle"
+  | "batch.progressDone"
+  | "batch.progressSuccess"
+  | "batch.progressFailed"
+  | "batch.viewRun"
+  | "batch.historyTitle"
+  | "batch.historyCount"
+  | "schedule.title"
+  | "schedule.subtitle"
+  | "schedule.statTotal"
+  | "schedule.statActive"
+  | "schedule.statPaused"
+  | "schedule.statRuns"
+  | "schedule.new"
+  | "schedule.nameLabel"
+  | "schedule.namePlaceholder"
+  | "schedule.queryLabel"
+  | "schedule.queryPlaceholder"
+  | "schedule.keywordsLabel"
+  | "schedule.keywordsPlaceholder"
+  | "schedule.frequencyLabel"
+  | "schedule.intervalHourly"
+  | "schedule.intervalDaily"
+  | "schedule.intervalWeekly"
+  | "schedule.intervalCustom"
+  | "schedule.intervalMinutesLabel"
+  | "schedule.hourLabel"
+  | "schedule.dayOfWeekLabel"
+  | "schedule.cancel"
+  | "schedule.create"
+  | "schedule.creating"
+  | "schedule.untitled"
+  | "schedule.empty"
+  | "schedule.emptyHint"
+  | "schedule.metaFrequency"
+  | "schedule.metaNextRun"
+  | "schedule.metaLastRun"
+  | "schedule.metaTotal"
+  | "schedule.runsUnit"
+  | "schedule.successSuffix"
+  | "schedule.failedSuffix"
+  | "schedule.trigger"
+  | "schedule.triggerTitle"
+  | "schedule.pause"
+  | "schedule.resume"
+  | "schedule.delete"
+  | "schedule.deleteConfirmTitle"
+  | "schedule.deleteConfirmBody"
+  | "schedule.statusActive"
+  | "schedule.statusPaused"
+  | "schedule.intervalHourlyShort"
+  | "schedule.intervalDailyShort"
+  | "schedule.intervalWeeklyShort"
+  | "schedule.intervalMinutesShort"
+  | "schedule.intervalUnknown"
+  | "schedule.daySun"
+  | "schedule.dayMon"
+  | "schedule.dayTue"
+  | "schedule.dayWed"
+  | "schedule.dayThu"
+  | "schedule.dayFri"
+  | "schedule.daySat"
   | "agent.synthesis.description"
   | "agent.synthesis.name"
   | "commandPalette.all"
@@ -282,6 +355,79 @@ const en: Dict = {
   "batch.status.running": "Running",
   "batch.status.completed": "Done",
   "batch.status.failed": "Failed",
+  "batch.title": "Batch Research",
+  "batch.subtitle": "Submit multiple research queries at once; the system processes them in sequence.",
+  "batch.backHome": "← Back to home",
+  "batch.queriesLabel": "Research queries (one per line, max 10)",
+  "batch.queriesPlaceholder": "Analyze the generative AI market opportunity\nResearch AI Agent trends\nAssess AI in education",
+  "batch.queryCount": "queries",
+  "batch.keywordsLabel": "Shared keywords (comma-separated, optional)",
+  "batch.keywordsPlaceholder": "e.g. market size, competitive landscape",
+  "batch.submit": "🚀 Start batch research",
+  "batch.submitting": "Submitting...",
+  "batch.maxQueries": "A maximum of 10 research queries is supported.",
+  "batch.progressTitle": "Batch progress",
+  "batch.progressDone": "done",
+  "batch.progressSuccess": "succeeded",
+  "batch.progressFailed": "failed",
+  "batch.viewRun": "View →",
+  "batch.historyTitle": "Recent batches",
+  "batch.historyCount": "studies",
+  "schedule.title": "Scheduled research",
+  "schedule.subtitle": "Set up recurring automatic research to track changes over time.",
+  "schedule.statTotal": "Total",
+  "schedule.statActive": "Active",
+  "schedule.statPaused": "Paused",
+  "schedule.statRuns": "Total runs",
+  "schedule.new": "+ New schedule",
+  "schedule.nameLabel": "Name",
+  "schedule.namePlaceholder": "Daily market scan",
+  "schedule.queryLabel": "Research query",
+  "schedule.queryPlaceholder": "Latest AI industry trends",
+  "schedule.keywordsLabel": "Keywords (comma-separated, optional)",
+  "schedule.keywordsPlaceholder": "market trends, competitive landscape",
+  "schedule.frequencyLabel": "Frequency",
+  "schedule.intervalHourly": "Hourly",
+  "schedule.intervalDaily": "Daily",
+  "schedule.intervalWeekly": "Weekly",
+  "schedule.intervalCustom": "Custom (minutes)",
+  "schedule.intervalMinutesLabel": "Interval (minutes)",
+  "schedule.hourLabel": "Time (hour)",
+  "schedule.dayOfWeekLabel": "Day of week",
+  "schedule.cancel": "Cancel",
+  "schedule.create": "Create schedule",
+  "schedule.creating": "Creating...",
+  "schedule.untitled": "Untitled schedule",
+  "schedule.empty": "No scheduled research yet",
+  "schedule.emptyHint": "Create one and let research run automatically.",
+  "schedule.metaFrequency": "Frequency",
+  "schedule.metaNextRun": "Next run",
+  "schedule.metaLastRun": "Last run",
+  "schedule.metaTotal": "Total",
+  "schedule.runsUnit": "runs",
+  "schedule.successSuffix": "succeeded",
+  "schedule.failedSuffix": "failed",
+  "schedule.trigger": "▶ Run now",
+  "schedule.triggerTitle": "Run once immediately",
+  "schedule.pause": "⏸ Pause",
+  "schedule.resume": "▶ Resume",
+  "schedule.delete": "Delete",
+  "schedule.deleteConfirmTitle": "Delete scheduled research?",
+  "schedule.deleteConfirmBody": "This schedule will stop running permanently.",
+  "schedule.statusActive": "Active",
+  "schedule.statusPaused": "Paused",
+  "schedule.intervalHourlyShort": "Hourly",
+  "schedule.intervalDailyShort": "Daily at {hh}:00",
+  "schedule.intervalWeeklyShort": "{day} {hh}:00",
+  "schedule.intervalMinutesShort": "Every {minutes} min",
+  "schedule.intervalUnknown": "Unknown",
+  "schedule.daySun": "Sun",
+  "schedule.dayMon": "Mon",
+  "schedule.dayTue": "Tue",
+  "schedule.dayWed": "Wed",
+  "schedule.dayThu": "Thu",
+  "schedule.dayFri": "Fri",
+  "schedule.daySat": "Sat",
   "studio.researchAgents": "Research Agents",
   "studio.poweredBy": "Powered by 6 research agents:",
   "studio.tipStart": "to start",
@@ -492,6 +638,79 @@ const zhCN: Dict = {
   "batch.status.running": "运行中",
   "batch.status.completed": "完成",
   "batch.status.failed": "失败",
+  "batch.title": "批量研究",
+  "batch.subtitle": "一次提交多个研究问题，系统依次处理",
+  "batch.backHome": "← 返回首页",
+  "batch.queriesLabel": "研究问题（每行一个，最多 10 个）",
+  "batch.queriesPlaceholder": "分析生成式 AI 的市场机会\n研究 AI Agent 的发展趋势\n评估 AI 在教育行业的应用",
+  "batch.queryCount": "个问题",
+  "batch.keywordsLabel": "共同关键词（用逗号分隔，可选）",
+  "batch.keywordsPlaceholder": "例如：市场规模, 竞争格局",
+  "batch.submit": "🚀 开始批量研究",
+  "batch.submitting": "提交中...",
+  "batch.maxQueries": "最多支持 10 个研究问题",
+  "batch.progressTitle": "批量研究进度",
+  "batch.progressDone": "完成",
+  "batch.progressSuccess": "成功",
+  "batch.progressFailed": "失败",
+  "batch.viewRun": "查看 →",
+  "batch.historyTitle": "最近批量研究",
+  "batch.historyCount": "个研究",
+  "schedule.title": "定时研究",
+  "schedule.subtitle": "设置周期性自动研究，持续跟踪变化",
+  "schedule.statTotal": "总计",
+  "schedule.statActive": "运行中",
+  "schedule.statPaused": "已暂停",
+  "schedule.statRuns": "累计运行",
+  "schedule.new": "+ 新建定时研究",
+  "schedule.nameLabel": "名称",
+  "schedule.namePlaceholder": "每日市场扫描",
+  "schedule.queryLabel": "研究问题",
+  "schedule.queryPlaceholder": "AI 行业最新动态",
+  "schedule.keywordsLabel": "关键词（逗号分隔，可选）",
+  "schedule.keywordsPlaceholder": "市场趋势, 竞争格局",
+  "schedule.frequencyLabel": "频率",
+  "schedule.intervalHourly": "每小时",
+  "schedule.intervalDaily": "每天",
+  "schedule.intervalWeekly": "每周",
+  "schedule.intervalCustom": "自定义（分钟）",
+  "schedule.intervalMinutesLabel": "间隔（分钟）",
+  "schedule.hourLabel": "时间（时）",
+  "schedule.dayOfWeekLabel": "星期",
+  "schedule.cancel": "取消",
+  "schedule.create": "创建定时研究",
+  "schedule.creating": "创建中...",
+  "schedule.untitled": "未命名定时研究",
+  "schedule.empty": "还没有定时研究",
+  "schedule.emptyHint": "创建一个，让研究自动跑起来",
+  "schedule.metaFrequency": "频率",
+  "schedule.metaNextRun": "下次运行",
+  "schedule.metaLastRun": "上次运行",
+  "schedule.metaTotal": "累计",
+  "schedule.runsUnit": "次",
+  "schedule.successSuffix": "成功",
+  "schedule.failedSuffix": "失败",
+  "schedule.trigger": "▶ 立即运行",
+  "schedule.triggerTitle": "立即运行一次",
+  "schedule.pause": "⏸ 暂停",
+  "schedule.resume": "▶ 启用",
+  "schedule.delete": "删除",
+  "schedule.deleteConfirmTitle": "删除定时研究？",
+  "schedule.deleteConfirmBody": "该定时研究将永久停止运行。",
+  "schedule.statusActive": "运行中",
+  "schedule.statusPaused": "已暂停",
+  "schedule.intervalHourlyShort": "每小时",
+  "schedule.intervalDailyShort": "每天 {hh}:00",
+  "schedule.intervalWeeklyShort": "{day} {hh}:00",
+  "schedule.intervalMinutesShort": "每 {minutes} 分钟",
+  "schedule.intervalUnknown": "未知",
+  "schedule.daySun": "周日",
+  "schedule.dayMon": "周一",
+  "schedule.dayTue": "周二",
+  "schedule.dayWed": "周三",
+  "schedule.dayThu": "周四",
+  "schedule.dayFri": "周五",
+  "schedule.daySat": "周六",
   "studio.researchAgents": "调研智能体",
   "studio.poweredBy": "由 6 个调研智能体驱动：",
   "studio.tipStart": "开始调研",
@@ -702,6 +921,79 @@ const ja: Dict = {
   "batch.status.running": "実行中",
   "batch.status.completed": "完了",
   "batch.status.failed": "失敗",
+  "batch.title": "バッチリサーチ",
+  "batch.subtitle": "複数のリサーチ質問を一度に送信し、システムが順次処理します。",
+  "batch.backHome": "← ホームへ戻る",
+  "batch.queriesLabel": "リサーチ質問（1行1問、最大10問）",
+  "batch.queriesPlaceholder": "生成 AI 市場の機会を分析\nAI エージェントのトレンドを調査\n教育分野の AI 活用を評価",
+  "batch.queryCount": "件",
+  "batch.keywordsLabel": "共通キーワード（カンマ区切り、任意）",
+  "batch.keywordsPlaceholder": "例: 市場規模, 競争環境",
+  "batch.submit": "🚀 バッチリサーチを開始",
+  "batch.submitting": "送信中...",
+  "batch.maxQueries": "最大10件のリサーチ質問に対応しています。",
+  "batch.progressTitle": "バッチ進捗",
+  "batch.progressDone": "完了",
+  "batch.progressSuccess": "成功",
+  "batch.progressFailed": "失敗",
+  "batch.viewRun": "表示 →",
+  "batch.historyTitle": "最近のバッチ",
+  "batch.historyCount": "件",
+  "schedule.title": "スケジュールリサーチ",
+  "schedule.subtitle": "定期自動リサーチを設定し、変化を継続的に追跡します。",
+  "schedule.statTotal": "合計",
+  "schedule.statActive": "実行中",
+  "schedule.statPaused": "一時停止",
+  "schedule.statRuns": "累計実行",
+  "schedule.new": "+ 新規スケジュール",
+  "schedule.nameLabel": "名称",
+  "schedule.namePlaceholder": "毎日の市場スキャン",
+  "schedule.queryLabel": "リサーチ質問",
+  "schedule.queryPlaceholder": "AI 業界の最新動向",
+  "schedule.keywordsLabel": "キーワード（カンマ区切り、任意）",
+  "schedule.keywordsPlaceholder": "市場動向, 競争環境",
+  "schedule.frequencyLabel": "頻度",
+  "schedule.intervalHourly": "毎時",
+  "schedule.intervalDaily": "毎日",
+  "schedule.intervalWeekly": "毎週",
+  "schedule.intervalCustom": "カスタム（分）",
+  "schedule.intervalMinutesLabel": "間隔（分）",
+  "schedule.hourLabel": "時刻（時）",
+  "schedule.dayOfWeekLabel": "曜日",
+  "schedule.cancel": "キャンセル",
+  "schedule.create": "スケジュールを作成",
+  "schedule.creating": "作成中...",
+  "schedule.untitled": "無題のスケジュール",
+  "schedule.empty": "スケジュールリサーチがまだありません",
+  "schedule.emptyHint": "作成して、リサーチを自動実行しましょう。",
+  "schedule.metaFrequency": "頻度",
+  "schedule.metaNextRun": "次回実行",
+  "schedule.metaLastRun": "前回実行",
+  "schedule.metaTotal": "累計",
+  "schedule.runsUnit": "回",
+  "schedule.successSuffix": "成功",
+  "schedule.failedSuffix": "失敗",
+  "schedule.trigger": "▶ 今すぐ実行",
+  "schedule.triggerTitle": "今すぐ1回実行",
+  "schedule.pause": "⏸ 一時停止",
+  "schedule.resume": "▶ 再開",
+  "schedule.delete": "削除",
+  "schedule.deleteConfirmTitle": "スケジュールリサーチを削除しますか？",
+  "schedule.deleteConfirmBody": "このスケジュールは完全に停止します。",
+  "schedule.statusActive": "実行中",
+  "schedule.statusPaused": "一時停止",
+  "schedule.intervalHourlyShort": "毎時",
+  "schedule.intervalDailyShort": "毎日 {hh}:00",
+  "schedule.intervalWeeklyShort": "{day} {hh}:00",
+  "schedule.intervalMinutesShort": "{minutes} 分ごと",
+  "schedule.intervalUnknown": "不明",
+  "schedule.daySun": "日",
+  "schedule.dayMon": "月",
+  "schedule.dayTue": "火",
+  "schedule.dayWed": "水",
+  "schedule.dayThu": "木",
+  "schedule.dayFri": "金",
+  "schedule.daySat": "土",
   "studio.researchAgents": "リサーチエージェント",
   "studio.poweredBy": "6 つのリサーチエージェントで動作:",
   "studio.tipStart": "開始",
@@ -873,6 +1165,79 @@ const ko: Dict = {
   "batch.status.running": "실행 중",
   "batch.status.completed": "완료",
   "batch.status.failed": "실패",
+  "batch.title": "일괄 리서치",
+  "batch.subtitle": "여러 리서치 질문을 한 번에 제출하면 시스템이 순차적으로 처리합니다.",
+  "batch.backHome": "← 홈으로",
+  "batch.queriesLabel": "리서치 질문 (한 줄에 하나, 최대 10개)",
+  "batch.queriesPlaceholder": "생성 AI 시장 기회 분석\nAI 에이전트 트렌드 조사\n교육 분야 AI 활용 평가",
+  "batch.queryCount": "개",
+  "batch.keywordsLabel": "공통 키워드 (쉼표 구분, 선택)",
+  "batch.keywordsPlaceholder": "예: 시장 규모, 경쟁 구도",
+  "batch.submit": "🚀 일괄 리서치 시작",
+  "batch.submitting": "제출 중...",
+  "batch.maxQueries": "최대 10개의 리서치 질문을 지원합니다.",
+  "batch.progressTitle": "일괄 진행률",
+  "batch.progressDone": "완료",
+  "batch.progressSuccess": "성공",
+  "batch.progressFailed": "실패",
+  "batch.viewRun": "보기 →",
+  "batch.historyTitle": "최근 일괄 리서치",
+  "batch.historyCount": "건",
+  "schedule.title": "예약 리서치",
+  "schedule.subtitle": "정기 자동 리서치를 설정하여 변화를 지속적으로 추적하세요.",
+  "schedule.statTotal": "전체",
+  "schedule.statActive": "실행 중",
+  "schedule.statPaused": "일시정지",
+  "schedule.statRuns": "누적 실행",
+  "schedule.new": "+ 새 예약",
+  "schedule.nameLabel": "이름",
+  "schedule.namePlaceholder": "일일 시장 스캔",
+  "schedule.queryLabel": "리서치 질문",
+  "schedule.queryPlaceholder": "AI 업계 최신 동향",
+  "schedule.keywordsLabel": "키워드 (쉼표 구분, 선택)",
+  "schedule.keywordsPlaceholder": "시장 동향, 경쟁 구도",
+  "schedule.frequencyLabel": "빈도",
+  "schedule.intervalHourly": "매시간",
+  "schedule.intervalDaily": "매일",
+  "schedule.intervalWeekly": "매주",
+  "schedule.intervalCustom": "사용자 지정 (분)",
+  "schedule.intervalMinutesLabel": "간격 (분)",
+  "schedule.hourLabel": "시간 (시)",
+  "schedule.dayOfWeekLabel": "요일",
+  "schedule.cancel": "취소",
+  "schedule.create": "예약 만들기",
+  "schedule.creating": "생성 중...",
+  "schedule.untitled": "제목 없는 예약",
+  "schedule.empty": "예약된 리서치가 없습니다",
+  "schedule.emptyHint": "하나 만들어 리서치를 자동으로 실행하세요.",
+  "schedule.metaFrequency": "빈도",
+  "schedule.metaNextRun": "다음 실행",
+  "schedule.metaLastRun": "마지막 실행",
+  "schedule.metaTotal": "누적",
+  "schedule.runsUnit": "회",
+  "schedule.successSuffix": "성공",
+  "schedule.failedSuffix": "실패",
+  "schedule.trigger": "▶ 지금 실행",
+  "schedule.triggerTitle": "지금 즉시 한 번 실행",
+  "schedule.pause": "⏸ 일시정지",
+  "schedule.resume": "▶ 재개",
+  "schedule.delete": "삭제",
+  "schedule.deleteConfirmTitle": "예약 리서치를 삭제하시겠습니까?",
+  "schedule.deleteConfirmBody": "이 예약은 영구적으로 중지됩니다.",
+  "schedule.statusActive": "실행 중",
+  "schedule.statusPaused": "일시정지",
+  "schedule.intervalHourlyShort": "매시간",
+  "schedule.intervalDailyShort": "매일 {hh}:00",
+  "schedule.intervalWeeklyShort": "{day} {hh}:00",
+  "schedule.intervalMinutesShort": "{minutes}분마다",
+  "schedule.intervalUnknown": "알 수 없음",
+  "schedule.daySun": "일",
+  "schedule.dayMon": "월",
+  "schedule.dayTue": "화",
+  "schedule.dayWed": "수",
+  "schedule.dayThu": "목",
+  "schedule.dayFri": "금",
+  "schedule.daySat": "토",
   "agent.status.idle": "대기 중",
   "agent.status.running": "리서치 중",
   "agent.synthesis.description": "에이전트 간 검증, 실행 가능한 요약, 공유 가능한 브리프",

@@ -29,7 +29,7 @@ interface BatchInfo {
 }
 
 export default function BatchPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [queries, setQueries] = useState("");
   const [keywords, setKeywords] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -48,7 +48,7 @@ export default function BatchPage() {
 
     if (queryList.length === 0) return;
     if (queryList.length > 10) {
-      alert("最多支持 10 个研究问题");
+      alert(t("batch.maxQueries", "A maximum of 10 research queries is supported."));
       return;
     }
 
@@ -158,16 +158,16 @@ export default function BatchPage() {
 
   const formatTime = (ts?: number) => {
     if (!ts) return "—";
-    return new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return new Date(ts).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
   return (
     <div className="batch-page">
       <header className="batch-header">
         <div className="batch-header-inner">
-          <Link href="/" className="research-back-link">← 返回首页</Link>
-          <h1 className="batch-title">批量研究</h1>
-          <p className="batch-subtitle">一次提交多个研究问题，系统依次处理</p>
+          <Link href="/" className="research-back-link">{t("batch.backHome", "← Back to home")}</Link>
+          <h1 className="batch-title">{t("batch.title", "Batch Research")}</h1>
+          <p className="batch-subtitle">{t("batch.subtitle", "Submit multiple research queries at once; the system processes them in sequence.")}</p>
         </div>
       </header>
 
@@ -176,27 +176,27 @@ export default function BatchPage() {
         <form className="batch-form" onSubmit={handleSubmit}>
           <div className="form-group">
             <label>
-              研究问题（每行一个，最多 10 个）
+              {t("batch.queriesLabel", "Research queries (one per line, max 10)")}
             </label>
             <textarea
               value={queries}
               onChange={(e) => setQueries(e.target.value)}
-              placeholder={"分析生成式 AI 的市场机会\n研究 AI Agent 的发展趋势\n评估 AI 在教育行业的应用"}
+              placeholder={t("batch.queriesPlaceholder", "Analyze the generative AI market opportunity\nResearch AI Agent trends\nAssess AI in education")}
               className="batch-textarea"
               rows={6}
             />
             <div className="form-hint">
-              {queries.split("\n").filter((q) => q.trim()).length} / 10 个问题
+              {queries.split("\n").filter((q) => q.trim()).length} / 10 {t("batch.queryCount", "queries")}
             </div>
           </div>
 
           <div className="form-group">
-            <label>共同关键词（用逗号分隔，可选）</label>
+            <label>{t("batch.keywordsLabel", "Shared keywords (comma-separated, optional)")}</label>
             <input
               type="text"
               value={keywords}
               onChange={(e) => setKeywords(e.target.value)}
-              placeholder="例如：市场规模, 竞争格局"
+              placeholder={t("batch.keywordsPlaceholder", "e.g. market size, competitive landscape")}
               className="form-input"
             />
           </div>
@@ -206,7 +206,7 @@ export default function BatchPage() {
             className="btn btn-primary batch-submit"
             disabled={submitting || !queries.trim()}
           >
-            {submitting ? "提交中..." : "🚀 开始批量研究"}
+            {submitting ? t("batch.submitting", "Submitting...") : t("batch.submit", "🚀 Start batch research")}
           </button>
           {submitError && <div className="form-error" role="alert">{submitError}</div>}
         </form>
@@ -215,7 +215,7 @@ export default function BatchPage() {
         {currentBatch && (
           <div className="batch-progress">
             <div className="batch-progress-header">
-              <h3>批量研究进度</h3>
+              <h3>{t("batch.progressTitle", "Batch progress")}</h3>
               <span className={`batch-status ${statusClass(currentBatch.status)}`}>
                 {statusLabel(currentBatch.status)}
               </span>
@@ -228,9 +228,9 @@ export default function BatchPage() {
               />
             </div>
             <div className="batch-progress-stats">
-              {currentBatch.completed + currentBatch.failed} / {currentBatch.total} 完成
-              · {currentBatch.completed} 成功
-              · {currentBatch.failed} 失败
+              {currentBatch.completed + currentBatch.failed} / {currentBatch.total} {t("batch.progressDone", "done")}
+              · {currentBatch.completed} {t("batch.progressSuccess", "succeeded")}
+              · {currentBatch.failed} {t("batch.progressFailed", "failed")}
             </div>
 
             <div className="batch-run-list">
@@ -242,7 +242,7 @@ export default function BatchPage() {
                   <span className="batch-run-query">{run.query}</span>
                   {run.id ? (
                     <Link href={`/research/${run.id}`} className="batch-run-link">
-                      查看 →
+                      {t("batch.viewRun", "View →")}
                     </Link>
                   ) : (
                     <span className="batch-run-time">{formatTime(run.startedAt)}</span>
@@ -256,14 +256,14 @@ export default function BatchPage() {
         {/* Recent batches */}
         {recentBatches.length > 0 && (
           <div className="batch-history">
-            <h3 className="batch-history-title">最近批量研究</h3>
+            <h3 className="batch-history-title">{t("batch.historyTitle", "Recent batches")}</h3>
             <div className="batch-history-list">
               {recentBatches.slice(0, 5).map((batch) => (
                 <div key={batch.id} className="batch-history-item">
                   <div className="batch-history-info">
                     <div className="batch-history-id">{batch.id}</div>
                     <div className="batch-history-meta">
-                      {batch.total} 个研究 · {formatTime(batch.createdAt)}
+                      {batch.total} {t("batch.historyCount", "studies")} · {formatTime(batch.createdAt)}
                     </div>
                   </div>
                   <div className="batch-history-stats">
