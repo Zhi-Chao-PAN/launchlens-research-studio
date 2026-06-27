@@ -72,6 +72,8 @@ export type DictionaryKey =
   | "errors.serviceUnavailable"
   | "errors.notFound"
   | "errors.badRequest"
+  | "errors.unauthorized"
+  | "errors.cronNotConfigured"
   | "export.copied"
   | "export.copy"
   | "export.download"
@@ -169,6 +171,8 @@ const en: Dict = {
   "errors.serviceUnavailable": "Service temporarily unavailable. Please try again later.",
   "errors.notFound": "Not found.",
   "errors.badRequest": "Invalid request.",
+  "errors.unauthorized": "Unauthorized.",
+  "errors.cronNotConfigured": "Scheduled-task endpoint is not configured. Set LAUNCHLENS_CRON_SECRET.",
   "status.loading": "Starting research session",
   "status.running": "Research agents are running",
   "status.completed": "Research complete",
@@ -311,6 +315,8 @@ const zhCN: Dict = {
   "errors.serviceUnavailable": "服务暂时不可用，请稍后重试。",
   "errors.notFound": "未找到。",
   "errors.badRequest": "请求无效。",
+  "errors.unauthorized": "未授权。",
+  "errors.cronNotConfigured": "定时任务端点未配置，请设置 LAUNCHLENS_CRON_SECRET。",
   "status.loading": "正在启动调研会话",
   "status.running": "调研智能体运行中",
   "status.completed": "调研完成",
@@ -453,6 +459,8 @@ const ja: Dict = {
   "errors.serviceUnavailable": "サービスが一時的に利用できません。しばらくしてから再試行してください。",
   "errors.notFound": "見つかりません。",
   "errors.badRequest": "無効なリクエストです。",
+  "errors.unauthorized": "認証されていません。",
+  "errors.cronNotConfigured": "スケジュールタスクのエンドポイントが設定されていません。LAUNCHLENS_CRON_SECRET を設定してください。",
   "status.loading": "リサーチセッションを開始しています",
   "status.running": "リサーチエージェントが実行中です",
   "status.completed": "リサーチ完了",
@@ -643,6 +651,8 @@ const ko: Dict = {
   "errors.serviceUnavailable": "서비스가 일시적으로 사용 불가능합니다. 나중에 다시 시도해 주세요.",
   "errors.notFound": "찾을 수 없습니다.",
   "errors.badRequest": "잘못된 요청입니다.",
+  "errors.unauthorized": "인증되지 않았습니다.",
+  "errors.cronNotConfigured": "예약 작업 엔드포인트가 구성되지 않았습니다. LAUNCHLENS_CRON_SECRET을 설정하세요.",
   "export.copied": "복사됨!",
   "export.copy": "복사",
   "export.download": "다운로드",

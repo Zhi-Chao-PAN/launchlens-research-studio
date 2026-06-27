@@ -201,6 +201,44 @@ describe("Research storage", () => {
       expect(retrieved!.error).toBe("something went wrong");
     });
   });
+
+  describe("R212: cancelled run persistence", () => {
+    it("round-trips a cancelled run with status=cancelled", () => {
+      const run = {
+        id: generateRunId(),
+        query: "user cancelled this",
+        keywords: ["kw"],
+        result: "",
+        provider: "mock",
+        model: "mock",
+        createdAt: Date.now(),
+        durationMs: 1500,
+        status: "cancelled" as const,
+      };
+      saveResearchRun(run);
+      const retrieved = getResearchRun(run.id);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved!.status).toBe("cancelled");
+      expect(retrieved!.query).toBe("user cancelled this");
+    });
+
+    it("searchResearchRuns can filter by status=cancelled", () => {
+      const id = generateRunId();
+      saveResearchRun({
+        id,
+        query: "cancelled run",
+        keywords: [],
+        result: "",
+        provider: "mock",
+        model: "mock",
+        createdAt: Date.now(),
+        durationMs: 0,
+        status: "cancelled",
+      });
+      const found = searchResearchRuns({ status: "cancelled" });
+      expect(found.runs.some((r) => r.id === id)).toBe(true);
+    });
+  });
 });
 
 

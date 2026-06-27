@@ -28,7 +28,10 @@ export interface ResearchRun {
   model: string;
   createdAt: number;
   durationMs: number;
-  status: "completed" | "failed";
+  // R212: "cancelled" is now a first-class persistence status so users can
+  // find interrupted runs in History. Cancelled runs carry whatever partial
+  // result/agents existed at the moment of cancellation.
+  status: "completed" | "failed" | "cancelled";
   agent?: string;
   error?: string;
 }
@@ -162,7 +165,7 @@ export function deleteResearchRun(id: string): boolean {
  */
 export function searchResearchRuns(options: {
   query?: string;
-  status?: "completed" | "failed";
+  status?: "completed" | "failed" | "cancelled";
   provider?: string;
   limit?: number;
   offset?: number;

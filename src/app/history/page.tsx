@@ -14,7 +14,7 @@ import { UndoManager } from "@/lib/utils/undo-manager";
 interface HistoryRun {
   id: string;
   query: string;
-  status: "completed" | "failed" | "running";
+  status: "completed" | "failed" | "cancelled" | "running";
   createdAt: number;
   durationMs: number;
   provider: string;
@@ -28,7 +28,9 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [selectedFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "failed">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "completed" | "failed" | "cancelled"
+  >("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "fastest" | "slowest">("newest");
   const [starredOnly, setStarredOnly] = useState(false);
   const [allTags] = useState<RunTag[]>([]);
@@ -350,13 +352,19 @@ export default function HistoryPage() {
             <div className="history-filter-group">
               <label className="history-filter-label">Status</label>
               <div className="history-filter-buttons">
-                {(["all", "completed", "failed"] as const).map((s) => (
+                {(["all", "completed", "failed", "cancelled"] as const).map((s) => (
                   <button
                     key={s}
                     className={`history-filter-btn status-${s} ${statusFilter === s ? "active" : ""}`}
                     onClick={() => setStatusFilter(s)}
                   >
-                    {s === "all" ? "All" : s === "completed" ? "✓ Success" : "✕ Failed"}
+                    {s === "all"
+                      ? "All"
+                      : s === "completed"
+                        ? "✓ Success"
+                        : s === "failed"
+                          ? "✕ Failed"
+                          : "⊘ Cancelled"}
                   </button>
                 ))}
               </div>
@@ -563,7 +571,13 @@ export default function HistoryPage() {
                   >
                     <div className="history-item-main">
                       <div className={`history-item-status status-${run.status}`}>
-                        {run.status === "completed" ? "[ok]" : run.status === "failed" ? "[x]" : "[...]"}
+                        {run.status === "completed"
+                          ? "[ok]"
+                          : run.status === "failed"
+                            ? "[x]"
+                            : run.status === "cancelled"
+                              ? "[c]"
+                              : "[...]"}
                       </div>
                       <div className="history-item-content">
                         <h3 className="history-item-query">
@@ -624,7 +638,13 @@ export default function HistoryPage() {
                 ) : (
                   <div className="history-item-main">
                     <div className={`history-item-status status-${run.status}`}>
-                      {run.status === "completed" ? "✓" : run.status === "failed" ? "✕" : "○"}
+                      {run.status === "completed"
+                        ? "✓"
+                        : run.status === "failed"
+                          ? "✕"
+                          : run.status === "cancelled"
+                            ? "⊘"
+                            : "○"}
                     </div>
                     <div className="history-item-content">
                       <h3 className="history-item-query">{run.query}</h3>

@@ -123,7 +123,60 @@ export function cancelSession(id: string): boolean {
   // Single terminal event — do NOT emit an agent-error, otherwise cancelled
   // runs show up as red error badges on the synthesis card.
   emitEvent(id, { type: "cancelled", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Research cancelled" });
+
+  // R212: persist cancelled runs so they show up in History instead of
+  // vanishing on restart. Best-effort — storage failures must not break cancel.
+  persistRunSnapshot(session, "cancelled");
   return true;
+}
+
+/**
+ * R212: write the session to durable storage with the requested status.
+ * Best-effort: storage failures are swallowed so they never bubble up
+ * to break the user's primary action (cancel / completion).
+ *
+ * Status semantics:
+ *   - "completed" — partial JSON of whatever the synthesis (or last
+ *     successful agent) produced. Matches the prior persistence path.
+ *   - "cancelled" — JSON dump of the per-agent outputs that finished
+ *     before the user cancelled, so they can revisit partial results.
+ */
+function persistRunSnapshot(session: ResearchSession, status: "completed" | "cancelled"): void {
+  try {
+    const synthesisRaw = session.agents.synthesis?.output;
+    const resultText =
+      typeof synthesisRaw === "string"
+        ? synthesisRaw
+        : synthesisRaw
+          ? JSON.stringify(synthesisRaw, null, 2)
+          : "";
+
+    const createdMs = new Date(session.createdAt).getTime();
+    const durationMs = createdMs ? Date.now() - createdMs : 0;
+
+    saveResearchRun({
+      id: session.id,
+      query: session.query,
+      keywords: session.keywords,
+      result: resultText,
+      provider: session.providerId ?? "mock",
+      model: session.providerModel ?? session.providerId ?? "default",
+      createdAt: createdMs,
+      durationMs,
+      status,
+      sources:
+        session.citations
+          ?.slice(0, 20)
+          ?.filter((c) => c.url)
+          ?.map((c) => ({
+            title: c.title,
+            url: c.url || "",
+            snippet: c.snippet,
+          })) || [],
+    });
+  } catch {
+    // Storage is best-effort — never break the caller.
+  }
 }
 
 /** Hard-delete a session from the in-memory store. Aborts any running work
@@ -469,6 +522,7 @@ export async function runResearchSession(
     session.status = "cancelled";
     session.updatedAt = new Date().toISOString();
     cancelledSessions.delete(sessionId);
+    persistRunSnapshot(session, "cancelled"); // R212
     return session;
   }
 
@@ -500,7 +554,13 @@ export async function runResearchSession(
     });
   }
 
-  if (isCancelled(sessionId)) { session.status = "cancelled"; cancelledSessions.delete(sessionId); session.updatedAt = new Date().toISOString(); return session; }
+  if (isCancelled(sessionId)) {
+    session.status = "cancelled";
+    cancelledSessions.delete(sessionId);
+    session.updatedAt = new Date().toISOString();
+    persistRunSnapshot(session, "cancelled"); // R212
+    return session;
+  }
   session.status = "completed";
 
 
@@ -508,42 +568,11 @@ export async function runResearchSession(
 
 
 
-    // Persist to storage (best-effort)
-  try {
-    const synthesisRaw = session.agents.synthesis?.output;
-    const resultText = typeof synthesisRaw === "string"
-      ? synthesisRaw
-      : synthesisRaw
-        ? JSON.stringify(synthesisRaw, null, 2)
-        : "";
-
-    const createdMs = new Date(session.createdAt).getTime();
-    const durationMs = createdMs ? Date.now() - createdMs : 0;
-
   sessionAborts.delete(sessionId);
 
-    saveResearchRun({
-      id: session.id,
-      query: session.query,
-      keywords: session.keywords,
-      result: resultText,
-      // R203: record the actual provider that ran (or attempted to run) the
-      // session, not a hardcoded "mock". The session was annotated with
-      // providerId at createResearchSession time.
-      provider: session.providerId ?? "mock",
-      model: session.providerModel ?? session.providerId ?? "default",
-      createdAt: createdMs,
-      durationMs,
-      status: "completed",
-      sources: session.citations?.slice(0, 20)?.filter((c) => c.url)?.map((c) => ({
-        title: c.title,
-        url: c.url || "",
-        snippet: c.snippet,
-      })) || [],
-    });
-  } catch {
-    // Storage is best-effort — don't fail the run
-  }
+  // Persist completed snapshot (R212: routed through helper for parity with
+  // the cancelled/failed paths).
+  persistRunSnapshot(session, "completed");
 
   emitEvent(session.id, {
     type: "complete",

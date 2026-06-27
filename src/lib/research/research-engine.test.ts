@@ -17,6 +17,7 @@ import {
   deleteSession,
   subscribeToSession,
 } from "@/lib/research/research-engine";
+import { getResearchRun } from "@/lib/research/storage";
 import type { ResearchSession, AgentState } from "@/lib/schema/research-schema";
 
 // Deterministic IDs & timestamps so tests aren't flaky.
@@ -197,6 +198,19 @@ describe("cancelSession (round 190/191 + R48)", () => {
     // Must emit exactly one cancelled terminal event so SSE closes cleanly.
     const cancelled = events.filter((e) => e.type === "cancelled");
     expect(cancelled.length).toBe(1);
+  });
+
+  it("persists a 'cancelled' run so History can surface it (R212)", () => {
+    const session = createResearchSession("persist-cancel", ["kw"]);
+    session.status = "running";
+    session.agents["market-sizer"].status = "running";
+    session.agents["market-sizer"].progress = 60;
+    const ok = cancelSession(session.id);
+    expect(ok).toBe(true);
+    const stored = getResearchRun(session.id);
+    expect(stored).toBeDefined();
+    expect(stored?.status).toBe("cancelled");
+    expect(stored?.query).toBe("persist-cancel");
   });
 });
 

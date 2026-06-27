@@ -34,7 +34,11 @@ export async function GET(request: NextRequest) {
   }
 
   const q = url.searchParams.get("q") || "";
-  const statusFilter = url.searchParams.get("status") as "completed" | "failed" | null;
+  const statusFilter = url.searchParams.get("status") as
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   const providerFilter = url.searchParams.get("provider");
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10) || 20));
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
