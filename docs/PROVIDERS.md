@@ -101,3 +101,44 @@ Note: local models that ignore `response_format: json_object` may still produce 
 
 - Provider keys are read **server-side only** (in API routes and the research engine). They are never bundled into the client.
 - The mock fallback is a feature for demos, not a security control. In production, set `LAUNCHLENS_PROVIDER` explicitly and monitor for unexpected fallbacks if you require real data.
+
+---
+
+## Web retrieval (RAG grounding)
+
+LLM providers generate citation URLs from parametric memory alone. To ground citations in real, retrieved web sources, configure a retrieval provider. The engine then injects up to 6 verified sources into each agent's prompt and filters out any citation whose URL was not retrieved.
+
+### Tavily (default adapter)
+
+Get a free-tier key at [tavily.com](https://tavily.com). Add to `.env.local`:
+
+```bash
+TAVILY_API_KEY=tvly-...
+```
+
+That's it. The next research run will:
+
+1. POST `https://api.tavily.com/search` with the product query + keywords.
+2. Receive up to 6 results (`title`, `url`, `content`).
+3. Prepend them to each agent's user prompt as a "Verified web sources" section.
+4. After the LLM responds, drop any emitted citation whose URL was not in the retrieved set.
+5. If Tavily returns 0 results, fails, or times out (12s), the engine falls back to LLM-only generation — no run ever blocks on retrieval.
+
+Optional overrides:
+
+```bash
+# Force a specific adapter (default: auto-pick when key is set)
+LAUNCHLENS_SEARCH_PROVIDER=tavily
+# Or force retrieval off even with a key present
+LAUNCHLENS_SEARCH_PROVIDER=mock
+# Self-hosted / proxy endpoint
+TAVILY_BASE_URL=https://your-tavily-proxy.example.com
+```
+
+Selection rules live in [`src/lib/providers/retrieval-registry.ts`](../src/lib/providers/retrieval-registry.ts). The adapter contract is [`RetrievalProvider`](../src/lib/providers/retrieval.types.ts); adding Serper, Brave Search, or a crawler is a new ~150-line module plus a registry branch.
+
+### What grounding actually buys you
+
+Without retrieval: the LLM fabricates plausible-looking URLs (e.g. `https://example.com/2024-report`). The validator does not check reachability, so these pass through to the user.
+
+With Tavily retrieval: every emitted citation must match a URL the search backend actually returned. The deterministic FNV-1a hash in `TavilyRetrievalProvider` makes citation IDs stable across runs. URLs missing from the retrieved set are silently dropped by `filterCitationsAgainstRetrieved()` — never inflated with synthetic data.

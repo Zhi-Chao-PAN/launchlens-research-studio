@@ -271,6 +271,7 @@ export function buildSystemPrompt(agentId: AgentId): string {
     ...spec.coaching.map((c) => "- " + c),
     "- Use the current date for accessedAt (ISO 8601).",
     "- When you are unsure of a real source, prefer an honest confidence level of \"low\" over inventing a URL. A citation with reasoning in the snippet is acceptable; a fabricated URL is not.",
+    "- R215: if the user prompt contains a 'Verified web sources' list, prefer citing those URLs over inventing your own. The engine filters out citations whose URLs were not retrieved, so invented URLs are silently dropped.",
     "- Output ONLY the JSON object.",
   ].join("\n");
 }
@@ -286,38 +287,66 @@ export function buildSystemPrompt(agentId: AgentId): string {
  * individually (each stays valid JSON) and apply a per-agent budget, so a
  * truncated output is still parseable and is explicitly flagged as
  * "[truncated]" so the model knows it is seeing a subset.
+ *
+ * R215: if `retrievedSources` is supplied (from a RetrievalProvider like
+ * Tavily), they are appended as a "verified sources you can cite" section
+ * before the upstream block. The model is coached (system prompt) to
+ * prefer these URLs over LLM-generated ones, and the engine runs the
+ * emitted citations through filterCitationsAgainstRetrieved() to drop any
+ * fabricated URLs.
  */
 export function buildUserPrompt(agentId: AgentId, ctx: {
   query: string;
   keywords: string[];
   upstream?: AgentOutput[];
+  retrievedSources?: Array<{
+    title: string;
+    url: string;
+    snippet?: string;
+    confidence?: "low" | "medium" | "high";
+  }>;
 }): string {
-  if (!ctx.upstream || ctx.upstream.length === 0) {
-    return [
-      "Product idea: " + ctx.query,
-      "Keywords: " + (ctx.keywords && ctx.keywords.length ? ctx.keywords.join(", ") : "(none provided)"),
-    ].join("\n");
-  }
-  // Budget the upstream section so the whole prompt stays well within a
-  // typical model context window while giving every agent fair space.
-  const PER_AGENT_BUDGET = 6000;
-  const parts = ctx.upstream.map((out, i) => {
-    const tag = out.agent || ("agent-" + i);
-    const json = JSON.stringify(out);
-    if (json.length <= PER_AGENT_BUDGET) {
-      return "--- " + tag + " ---\n" + json;
-    }
-    // Truncate at the last safe boundary before the budget so the JSON
-    // stays invalid-but-explicitly-truncated rather than misleadingly
-    // whole. We close the object best-effort; the model is told it's a
-    // truncation and coached (in the system prompt) to treat it as partial.
-    return "--- " + tag + " [truncated, first " + PER_AGENT_BUDGET + " chars] ---\n" + json.slice(0, PER_AGENT_BUDGET) + " …";
-  });
-  return [
+  const sections: string[] = [
     "Product idea: " + ctx.query,
     "Keywords: " + (ctx.keywords && ctx.keywords.length ? ctx.keywords.join(", ") : "(none provided)"),
-    "",
-    "Upstream agent outputs to synthesize (one JSON object per agent; some may be marked [truncated]):",
-    parts.join("\n\n"),
-  ].join("\n");
+  ];
+
+  if (ctx.retrievedSources && ctx.retrievedSources.length > 0) {
+    sections.push(
+      "",
+      "Verified web sources retrieved for this question (you SHOULD cite these URLs when they support a claim; do NOT invent URLs not on this list):",
+      ctx.retrievedSources
+        .map((s, i) => {
+          const conf = s.confidence ? ` [confidence: ${s.confidence}]` : "";
+          const snippet = s.snippet ? `\n   snippet: ${s.snippet.slice(0, 280)}` : "";
+          return `${i + 1}. ${s.title}${conf}\n   url: ${s.url}${snippet}`;
+        })
+        .join("\n"),
+    );
+  }
+
+  if (ctx.upstream && ctx.upstream.length > 0) {
+    // Budget the upstream section so the whole prompt stays well within a
+    // typical model context window while giving every agent fair space.
+    const PER_AGENT_BUDGET = 6000;
+    const parts = ctx.upstream.map((out, i) => {
+      const tag = out.agent || ("agent-" + i);
+      const json = JSON.stringify(out);
+      if (json.length <= PER_AGENT_BUDGET) {
+        return "--- " + tag + " ---\n" + json;
+      }
+      // Truncate at the last safe boundary before the budget so the JSON
+      // stays invalid-but-explicitly-truncated rather than misleadingly
+      // whole. We close the object best-effort; the model is told it's a
+      // truncation and coached (in the system prompt) to treat it as partial.
+      return "--- " + tag + " [truncated, first " + PER_AGENT_BUDGET + " chars] ---\n" + json.slice(0, PER_AGENT_BUDGET) + " …";
+    });
+    sections.push(
+      "",
+      "Upstream agent outputs to synthesize (one JSON object per agent; some may be marked [truncated]):",
+      parts.join("\n\n"),
+    );
+  }
+
+  return sections.join("\n");
 }

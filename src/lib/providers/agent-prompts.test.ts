@@ -83,6 +83,40 @@ describe("agent-prompts", () => {
       expect(prompt).toMatch(/none provided/i);
     });
 
+    it("includes verified retrieved sources when provided (R215)", () => {
+      const prompt = buildUserPrompt("market-sizer", {
+        query: "AI tools",
+        keywords: [],
+        retrievedSources: [
+          {
+            title: "Top AI tools 2026",
+            url: "https://example.com/ai-tools",
+            snippet: "a writeup about AI tools",
+            confidence: "high",
+          },
+          {
+            title: "AI tools market",
+            url: "https://other.com/ai",
+            snippet: "market data",
+            confidence: "medium",
+          },
+        ],
+      });
+      expect(prompt).toContain("Verified web sources");
+      expect(prompt).toContain("https://example.com/ai-tools");
+      expect(prompt).toContain("https://other.com/ai");
+      expect(prompt).toContain("[confidence: high]");
+      expect(prompt).toContain("[confidence: medium]");
+    });
+
+    it("omits the verified-sources section when no retrieved sources are supplied", () => {
+      const prompt = buildUserPrompt("market-sizer", {
+        query: "AI tools",
+        keywords: [],
+      });
+      expect(prompt).not.toContain("Verified web sources");
+    });
+
     it("includes upstream outputs for the synthesis agent", () => {
       const upstream = [
         { agent: "market-sizer", summary: "x", citations: [] },
