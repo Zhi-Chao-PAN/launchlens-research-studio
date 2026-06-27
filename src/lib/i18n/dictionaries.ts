@@ -113,6 +113,12 @@ export type DictionaryKey =
   | "notFound.title"
   | "provider.breakerOpen"
   | "provider.mock"
+  | "provider.probe.error"
+  | "provider.probe.failed"
+  | "provider.probe.mockOk"
+  | "provider.probe.ok"
+  | "provider.probe.test"
+  | "provider.probe.testing"
   | "provider.streaming"
   | "report.degradedBanner.body"
   | "report.degradedBanner.title"
@@ -202,6 +208,12 @@ const en: Dict = {
   "provider.mock": "Mock provider",
   "provider.breakerOpen": "Provider breaker open",
   "provider.streaming": "stream",
+  "provider.probe.test": "Test",
+  "provider.probe.testing": "Testing…",
+  "provider.probe.ok": "Connected ({ms}ms)",
+  "provider.probe.mockOk": "Mock provider — no network needed",
+  "provider.probe.failed": "Failed: {reason}",
+  "provider.probe.error": "Error: {message}",
   "report.degradedBanner.title": "{count} agent(s) showing demo data",
   "report.degradedBanner.body": "Some agents could not reach the real LLM provider and fell back to illustrative mock data. Check your API key and provider configuration, then re-run for authoritative results.",
   "crash.title": "Something went wrong",
@@ -338,6 +350,12 @@ const zhCN: Dict = {
   "provider.mock": "模拟模型",
   "provider.breakerOpen": "提供方熔断已开启",
   "provider.streaming": "流式",
+  "provider.probe.test": "测试",
+  "provider.probe.testing": "测试中…",
+  "provider.probe.ok": "已连接（{ms}ms）",
+  "provider.probe.mockOk": "模拟模型 — 无需网络",
+  "provider.probe.failed": "失败：{reason}",
+  "provider.probe.error": "错误：{message}",
   "report.degradedBanner.title": "{count} 个智能体显示示例数据",
   "report.degradedBanner.body": "部分智能体无法连接真实 LLM 提供方，已回退到示例数据。请检查 API 密钥与提供方配置后重新运行以获取权威结果。",
   "crash.title": "出错了",
@@ -474,6 +492,12 @@ const ja: Dict = {
   "provider.mock": "モックプロバイダ",
   "provider.breakerOpen": "プロバイダ遮断中",
   "provider.streaming": "ストリーム",
+  "provider.probe.test": "テスト",
+  "provider.probe.testing": "テスト中…",
+  "provider.probe.ok": "接続済み（{ms}ms）",
+  "provider.probe.mockOk": "モックプロバイダ — ネットワーク不要",
+  "provider.probe.failed": "失敗：{reason}",
+  "provider.probe.error": "エラー：{message}",
   "report.degradedBanner.title": "{count} 個のエージェントがデモデータを表示中",
   "report.degradedBanner.body": "一部のエージェントが実際の LLM プロバイダに接続できず、例示用のモックデータにフォールバックしました。API キーとプロバイダ設定を確認し、信頼できる結果を得るために再実行してください。",
   "crash.title": "エラーが発生しました",
@@ -661,6 +685,12 @@ const ko: Dict = {
   "provider.breakerOpen": "프로바이더 차단기 열림",
   "provider.mock": "목업 모델",
   "provider.streaming": "스트리밍",
+  "provider.probe.test": "테스트",
+  "provider.probe.testing": "테스트 중…",
+  "provider.probe.ok": "연결됨 ({ms}ms)",
+  "provider.probe.mockOk": "목업 모델 — 네트워크 불필요",
+  "provider.probe.failed": "실패: {reason}",
+  "provider.probe.error": "오류: {message}",
   "report.degradedBanner.title": "{count}개 에이전트가 데모 데이터 표시 중",
   "report.degradedBanner.body": "일부 에이전트가 실제 LLM 프로바이더에 연결하지 못해 예시용 목업 데이터로 폴백했습니다. API 키와 프로바이더 설정을 확인한 뒤 신뢰할 수 있는 결과를 위해 다시 실행하세요.",
   "search.matchCount": "of",

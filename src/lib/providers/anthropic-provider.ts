@@ -117,20 +117,31 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
 
         let text: string;
         if (wantsStream) {
-          text = await readSseWithReconnect(
-            doFetch,
-            (assembled) => {
-              const fraction = Math.min(0.95, assembled.length / 1500);
-              ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
-            },
-            parseAnthropicSse,
-            {
-              maxAttempts: 3,
-              baseDelayMs: 300,
-              maxDelayMs: 2000,
-              signal: ctx.signal,
-            },
-          );
+          try {
+            text = await readSseWithReconnect(
+              doFetch,
+              (assembled) => {
+                const fraction = Math.min(0.95, assembled.length / 1500);
+                ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
+              },
+              parseAnthropicSse,
+              {
+                maxAttempts: 3,
+                baseDelayMs: 300,
+                maxDelayMs: 2000,
+                signal: ctx.signal,
+              },
+            );
+          } catch (streamErr) {
+            // R205 gap: the streaming path previously let readSseWithReconnect
+            // failures fall straight to the outer catch without reporting a
+            // reason, so a stream that dropped after retries (or returned an
+            // HTTP error / empty body mid-stream) degraded to mock with no
+            // "demo" badge. Classify the SSE error so the UI shows the cause.
+            const isAbort = streamErr instanceof Error && (streamErr.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
+            if (!isAbort) reportFallback("network_error");
+            throw streamErr;
+          }
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
           const json: any = await res.json();

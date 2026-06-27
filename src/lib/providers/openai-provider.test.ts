@@ -173,4 +173,26 @@ describe("createOpenAIProvider", () => {
     await p.generate("channel-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
     expect(reasons).toHaveLength(0);
   });
+
+  it("reports onFallback(network_error) when the streaming response drops mid-stream", async () => {
+    // R205 gap: the streaming path (wantsStream when onProgress is set) used
+    // to let readSseWithReconnect failures fall to the outer catch without
+    // reporting a reason. A stream that returns ok but then errors mid-read
+    // must now surface network_error so the demo badge shows.
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: async () => { throw new Error("stream broke"); },
+          releaseLock: () => {},
+        }),
+      },
+    }) as any);
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    const onProgress = vi.fn();
+    const out = await p.generate("market-sizer", { query: "q", keywords: [], onProgress, onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("network_error");
+    expect(out.agent).toBe("market-sizer");
+  });
 });

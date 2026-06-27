@@ -7,6 +7,27 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Streaming fallback fix + provider test-connection (round 208)** — closed a
+  round-205 gap and added the last major usability affordance. The streaming
+  path (taken whenever `onProgress` is set, i.e. every real research run)
+  let `readSseWithReconnect` failures fall straight to the outer catch
+  without invoking `onFallback`, so a stream that dropped after retries — or
+  returned an HTTP error / empty body mid-stream — degraded to mock with no
+  "demo" badge. Both providers now wrap the SSE read in a try/catch that
+  classifies the failure as `network_error` (Aborts excluded as user cancels)
+  before re-throwing, so the demo badge and session banner light up. New
+  `/api/provider/test` endpoint runs a single non-streaming `generate()`
+  against the configured provider with the lightest agent schema
+  (pain-detective) so a user can confirm their real key/base URL/model
+  actually produce valid structured output without launching a full 6-agent
+  session; mock providers return immediately, real providers that fail
+  return the precise `reason` (http_error / validation_error / ...). The
+  endpoint is CSRF-guarded and rate-limited. `ProviderPill` gained a "Test"
+  button that calls it and shows Connected (durationMs) / Failed (reason) /
+  Error, fully translated across all four locales via new
+  `provider.probe.*` dictionary keys. 2 new streaming-fallback tests
+  (one per provider) using a mock ReadableStream that throws mid-read.
+  79 files / 1379 tests pass (+2), tsc and build clean, lint 0.
 - **Degraded-data session banner (round 207)** — the round-205 per-agent
   "demo" badge only showed during the run; a user reading the completed
   report had no session-level indication that some sections were
