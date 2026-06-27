@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "src/app/api/research/[sessionId]/stream/route.ts": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "memory": 1024
     },
     "src/app/api/research/route.ts": {
@@ -10,6 +10,9 @@
     },
     "src/app/api/research/[sessionId]/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/research/smoke/route.ts": {
+      "maxDuration": 300
     },
     "src/app/api/cron/scheduler/route.ts": {
       "maxDuration": 60

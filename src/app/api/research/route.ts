@@ -9,7 +9,6 @@ import { checkCors, handleOptions } from "@/lib/api/cors";
 import { createServerI18n } from "@/lib/i18n/server";
 import {
   createResearchSession,
-  runResearchSession,
 } from "@/lib/research/research-engine";
 import {
   validateResearchRequest,
@@ -114,12 +113,18 @@ export async function POST(request: NextRequest) {
   const { query, keywords } = validation.value;
   const session = createResearchSession(query, keywords);
 
-  // Start the research in the background. We don't await it so the client
-  // can connect to the SSE stream immediately. Errors are logged but do not
-  // propagate to the response (the client polls/streams for status).
-  runResearchSession(session.id).catch((err) => {
-    console.error(`[research] session ${session.id} failed:`, err);
-  });
+  // R231: execution-model change. Previously this route kicked off
+  // runResearchSession in the background (fire-and-forget) so the client
+  // could connect to the SSE stream immediately. That left the agent running
+  // on whatever lambda handled the POST — which Vercel could freeze once
+  // the response returned, severing the SSE stream on a different instance.
+  //
+  // The run now starts when the SSE stream route connects (see
+  // /api/research/[sessionId]/stream/route.ts), where the agent and the SSE
+  // listener share one request/instance for the full 300s window. This POST
+  // route only creates the session and returns 201; the session is mirrored
+  // to Upstash Redis (if configured) so the SSE route can hydrate it from a
+  // different instance if necessary.
 
   logRequest(201, true);
   const response = NextResponse.json(

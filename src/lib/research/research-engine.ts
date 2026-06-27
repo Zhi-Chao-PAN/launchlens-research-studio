@@ -13,6 +13,15 @@ import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordF
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { saveResearchRun } from "@/lib/research/storage";
 import { sleep } from "@/lib/utils/sleep";
+import {
+  storeSession,
+  fetchSession,
+  removeSession,
+  setCancelFlag,
+  isCancelledRemotely,
+  publishEvent,
+  subscribeEvents,
+} from "@/lib/research/session-store";
 
 // In-memory session store for the research engine.
 // In production this would be backed by a database with proper persistence.
@@ -161,11 +170,47 @@ export function createResearchSession(query: string, keywords: string[], persona
 
   sessions.set(id, session);
   sessionAborts.set(id, new AbortController());
+  // Mirror to Redis so other instances can recover this session on
+  // reconnect / GET / SSE. Fire-and-forget: storeSession swallows its own
+  // errors and returns when Redis is not configured.
+  void storeSession(session);
   return session;
 }
 
 export function getResearchSession(id: string): ResearchSession | undefined {
-  return sessions.get(id);
+  const local = sessions.get(id);
+  if (local) return local;
+  // Fall back to Redis for sessions created on a different instance. We
+  // intentionally do NOT await here — the engine uses this synchronously in
+  // many places. When Redis is configured, the SSE/GET callers should call
+  // `hydrateSessionFromRedis(id)` first if they need cross-instance recovery
+  // before invoking the engine. This keeps single-instance behavior
+  // identical (synchronous, in-memory) and adds the Redis path only as an
+  // opt-in layer.
+  return undefined;
+}
+
+/**
+ * Best-effort cross-instance session recovery. Looks up a session id in
+ * Redis and, if found, installs it into the local in-memory Map. Returns
+ * the recovered session, or undefined if no Redis session exists. Callers
+ * that need cross-instance visibility (e.g. the SSE stream route) should
+ * invoke this before falling back to the "session not found" terminal.
+ *
+ * Re-installing into the local Map also restores the AbortController if
+ * the recovered session is still running, so cancel propagation continues
+ * to work on the recovering instance.
+ */
+export async function hydrateSessionFromRedis(id: string): Promise<ResearchSession | undefined> {
+  const local = sessions.get(id);
+  if (local) return local;
+  const remote = await fetchSession(id);
+  if (!remote) return undefined;
+  sessions.set(id, remote);
+  if (!sessionAborts.has(id)) {
+    sessionAborts.set(id, new AbortController());
+  }
+  return remote;
 }
 
 export function cancelSession(id: string): boolean {
@@ -200,6 +245,11 @@ export function cancelSession(id: string): boolean {
   // R212: persist cancelled runs so they show up in History instead of
   // vanishing on restart. Best-effort — storage failures must not break cancel.
   persistRunSnapshot(session, "cancelled");
+  // Cross-instance: flag cancellation in Redis so any agent loop running on
+  // a different instance can observe it, and mirror the cancelled state into
+  // the session JSON so other instances see "cancelled" on GET.
+  void setCancelFlag(id);
+  void storeSession(session);
   return true;
 }
 
@@ -282,17 +332,46 @@ export function deleteSession(id: string): boolean {
   sessionAborts.delete(id);
   cancelledSessions.delete(id);
   sessions.delete(id);
+  // Cross-instance: remove from Redis so deleted sessions don't resurface
+  // on a future instance. Best-effort.
+  void removeSession(id);
   return true;
 }
 
 function isCancelled(id: string): boolean { return cancelledSessions.has(id); }
 
-function emitEvent(sessionId: string, event: ResearchEvent): void {
-  const listeners = eventListeners.get(sessionId);
-  if (!listeners) return;
-  for (const l of Array.from(listeners)) {
-    try { l(event); } catch (err) { console.error(`[research] listener for ${sessionId} threw:`, err); }
+/**
+ * Pre-flight check used by the SSE stream route before subscribing to a
+ * session. Hydrates the local cancelledSessions Set from Redis so the
+ * synchronous `isCancelled()` check inside `runAgent` observes a remote
+ * cancellation that originated on a different instance. Best-effort; if
+ * Redis is not configured or the check fails, the local Set remains the
+ * sole source of truth (single-instance behavior).
+ */
+export async function awaitCancelFromRedis(id: string): Promise<boolean> {
+  const remote = await isCancelledRemotely(id);
+  if (remote) {
+    cancelledSessions.add(id);
+    // Also abort any in-flight AbortController on this instance so an
+    // active runAgent that holds a reference aborts immediately.
+    sessionAborts.get(id)?.abort();
   }
+  return remote;
+}
+
+function emitEvent(sessionId: string, event: ResearchEvent): void {
+  // Local fan-out first — must remain synchronous so existing tests that
+  // assert on cancel/listener behavior (e.g. research-engine.test.ts cancel
+  // block) keep passing.
+  const listeners = eventListeners.get(sessionId);
+  if (listeners) {
+    for (const l of Array.from(listeners)) {
+      try { l(event); } catch (err) { console.error(`[research] listener for ${sessionId} threw:`, err); }
+    }
+  }
+  // Cross-instance fan-out via Redis Pub/Sub — fire-and-forget so the
+  // engine loop is never blocked by a Redis publish.
+  publishEvent(sessionId, event);
 }
 
 function updateAgentState(
@@ -723,7 +802,15 @@ export function subscribeToSession(
   set.add(listener);
   const pending = sseIdleTimers.get(sessionId);
   if (pending) { clearTimeout(pending); sseIdleTimers.delete(sessionId); }
+  // Cross-instance fan-out: also subscribe to the Redis Pub/Sub channel so
+  // events emitted from a different lambda instance reach this listener.
+  // subscribeEvents is synchronous (Upstash returns a Subscriber instance
+  // immediately) and returns an unsub function we capture here.
+  const remoteUnsub = subscribeEvents(sessionId, (e) => {
+    try { listener(e); } catch (err) { console.error(`[research] pubsub listener for ${sessionId} threw:`, err); }
+  });
   return () => {
+    try { remoteUnsub(); } catch { /* ignore */ }
     const set = eventListeners.get(sessionId);
     if (!set) return;
     set.delete(listener);

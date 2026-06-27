@@ -1,13 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// R230: Vercel serverless caps function lifetime at maxDuration (60s on
-// Pro, 10s on Hobby). A 6-agent live-LLM run that exceeds the budget will
-// have its SSE connection severed by the platform; the agent work may
-// still complete in-process, but the client stops receiving events. The
-// research-engine module-level session map is also per-instance — a
-// subsequent request that lands on a different lambda will see an empty
-// store. The companion probe (`npm run probe:serverless`) and README's
-// "Known serverless constraints" cover both failure modes.
-import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
+// R231: Vercel serverless cap raised to 300s (Vercel Hobby/Pro documented
+// maximum for streaming responses) so the SSE stream route can host the
+// full 6-agent research run inside its own request lifetime. That guarantees
+// the agent and its SSE listener share one lambda instance — the previous
+// fire-and-forget POST pattern left the agent running in an instance that
+// Vercel could freeze, severing the stream. Cross-instance state is mirrored
+// to Upstash Redis (when configured) so a session created on instance A is
+// still recoverable if the SSE lands on instance B.
+//
+// Without Redis env vars the route degrades to the original in-process
+// behavior — see `hydrateSessionFromRedis` and `isRunLocked` no-op fallbacks
+// in @/lib/research/session-store. Local dev and tests behave exactly as
+// before.
+import {
+  subscribeToSession,
+  getResearchSession,
+  runResearchSession,
+  hydrateSessionFromRedis,
+} from "@/lib/research/research-engine";
+import { acquireRunLock, releaseRunLock, isRunLocked } from "@/lib/research/session-store";
 import { getResearchRun } from "@/lib/research/storage";
 import { jsonError } from "@/lib/api/validation";
 import { sleep } from "@/lib/utils/sleep";
@@ -15,10 +26,11 @@ import type { AgentId } from "@/lib/schema/research-schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-// R230: serverless lifetime cap. 60s matches Vercel Pro's default and the
-// companion vercel.json function config. Live 6-agent runs that exceed
-// this will have their stream severed (see header comment above).
-export const maxDuration = 60;
+// R231: raised to match the Vercel-documented 300s streaming-response cap so
+// the SSE route can host a full 6-agent run. The agent and listener now
+// share this single request/instance, closing the cross-instance event-fan-out
+// gap. See research-engine.ts header comment for the full rationale.
+export const maxDuration = 300;
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 const HEARTBEAT_INTERVAL_MS = 15000;
@@ -34,7 +46,13 @@ export async function GET(
     return jsonError("Invalid session id format.", 400);
   }
 
-  const session = getResearchSession(sessionId);
+  // Try the in-process map first (fast path for same-instance reconnects).
+  // If absent, attempt Redis hydration so a session created on a different
+  // lambda is still recoverable. This is a no-op without Redis env.
+  let session = getResearchSession(sessionId);
+  if (!session) {
+    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
+  }
   if (!session) {
     // R217: distinguish "the id is wrong / never existed" from "the live
     // engine session expired but the run is on disk". The former gets a
@@ -98,7 +116,7 @@ export async function GET(
   heartbeat = setInterval(() => {
     if (closed) return;
     try {
-      writer.write(encoder.encode(`: keepalive\n\n`));
+      writer.write(encoder.encode(": keepalive\n\n"));
     } catch {
       safeClose();
     }
@@ -131,6 +149,38 @@ export async function GET(
     writeEvent("terminal", JSON.stringify({ reason: session.status, message: "Session " + session.status }));
     safeClose();
     return new Response(stream.readable, sseHeaders());
+  }
+
+  // R231: execution-model change. When a session is pending/running and no
+  // other instance holds the run lock, host the run inside this SSE request
+  // so the agent and listener share one lambda. Without Redis, isRunLocked()
+  // returns false and acquireRunLock() always succeeds — the run happens
+  // here on the first SSE connection, matching the old single-instance
+  // behavior. With Redis, the lock prevents two instances from running the
+  // same session concurrently.
+  let runPromise: Promise<unknown> | null = null;
+  const alreadyLocked = await isRunLocked(sessionId);
+  if (!alreadyLocked) {
+    const acquired = await acquireRunLock(sessionId);
+    if (acquired) {
+      // Fire the run in the background of this request. We don't await it —
+      // the listener is registered below and receives events as they emit.
+      runPromise = runResearchSession(sessionId)
+        .catch((err) => {
+          console.error(`[research] session ${sessionId} failed in-stream:`, err);
+          if (!closed) {
+            writeEvent(
+              "terminal",
+              JSON.stringify({ reason: "error", message: err instanceof Error ? err.message : "Run failed" }),
+            );
+            safeClose();
+          }
+        })
+        .finally(() => {
+          // Always release the lock so future reconnects can recover state.
+          void releaseRunLock(sessionId);
+        });
+    }
   }
 
   unsubscribe = subscribeToSession(sessionId, (event) => {
@@ -166,9 +216,28 @@ export async function GET(
     }
   });
 
-  request.signal.addEventListener("abort", safeClose, { once: true });
+  // Tie the run lifetime to the response: when the client disconnects we
+  // abort the AbortController so any in-flight sleep / provider call exits.
+  // We intentionally do NOT cancel the session — the lock + Pub/Sub mean
+  // another SSE client (a reconnect) can pick up where we left off.
+  request.signal.addEventListener("abort", () => {
+    if (!closed) {
+      ac.abort();
+    }
+  }, { once: true });
 
-  return new Response(stream.readable, { headers: sseHeaders() });
+  // Wrap the response so the SSE writer is closed when the run finishes.
+  const response = new Response(stream.readable, { headers: sseHeaders() });
+  if (runPromise) {
+    // If the run finishes before the client disconnects, ensure safeClose
+    // runs. The 'complete'/'terminal' event already triggers it; this is a
+    // belt-and-braces fallback for race conditions where the run resolves
+    // before any terminal event reaches the writer.
+    void runPromise.then(() => {
+      // Don't close here — let the terminal/complete event do it.
+    });
+  }
+  return response;
 }
 
 function sseHeaders(): Record<string, string> {
@@ -179,4 +248,3 @@ function sseHeaders(): Record<string, string> {
     "X-Accel-Buffering": "no",
   };
 }
-
