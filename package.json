@@ -19,7 +19,7 @@
     "probe:serverless": "node scripts/vercel-serverless-probe.js"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "next": "16.2.9",

@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf";
 
 /**
@@ -81,9 +80,16 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+export function safeEqual(a: string, b: string): boolean {
+  // Constant-time string compare — Edge runtime (no node:crypto) friendly.
+  // CSRF tokens are base64-encoded random strings; length is exposed via the
+  // short-circuit on line 1, which is fine since the length itself is not
+  // secret. The XOR-accumulate loop below ensures per-byte comparisons
+  // don't early-exit on the first differing character.
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
