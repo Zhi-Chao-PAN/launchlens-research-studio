@@ -92,6 +92,7 @@ Every report can be exported in multiple formats:
 - **JSON** (`.json`) — Versioned schema (v1.0.0) with metadata, citation stats, and full structured data
 - **CSV** (`.csv`) — Per-domain spreadsheets: market, competitors, pain points, pricing, channels
 - **LaunchLens brief** (`.json`) — Structured five-field brief (`idea` / `audience` / `market` / `tone` / `constraints`) derived deterministically from agent outputs, ready to import into launchlens-ai. Available via the **Export LaunchLens brief** button and `GET /api/research/[sessionId]/brief`.
+- **Send to LaunchLens AI** (R231) — One-click handoff to [launchlens-ai](https://launchlens-ai-two.vercel.app). Opens launchlens-ai in a new tab with the brief embedded in the URL hash; the launchlens-ai side detects it and pre-fills the brief builder. The local report stays open. URL domain configurable via `NEXT_PUBLIC_LAUNCHLENS_AI_URL`. The `.json` download remains as an offline fallback.
 - **Clipboard** — Copy Markdown, JSON, or a launchlens-ai-compatible brief
 
 Each report section also has its own **"Copy section"** button for sharing individual agent findings.

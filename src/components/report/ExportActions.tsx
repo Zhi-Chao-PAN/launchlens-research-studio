@@ -6,7 +6,8 @@ import { useToast } from "@/components/toast/ToastContext";
 import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
 import { generateMarkdownReport, generateBriefOnly } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
-import { toLaunchLensBrief, serializeBrief } from "@/lib/export/brief-mapper";
+import { toLaunchLensBrief, serializeBrief, getLaunchLensAiUrl } from "@/lib/export/brief-mapper";
+import { briefHashFor } from "@/lib/export/base64url";
 import { generateCSVBundle } from "@/lib/export/csv-formatter";
 import { getNotes } from "@/lib/research/notes";
 
@@ -230,6 +231,67 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     }
   }, [sessionId, query, keywords, outputs, showToast]);
 
+  // R231: one-click send-to-launchlens-ai via #brief=<base64url> hash
+  // fragment. launchlens-ai (commit 98ad77a, brief-fragment.ts) auto-detects
+  // this hash on landing and pre-fills the 5-field brief. We open in a new
+  // tab so the research-studio report stays open in the original tab.
+  //
+  // The download button above remains as a fallback for users on browsers
+  // where popups are blocked, or when the upstream launchlens-ai domain is
+  // temporarily unreachable.
+  const handleSendToLaunchLensAi = useCallback(() => {
+    if (!outputs.synthesis) {
+      showToast("Synthesis report is not yet available.", "error");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const agents = {} as ResearchSession["agents"];
+      (Object.keys(outputs) as AgentId[]).forEach((id) => {
+        const output = outputs[id];
+        agents[id] = {
+          id,
+          status: output ? "done" : "idle",
+          progress: output ? 100 : 0,
+          currentStep: output ? "Done" : "",
+          output: output ?? undefined,
+        };
+      });
+      const session: ResearchSession = {
+        id: sessionId,
+        query,
+        keywords,
+        createdAt: "",
+        updatedAt: "",
+        status: "completed",
+        agents,
+        citations: [],
+      };
+      const brief = toLaunchLensBrief(session);
+      // Compact JSON keeps the URL shorter; the launchlens-ai decoder accepts
+      // any valid JSON string.
+      const compactJson = serializeBrief(brief, false);
+      const hash = briefHashFor(compactJson);
+      const aiUrl = getLaunchLensAiUrl();
+      const targetUrl = `${aiUrl}/${hash}`;
+      // noopener,noreferrer keeps the new tab isolated (matches the existing
+      // <a target="_blank" rel="noopener noreferrer"> pattern across the app).
+      const opened = window.open(targetUrl, "_blank", "noopener,noreferrer");
+      if (opened === null) {
+        // Popup blocked. Surface a hint instead of failing silently so the
+        // user knows to fall back to the download button.
+        showToast("Popup blocked — please use the download button and import the .json file in LaunchLens AI.", "error");
+      } else {
+        showToast("Opened LaunchLens AI in a new tab.", "success");
+      }
+    } catch (err) {
+      console.error("Send to LaunchLens AI failed:", err);
+      showToast("Send to LaunchLens AI failed.", "error");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [sessionId, query, keywords, outputs, showToast]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
@@ -283,13 +345,29 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
           <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Send to LaunchLens AI</p>
         </div>
 
-        <button onClick={handleExportLaunchLens} disabled={isExporting}
-          className="w-full py-2 px-3 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50">
+        {/* R231: primary one-click path. Opens launchlens-ai in a new tab with
+            the brief embedded in the URL hash so the 5 fields are pre-filled.
+            Popup-blocked → user falls back to the download button below. */}
+        <button
+          onClick={handleSendToLaunchLensAi}
+          disabled={isExporting || !outputs.synthesis}
+          data-testid="send-to-launchlens-ai"
+          className="w-full py-2 px-3 text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50 shadow-sm"
+        >
           <span aria-hidden>🚀</span>
+          <span className="flex-1">Send to LaunchLens AI</span>
+        </button>
+        <p className="text-[11px] text-slate-500 px-1 leading-snug">
+          Opens launchlens-ai in a new tab with your 5-field brief pre-filled. The current report stays open here.
+        </p>
+
+        <button onClick={handleExportLaunchLens} disabled={isExporting}
+          className="w-full py-2 px-3 text-sm font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50">
+          <span aria-hidden>📦</span>
           <span className="flex-1">Export LaunchLens brief (.json)</span>
         </button>
         <p className="text-[11px] text-slate-500 px-1 leading-snug">
-          Downloads a structured brief you can import into launchlens-ai to generate a full GTM workspace.
+          Fallback: downloads the structured brief as a .json file you can manually import into launchlens-ai.
         </p>
       </div>
     </div>
