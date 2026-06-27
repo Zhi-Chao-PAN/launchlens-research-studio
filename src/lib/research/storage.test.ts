@@ -10,6 +10,7 @@ import {
   searchResearchRuns,
   bulkDeleteRuns,
   exportRuns,
+  getDashboardStats,
 } from "@/lib/research/storage";
 
 describe("Research storage", () => {
@@ -429,7 +430,7 @@ describe("exportRuns", () => {
       result: "", provider: "mock", model: "m2",
       createdAt: 2000, durationMs: 100, status: "completed",
     });
-    
+
     const json = exportRuns("json", ["exp-2"]);
     const parsed = JSON.parse(json);
     expect(parsed.length).toBe(1);
@@ -437,4 +438,50 @@ describe("exportRuns", () => {
   });
 });
 
+describe("getDashboardStats (R224)", () => {
+  beforeEach(() => {
+    const runs = listResearchRuns(100);
+    for (const run of runs) {
+      deleteResearchRun(run.id);
+    }
+  });
+
+  it("returns zeros for an empty store", () => {
+    const stats = getDashboardStats();
+    expect(stats.totalRuns).toBe(0);
+    expect(stats.recentRuns).toBe(0);
+    expect(stats.totalDurationMs).toBe(0);
+    expect(stats.byStatus).toEqual({ completed: 0, failed: 0, cancelled: 0 });
+  });
+
+  it("counts total runs, sums duration, and buckets by status", () => {
+    const now = Date.now();
+    saveResearchRun({ id: "s-1", query: "a", keywords: [], result: "", provider: "mock", model: "m", createdAt: now, durationMs: 60000, status: "completed" });
+    saveResearchRun({ id: "s-2", query: "b", keywords: [], result: "", provider: "mock", model: "m", createdAt: now, durationMs: 120000, status: "failed" });
+    saveResearchRun({ id: "s-3", query: "c", keywords: [], result: "", provider: "mock", model: "m", createdAt: now, durationMs: 0, status: "cancelled" });
+
+    const stats = getDashboardStats();
+    expect(stats.totalRuns).toBe(3);
+    expect(stats.totalDurationMs).toBe(180000);
+    expect(stats.byStatus).toEqual({ completed: 1, failed: 1, cancelled: 1 });
+  });
+
+  it("scopes recentRuns to the sinceMs window", () => {
+    const now = Date.now();
+    // recent (within 7 days)
+    saveResearchRun({ id: "r-new", query: "new", keywords: [], result: "", provider: "mock", model: "m", createdAt: now, durationMs: 1000, status: "completed" });
+    // old (30 days ago)
+    saveResearchRun({ id: "r-old", query: "old", keywords: [], result: "", provider: "mock", model: "m", createdAt: now - 30 * 24 * 60 * 60 * 1000, durationMs: 1000, status: "completed" });
+
+    const stats = getDashboardStats(7 * 24 * 60 * 60 * 1000);
+    expect(stats.totalRuns).toBe(2);
+    expect(stats.recentRuns).toBe(1);
+  });
+
+  it("treats missing durationMs as zero", () => {
+    saveResearchRun({ id: "s-d", query: "d", keywords: [], result: "", provider: "mock", model: "m", createdAt: Date.now(), durationMs: 0, status: "completed" } as any);
+    const stats = getDashboardStats();
+    expect(stats.totalDurationMs).toBe(0);
+  });
+});
 

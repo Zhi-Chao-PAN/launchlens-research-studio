@@ -239,6 +239,45 @@ export function getResearchStorageInfo() {
 }
 
 /**
+ * R224: aggregate dashboard stats computed server-side over the in-memory
+ * run cache. Returning pre-aggregated counts lets the home dashboard fetch
+ * a single tiny payload instead of pulling up to 100 full summary rows and
+ * re-counting on the client (the old ?limit=500 was silently capped to 100
+ * by the runs route, so totalRuns was already wrong past 100 runs).
+ *
+ * `sinceMs` scopes the "recent" count (defaults to 7 days).
+ */
+export interface DashboardStats {
+  totalRuns: number;
+  recentRuns: number;
+  totalDurationMs: number;
+  byStatus: { completed: number; failed: number; cancelled: number };
+}
+
+export function getDashboardStats(sinceMs: number = 7 * 24 * 60 * 60 * 1000): DashboardStats {
+  const now = Date.now();
+  const cutoff = now - sinceMs;
+  const byStatus = { completed: 0, failed: 0, cancelled: 0 };
+  let recentCount = 0;
+  let totalDurationMs = 0;
+
+  for (const r of recentRuns) {
+    if (r.status === "completed" || r.status === "failed" || r.status === "cancelled") {
+      byStatus[r.status]++;
+    }
+    if (r.createdAt >= cutoff) recentCount++;
+    totalDurationMs += r.durationMs || 0;
+  }
+
+  return {
+    totalRuns: recentRuns.length,
+    recentRuns: recentCount,
+    totalDurationMs,
+    byStatus,
+  };
+}
+
+/**
  * Delete multiple research runs by IDs.
  * Returns count of successfully deleted runs.
  */

@@ -111,30 +111,30 @@ export default function Home() {
       : null,
   );
 
-  // Load dashboard stats on mount
+  // Load dashboard stats on mount.
+  // R224: fetch a single pre-aggregated payload from /api/research/stats
+  // instead of pulling up to 100 summary rows and re-counting on the client.
+  // The old ?limit=500 was silently capped to 100 by the runs route, so
+  // totalRuns was already wrong past 100 runs. starredCount + templates stay
+  // client-side (they derive from localStorage, which the server can't see).
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const res = await fetch("/api/research/runs?limit=500");
+        const res = await fetch("/api/research/stats");
         if (res.ok) {
           const data = await res.json();
-          const runs = data.runs || [];
-          const now = Date.now();
-          const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-          const thisWeek = runs.filter((r: any) => r.createdAt > weekAgo);
-          const totalMs = runs.reduce((acc: number, r: any) => acc + (r.durationMs || 0), 0);
           const starred = getStarredRunIds();
 
           setStats({
-            totalRuns: runs.length,
-            starredCount: starred.filter((id: string) => runs.some((r: any) => r.id === id)).length,
-            thisWeekRuns: thisWeek.length,
-            totalDurationMin: Math.round(totalMs / 60000),
+            totalRuns: data.totalRuns ?? 0,
+            starredCount: starred.length,
+            thisWeekRuns: data.recentRuns ?? 0,
+            totalDurationMin: data.totalDurationMin ?? 0,
             templates: listTemplates().length,
           });
         }
       } catch {
-        // Silently fail ? stats are a nice-to-have
+        // Silently fail — stats are a nice-to-have
       }
     };
     void loadStats();
