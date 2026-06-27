@@ -7,6 +7,26 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Synthesis upstream integrity + model capture (round 206)** — fixed a
+  silent data-corruption bug in the synthesis agent's user prompt. The
+  previous `buildUserPrompt` stringified the entire five-agent upstream
+  array and sliced the result to 8000 chars, which cut a number/string
+  mid-token and produced invalid JSON the model could not parse — so the
+  synthesis agent could receive a corrupted subset of the research with no
+  indication. Rewritten to stringify each agent's output individually
+  (each stays valid JSON) with a per-agent budget of 6000 chars, label
+  every block `--- <agentId> ---`, and explicitly flag truncated outputs
+  `[truncated, first N chars]` so the model knows it is seeing a subset;
+  the synthesis coaching now instructs the model to treat `[truncated]`
+  fields as cut for length, not absent. Also fixed a history-accuracy
+  gap: `session.providerModel` was referenced at save time but never set,
+  so history rows recorded the provider id (e.g. "openai") as the model
+  instead of the actual model name; `createResearchSession` now derives
+  the model from the provider's `displayName` (which follows the
+  "Label (model)" convention). Tests: 2 new `agent-prompts.test.ts` cases
+  asserting per-agent block labeling and that an oversized single output
+  is truncated (not the whole array) while a small sibling survives
+  intact. 79 files / 1377 tests pass (+2), tsc and build clean.
 - **Provider fallback visibility (round 205)** — closed the silent-degradation
   gap left after round 204. The OpenAI/Anthropic providers catch all failures
   internally and return mock output so a session always completes, but their

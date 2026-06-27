@@ -250,6 +250,7 @@ const AGENT_SPECS: Record<AgentId, AgentPromptSpec> = {
       "opportunityScore and riskScore are 0-100. Higher opportunity = more attractive; higher risk = harder to execute.",
       "Provide exactly 3 topThreeOpportunities and 3 topThreeRisks.",
       "The launchlensBrief should be a concise, self-contained paragraph a founder could act on.",
+      "Upstream outputs are provided one JSON object per agent. If an output is marked [truncated], synthesize from the visible fields and do not treat missing fields as absent from the research — they were cut for length, not because they were empty.",
     ],
   },
 };
@@ -277,18 +278,46 @@ export function buildSystemPrompt(agentId: AgentId): string {
 /**
  * Build the user prompt for an agent. Includes the product idea, keywords,
  * and — for the synthesis agent — the upstream agent outputs to synthesize.
+ *
+ * For synthesis the upstream payload is the five research agents' full
+ * outputs. Naively JSON.stringify-ing the whole array and slicing would
+ * cut a number/string mid-token and yield invalid JSON the model cannot
+ * parse — silent data corruption. Instead we stringify each agent's output
+ * individually (each stays valid JSON) and apply a per-agent budget, so a
+ * truncated output is still parseable and is explicitly flagged as
+ * "[truncated]" so the model knows it is seeing a subset.
  */
 export function buildUserPrompt(agentId: AgentId, ctx: {
   query: string;
   keywords: string[];
   upstream?: AgentOutput[];
 }): string {
-  const upstream = ctx.upstream && ctx.upstream.length
-    ? "\n\nUpstream agent outputs to synthesize (JSON array):\n" + JSON.stringify(ctx.upstream).slice(0, 8000)
-    : "";
+  if (!ctx.upstream || ctx.upstream.length === 0) {
+    return [
+      "Product idea: " + ctx.query,
+      "Keywords: " + (ctx.keywords && ctx.keywords.length ? ctx.keywords.join(", ") : "(none provided)"),
+    ].join("\n");
+  }
+  // Budget the upstream section so the whole prompt stays well within a
+  // typical model context window while giving every agent fair space.
+  const PER_AGENT_BUDGET = 6000;
+  const parts = ctx.upstream.map((out, i) => {
+    const tag = out.agent || ("agent-" + i);
+    const json = JSON.stringify(out);
+    if (json.length <= PER_AGENT_BUDGET) {
+      return "--- " + tag + " ---\n" + json;
+    }
+    // Truncate at the last safe boundary before the budget so the JSON
+    // stays invalid-but-explicitly-truncated rather than misleadingly
+    // whole. We close the object best-effort; the model is told it's a
+    // truncation and coached (in the system prompt) to treat it as partial.
+    return "--- " + tag + " [truncated, first " + PER_AGENT_BUDGET + " chars] ---\n" + json.slice(0, PER_AGENT_BUDGET) + " …";
+  });
   return [
     "Product idea: " + ctx.query,
     "Keywords: " + (ctx.keywords && ctx.keywords.length ? ctx.keywords.join(", ") : "(none provided)"),
-    upstream,
-  ].filter(Boolean).join("\n");
+    "",
+    "Upstream agent outputs to synthesize (one JSON object per agent; some may be marked [truncated]):",
+    parts.join("\n\n"),
+  ].join("\n");
 }

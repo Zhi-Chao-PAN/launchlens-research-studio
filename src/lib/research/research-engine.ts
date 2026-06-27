@@ -60,6 +60,12 @@ export function createResearchSession(query: string, keywords: string[], persona
   // is *attempting*; the per-call telemetry in runAgent still captures
   // the resolved provider when the breaker flips to mock.
   const provider = selectProvider();
+  // R205: derive the model name from the provider displayName so history
+  // records the actual model (e.g. "gpt-4o-mini") rather than falling back
+  // to the provider id. Display names follow the "Label (model)" convention;
+  // for the mock provider there is no parenthetical, so we keep the id.
+  const modelFromName = /\(([^)]+)\)\s*$/.exec(provider.displayName);
+  const providerModel = modelFromName ? modelFromName[1] : provider.id;
 
   const session: ResearchSession = {
     id,
@@ -71,6 +77,8 @@ export function createResearchSession(query: string, keywords: string[], persona
     ...(personaId ? { personaId } : {}),
     // R203: record real provider so history is accurate.
     providerId: provider.id,
+    // R205: record the resolved model name for accurate history rows.
+    providerModel,
     createdAt: now,
     updatedAt: now,
     status: "pending",

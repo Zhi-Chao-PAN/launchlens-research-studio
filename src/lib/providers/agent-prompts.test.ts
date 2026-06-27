@@ -96,6 +96,37 @@ describe("agent-prompts", () => {
       expect(prompt).toContain("market-sizer");
     });
 
+    it("renders each upstream agent as its own labeled block", () => {
+      const upstream = [
+        { agent: "market-sizer", summary: "ms", citations: [] },
+        { agent: "competitor-analyst", summary: "ca", citations: [] },
+      ] as unknown as AgentOutput[];
+      const prompt = buildUserPrompt("synthesis", { query: "q", keywords: [], upstream });
+      // Each agent gets a "--- <id> ---" header so the model can attribute
+      // findings, and each block is independently valid JSON.
+      expect(prompt).toContain("--- market-sizer ---");
+      expect(prompt).toContain("--- competitor-analyst ---");
+      // The full first agent output survives intact.
+      expect(prompt).toContain('"summary":"ms"');
+    });
+
+    it("truncates a single oversized upstream output per-agent, not mid-array", () => {
+      // An upstream output larger than the per-agent budget must be flagged
+      // [truncated] rather than sliced mid-token (which would corrupt the
+      // whole JSON array and make every agent's output unparseable).
+      const bigSummary = "x".repeat(8000);
+      const upstream = [
+        { agent: "market-sizer", summary: bigSummary, citations: [] },
+        { agent: "competitor-analyst", summary: "small", citations: [] },
+      ] as unknown as AgentOutput[];
+      const prompt = buildUserPrompt("synthesis", { query: "q", keywords: [], upstream });
+      expect(prompt).toContain("[truncated");
+      // The second (small) agent must survive fully — the old whole-string
+      // slice could have dropped it entirely.
+      expect(prompt).toContain('"summary":"small"');
+      expect(prompt).toContain("--- competitor-analyst ---");
+    });
+
     it("omits the upstream section when there is none", () => {
       const prompt = buildUserPrompt("market-sizer", {
         query: "q",
