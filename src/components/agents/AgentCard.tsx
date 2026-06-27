@@ -18,6 +18,28 @@ interface AgentCardProps {
   cancelled?: boolean;
 }
 
+/** Map a degradation reason to a human-readable tooltip so the user can tell
+ *  a bad API key from a weak-model validation failure from a network blip. */
+function degradedTooltip(reason: AgentState["degradedReason"]): string {
+  switch (reason) {
+    case "breaker_open":
+      return "Real provider circuit breaker open — showing demo data";
+    case "http_error":
+      return "Real provider returned an HTTP error (bad key, rate limit, server error) — showing demo data";
+    case "network_error":
+      return "Could not reach the real provider (network/DNS/timeout) — showing demo data";
+    case "parse_error":
+      return "Real provider returned a non-JSON response — showing demo data";
+    case "validation_error":
+      return "Real provider output failed schema validation — showing demo data";
+    case "empty_response":
+      return "Real provider returned an empty response — showing demo data";
+    case "provider_fallback":
+    default:
+      return "Real provider failed — showing demo data";
+  }
+}
+
 const statusColors: Record<string, string> = {
   idle: "bg-slate-100 text-slate-500",
   running: "bg-amber-100 text-amber-700",
@@ -64,13 +86,16 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-semibold text-slate-800 text-sm truncate">{meta.name}</h3>
             <div className="flex items-center gap-1 flex-shrink-0">
-              {/* R203: when the real provider failed and the output is
-                  illustrative mock data, surface a small amber badge so the
-                  user knows the numbers are a demo, not authoritative. */}
+              {/* R203/R204: when the real provider failed (or the circuit
+                  breaker was open) and the output is illustrative mock data,
+                  surface a small amber badge so the user knows the numbers
+                  are a demo, not authoritative. R204 added finer-grained
+                  reasons (http_error / validation_error / ...) reported by
+                  the provider's onFallback callback. */}
               {state.degraded && (
                 <span
                   className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200"
-                  title={state.degradedReason === "breaker_open" ? "Provider circuit breaker open — showing demo data" : "Provider failed — showing demo data"}
+                  title={degradedTooltip(state.degradedReason)}
                 >
                   {t("agent.degraded" as any, "demo")}
                 </span>
@@ -141,7 +166,11 @@ export const AgentCard = memo(AgentCardImpl, (prev, next) => {
     prev.onClick === next.onClick &&
     prev.state.status === next.state.status &&
     bucketProgress(prev.state.progress) === bucketProgress(next.state.progress) &&
-    prev.state.currentStep === next.state.currentStep
+    prev.state.currentStep === next.state.currentStep &&
+    // R204: the "demo data" badge depends on these, so they must trigger a
+    // re-render when the engine flips them after a provider fallback.
+    prev.state.degraded === next.state.degraded &&
+    prev.state.degradedReason === next.state.degradedReason
   );
 });
 AgentCard.displayName = "AgentCard";

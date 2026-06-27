@@ -8,7 +8,7 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 
 ![CI](https://img.shields.io/badge/CI-passing-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Tests](https://img.shields.io/badge/tests-1364%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1375%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---

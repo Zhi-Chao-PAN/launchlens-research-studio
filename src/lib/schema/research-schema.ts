@@ -180,10 +180,19 @@ export interface AgentState {
    *  illustrative (mock or breaker-fallback). The data is still useful for
    *  demos, but the user should know it's not authoritative. */
   degraded?: boolean;
-  /** R203: short human-readable reason for the degradation, e.g.
-   *  "provider_fallback" (real provider failed) or "breaker_open" (circuit
-   *  breaker was open for the real provider). */
-  degradedReason?: "provider_fallback" | "breaker_open";
+  /** R203: short human-readable reason for the degradation.
+   *  - "provider_fallback" / "breaker_open": R203 reasons (outer engine path).
+   *  - "http_error" / "network_error" / "parse_error" / "validation_error" /
+   *    "empty_response": R204 reasons reported by the provider's own
+   *    onFallback callback when it silently degrades to mock internally. */
+  degradedReason?:
+    | "provider_fallback"
+    | "breaker_open"
+    | "http_error"
+    | "network_error"
+    | "parse_error"
+    | "validation_error"
+    | "empty_response";
 }
 
 export interface ResearchSession {

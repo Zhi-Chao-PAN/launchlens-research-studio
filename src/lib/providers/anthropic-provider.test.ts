@@ -2,11 +2,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { createAnthropicProvider } from "./anthropic-provider";
 
+// A channel-scout payload that actually passes validateAgentOutput: it
+// carries the required fields plus at least one citation with a non-empty
+// snippet (the validator rejects empty citation arrays and snippet-less
+// citations). The previous version had citations:[] and silently fell back
+// to mock, making the "returns parsed JSON" test misleading.
 const validPayload = {
   agent: "channel-scout",
   summary: "ok",
   channels: [],
-  citations: [],
+  citations: [{ id: "c1", title: "Source", snippet: "evidence" }],
 };
 
 describe("createAnthropicProvider", () => {
@@ -115,5 +120,56 @@ describe("createAnthropicProvider", () => {
     expect(systemContent).toContain("synthesis");
     expect(systemContent).toContain("opportunityScore");
     expect(systemContent).toContain("launchlensBrief");
+  });
+
+  it("reports onFallback(http_error) when the provider returns 4xx", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("market-sizer", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("http_error");
+  });
+
+  it("reports onFallback(validation_error) when the LLM output fails schema validation", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ content: [{ type: "text", text: JSON.stringify({ agent: "channel-scout" }) }] }),
+    }) as any);
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    const out = await p.generate("channel-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("validation_error");
+    expect(out.agent).toBe("channel-scout");
+  });
+
+  it("reports onFallback(parse_error) when the response is not JSON", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ content: [{ type: "text", text: "not json at all" }] }),
+    }) as any);
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("pricing-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("parse_error");
+  });
+
+  it("reports onFallback(network_error) when fetch throws before a response", async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error("ECONNREFUSED"); });
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    const out = await p.generate("market-sizer", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("network_error");
+    expect(out.agent).toBe("market-sizer");
+  });
+
+  it("does not report onFallback on a successful real call", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ content: [{ type: "text", text: JSON.stringify(validPayload) }] }),
+    }) as any);
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("channel-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toHaveLength(0);
   });
 });

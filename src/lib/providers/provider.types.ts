@@ -28,7 +28,26 @@ export interface ProviderContext {
   // engine can fan progress out to subscribers. Optional so legacy
   // call-sites and the deterministic mock keep working unchanged.
   onProgress?: (event: ProviderProgressEvent) => void;
+  /** Called by a real provider when it degrades to the mock fallback for
+   *  this agent. Real providers (openai/anthropic) catch all failures
+   *  internally and return mock output so a session always completes — but
+   *  without this callback the engine cannot tell a successful real call
+   *  from a silent fallback, so the user would see demo data with no
+   *  "demo" badge. The engine wires this to set the agent's `degraded`
+   *  flag and surface the reason in the UI. Optional for back-compat. */
+  onFallback?: (reason: ProviderFallbackReason) => void;
 }
+
+/** Why a real provider fell back to mock. Surfaced to the UI as the
+ *  "demo data" badge tooltip so users can tell a weak model / bad key from
+ *  a network blip. */
+export type ProviderFallbackReason =
+  | "http_error" // non-retriable 4xx, or 5xx after exhausting retries
+  | "network_error" // fetch threw before a response (DNS, timeout, abort)
+  | "parse_error" // response body was not valid JSON
+  | "validation_error" // parsed JSON failed the agent schema validator
+  | "empty_response"; // model returned an empty/no content message
+
 
 export interface ResearchProvider {
   readonly id: string;

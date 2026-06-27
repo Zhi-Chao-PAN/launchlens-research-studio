@@ -7,6 +7,36 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Provider fallback visibility (round 205)** — closed the silent-degradation
+  gap left after round 204. The OpenAI/Anthropic providers catch all failures
+  internally and return mock output so a session always completes, but their
+  catch blocks returned mock without the engine ever knowing — so a user with
+  a bad API key or a weak model that failed validation saw demo data with no
+  "demo" badge and no clue their real provider never ran. New
+  `ProviderContext.onFallback` callback (type `ProviderFallbackReason`:
+  `http_error` / `network_error` / `parse_error` / `validation_error` /
+  `empty_response`) is invoked by each provider's failure paths with the
+  precise reason *before* degrading; the engine wires it to set the agent's
+  `degraded` flag and `degradedReason` (the R203 union widened to include the
+  new reasons). Both providers now classify each failure point: network
+  throws (DNS/timeout, with AbortError excluded as a user cancel), HTTP
+  exhaustion after retries, non-retriable 4xx, empty responses, JSON parse
+  failures, and schema-validation failures. `AgentCard`'s memo comparator
+  was missing `degraded`/`degradedReason` so the badge never re-rendered
+  even when the engine set them — fixed; the tooltip now maps each reason to
+  a human-readable explanation ("Real provider returned an HTTP error...",
+  "Could not reach the real provider...", etc.). The `use-research-studio`
+  hook's local agent type reused the narrow R203 reason union and would
+  have rejected the new reasons — widened to `AgentState["degradedReason"]`.
+  Tests: 5 `onFallback`-reason tests each in openai/anthropic provider tests
+  (http_error, validation_error, parse_error, network_error, and a negative
+  "no fallback on success" test); the misleading `validPayload` (which had
+  `citations:[]` and silently fell back to mock, making the "returns parsed
+  JSON" test a lie) now carries a real citation so that test is honest; 1
+  end-to-end engine test forces `LAUNCHLENS_PROVIDER=openai` + a throwing
+  fetch and asserts all five research agents come back `done` + `degraded` +
+  `degradedReason="network_error"`. 79 files / 1375 tests pass (+11), tsc
+  and build clean.
 - **Real-provider usability (round 204)** — fixed the core blocker that kept
   the product on demo data even with real API keys configured: the OpenAI and
   Anthropic provider prompts never showed the agent schemas to the LLM, so

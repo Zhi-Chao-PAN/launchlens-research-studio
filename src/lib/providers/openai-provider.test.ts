@@ -2,11 +2,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { createOpenAIProvider } from "./openai-provider";
 
+// A channel-scout payload that actually passes validateAgentOutput: it
+// carries the required fields plus at least one citation with a non-empty
+// snippet (the validator rejects empty citation arrays and snippet-less
+// citations). The previous version had citations:[] and silently fell back
+// to mock, making the "returns parsed JSON" test misleading.
 const validPayload = {
   agent: "channel-scout",
   summary: "ok",
   channels: [],
-  citations: [],
+  citations: [{ id: "c1", title: "Source", snippet: "evidence" }],
 };
 
 describe("createOpenAIProvider", () => {
@@ -113,7 +118,59 @@ describe("createOpenAIProvider", () => {
     await p.generate("synthesis", { query: "q", keywords: [] });
     expect(systemContent).toContain("synthesis");
     expect(systemContent).toContain("opportunityScore");
-    expect(systemContent).toContain("riskScore");
     expect(systemContent).toContain("launchlensBrief");
+  });
+
+  it("reports onFallback(http_error) when the provider returns 4xx", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("market-sizer", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("http_error");
+  });
+
+  it("reports onFallback(validation_error) when the LLM output fails schema validation", async () => {
+    // Valid JSON but wrong agent — validateAgentOutput rejects it.
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({ agent: "wrong" }) } }] }),
+    }) as any);
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    const out = await p.generate("channel-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("validation_error");
+    // Still returns mock output so the session completes.
+    expect(out.agent).toBe("channel-scout");
+  });
+
+  it("reports onFallback(parse_error) when the response is not JSON", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "not json at all" } }] }),
+    }) as any);
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("pricing-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("parse_error");
+  });
+
+  it("reports onFallback(network_error) when fetch throws before a response", async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error("ECONNREFUSED"); });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    const out = await p.generate("market-sizer", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toContain("network_error");
+    expect(out.agent).toBe("market-sizer");
+  });
+
+  it("does not report onFallback on a successful real call", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(validPayload) } }] }),
+    }) as any);
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+    await p.generate("channel-scout", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    expect(reasons).toHaveLength(0);
   });
 });

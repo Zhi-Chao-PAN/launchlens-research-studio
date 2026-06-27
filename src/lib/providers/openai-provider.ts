@@ -11,7 +11,7 @@
 // through to the mock fallback.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
-import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
+import type { ProviderContext, ProviderFallbackReason, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
@@ -37,42 +37,75 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
     supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       const wantsStream = typeof ctx.onProgress === "function";
+      // Classify a thrown error into a fallback reason so the engine can
+      // surface "demo data" with an accurate tooltip. Without this the
+      // catch below silently returned mock and the user had no idea the
+      // real call failed.
+      const reportFallback = (reason: ProviderFallbackReason) => {
+        ctx.onFallback?.(reason);
+      };
       try {
         const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
 
         const doFetch = async () => {
-          const r = await fetchImpl(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": "Bearer " + config.apiKey,
-            },
-            signal: ctx.signal,
-            body: JSON.stringify({
-              model,
-              temperature: 0.4,
-              stream: wantsStream,
-              response_format: { type: "json_object" },
-              messages: [
-                { role: "system", content: buildSystemPrompt(agentId) },
-                { role: "user", content: buildUserPrompt(agentId, ctx) },
-              ],
-            }),
-          });
+          let r: Response;
+          try {
+            r = await fetchImpl(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + config.apiKey,
+              },
+              signal: ctx.signal,
+              body: JSON.stringify({
+                model,
+                temperature: 0.4,
+                stream: wantsStream,
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: buildSystemPrompt(agentId) },
+                  { role: "user", content: buildUserPrompt(agentId, ctx) },
+                ],
+              }),
+            });
+          } catch (e) {
+            // fetchImpl threw before any response — DNS, connection refused,
+            // timeout, etc. Aborts are a user cancel, not a degradation, so
+            // let them propagate untouched. Network errors are retriable for
+            // the breaker's sake but we tag them as the fallback reason.
+            const isAbort = e instanceof Error && (e.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
+            if (!isAbort) reportFallback("network_error");
+            throw e;
+          }
           if (!r.ok && (r.status >= 500 || r.status === 429)) {
             throw new Error("retriable HTTP " + r.status);
           }
           return r;
         };
 
-        const res = await retryWithBackoff(doFetch, {
-          maxAttempts: 3,
-          baseDelayMs: 200,
-          maxDelayMs: 2000,
-          shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
-        });
+        let res: Response;
+        try {
+          res = await retryWithBackoff(doFetch, {
+            maxAttempts: 3,
+            baseDelayMs: 200,
+            maxDelayMs: 2000,
+            shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
+          });
+        } catch (err) {
+          // Retries exhausted on a retriable HTTP error (5xx/429), or a
+          // network error propagated from doFetch (already reported there).
+          // Tag HTTP exhaustion so the UI can show an accurate reason;
+          // network errors were already tagged inside doFetch.
+          const isHttp = err instanceof Error && err.message.startsWith("retriable HTTP");
+          if (isHttp) reportFallback("http_error");
+          throw err;
+        }
 
-        if (!res.ok) throw new Error("provider HTTP " + res.status);
+        if (!res.ok) {
+          // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
+          reportFallback("http_error");
+          throw new Error("provider HTTP " + res.status);
+        }
 
         let text: string;
         if (wantsStream) {
@@ -98,8 +131,23 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           const json: any = await res.json();
           text = json?.choices?.[0]?.message?.content || "";
         }
-        const parsed = JSON.parse(text);
-        return validateAgentOutput(agentId, parsed);
+        if (!text) {
+          reportFallback("empty_response");
+          throw new Error("empty provider response");
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          reportFallback("parse_error");
+          throw new Error("provider returned non-JSON");
+        }
+        try {
+          return validateAgentOutput(agentId, parsed);
+        } catch {
+          reportFallback("validation_error");
+          throw new Error("provider output failed schema validation");
+        }
       } catch {
         return mockResearchProvider.generate(agentId, ctx);
       }

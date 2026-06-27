@@ -227,9 +227,12 @@ async function runAgent(
         // R203: track per-agent whether we resolved to the real provider or
         // fell back to mock (so the UI can show a "demo data" badge).
         // isDegradedHere is `let` because the catch block below can flip it
-        // when a real provider call throws.
+        // when a real provider call throws. R204: degradedReasonCaptured is
+        // set by the provider's onFallback callback with a finer-grained
+        // reason (http_error / validation_error / ...) than the R203 catch.
         const resolvedProviderId = provider.id;
         let isDegradedHere = provider.id !== selected.id;
+        let degradedReasonCaptured: NonNullable<AgentState["degradedReason"]> | undefined;
         let output;
         const t0 = Date.now();
         let telemetryOk = true;
@@ -257,6 +260,23 @@ async function runAgent(
                   partial: event.partial,
                 },
               });
+            },
+            // R204: real providers (openai/anthropic) catch failures
+            // internally and return mock output so a session always
+            // completes — but they now invoke this callback with the
+            // precise reason first. Without wiring it here, a bad key or
+            // weak-model validation failure would surface as demo data
+            // with no "demo" badge, leaving the user blind to the fact
+            // that their real provider never actually ran. We flip
+            // isDegradedHere and capture the reason; the resolvedProviderId
+            // stays as the real provider's id (the call was attempted
+            // against it) so history is accurate.
+            onFallback: (reason) => {
+              if (selected.isMock) return;
+              isDegradedHere = true;
+              degradedReasonCaptured = reason;
+              telemetryOk = false;
+              telemetryErr = "provider fallback: " + reason;
             },
           });
         } catch (e) {
@@ -296,7 +316,7 @@ async function runAgent(
       output,
       resolvedProviderId,
       ...(isDegradedHere
-        ? { degraded: true, degradedReason: breakerOpen ? "breaker_open" : "provider_fallback" as const }
+        ? { degraded: true, degradedReason: degradedReasonCaptured ?? (breakerOpen ? "breaker_open" : "provider_fallback") }
         : {}),
     });
 

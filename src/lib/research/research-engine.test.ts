@@ -210,3 +210,53 @@ describe("deleteSession (R47/R48)", () => {
     expect(deleteSession(s.id)).toBe(false);
   });
 });
+
+describe("provider fallback visibility (round 205)", () => {
+  // R205: when a real provider silently degrades to mock internally (the
+  // common case — bad key, weak model, validation failure), the engine must
+  // still mark the agent `degraded` so the UI shows a "demo data" badge.
+  // Previously the provider's internal catch returned mock without the
+  // engine ever knowing, so users saw demo data with no indication their
+  // real provider never ran. These tests force the real-provider path and
+  // assert the degraded flag + reason propagate to the agent state.
+  const origEnv = { ...process.env };
+  let origFetch: typeof globalThis.fetch | undefined;
+
+  beforeEach(() => {
+    // The file-level beforeAll installs fake timers for the helper tests;
+    // runResearchSession uses real setTimeout-based sleep, so restore real
+    // timers for this block only.
+    vi.useRealTimers();
+    origFetch = globalThis.fetch;
+    // Force the OpenAI provider so selectProvider() returns a real adapter
+    // (not the mock), then make fetch throw so it degrades via onFallback.
+    process.env.LAUNCHLENS_PROVIDER = "openai";
+    process.env.OPENAI_API_KEY = "sk-test";
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof globalThis.fetch;
+  });
+  afterEach(() => {
+    process.env = { ...origEnv };
+    if (origFetch !== undefined) globalThis.fetch = origFetch;
+    // Re-arm fake timers for any subsequent describe blocks in this file.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-01T00:00:00.000Z"));
+  });
+
+  it("marks agents degraded with network_error when the real provider is unreachable", async () => {
+    const { runResearchSession } = await import("@/lib/research/research-engine");
+    const session = createResearchSession("AI code reviewer", ["devtools"]);
+    await runResearchSession(session.id, { speedMultiplier: 1000 });
+
+    const refreshed = getResearchSession(session.id)!;
+    expect(refreshed.status).toBe("completed");
+    // Every research agent should be done and flagged as degraded mock data.
+    for (const id of ["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout"] as const) {
+      const ag = refreshed.agents[id];
+      expect(ag.status).toBe("done");
+      expect(ag.degraded).toBe(true);
+      expect(ag.degradedReason).toBe("network_error");
+    }
+  });
+});

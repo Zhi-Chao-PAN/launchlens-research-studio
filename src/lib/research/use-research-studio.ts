@@ -2,14 +2,14 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
-import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
+import type { AgentId, AgentOutput, AgentState } from "@/lib/schema/research-schema";
 
 export interface ResearchStudioState {
   sessionId: string | null;
   query: string;
   keywords: string[];
   status: "idle" | "loading" | "running" | "completed" | "error" | "cancelling";
-  agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean; degraded?: boolean; degradedReason?: "provider_fallback" | "breaker_open" }>;
+  agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean; degraded?: boolean; degradedReason?: AgentState["degradedReason"] }>;
   agentOutputs: Record<AgentId, AgentOutput | null>;
   activeAgentTab: AgentId;
   error: string | null;
