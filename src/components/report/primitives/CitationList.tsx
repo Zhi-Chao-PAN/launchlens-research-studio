@@ -43,11 +43,16 @@ export function CitationList({ citations, compact = false }: { citations: Source
                 {c.snippet && (
                   <p className="text-slate-500 mt-0.5 italic line-clamp-2">&ldquo;{c.snippet}&rdquo;</p>
                 )}
-                {c.accessedAt && (
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Accessed {new Date(c.accessedAt).toLocaleDateString()}
-                  </p>
-                )}
+                {c.accessedAt && (() => {
+                  // R210 defense: an LLM that hallucinates an invalid date
+                  // string would produce "Invalid Date" in the UI. Fall back
+                  // to the raw value so the user still sees *something*.
+                  const d = new Date(c.accessedAt);
+                  const display = Number.isNaN(d.getTime()) ? c.accessedAt : d.toLocaleDateString();
+                  return (
+                    <p className="text-[10px] text-slate-400 mt-0.5">Accessed {display}</p>
+                  );
+                })()}
               </div>
             </li>
           ))}

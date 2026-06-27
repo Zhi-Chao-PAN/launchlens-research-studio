@@ -8,6 +8,10 @@ import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 
 function formatCurrency(value: number, currency: string = "USD"): string {
+  // R210 defense: provider normalization guarantees a finite number, but
+  // older cached sessions or future schema drift could still hand us
+  // undefined/NaN. Render a dash instead of throwing on `.toFixed()`.
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const sym = currency === "USD" ? "$" : currency + " ";
   if (value >= 1e9) return `${sym}${(value / 1e9).toFixed(2)}B`;
   if (value >= 1e6) return `${sym}${(value / 1e6).toFixed(1)}M`;

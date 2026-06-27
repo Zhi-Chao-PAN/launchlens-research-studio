@@ -8,6 +8,8 @@ import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 
 function formatPrice(value: number, currency: string = "USD"): string {
+  // R210 defense: see MarketSizerReport.formatCurrency.
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const sym = currency === "USD" ? "$" : currency + " ";
   if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;

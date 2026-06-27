@@ -7,6 +7,32 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Nested-field robustness / output normalization (round 210)** — closed the
+  real-LLM crash risk that the round-209 audit exposed. The output validator
+  only checks top-level field presence and a couple of deep checks
+  (TAM/SAM/SOM range, synthesis scores), so any real LLM that returns a
+  structurally valid but *incomplete* nested object (e.g. `competitors:
+  [{name: "X"}]` with all other required fields missing) would be passed
+  straight to the UI, which dereferences fields unguarded and crashes the
+  report tab. New `src/lib/providers/output-normalize.ts` (`normalizeAgentOutput`)
+  sits between the validator and the engine: it fills safe defaults for
+  every nested field the UI reads (empty strings, empty arrays, `[]` for
+  arrays like `gaps`/`recommendations`/`userPersonas`/`unmetNeeds`/
+  `recommendedChannels`/`contentTopics` that aren't in `REQUIRED_FIELDS`),
+  coerces enum-like fields to allowed values (`positioning`, `severity`,
+  `frequency`, `period`, `category`/`reach`/`cost`/`effectiveness`,
+  `confidence`), and clamps `synthesis` scores to 0-100. Both providers
+  call it after `validateAgentOutput` succeeds. Defensive second layer in
+  shared UI primitives: `ConfidenceBadge` now falls back to `"low"` on
+  undefined/invalid level instead of throwing `config[undefined].bg`;
+  `formatCurrency` / `formatPrice` return `"—"` on non-finite numbers
+  instead of throwing on `undefined.toFixed()`; `CitationList` shows the
+  raw `accessedAt` string when `new Date(...)` would produce
+  "Invalid Date". The mock provider's data is already complete so
+  normalize is a no-op for the demo path. 23 new `output-normalize.test.ts`
+  cases (one per agent + arrays + enums + NaN + non-object) + 5 new
+  `ConfidenceBadge.test.tsx` cases (undefined/invalid/numeric level).
+  82 files / 1423 tests pass (+28), tsc and build clean, lint 0.
 - **MiniMax provider + reasoning-model JSON extraction + synthesis validator fix (round 209)** —
   the first real-LLM end-to-end validation. Wired MiniMax (MiniMax-M3) via
   the OpenAI-compatible adapter and discovered two blockers that made every
