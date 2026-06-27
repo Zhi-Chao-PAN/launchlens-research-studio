@@ -16,10 +16,11 @@ const ALL_SHORTCUTS: Shortcut[] = [
   { keys: "?", description: "Toggle keyboard shortcuts", category: "Global", scope: "global" },
   { keys: "Esc", description: "Close modal / panel", category: "Global", scope: "global" },
   { keys: "/", description: "Focus search", category: "Global", scope: "global" },
-  { keys: "G + H", description: "Go to home", category: "Navigation", scope: "global" },
-  { keys: "G + S", description: "Go to history", category: "Navigation", scope: "global" },
-  { keys: "G + T", description: "Go to templates", category: "Navigation", scope: "global" },
-  { keys: "G + B", description: "Go to batch research", category: "Navigation", scope: "global" },
+  { keys: "G then H", description: "Go to home", category: "Navigation", scope: "global" },
+  { keys: "G then S", description: "Go to history", category: "Navigation", scope: "global" },
+  { keys: "G then T", description: "Go to templates", category: "Navigation", scope: "global" },
+  { keys: "G then B", description: "Go to batch research", category: "Navigation", scope: "global" },
+  { keys: "G then C", description: "Go to compare", category: "Navigation", scope: "global" },
 
   // Command palette
   { keys: "↑ / ↓", description: "Navigate results", category: "Command Palette", scope: "command-palette" },
