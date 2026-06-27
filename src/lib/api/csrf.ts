@@ -10,9 +10,13 @@
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "./csrf-constants";
 
-export const CSRF_COOKIE_NAME = "csrf_token";
-export const CSRF_HEADER_NAME = "x-csrf-token";
+// R230: the constants live in csrf-constants.ts so Edge middleware can
+// import them without dragging node:crypto into its bundle. Re-export
+// them from this file so existing route-handler imports keep working.
+export { CSRF_COOKIE_NAME, CSRF_HEADER_NAME };
+
 const TOKEN_BYTES = 32;
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf-constants";
 
 /**
  * Global middleware for `/api/*` requests.
