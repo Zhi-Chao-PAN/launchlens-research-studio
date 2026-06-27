@@ -15,32 +15,13 @@ import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconnect";
+import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
 
 export interface AnthropicProviderConfig {
   apiKey: string;
   baseUrl?: string;
   model?: string;
   fetchImpl?: typeof fetch;
-}
-
-function buildSystemPrompt(agentId: AgentId): string {
-  return [
-    "You are the " + agentId + " agent in a multi-agent market intelligence system.",
-    "Respond with strict JSON that matches the LaunchLens AgentOutput schema for this agent.",
-    "Do not include explanations, prose, or fences outside the JSON object.",
-  ].join(" ");
-}
-
-function buildUserPrompt(agentId: AgentId, ctx: ProviderContext): string {
-  const upstream = ctx.upstream && ctx.upstream.length
-    ? "\nUpstream agent outputs (JSON): " + JSON.stringify(ctx.upstream).slice(0, 4000)
-    : "";
-  return [
-    "Agent: " + agentId,
-    "Product idea: " + ctx.query,
-    "Keywords: " + (ctx.keywords || []).join(", "),
-    upstream,
-  ].filter(Boolean).join("\n");
 }
 
 function extractJsonFromMessages(json: any): string {

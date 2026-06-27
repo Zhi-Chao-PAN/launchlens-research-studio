@@ -7,6 +7,32 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Real-provider usability (round 204)** — fixed the core blocker that kept
+  the product on demo data even with real API keys configured: the OpenAI and
+  Anthropic provider prompts never showed the agent schemas to the LLM, so
+  real calls guessed the output shape, failed `validateAgentOutput`, and
+  silently fell back to mock every time. New shared module
+  `src/lib/providers/agent-prompts.ts` builds schema-aware system prompts
+  (role + exact TypeScript shape + per-agent coaching + honesty rules about
+  fabricated URLs) and user prompts (query, keywords, upstream synthesis
+  payload) for all six agents; both `openai-provider.ts` and
+  `anthropic-provider.ts` now import from it, dropping their duplicate vague
+  local builders. Onboarding: added `.env.example` (with a `!.env.example`
+  gitignore exception so it is actually committed) documenting every provider
+  env var (`LAUNCHLENS_PROVIDER`, `OPENAI_API_KEY`/`LAUNCHLENS_OPENAI_KEY`,
+  `ANTHROPIC_API_KEY`, `OPENAI_BASE_URL`/`ANTHROPIC_BASE_URL`,
+  `OPENAI_MODEL`/`ANTHROPIC_MODEL`); new `docs/PROVIDERS.md` covering
+  selection rules, OpenAI-compatible gateways (Azure/local), and
+  troubleshooting the silent-mock-fallback failure mode; README's
+  "Extending with Real Providers" section rewritten (it previously named the
+  wrong interface and the wrong file) to a real configuration quickstart, and
+  the architecture tree now lists the full `providers/` directory. New tests:
+  `agent-prompts.test.ts` (10 tests asserting schema fields, enum values,
+  honesty rule, synthesis coaching) plus 2 schema-injection tests each in
+  `openai-provider.test.ts` and `anthropic-provider.test.ts` that capture the
+  actual system/user prompts sent to the LLM and assert they contain the
+  required schema text — a regression guard for the exact bug this round
+  fixes. 79 files / 1364 tests pass, tsc and build clean.
 - Wrap-up sweep (round 203+): 140 lint warnings cleared to zero; CHANGELOG
   brought in sync with code; pre-existing latent bugs fixed during lint
   cleanup (ScheduleManager confirm dialog rendering, FolderSidebar

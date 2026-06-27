@@ -77,4 +77,43 @@ describe("createOpenAIProvider", () => {
     expect(capturedBody.model).toBe("test-model");
     expect(capturedBody.response_format.type).toBe("json_object");
   });
+
+  it("injects the schema-aware system prompt into the LLM call", async () => {
+    let systemContent = "";
+    let userContent = "";
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      const messages = JSON.parse(init.body).messages;
+      systemContent = messages.find((m: any) => m.role === "system").content;
+      userContent = messages.find((m: any) => m.role === "user").content;
+      return { ok: false, status: 401 } as any;
+    });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    await p.generate("market-sizer", { query: "AI code reviewer", keywords: ["devtools"] });
+
+    // The system prompt must name the agent and show its required schema fields
+    // (the old prompt only said "match the LaunchLens schema" without showing it).
+    expect(systemContent).toContain("market-sizer");
+    expect(systemContent).toContain("TAM");
+    expect(systemContent).toContain("SAM");
+    expect(systemContent).toContain("citations");
+    expect(systemContent).toContain("targetSegments");
+
+    // The user prompt must carry the product query and keywords the model needs.
+    expect(userContent).toContain("AI code reviewer");
+    expect(userContent).toContain("devtools");
+  });
+
+  it("injects synthesis agent coaching when generating synthesis", async () => {
+    let systemContent = "";
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      systemContent = JSON.parse(init.body).messages.find((m: any) => m.role === "system").content;
+      return { ok: false, status: 401 } as any;
+    });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    await p.generate("synthesis", { query: "q", keywords: [] });
+    expect(systemContent).toContain("synthesis");
+    expect(systemContent).toContain("opportunityScore");
+    expect(systemContent).toContain("riskScore");
+    expect(systemContent).toContain("launchlensBrief");
+  });
 });

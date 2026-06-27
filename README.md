@@ -8,7 +8,7 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 
 ![CI](https://img.shields.io/badge/CI-passing-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Tests](https://img.shields.io/badge/tests-1350%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1364%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -161,7 +161,14 @@ src/
     │   ├── json-formatter.ts            # Versioned JSON export
     │   ├── csv-formatter.ts             # Spreadsheet-ready CSVs
     │   └── agent-markdown.ts            # Per-agent snippets
-    └── providers/mock-provider.ts # Deterministic research outputs
+    └── providers/
+        ├── mock-provider.ts           # Deterministic demo outputs
+        ├── mock-provider-adapter.ts   # Provider interface over mock
+        ├── provider-registry.ts       # Selects provider from env (mock/openai/anthropic)
+        ├── agent-prompts.ts           # Schema-aware system/user prompts for real LLMs
+        ├── output-validator.ts        # Validates LLM JSON against agent schemas
+        ├── openai-provider.ts         # OpenAI / OpenAI-compatible adapter
+        └── anthropic-provider.ts      # Anthropic Messages API adapter
 ```
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full architecture document.
@@ -180,14 +187,19 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full architecture d
 
 ---
 
-## 🔌 Extending with Real Providers
+## 🔌 Real LLM Providers
 
-The mock provider (`src/lib/providers/mock-provider.ts`) generates deterministic demo data. To use real LLMs and search:
+The app runs on a deterministic **mock provider** by default, so the demo works with zero configuration. To run real research with a live LLM, add an API key to `.env.local`:
 
-1. Create a new provider in `src/lib/providers/`
-2. Implement the `generateMockAgentOutput(agentId, query, keywords, previousOutputs): AgentOutput` interface
-3. Swap the import in `src/lib/research/research-engine.ts`
-4. Add API keys to `.env.local`
+```bash
+cp .env.example .env.local
+# then edit .env.local — set ANTHROPIC_API_KEY or OPENAI_API_KEY
+npm run dev
+```
+
+With a key set, [`provider-registry.ts`](./src/lib/providers/provider-registry.ts) auto-selects the real provider (Anthropic preferred, then OpenAI, then mock). Set `LAUNCHLENS_PROVIDER` to force a specific one. Each provider sends a schema-aware prompt ([`agent-prompts.ts`](./src/lib/providers/agent-prompts.ts)) so the LLM returns the exact structured output the validators expect, and falls back to mock per-agent on any failure so sessions always complete.
+
+See [`docs/PROVIDERS.md`](./docs/PROVIDERS.md) for the full configuration guide, gateway setup, and troubleshooting.
 
 ---
 

@@ -79,4 +79,41 @@ describe("createAnthropicProvider", () => {
     expect(body.model).toBe("claude-3-haiku");
     expect(body.system).toContain("market-sizer");
   });
+
+  it("injects the schema-aware system prompt into the LLM call", async () => {
+    let systemContent = "";
+    let userContent = "";
+    const fetchImpl = vi.fn(async (_u: string, i: any) => {
+      const body = JSON.parse(i.body);
+      systemContent = body.system;
+      userContent = body.messages.find((m: any) => m.role === "user").content;
+      return { ok: false, status: 401 } as any;
+    });
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    await p.generate("pain-detective", { query: "AI code reviewer", keywords: ["devtools"] });
+
+    // System prompt must name the agent and surface its schema fields; the old
+    // prompt never showed the schema, so real calls always failed validation.
+    expect(systemContent).toContain("pain-detective");
+    expect(systemContent).toContain("painPoints");
+    expect(systemContent).toContain("unmetNeeds");
+    expect(systemContent).toContain("citations");
+
+    // User prompt must carry the query + keywords.
+    expect(userContent).toContain("AI code reviewer");
+    expect(userContent).toContain("devtools");
+  });
+
+  it("injects synthesis agent coaching when generating synthesis", async () => {
+    let systemContent = "";
+    const fetchImpl = vi.fn(async (_u: string, i: any) => {
+      systemContent = JSON.parse(i.body).system;
+      return { ok: false, status: 401 } as any;
+    });
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    await p.generate("synthesis", { query: "q", keywords: [] });
+    expect(systemContent).toContain("synthesis");
+    expect(systemContent).toContain("opportunityScore");
+    expect(systemContent).toContain("launchlensBrief");
+  });
 });
