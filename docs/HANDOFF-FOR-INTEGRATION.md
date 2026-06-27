@@ -12,7 +12,7 @@
 - 两个项目目前**零代码耦合**，只有一个"人肉复制粘贴"的单向文本桥梁，且**该桥梁两端格式不兼容**——research-studio 产一段自由文本，launchlens-ai 吃结构化五字段对象。
 - README 里"Export a `launchlensBrief` → import into launchlens-ai"是**未兑现的设计意图**，不是已实现功能。
 - 合体的核心工作 = **定义一个结构化共享契约**，让 research-studio 的综合输出能无损映射到 launchlens-ai 的 `LaunchLensInput`。
-- 这需要**同时改两个仓库**，所以必须在新对话里做，且建议先把 launchlens-ai 克隆到本机。
+- 两个项目都是**独立的 git 仓库**，remote 指向各自的 GitHub，**彼此零路径硬编码**——可以直接跨目录工作，**不需要移动文件夹**。详见第 1.5 节。
 
 ---
 
@@ -32,7 +32,35 @@
 - **技术栈**：Next.js + React + TypeScript（与 research-studio 同栈，但版本/依赖未逐一核对）。
 - **成熟度**：v1.0.0，portfolio-ready，已部署 Vercel，含 Stripe 计费、多租户、Auth。
 - **关键入口**：`POST /api/generate`，吃 `LaunchLensInput`，产 `LaunchLensWorkspace`。
-- **本机状态**：⚠️ **未克隆到本机**。统筹前必须先 `git clone` 到 `C:\Users\22304\ZCodeProject\launchlens-ai`。
+- **本机状态**：✅ **已在本机**，路径 `C:\Users\22304\ai-portfolio-automation\launchlens-ai`。⚠️ 该仓库当前有**未提交改动**（11 个文件修改 + 2 个未跟踪文件），统筹前应先让用户在 launchlens-ai 侧提交或 stash，避免在有未保存工作的工作树上动手。另含 `.env.local` / `.env.production.local`（密钥，勿提交）。
+
+---
+
+## 1.5 文件夹布局与移动决策（重要）
+
+经核实，两个项目是**独立 git 仓库、彼此零路径硬编码**，可以直接跨目录工作，**不需要移动文件夹**。
+
+### 当前布局
+```
+C:\Users\22304\
+├─ ZCodeProject\
+│  └─ launchlens-research-studio\   ← 本项目，remote: github.com/.../research-studio
+│     （同目录还有大量 *_eval 临时文件夹，与本项目无关）
+└─ ai-portfolio-automation\
+   ├─ launchlens-ai\                ← 配套项目，remote: github.com/.../launchlens-ai
+   └─ .codex-local-secrets\         ← launchlens-ai 的密钥配置，勿动
+```
+
+### 为什么不移动（已核实的依据）
+1. **git remote 是 URL 不是路径**：移动文件夹**不影响** push/pull，`.git` 里的 remote 指向 GitHub，与本地位置无关。
+2. **零绝对路径硬编码**：research-studio 代码里出现的 `launchlens-ai` 全是纯文本（footer 文案、字段名 `launchlensBrief`、GitHub 链接），**没有任何一处用 `C:\` 或 `/c/Users` 指向对方**；launchlens-ai 侧也**不引用** research-studio 的路径。已用 grep 双向核实。
+3. **移动本身不带来整合收益**：两个项目放进同一父目录不会自动共享类型、不会对接 API、不会变成 monorepo。真正的整合是代码工作（定义共享契约），与文件夹位置无关。
+4. **移动有迁移风险**：launchlens-ai 当前有未提交改动，且其父目录 `ai-portfolio-automation` 旁有 `.codex-local-secrets` 等配置，强移可能搅乱既有工具链。
+
+### 给统筹 agent 的指引
+- **直接跨目录工作**：同时打开 `C:\Users\22304\ai-portfolio-automation\launchlens-ai` 和 `C:\Users\22304\ZCodeProject\launchlens-research-studio` 两个绝对路径即可，对 agent 无障碍。
+- **不要主动移动文件夹**。若用户坚持要做 monorepo，正确方式是用 `git subtree` 或新建 monorepo 仓库，且应作为第三步深度集成的一部分，不是开工前置条件。
+- 移动前若不可避免，必须先确保两个仓库工作树干净（`git status` 无改动）。
 
 ---
 
@@ -139,11 +167,11 @@ research-studio 的综合输出 + 各智能体输出，天然能映射到 launch
 
 **验收**：`brief-mapper.test.ts` 覆盖映射 + 截断 + 空字段回退；tsc/lint/test/build 全绿。
 
-### 第二步：在 launchlens-ai 增加"从 Research Studio 导入"入口（需打开 launchlens-ai 仓库）
+### 第二步：在 launchlens-ai 增加"从 Research Studio 导入"入口（跨目录操作 launchlens-ai 仓库）
 
 **目标**：让"入口"能接收结构化 brief，而非只接受手填表单。
 
-**改动点**（基于 GitHub API 看到的结构，需克隆后核实）：
+**改动点**（基于 GitHub API 看到的结构，动手前先读本地 `C:\Users\22304\ai-portfolio-automation\launchlens-ai` 核实）：
 1. `src/app/page.tsx` 或新增 `/import` 页面：粘贴 JSON / 上传文件 / 输入 research-studio URL。
 2. `POST /api/generate` 已能吃 `LaunchLensInput`，无需改后端——只需前端把导入的 JSON 填入表单并提交。
 3. 可选：新增 `POST /api/import-from-studio`，接收 research-studio 的 session 快照，内部转成 `LaunchLensInput` 再调 `generateLaunchWorkspace`。
@@ -178,7 +206,7 @@ research-studio 的综合输出 + 各智能体输出，天然能映射到 launch
 | `docs/ARCHITECTURE.md` | 技术架构详图 |
 | `docs/PROVIDERS.md` | LLM / 检索提供方配置文档 |
 
-### launchlens-ai（GitHub，经 API 核实，需克隆后复查）
+### launchlens-ai（本机 `C:\Users\22304\ai-portfolio-automation\launchlens-ai`，经 API 核实，动手前读本地复查）
 | 文件 | 作用 |
 |---|---|
 | `src/lib/launchlens/types.ts` | `LaunchLensInput` / `LaunchLensWorkspace` / `GenerationResult` 类型 |
@@ -187,6 +215,8 @@ research-studio 的综合输出 + 各智能体输出，天然能映射到 launch
 | `src/lib/launchlens/provider.ts` | `generateLaunchWorkspace()` 核心生成逻辑 |
 | `src/app/page.tsx` | 首页（手填表单入口，导入功能需加在此或新页面） |
 | `README.md` / `ARCHITECTURE.md` / `docs/PORTFOLIO_CASE_STUDY.md` | 项目文档 |
+
+> ⚠️ launchlens-ai 当前有未提交改动（见第 1 节），动手前先 `git -C C:/Users/22304/ai-portfolio-automation/launchlens-ai status` 确认，必要时让用户先提交。
 
 ---
 
@@ -203,16 +233,15 @@ research-studio 的综合输出 + 各智能体输出，天然能映射到 launch
 
 ## 7. 给统筹 agent 的操作建议
 
-1. **先把 launchlens-ai 克隆到本机**：
-   ```bash
-   cd C:/Users/22304/ZCodeProject
-   git clone https://github.com/Zhi-Chao-PAN/launchlens-ai.git
-   ```
-2. **先做第一步**（research-studio 结构化导出），它独立可验证，不依赖 launchlens-ai。做完后 research-studio 的"出口"就是结构化的，降低后续耦合风险。
-3. **再做第二步**（launchlens-ai 导入入口），需要同时打开两个仓库，对照 `LaunchLensInput` 字段。
-4. **每步都要跑两边的测试**：research-studio 用 `npm test`（vitest），launchlens-ai 的测试命令需克隆后看 `package.json`。
-5. **保留向后兼容**：research-studio 的 `launchlensBrief: string` 不要删，新增结构化字段并存，避免破坏现有导出和测试。
-6. **i18n 同步**：research-studio 是 4 语种，launchlens-ai 的语种支持需核实，新增文案要对齐。
+1. **两个仓库都已在本地，直接跨目录工作**（详见第 1.5 节，不要移动文件夹）：
+   - research-studio：`C:/Users/22304/ZCodeProject/launchlens-research-studio`
+   - launchlens-ai：`C:/Users/22304/ai-portfolio-automation/launchlens-ai`
+2. **动手前先确认 launchlens-ai 工作树状态**：`git -C C:/Users/22304/ai-portfolio-automation/launchlens-ai status`。该仓库当前有未提交改动（11 文件 + 2 新文件），若要改它，先让用户提交或 stash，避免冲突。
+3. **先做第一步**（research-studio 结构化导出），它独立可验证，不依赖 launchlens-ai。做完后 research-studio 的"出口"就是结构化的，降低后续耦合风险。
+4. **再做第二步**（launchlens-ai 导入入口），跨目录同时读两个仓库，对照 `LaunchLensInput` 字段。
+5. **每步都要跑两边的测试**：research-studio 用 `npm test`（vitest）；launchlens-ai 的测试命令读其本地 `package.json`（尚未核对）。
+6. **保留向后兼容**：research-studio 的 `launchlensBrief: string` 不要删，新增结构化字段并存，避免破坏现有导出和测试。
+7. **i18n 同步**：research-studio 是 4 语种，launchlens-ai 的语种支持需读本地代码核实，新增文案要对齐。
 
 ---
 
