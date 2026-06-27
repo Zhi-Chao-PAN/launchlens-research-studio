@@ -15,6 +15,25 @@ import { RelatedRuns } from "@/components/related/RelatedRuns";
 import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 import { TagList } from "@/components/tags/TagList";
+import dynamic from "next/dynamic";
+
+// R220: split the 1500-line detail page. Heavy visual primitives
+// (ScoreGauge is a 50-line inline SVG; SourceChart builds a domain
+// bar chart) are dynamic-imported with ssr: false so the initial
+// JS bundle skips their code. Identical server- and client-side,
+// so the SSR-disable is purely a bundle-size optimization.
+const ScoreGauge = dynamic(
+  () => import("@/components/report/primitives/ScoreGauge").then((m) => m.ScoreGauge),
+  { ssr: false, loading: () => <div className="score-gauge-skeleton" /> },
+);
+const SourceChart = dynamic(
+  () => import("@/components/report/primitives/SourceChart").then((m) => m.SourceChart),
+  { ssr: false, loading: () => <div className="source-chart-skeleton" /> },
+);
+const KeywordCloud = dynamic(
+  () => import("@/components/report/primitives/KeywordCloud").then((m) => m.KeywordCloud),
+  { ssr: false, loading: () => <div className="keyword-cloud-skeleton" /> },
+);
 
 interface ResearchRun {
   id: string;
@@ -125,148 +144,10 @@ function computeSourceCitationMap(
   return map;
 }
 
-// Word cloud component ? renders keywords in varying sizes
-function KeywordCloud({ keywords }: { keywords: string[] }) {
-  if (!keywords?.length) return null;
-  
-  // Size each keyword by its position (earlier = larger = more important)
-  const maxSize = 22;
-  const minSize = 12;
-  
-  const getSize = (index: number): number => {
-    const ratio = 1 - index / Math.min(keywords.length, 15);
-    return Math.round(minSize + (maxSize - minSize) * Math.max(0.2, ratio));
-  };
+// Word cloud component ? renders keywords in varying sizes — moved to
+// src/components/report/primitives/KeywordCloud.tsx (R220) and
+// dynamic-imported above.
 
-  const colors = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", 
-    "#10b981", "#06b6d4", "#3b82f6", "#f43f5e"
-  ];
-
-  return (
-    <div className="keyword-cloud">
-      {keywords.slice(0, 20).map((kw, i) => (
-        <span
-          key={kw}
-          className="keyword-cloud-item"
-          style={{
-            fontSize: getSize(i) + "px",
-            color: colors[i % colors.length],
-            opacity: 0.85 - i * 0.02,
-          }}
-        >
-          {kw}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// Circular score gauge
-function ScoreGauge({ value, label, color }: { value: number; label: string; color: string }) {
-  const radius = 50;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
-  
-  return (
-    <div className="score-gauge">
-      <svg viewBox="0 0 120 120" className="score-gauge-svg">
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.06)"
-          strokeWidth="8"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform="rotate(-90 60 60)"
-          style={{ transition: "stroke-dashoffset 0.8s ease-out" }}
-        />
-        <text
-          x="60"
-          y="58"
-          textAnchor="middle"
-          fill={color}
-          fontSize="22"
-          fontWeight="700"
-        >
-          {value}
-        </text>
-        <text
-          x="60"
-          y="78"
-          textAnchor="middle"
-          fill="#64748b"
-          fontSize="11"
-        >
-          / 100
-        </text>
-      </svg>
-      <div className="score-gauge-label">{label}</div>
-    </div>
-  );
-}
-
-// Source distribution bar chart
-function SourceChart({ sources }: { sources: { domain?: string; url: string; title: string }[] }) {
-  if (!sources?.length) return null;
-
-  // Count by domain
-  const domainCounts = new Map<string, number>();
-  for (const s of sources) {
-    let domain = s.domain;
-    if (!domain) {
-      try {
-        domain = new URL(s.url).hostname;
-      } catch {
-        domain = "unknown";
-      }
-    }
-    domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
-  }
-
-  // Sort by count, take top 6
-  const sorted = Array.from(domainCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6);
-
-  const maxCount = Math.max(...sorted.map(([, c]) => c));
-
-  const colors = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ec4899"];
-
-  return (
-    <div className="source-chart">
-      <div className="source-chart-title">Sources by Domain</div>
-      <div className="source-chart-bars">
-        {sorted.map(([domain, count], i) => (
-          <div key={domain} className="source-chart-row">
-            <span className="source-chart-domain">{domain}</span>
-            <div className="source-chart-bar-track">
-              <div
-                className="source-chart-bar-fill"
-                style={{
-                  width: (count / maxCount * 100) + "%",
-                  background: colors[i % colors.length],
-                }}
-              />
-            </div>
-            <span className="source-chart-count">{count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export default function ResearchDetailPage({ params }: { params: { id: string } }) {
   const [run, setRun] = useState<ResearchRun | null>(null);
