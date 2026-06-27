@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "_comment": "R230: Vercel deployment preflight. See docs/HANDOFF-NEXT-STAGE.md §2. SSE maxDuration 60s caps the platform budget per request (60s Pro, 10s Hobby) — long 6-agent runs may be severed by the platform. The research engine keeps its session map in module-level state (src/lib/research/research-engine.ts), which is per-instance; cross-request session continuity is NOT guaranteed on serverless. Owner must verify post-deploy whether SSE survives across instances (see scripts/vercel-serverless-probe.js for a local dry-run).",
+  "functions": {
+    "src/app/api/research/[sessionId]/stream/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/research/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/research/[sessionId]/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/scheduler/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/scheduler",
+      "schedule": "* * * * *"
+    }
+  ]
+}

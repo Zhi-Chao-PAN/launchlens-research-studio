@@ -15,7 +15,11 @@
     "regression": "node scripts/regression.js",
     "visual:diff": "node scripts/visual-regression.js",
     "visual:update": "node scripts/visual-regression.js update",
-    "visual:report": "node scripts/visual-regression.js report"
+    "visual:report": "node scripts/visual-regression.js report",
+    "probe:serverless": "node scripts/vercel-serverless-probe.js"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "dependencies": {
     "next": "16.2.9",

@@ -1,4 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// R230: Vercel serverless caps function lifetime at maxDuration (60s on
+// Pro, 10s on Hobby). A 6-agent live-LLM run that exceeds the budget will
+// have its SSE connection severed by the platform; the agent work may
+// still complete in-process, but the client stops receiving events. The
+// research-engine module-level session map is also per-instance — a
+// subsequent request that lands on a different lambda will see an empty
+// store. The companion probe (`npm run probe:serverless`) and README's
+// "Known serverless constraints" cover both failure modes.
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
 import { getResearchRun } from "@/lib/research/storage";
 import { jsonError } from "@/lib/api/validation";
@@ -7,6 +15,10 @@ import type { AgentId } from "@/lib/schema/research-schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// R230: serverless lifetime cap. 60s matches Vercel Pro's default and the
+// companion vercel.json function config. Live 6-agent runs that exceed
+// this will have their stream severed (see header comment above).
+export const maxDuration = 60;
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 const HEARTBEAT_INTERVAL_MS = 15000;
