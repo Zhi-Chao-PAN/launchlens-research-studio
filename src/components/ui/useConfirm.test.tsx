@@ -65,7 +65,7 @@ describe("useConfirm (round 195)", () => {
     expect(confirmBtn.disabled).toBe(true);
     expect(confirmBtn.querySelector(".animate-spin")).toBeTruthy();
     expect(screen.getByText("Delete?")).toBeTruthy();
-    act(() => { resolve && resolve(); });
+    act(() => { if (resolve) resolve(); });
     await waitFor(() => expect(screen.queryByText("Delete?")).toBeNull());
   });
 
@@ -86,6 +86,6 @@ describe("useConfirm (round 195)", () => {
     fireEvent.click(screen.getByText("Cancel"));
     // should still be open (cancel disabled while pending)
     expect(screen.getByText("X?")).toBeTruthy();
-    act(() => { resolve && resolve(); });
+    act(() => { if (resolve) resolve(); });
   });
 });

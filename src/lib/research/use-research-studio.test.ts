@@ -6,7 +6,6 @@ import {
   STUDIO_CONSTANTS,
 } from "@/lib/research/use-research-studio";
 import type { ResearchStudioState } from "@/lib/research/use-research-studio";
-import type { AgentId } from "@/lib/schema/research-schema";
 
 const baseAgent = () => ({ status: "idle", progress: 0, currentStep: "Waiting to start...", hasOutput: false });
 const state = (overrides: any = {}): ResearchStudioState => ({

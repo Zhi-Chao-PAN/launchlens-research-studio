@@ -1,5 +1,5 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
-import { checkRateLimit, checkRateLimitForIp } from "@/lib/api/rate-limit";
+import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { checkCsrfToken } from "@/lib/api/csrf";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { isBypassToken, extractBearerToken } from "@/lib/api/bypass-tokens";

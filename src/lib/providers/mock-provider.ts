@@ -397,7 +397,6 @@ export function generateMockChannelScout(query: string, keywords: string[]): Cha
 export function generateMockSynthesis(
   query: string,
   keywords: string[],
-  agentOutputs: AgentOutput[],
 ): SynthesisOutput {
   return {
     agent: "synthesis",
@@ -527,6 +526,7 @@ export function generateMockAgentOutput(
   agentId: AgentId,
   query: string,
   keywords: string[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for future synthesis cross-agent reasoning
   agentOutputs?: AgentOutput[],
 ): AgentOutput {
   switch (agentId) {
@@ -541,6 +541,6 @@ export function generateMockAgentOutput(
     case "channel-scout":
       return generateMockChannelScout(query, keywords);
     case "synthesis":
-      return generateMockSynthesis(query, keywords, agentOutputs || []);
+      return generateMockSynthesis(query, keywords);
   }
 }

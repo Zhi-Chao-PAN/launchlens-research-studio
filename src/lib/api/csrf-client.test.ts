@@ -154,6 +154,8 @@ it("fetchWithCsrf passes non-GET methods through with token header", async () =>
     return Promise.resolve(new Response(JSON.stringify({ csrfToken: "t1" }), { status: 200 }));
   }) as typeof fetch;
   await fetchWithCsrf("/x", { method: "POST" });
+  const headers = new Headers(capturedHeaders as HeadersInit);
+  expect(headers.get("X-CSRF-Token")).toBe("t1");
   (globalThis as any).fetch = origFetch;
   invalidateCsrfToken();
 });

@@ -19,7 +19,7 @@
 //   LAUNCHLENS_ALERT_WINDOW_SECONDS  ? detection window in seconds (default 60)
 
 import { createHmac } from "crypto";
-import { recordAuthAudit, onAuthAuditEvent, AuthAuditEvent } from "./auth-audit";
+import { onAuthAuditEvent, AuthAuditEvent } from "./auth-audit";
 
 export interface AlertEvent {
   id: string;

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCommandPalette } from "./CommandPaletteContext";
-import { rankCommands, loadCommandHistory, recordCommandUse, historyToMap, getMatchRanges } from "@/lib/utils/fuzzy-search";
+import { rankCommands, getMatchRanges } from "@/lib/utils/fuzzy-search";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 
 interface CommandPaletteProps {
@@ -13,7 +13,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
   const { isOpen, closePalette, commands, runCommand } = useCommandPalette();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [historyMap, setHistoryMap] = useState<Map<string, { id: string; count: number; lastUsed: number }>>(new Map());
+  const historyMap = useMemo<Map<string, { id: string; count: number; lastUsed: number }>>(() => new Map(), []);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const inputRef = useRef<HTMLInputElement>(null);
 

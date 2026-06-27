@@ -9,7 +9,6 @@ import {
   getRunTags,
   getTagDetails,
   // deleteTag reserved for future use
-  type RunTag,
 } from "@/lib/research/tags";
 
 interface TagListProps {
@@ -24,7 +23,9 @@ export function TagList({ runId, onTagsChange }: TagListProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Derive tag state synchronously from runId + revision counter
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- revision is a manual cache-bust token
   const tagIds = useMemo(() => getRunTags(runId), [runId, revision]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- revision is a manual cache-bust token
   const allTags = useMemo(() => getAllTags(), [revision]) as Array<{ id: string; name: string; color?: string }>;
 
   const refresh = () => setRevision((r) => r + 1);

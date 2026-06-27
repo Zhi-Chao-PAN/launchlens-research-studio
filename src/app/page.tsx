@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 ﻿"use client";
 
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
@@ -23,10 +23,7 @@ import { useFreezeMode } from "@/lib/perf/use-freeze-mode";
 import { getStarredRunIds } from "@/lib/research/starred";
 import { listTemplates } from "@/lib/research/templates";
 import { generateSuggestions } from "@/lib/research/suggestions";
-import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
-import type { AgentId } from "@/lib/schema/research-schema";
-import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
-import { useHotkeys } from "@/lib/hooks/use-hotkeys";
+import { AGENT_METADATA } from "@/lib/schema/research-schema";
 
 export default function Home() {
   useFreezeMode();
@@ -52,8 +49,6 @@ export default function Home() {
   const pollingSecs = state.pollingIntervalMs
     ? Math.max(1, Math.round(state.pollingIntervalMs / 1000))
     : 0;
-  const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [, setTick] = useState(0);
@@ -189,17 +184,6 @@ export default function Home() {
     startResearch(cached.query, cached.keywords);
   }, [startResearch]);
 
-  // Track user-initiated cancellation so we can surface a non-error banner.
-  const prevStatusRef = useRef(state.status);
-  useEffect(() => {
-    const prev = prevStatusRef.current;
-    if ((prev === "running" || prev === "loading") && state.status === "idle") {
-      setCancelledNotice("Research stopped.");
-    }
-    if (state.status === "completed" || state.status === "error") setCancelledNotice(null);
-    prevStatusRef.current = state.status;
-  }, [state.status]);
-
   // Keyboard shortcut: ⌘/Ctrl + Enter submits the query
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -211,24 +195,9 @@ export default function Home() {
         if (sidebarOpen) setSidebarOpen(false);
         else reset();
       }
-      if (e.key === "?" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        // Simple help: print the keyboard shortcuts
-        setShowHelp(true);
-      }
     };
     window.addEventListener("keydown", onKey);
-    function formatDuration(ms: number): string {
-    if (ms < 1000) return ms + "ms";
-    if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
-    return Math.floor(ms / 60000) + "m " + Math.floor((ms % 60000) / 1000) + "s";
-  }
-
-  function formatTime(ts: number): string {
-    return new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  }
-
-  return () => window.removeEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [hasSession, isRunning, reset]);
 
   // Auto-switch tab to the first agent that completes

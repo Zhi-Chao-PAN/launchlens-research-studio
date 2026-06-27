@@ -248,6 +248,7 @@ export function FolderSidebar({
             + New folder
         </button>
       )}
+      {confirmDialog}
     </aside>
   );
 }

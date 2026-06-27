@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef } from "react";
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
 import dynamic from "next/dynamic";
@@ -39,7 +39,6 @@ const AGENT_ORDER: AgentId[] = [
 ];
 
 export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: ReportViewProps) {
-  const [isPrintMode, setIsPrintMode] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const meta = AGENT_METADATA[activeAgent];
   const output = outputs[activeAgent];

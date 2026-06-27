@@ -36,7 +36,7 @@ export function VennDiagram({ sets, width = 400, height = 260 }: VennDiagramProp
     return <Venn2 sets={sets} width={width} height={height} totalItems={totalItems} />;
   }
 
-  return <Venn3 sets={sets} width={width} height={height} totalItems={totalItems} />;
+  return <Venn3 sets={sets} width={width} height={height} />;
 }
 
 function Venn2({
@@ -149,12 +149,10 @@ function Venn3({
   sets,
   width,
   height,
-  totalItems,
 }: {
   sets: Array<{ label: string; color: string; items: string[] }>;
   width: number;
   height: number;
-  totalItems: number;
 }) {
   const setA = new Set(sets[0].items);
   const setB = new Set(sets[1].items);

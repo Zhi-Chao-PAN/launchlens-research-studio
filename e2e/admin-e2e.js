@@ -1,5 +1,4 @@
-﻿const fs = require('fs');
-const { spawn } = require("node:child_process");
+﻿const { spawn } = require("node:child_process");
 const path = require("node:path");
 
 const PROJECT_DIR = path.resolve(__dirname, "..");
@@ -207,7 +206,6 @@ async function run() {
     log("Audit scope filter returns 200", scopeFilterRes.ok, `status=${scopeFilterRes.status}`);
     if (scopeFilterRes.ok) {
       const filtered = await scopeFilterRes.json();
-      const allMatch = filtered.events.every((e) => e.scope === "admin" || !e.scope);
       // Some events may have no scope, so verify no wrong scopes
       const wrongScope = filtered.events.filter((e) => e.scope && e.scope !== "admin");
       log("Scope filter excludes non-matching scopes", wrongScope.length === 0);

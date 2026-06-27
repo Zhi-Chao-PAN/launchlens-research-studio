@@ -1,5 +1,4 @@
 "use client";
-import { fetchWithCsrf } from "@/lib/api/csrf-client";
 
 /* eslint-disable */
 

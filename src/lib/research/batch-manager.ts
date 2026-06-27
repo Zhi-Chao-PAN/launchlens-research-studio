@@ -11,7 +11,6 @@
  */
 
 import { createResearchSession } from "@/lib/research/research-engine";
-import { saveResearchRun } from "@/lib/research/storage";
 import { sleep } from "@/lib/utils/sleep";
 
 export type BatchPriority = "high" | "normal" | "low";
@@ -168,6 +167,7 @@ export function getConcurrencyStats(): ConcurrencyStats {
 /** Create a new batch of research runs. */
 export function createBatch(
   queries: string[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for future per-batch keyword tagging
   keywords: string[] = [],
   options: CreateBatchOptions = {},
 ): Batch {
@@ -218,7 +218,7 @@ export function createBatch(
   getAborts().set(id, new AbortController());
 
   // Kick off batch processing
-  void processBatch(id, queries, keywords, options);
+  void processBatch();
 
   return batch;
 }
@@ -738,12 +738,7 @@ export function retryPolicyLabel(retries: number): string {
 }
 
 // Keep processBatch as a thin wrapper that triggers the scheduler
-async function processBatch(
-  batchId: string,
-  _queries: string[],
-  _keywords: string[],
-  _options?: CreateBatchOptions,
-): Promise<void> {
+async function processBatch(): Promise<void> {
   // The actual processing is driven by the global scheduler
   void runScheduler();
 }

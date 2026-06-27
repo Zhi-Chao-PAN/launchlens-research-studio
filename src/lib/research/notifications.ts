@@ -4,7 +4,6 @@ import { addNotification } from "./notification-store";
  * Shows desktop notifications when long-running research completes.
  */
 
-const PERMISSION_KEY = "launchlens:notif-permission";
 const PENDING_KEY = "launchlens:pending-notifs";
 
 export interface PendingNotification {

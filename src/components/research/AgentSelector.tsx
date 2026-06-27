@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getAllAgents, getSelectedAgentId, setSelectedAgentId, type AgentPersona } from "@/lib/research/agent-personas";
+import { getAllAgents, getSelectedAgentId, setSelectedAgentId } from "@/lib/research/agent-personas";
 
 interface AgentSelectorProps {
   selected: string;

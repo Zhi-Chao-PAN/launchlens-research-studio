@@ -66,12 +66,12 @@ const statusClass = (s: ScheduleStatus): string =>
 
 export function ScheduleManager() {
   const { showToast } = useToast();
+  const { askConfirm, dialog: confirmDialog } = useConfirm();
   const [schedules, setSchedules] = useState<ResearchSchedule[]>([]);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setSchError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{open: boolean; title: string; message?: string; onConfirm: () => void} | null>(null);
 
   // Form state
   const [name, setName] = useState("");
@@ -155,15 +155,6 @@ export function ScheduleManager() {
 
   const handleToggle = async (id: string) => {
     try {
-      const res = await fetchWithCsrf(`/api/research/schedules/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-      });
-      // We need to send status. Let's do a proper PATCH with the toggle.
-      // Actually let's fetch first, then toggle.
-      // Simpler: use the toggle via status field.
-      // Wait, I didn't build a toggle endpoint. Let me use PATCH with status toggle.
-      // But we don't know current status from the UI state? We do - from schedules state.
       const s = schedules.find((s) => s.id === id);
       if (!s) return;
 
@@ -182,10 +173,13 @@ export function ScheduleManager() {
   };
 
   const handleDelete = (id: string) => {
-    setConfirm({ open: true, title: "Delete scheduled research?", message: "This schedule will stop running permanently.", onConfirm: () => handleDeleteConfirm(id) });
+    askConfirm(
+      "Delete scheduled research?",
+      "This schedule will stop running permanently.",
+      () => handleDeleteConfirm(id),
+    );
   };
   const handleDeleteConfirm = async (id: string) => {
-    setConfirm({ open: true, title: "Delete scheduled research?", message: "This schedule will stop running permanently.", onConfirm: () => handleDeleteConfirm(id) });
     try {
       const res = await fetchWithCsrf(`/api/research/schedules/${id}`, {
         method: "DELETE",
@@ -449,6 +443,7 @@ export function ScheduleManager() {
           ))
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

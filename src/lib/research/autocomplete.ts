@@ -243,10 +243,12 @@ export function getEmptyQuerySuggestions(
   return results;
 }
 
-export default {
+const autocompleteApi = {
   getAutocompleteSuggestions,
   getEmptyQuerySuggestions,
 };
+
+export default autocompleteApi;
 
 /* ------------------------------------------------------------------ */
 /*  Extended autocomplete utilities (round 142)                        */

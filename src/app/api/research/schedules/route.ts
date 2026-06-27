@@ -9,7 +9,6 @@ import {
   listSchedules,
   getSchedulerStats,
   ensurePollerRunning,
-  type ScheduleInterval,
 } from "@/lib/research/scheduler";
 
 const CreateScheduleSchema = z.object({

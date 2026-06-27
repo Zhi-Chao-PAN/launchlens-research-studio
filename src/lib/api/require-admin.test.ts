@@ -1,7 +1,7 @@
 /// <reference types="vitest/globals" />
 import { describe, it, expect, beforeEach } from "vitest";
 import { requireAdmin } from "@/lib/api/require-admin";
-import { createBypassToken, listBypassTokens } from "@/lib/api/bypass-tokens";
+import { createBypassToken, listBypassTokens, revokeBypassToken } from "@/lib/api/bypass-tokens";
 import { NextRequest } from "next/server";
 
 function makeReq(authHeader?: string): NextRequest {
@@ -15,7 +15,7 @@ describe("requireAdmin (round 202)", () => {
   beforeEach(() => {
     // Wipe tokens between tests so the storage backend doesn't accumulate.
     for (const t of listBypassTokens()) {
-      // revocation is by hash; we use the public revoke fn
+      revokeBypassToken(t.hash);
     }
   });
 

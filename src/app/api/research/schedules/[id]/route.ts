@@ -8,8 +8,6 @@ import {
   getSchedule,
   updateSchedule,
   deleteSchedule,
-  toggleSchedule,
-  type ScheduleInterval,
 } from "@/lib/research/scheduler";
 
 const UpdateScheduleSchema = z.object({

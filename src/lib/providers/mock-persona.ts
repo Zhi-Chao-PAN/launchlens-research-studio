@@ -36,16 +36,16 @@ export function applyPersona<T extends AgentOutput>(output: T, personaId: string
       result = applyMarketSizerPersona(output, persona, oppAdj, riskAdj);
       break;
     case "competitor-analyst":
-      result = applyCompetitorPersona(output, persona, oppAdj, riskAdj);
+      result = applyCompetitorPersona(output, persona);
       break;
     case "pain-detective":
-      result = applyPainPersona(output, persona, oppAdj, riskAdj);
+      result = applyPainPersona(output, persona);
       break;
     case "pricing-scout":
-      result = applyPricingPersona(output, persona, oppAdj, riskAdj);
+      result = applyPricingPersona(output, persona);
       break;
     case "channel-scout":
-      result = applyChannelPersona(output, persona, oppAdj, riskAdj);
+      result = applyChannelPersona(output, persona, oppAdj);
       break;
     case "synthesis":
       result = applySynthesisPersona(output, persona, oppAdj, riskAdj);
@@ -99,8 +99,6 @@ function applyMarketSizerPersona(
 function applyCompetitorPersona(
   out: CompetitorAnalystOutput,
   persona: AgentPersona,
-  oppAdj: number,
-  riskAdj: number,
 ): CompetitorAnalystOutput {
   // Adjust competitive matrix scores based on risk bias
   // Conservative personas give lower scores, aggressive give higher
@@ -132,8 +130,6 @@ function applyCompetitorPersona(
 function applyPainPersona(
   out: PainDetectiveOutput,
   persona: AgentPersona,
-  oppAdj: number,
-  riskAdj: number,
 ): PainDetectiveOutput {
   // Skeptical persona elevates pain severity
   const severityBias = persona.tone === "skeptical" ? 1 : persona.riskBias === "aggressive" ? -1 : 0;
@@ -155,8 +151,6 @@ function applyPainPersona(
 function applyPricingPersona(
   out: PricingScoutOutput,
   persona: AgentPersona,
-  oppAdj: number,
-  riskAdj: number,
 ): PricingScoutOutput {
   const priceFactor = persona.riskBias === "aggressive" ? 1.15 : persona.riskBias === "conservative" ? 0.85 : 1.0;
 
@@ -182,7 +176,6 @@ function applyChannelPersona(
   out: ChannelScoutOutput,
   persona: AgentPersona,
   oppAdj: number,
-  riskAdj: number,
 ): ChannelScoutOutput {
   const effectivenessShift = oppAdj > 0 ? 1 : oppAdj < -5 ? -1 : 0;
 

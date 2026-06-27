@@ -24,10 +24,6 @@ interface ResearchRun {
   status: "completed" | "failed";
 }
 
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleString();
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1000) return ms + "ms";
   if (ms < 60000) return (ms / 1000).toFixed(1) + "s";

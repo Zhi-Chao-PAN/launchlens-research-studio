@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { getResearchSession, deleteSession } from "@/lib/research/research-engine";
-import { jsonError, jsonErrorLocalized } from "@/lib/api/validation";
+import { jsonErrorLocalized } from "@/lib/api/validation";
 
 const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
 

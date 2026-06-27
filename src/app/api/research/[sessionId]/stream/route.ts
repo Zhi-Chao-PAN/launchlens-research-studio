@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-﻿import { NextResponse } from "next/server";
 import { subscribeToSession, getResearchSession } from "@/lib/research/research-engine";
 import { jsonError } from "@/lib/api/validation";
 import { sleep } from "@/lib/utils/sleep";

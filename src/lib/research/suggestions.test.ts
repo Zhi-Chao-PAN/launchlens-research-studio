@@ -12,7 +12,6 @@ import {
   getResearchGaps,
   getSuggestionStats,
 } from "./suggestions";
-import type { ResearchSuggestion } from "./suggestions";
 
 describe("research suggestions", () => {
   const makeRun = (id: string, query: string, keywords: string[], daysAgo = 7) => ({

@@ -1,6 +1,6 @@
 ﻿import { NextResponse, NextRequest } from "next/server";
 import { generateCsrfToken, CSRF_COOKIE_NAME, getCsrfCookieOptions } from "@/lib/api/csrf";
-import { checkCors, handleOptions } from "@/lib/api/cors";
+import { handleOptions } from "@/lib/api/cors";
 
 export async function GET() {
   const token = generateCsrfToken();

@@ -5,7 +5,6 @@
 
 const { spawn } = require("node:child_process");
 const path = require("node:path");
-const fs = require("node:fs");
 
 const PROJECT_DIR = path.resolve(__dirname, "..");
 const PORT = process.env.SMOKE_TEST_PORT || "3010";

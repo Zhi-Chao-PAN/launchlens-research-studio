@@ -165,7 +165,7 @@ export function summarizeNotifications(notifications: AppNotification[], nowMs: 
 export type NotificationHealth = "ok" | "unread" | "has-errors" | "stale-unread";
 const STALE_UNREAD_MS = 24 * 60 * 60 * 1000;
 
-export function getNotificationHealth(summary: NotificationSummary, nowMs: number = Date.now()): NotificationHealth {
+export function getNotificationHealth(summary: NotificationSummary): NotificationHealth {
   if (summary.total === 0) return "ok";
   if (summary.hasErrors) return "has-errors";
   if (summary.unread === 0) return "ok";

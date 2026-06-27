@@ -4,9 +4,9 @@ import { fetchWithCsrf } from "@/lib/api/csrf-client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { getFolder, getFolders, bulkAddRunsToFolder } from "@/lib/research/folders";
-import { getStarredRunIds, isRunStarred } from "@/lib/research/starred";
+import { getStarredRunIds } from "@/lib/research/starred";
 import { HistoryItemSkeleton } from "@/components/skeleton/Skeleton";
-import { getAllTags, getRunTags, getTagDetails, bulkAddTags, bulkRemoveTags, type RunTag } from "@/lib/research/tags";
+import { getRunTags, getTagDetails, bulkAddTags, type RunTag } from "@/lib/research/tags";
 import { useToast } from "@/components/toast/ToastContext";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { UndoManager } from "@/lib/utils/undo-manager";
@@ -26,15 +26,12 @@ export default function HistoryPage() {
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [totalRuns, setTotalRuns] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [folderName, setFolderName] = useState<string>("");
+  const [selectedFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "failed">("all");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "fastest" | "slowest">("newest");
   const [starredOnly, setStarredOnly] = useState(false);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [allTags, setAllTags] = useState<RunTag[]>([]);
-  const [showTagMenu, setShowTagMenu] = useState(false);
+  const [allTags] = useState<RunTag[]>([]);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -45,12 +42,10 @@ export default function HistoryPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [showMoveFolderMenu, setShowMoveFolderMenu] = useState(false);
   const [showBulkTagMenu, setShowBulkTagMenu] = useState(false);
-  const [tagRevision, setTagRevision] = useState(0);
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  const { showToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const { askConfirm, dialog: confirmDialog } = useConfirm();
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
   // Undo manager for soft deletes
   const undoManager = useMemo(() => {
@@ -65,13 +60,7 @@ export default function HistoryPage() {
           showToast("Failed to delete research", "error");
         }
       },
-      onRestore: (item) => {
-        // Item was restored - remove from deletedIds set visually
-        setDeletedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(item.id);
-          return next;
-        });
+      onRestore: () => {
         showToast("Deletion undone", "info");
       },
     });
@@ -151,7 +140,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedFolder, searchQuery, statusFilter, sortBy]);
+  }, [selectedFolder, searchQuery, statusFilter, sortBy, page, pageSize, starredIds, starredOnly]);
 
   // Load starred IDs on mount and refresh periodically
   useEffect(() => {
@@ -174,14 +163,6 @@ export default function HistoryPage() {
 
   useEffect(() => {
     void Promise.resolve().then(() => {
-      if (selectedFolder) {
-        const folder = getFolder(selectedFolder);
-        if (folder) {
-          setFolderName(folder.name);
-        }
-      } else {
-        setFolderName("");
-      }
       // Load folders for move-to-folder menu
       setFolders(
         getFolders()
@@ -230,14 +211,6 @@ export default function HistoryPage() {
   };
 
   // Bulk actions
-  const handleCompare = () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length < 2) return;
-    // Take first two for comparison
-    const url = `/compare?a=${ids[0]}&b=${ids[1]}`;
-    window.location.href = url;
-  };
-
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
     askConfirm(`Delete ${selectedIds.size} selected run${selectedIds.size>1?'s':''}?`, 'This cannot be undone.', () => performBulkDelete());
@@ -260,7 +233,7 @@ export default function HistoryPage() {
     }
   };
 
-  const handleBulkExport = (format: "json" | "csv" | "jsonl") => {
+  const handleBulkExport = () => {
     if (selectedIds.size === 0) return;
     // Use the export endpoint with a filter ? but since we have IDs on client side,
     // we can fetch individual runs and build the export
@@ -299,29 +272,12 @@ export default function HistoryPage() {
       bulkAddTags(ids, tagIds);
       showToast(`Added ${tagIds.length} tag(s) to ${ids.length} research runs`, "success");
       setShowBulkTagMenu(false);
-      setTagRevision(r => r + 1);
     } catch {
       showToast("Failed to add tags", "error");
     } finally {
       setBulkActionLoading(false);
     }
   };
-
-  const handleBulkRemoveTags = (tagIds: string[]) => {
-    if (selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds);
-    setBulkActionLoading(true);
-    try {
-      bulkRemoveTags(ids, tagIds);
-      showToast(`Removed ${tagIds.length} tag(s) from ${ids.length} research runs`, "success");
-      setShowBulkTagMenu(false);
-      setTagRevision(r => r + 1);
-    } catch {
-      showToast("Failed to remove tags", "error");
-    } finally {
-      setBulkActionLoading(false);
-    }
-  };;
 
   return (
     <div className="history-page">
@@ -500,7 +456,7 @@ export default function HistoryPage() {
               </div>
               <button
                 className="btn btn-sm btn-secondary"
-                onClick={() => handleBulkExport("json")}
+                onClick={() => handleBulkExport()}
                 disabled={bulkActionLoading}
               >
                 📤 Export
@@ -563,7 +519,7 @@ export default function HistoryPage() {
                 <>
                   <button
                     className="btn btn-secondary"
-                    onClick={() => { setSearchQuery(""); setStatusFilter("all"); setStarredOnly(false); setSelectedTag(null); }}
+                    onClick={() => { setSearchQuery(""); setStatusFilter("all"); setStarredOnly(false); }}
                   >
                     Clear all filters
                   </button>
@@ -723,6 +679,7 @@ export default function HistoryPage() {
           )}
         </>)}
       </div>
+      {confirmDialog}
     </div>
   );
 }

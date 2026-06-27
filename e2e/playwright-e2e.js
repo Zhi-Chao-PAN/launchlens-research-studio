@@ -12,7 +12,6 @@
 //   node e2e/playwright-e2e.js
 // Requires: production build at .next/ and Playwright + chromium installed.
 
-const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -217,7 +216,6 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-03-research-started
     // Wait for some agents to complete
     await page.waitForTimeout(8000);
 
-    const tabButtons = page.locator("button[aria-pressed]").filter({ hasText: /Competitor|Pain|Pricing|Channel|Synthesis/ });
     // Tab buttons may be inside the lazy ReportView, check after wait
     await settle(page, 500);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-debug-tabs.png"), fullPage: true });

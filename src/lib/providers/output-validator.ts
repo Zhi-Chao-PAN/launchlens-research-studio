@@ -44,15 +44,6 @@ function assertNumberInRange(obj: any, key: string, min: number, max: number, ba
   }
 }
 
-/** Assert a string is non-empty after trimming. */
-function assertNonEmptyString(obj: any, key: string, basePath: string): void {
-  const v = obj[key];
-  const path = basePath + "." + key;
-  if (typeof v !== "string" || v.trim() === "") {
-    throw new ValidationError("expected non-empty string", path);
-  }
-}
-
 function validateCitations(arr: any, basePath: string): SourceCitation[] {
   if (!Array.isArray(arr)) throw new ValidationError("citations must be array", basePath);
   return arr.map((c, i) => {

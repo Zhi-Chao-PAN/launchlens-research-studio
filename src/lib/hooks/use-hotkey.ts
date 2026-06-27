@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 type KeyHandler = (event: KeyboardEvent) => void;
 
@@ -27,9 +27,7 @@ function normalizeKey(key: string): string {
 
 function matchesKey(event: KeyboardEvent, config: HotkeyConfig): boolean {
   const keyMatch = normalizeKey(event.key) === normalizeKey(config.key);
-  
-  const ctrlMatch = config.ctrl ? event.ctrlKey || event.metaKey : true;
-  const metaMatch = config.meta ? event.metaKey || event.ctrlKey : true; // cross-platform
+
   const shiftMatch = config.shift ? event.shiftKey : true;
   const altMatch = config.alt ? event.altKey : true;
   
@@ -73,29 +71,31 @@ export function useHotkey(
   // Keep handler reference fresh
   useEffect(() => {
     handlerRef.current = config.handler;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps is a caller-supplied dependency array spread by design
   }, [config.handler, ...deps]);
-  
+
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (!matchesKey(event, config)) return;
-      
+
       if (config.ignoreInputs !== false && isInputTarget(event.target)) {
         return;
       }
-      
+
       if (config.preventDefault !== false) {
         event.preventDefault();
       }
-      
+
       if (config.stopPropagation) {
         event.stopPropagation();
       }
-      
+
       handlerRef.current(event);
     };
-    
+
     window.addEventListener("keydown", listener, { capture: false });
     return () => window.removeEventListener("keydown", listener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- config fields listed individually (avoid re-registering on every render); deps is caller-supplied
   }, [
     config.key,
     config.ctrl,
@@ -105,6 +105,7 @@ export function useHotkey(
     config.ignoreInputs,
     config.preventDefault,
     config.stopPropagation,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps is a caller-supplied dependency array spread by design
     ...deps,
   ]);
 }

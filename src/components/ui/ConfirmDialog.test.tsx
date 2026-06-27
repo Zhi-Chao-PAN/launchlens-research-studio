@@ -38,5 +38,6 @@ describe("ConfirmDialog (round 193)", () => {
     );
     // Escape calls onCancel
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(cancelled).toBe(true);
   });
 });

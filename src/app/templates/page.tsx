@@ -2,7 +2,6 @@
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   listTemplates,
@@ -181,9 +180,14 @@ export default function TemplatesPage() {
   }
 
   function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this template?")) return;
-    deleteTemplate(id);
-    refresh();
+    askConfirm(
+      "Delete template?",
+      "Are you sure you want to delete this template?",
+      () => {
+        deleteTemplate(id);
+        refresh();
+      },
+    );
   }
 
   function handleExport() {

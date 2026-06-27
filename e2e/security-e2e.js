@@ -76,10 +76,6 @@ async function run() {
     log("CSRF endpoint sets csrf_token cookie", setCookie.includes("csrf_token="));
     log("CSRF cookie is httpOnly", setCookie.includes("HttpOnly") || setCookie.includes("httponly"));
 
-    // Extract cookie and token for later tests
-    const cookieMatch = setCookie.match(/csrf_token=([^;]+)/);
-    const csrfCookie = cookieMatch ? cookieMatch[1] : null;
-
     console.log("\n[2] CSRF soft enforcement on /api/research");
 
     // Without CSRF token — should pass in soft mode
@@ -268,7 +264,7 @@ async function run() {
       `status=${after25.status}`);
 
     // CIDR range: 192.168.1.x should also be trusted
-    const cidrRes = await fetch(`${TRUSTED_BASE_URL}/api/research`, {
+    await fetch(`${TRUSTED_BASE_URL}/api/research`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

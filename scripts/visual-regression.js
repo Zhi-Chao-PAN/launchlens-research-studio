@@ -18,7 +18,6 @@ const SHOTS_DIR = path.join(PROJECT, "screenshots");
 const BASELINES_DIR = path.join(PROJECT, "baselines");
 const REPORT_PATH = path.join(PROJECT, "visual-report.md");
 const MODE = process.argv[2] || "diff";
-const USE_FREEZE = process.env.VISUAL_NO_FREEZE !== "1";
 
 function hashFile(file) {
   const buf = fs.readFileSync(file);

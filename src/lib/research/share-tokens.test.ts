@@ -36,7 +36,6 @@ describe("share-tokens pure helpers (round 158)", () => {
   });
 
   it("getShareHealth returns active/expired/maxed/revoked", () => {
-    vi_advance(NOW);
     expect(getShareHealth(mk(), NOW)).toBe("active");
     expect(getShareHealth(mk({ expiresAt: NOW - 1 }), NOW)).toBe("expired");
     expect(getShareHealth(mk({ maxViews: 5, views: 5 }), NOW)).toBe("maxed");
@@ -132,5 +131,3 @@ describe("share-tokens pure helpers (round 158)", () => {
     expect(getShareHealth(r)).toBe("active");
   });
 });
-
-function vi_advance(_t: number) { /* placeholder for real timers if needed */ }

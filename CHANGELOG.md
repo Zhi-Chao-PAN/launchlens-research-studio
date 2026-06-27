@@ -7,8 +7,92 @@ and this project adheres to Semantic Versioning (https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- Provider/breaker status pill in header (round 22).
-- Translated crash and 404 screens with copy-trace button (round 23).
+- Wrap-up sweep (round 203+): 140 lint warnings cleared to zero; CHANGELOG
+  brought in sync with code; pre-existing latent bugs fixed during lint
+  cleanup (ScheduleManager confirm dialog rendering, FolderSidebar
+  confirm dialog rendering, Admin stats fetch wiring, history pagination
+  deps, print mode dead code, cancelled-notice dead state, showHelp dead
+  state, dead `watchShareStorage`/`reloadSharesFromDisk`/`markPersisted`
+  watchers, dead `formatDuration`/`formatTime` helpers, dead
+  `DEFAULT_EXPORT_OPTIONS`/`FOLDER_ASSIGNMENTS_KEY`/`PERMISSION_KEY`
+  constants, dead `compare/page.tsx#formatTime`, dead `processBatch`
+  wrapper, dead `RelatedRun` interface, dead `ResearchSession` test
+  imports, dead `useState`/`useEffect`/`useCallback`/`useRef` imports,
+  dead `confirm`/`setConfirm` state in admin/history/templates, and
+  `defaultExport` anon → named in autocomplete/suggestions modules).
+
+## [0.6.0] - rounds 201-203 (Tier hardening sweep)
+
+### Added
+- **Tier 1 (round 201)** — stop the bleeding: CI green; 1300 tests pass;
+  typecheck and build clean; eslint config rewritten; docs/ROUNDS.md
+  backfilled through round 200; PRD.md identified as misplaced
+  ModelEval file and archived to `docs/PRD-misplaced-ModelEval.md`;
+  playwright-core devDep added.
+- **Tier 2 (round 202)** — security hardening: global `/api/*` middleware
+  enforcing strict-by-default CSRF on all non-safe methods; bypass tokens
+  skip CSRF; shared `requireAdmin(request)` helper replacing 5
+  copy-pasted admin auth blocks; CSRF token rotation after every
+  successful mutation (`rotateCsrf()` on `X-CSRF-Token` response header
+  + HttpOnly cookie); `csrf-client.fetchWithCsrf()` auto-picks up
+  rotated tokens; `auth-audit.ts` `cors_rejected` event added; trusted
+  IP ranges (single IP + CIDR) for `LAUNCHLENS_TRUSTED_PROXIES`.
+- **Tier 3 (round 203)** — engine correctness + UX:
+  - Research engine: `createResearchSession` captures
+    `selectProvider().id` as `session.providerId`; `saveResearchRun`
+    threads provider id through (history no longer misattributes all
+    runs to "mock"); `runAgent` tracks `resolvedProviderId` and
+    `isDegradedHere`, exposing degraded state on `AgentState`.
+  - Visible degradation: when a real-LLM provider fails, agents emit a
+    `degraded: true` flag surfaced as an amber "demo" badge on
+    `AgentCard`, while the response still uses mock output so the user
+    always sees something actionable.
+  - Theme unification: legacy `next-themes` `<ThemeProvider>` removed;
+    the custom `ThemeToggle` (which writes `[data-theme]`) is now the
+    sole source of truth; no more className=dark divergence.
+  - Locale resolution: `<html lang>` dynamic from request headers via
+    `resolveLocaleFromHeaders(await headers())`; client-side
+    `detectInitialLocale` now matches `"ko"`.
+  - Scheduler: `bootstrapScheduler()` called at module load (ensures
+    poller running + catch-up missed schedules); `tickSchedules` and
+    `triggerScheduleNow` record results.
+  - i18n: Korean (`ko`) locale added; `agent.degraded` and
+    `batch.status.{queued,running,completed,failed}` keys in all 4
+    locales; hardcoded Chinese status labels in `/batch/page.tsx`
+    replaced with `t("batch.status.*")`.
+  - Mock persona adjustments: `oppAdj`/`riskAdj` params dropped from
+    the 4 persona functions that didn't use them.
+  - Output validator: `assertNumberInRange`, `assertNonEmptyString`,
+    required citations (`>= 1`), positive TAM/SAM/SOM, 0-100 scores
+    enforced.
+  - Batch: `batch._agent` written in `createBatch` when an agent is
+    provided so per-agent runs have a stable audit trail.
+
+## [0.5.5] - rounds 24-200 (organic iteration log)
+
+This range contains 176 rounds of organic iteration. The full per-round
+log lives in [`docs/ROUNDS.md`](./docs/ROUNDS.md). Highlights grouped by
+cycle:
+
+- **Cycle 1 (R8-10)** — Founder-friendly seeds: pre-populated mock
+  personas, comparison page, persona switcher, confidence pills.
+- **Cycle 2 (R11-15)** — Reusable history: searchable history page,
+  star/unstar, delete with undo, folder sidebar, per-folder counts.
+- **Cycle 3 (R16-20)** — Templates & sharing: template CRUD + apply,
+  share tokens (view/edit scopes, expiry, password, revocation),
+  dashboard stats endpoints, top-keywords cloud.
+- **Cycle 4 (R21-23)** — Real-LLM plumbing (see 0.5.0 below).
+- **Cycles 5-12 (R24-120)** — Hardening + UX: telemetry, rate limiting,
+  IP bypass tokens, admin audit, webhooks, scheduler with cron + result
+  records, batch runner with concurrency, autocomplete + suggestions,
+  PDF/print styles, related-runs, Venn diagrams, tag system, retry-on-429
+  with Retry-After, i18n (en/zh-CN/ja), Vercel deploy config, smoke
+  scripts, visual regression harness.
+- **Cycles 13-20 (R121-200)** — Continued hardening: stronger CSRF, more
+  test coverage, structured logging, error boundaries, debounced keyword
+  analysis, indexed search, more personas, deeper report sections, the
+  paged schedule editor, idempotent batch cancel, and the multi-cycle
+  Tier 1/2/3 prep work.
 
 ## [0.5.0] - rounds 21-23
 

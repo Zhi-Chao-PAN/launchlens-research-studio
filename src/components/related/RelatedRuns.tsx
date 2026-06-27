@@ -4,14 +4,6 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { findRelatedRuns } from "@/lib/research/suggestions";
 
-interface RelatedRun {
-  id: string;
-  query: string;
-  keywords: string[];
-  status: "completed" | "failed";
-  createdAt: number;
-}
-
 interface RelatedRunsProps {
   runId: string;
   keywords: string[];
@@ -26,6 +18,7 @@ export function RelatedRuns({ runId, keywords, limit = 5 }: RelatedRunsProps) {
   }>>([]);
   const [loading, setLoading] = useState(true);
 
+  const keywordsKey = keywords.join(",");
   useEffect(() => {
     let cancelled = false;
 
@@ -52,7 +45,8 @@ export function RelatedRuns({ runId, keywords, limit = 5 }: RelatedRunsProps) {
     return () => {
       cancelled = true;
     };
-  }, [runId, keywords.join(","), limit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keywords captured via keywordsKey to avoid re-running on array identity changes
+  }, [runId, keywordsKey, limit]);
 
   if (loading) {
     return (

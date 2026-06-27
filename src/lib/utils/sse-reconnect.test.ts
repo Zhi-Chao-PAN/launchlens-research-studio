@@ -11,9 +11,6 @@ function makeSseResponse(frames: string[], failAfter?: number): Response {
   let i = 0;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
-    start(controller) {
-      // no-op, push on pull
-    },
     pull(controller) {
       if (failAfter !== undefined && i >= failAfter) {
         controller.error(new Error("simulated drop"));

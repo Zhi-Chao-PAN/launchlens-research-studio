@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useHotkey } from "@/lib/hooks/use-hotkey";
 
 interface Shortcut {

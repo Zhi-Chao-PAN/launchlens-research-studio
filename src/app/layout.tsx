@@ -9,7 +9,6 @@ import { GlobalCommands } from "@/components/command-palette/GlobalCommands";
 import { ToastProvider } from "@/components/toast/ToastContext";
 import { NetworkStatus } from "@/components/ui/NetworkStatus";
 import { KeyboardCheatsheetGlobal } from "@/components/keyboard/KeyboardCheatsheetGlobal";
-import { FreezeMode } from "@/components/perf/FreezeMode";
 import { ThemeProvider } from "next-themes";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { resolveLocaleFromHeaders } from "@/lib/i18n/server";

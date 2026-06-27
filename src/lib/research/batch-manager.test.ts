@@ -159,7 +159,6 @@ describe("batch-manager", () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(cancelBatch(batch.id)).toBe(true);
       const fresh = getBatch(batch.id)!;
-      const statuses = fresh.runs.map((r) => r.status).sort();
       // After 50ms with concurrency 3 at least some runs are already running
       // and some are still queued; cancelBatch flips queued to cancelled
       // immediately, and running runs will become cancelled as soon as their

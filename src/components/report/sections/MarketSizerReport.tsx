@@ -21,7 +21,6 @@ const TREND_COLOR = {
   negative: "bg-rose-50 border-rose-100",
   neutral: "bg-slate-50 border-slate-100",
 } as const;
-const TREND_BAR = { positive: "bg-emerald-400", negative: "bg-rose-400", neutral: "bg-slate-400" } as const;
 
 export function MarketSizerReport({ output }: { output: any }) {
   const data = output as MarketSizerOutput;
@@ -54,9 +53,9 @@ export function MarketSizerReport({ output }: { output: any }) {
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Market Size Estimate</h3>
         <div className="space-y-3">
-          <SizeBar label="TAM" sublabel={tamLabel} value={tam} displayValue={formatCurrency(tam, data.marketSize.currency)} percentage={100} color="from-indigo-600 to-violet-600" />
-          <SizeBar label="SAM" sublabel={samLabel} value={sam} displayValue={formatCurrency(sam, data.marketSize.currency)} percentage={samPct} color="from-indigo-400 to-violet-500" />
-          <SizeBar label="SOM" sublabel={somLabel} value={som} displayValue={formatCurrency(som, data.marketSize.currency)} percentage={somPct} color="from-emerald-400 to-teal-500" />
+          <SizeBar label="TAM" sublabel={tamLabel} displayValue={formatCurrency(tam, data.marketSize.currency)} percentage={100} color="from-indigo-600 to-violet-600" />
+          <SizeBar label="SAM" sublabel={samLabel} displayValue={formatCurrency(sam, data.marketSize.currency)} percentage={samPct} color="from-indigo-400 to-violet-500" />
+          <SizeBar label="SOM" sublabel={somLabel} displayValue={formatCurrency(som, data.marketSize.currency)} percentage={somPct} color="from-emerald-400 to-teal-500" />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -130,7 +129,7 @@ export function MarketSizerReport({ output }: { output: any }) {
   );
 }
 
-function SizeBar({ label, sublabel, value, displayValue, percentage, color }: { label: string; sublabel: string; value: number; displayValue: string; percentage: number; color: string }) {
+function SizeBar({ label, sublabel, displayValue, percentage, color }: { label: string; sublabel: string; displayValue: string; percentage: number; color: string }) {
   return (
     <div className="bg-white rounded-xl p-4 border border-slate-200">
       <div className="flex items-center justify-between mb-2">

@@ -217,9 +217,9 @@ describe("research folders", () => {
 
   describe("reorderFolders", () => {
     it("reorders custom folders while keeping system folders fixed", () => {
-      const f1 = createFolder({ name: "A" });
-      const f2 = createFolder({ name: "B" });
-      const f3 = createFolder({ name: "C" });
+      createFolder({ name: "A" });
+      createFolder({ name: "B" });
+      createFolder({ name: "C" });
 
       let folders = getFolders().filter((f) => !f.isSystem);
       expect(folders).toHaveLength(3);
@@ -307,7 +307,7 @@ describe("folder stats (round 136)", () => {
 
   it("getFolderStats computes totals correctly", () => {
     const f1 = createFolder({ name: "Research" });
-    const f2 = createFolder({ name: "Empty" });
+    createFolder({ name: "Empty" });
     addRunToFolder(f1.id, "run-1");
     addRunToFolder(f1.id, "run-2");
 
@@ -364,7 +364,7 @@ describe("empty folder cleanup (round 136)", () => {
 
   it("cleanupEmptyFolders removes empty custom folders", () => {
     const f1 = createFolder({ name: "Keep" });
-    const f2 = createFolder({ name: "Remove" });
+    createFolder({ name: "Remove" });
     addRunToFolder(f1.id, "r1");
     const before = getFolders().length;
     const removed = cleanupEmptyFolders();

@@ -18,7 +18,7 @@ function agentProgress(c: CachedSession): { done: number; total: number } {
   return { done, total: 6 };
 }
 
-export function CachedSessionsList({ refreshKey, onSelect, onClear }: CachedSessionsProps) {
+export function CachedSessionsList({ onSelect, onClear }: CachedSessionsProps) {
   const [expanded, setExpanded] = useState(true);
   const all = listCachedSessions();
 

@@ -18,7 +18,6 @@ export interface ResearchFolder {
 }
 
 const STORAGE_KEY = "launchlens:folders";
-const FOLDER_ASSIGNMENTS_KEY = "launchlens:folder-assignments"; // runId -> folderId[]
 
 // Default system folders
 const DEFAULT_FOLDERS: ResearchFolder[] = [
@@ -133,7 +132,8 @@ export function updateFolder(
   if (idx < 0) return null;
   if (folders[idx].isSystem && (updates.name !== undefined)) {
     // System folders can't be renamed (but other props can change)
-    const { name, ...rest } = updates;
+    const rest = { ...updates };
+    delete rest.name;
     folders[idx] = touch({ ...folders[idx], ...rest });
   } else {
     folders[idx] = touch({ ...folders[idx], ...updates });

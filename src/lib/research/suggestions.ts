@@ -320,12 +320,14 @@ export function findRelatedRuns(
   return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
 }
 
-export default {
+const suggestionsApi = {
   extractTopics,
   generateSuggestions,
   clusterHistoryByTopic,
   findRelatedRuns,
 };
+
+export default suggestionsApi;
 
 /* ------------------------------------------------------------------ */
 /*  Suggestion scoring, filtering, deduplication                       */

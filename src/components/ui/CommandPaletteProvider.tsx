@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { CommandPalette } from "./CommandPalette";
 import { useHotkey } from "@/lib/hooks/use-hotkey";
 

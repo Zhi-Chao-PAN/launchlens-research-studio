@@ -1,5 +1,5 @@
 /// <reference types="vitest/globals" />
-import { describe, beforeEach, afterAll, vi } from "vitest";
+import { describe, beforeEach, vi } from "vitest";
 import {
   generateRunId,
   saveResearchRun,

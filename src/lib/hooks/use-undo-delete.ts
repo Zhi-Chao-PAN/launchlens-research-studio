@@ -99,11 +99,12 @@ export function useUndoDelete<T>({
 
   // Clean up on unmount
   useEffect(() => {
+    const items = pendingItems;
     return () => {
-      pendingItems.current.forEach((entry) => {
+      items.current.forEach((entry) => {
         clearTimeout(entry.timer);
       });
-      pendingItems.current.clear();
+      items.current.clear();
     };
   }, []);
 

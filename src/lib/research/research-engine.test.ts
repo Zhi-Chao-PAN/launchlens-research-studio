@@ -16,7 +16,6 @@ import {
   cancelSession,
   deleteSession,
   subscribeToSession,
-  runResearchSession,
 } from "@/lib/research/research-engine";
 import type { ResearchSession, AgentState } from "@/lib/schema/research-schema";
 

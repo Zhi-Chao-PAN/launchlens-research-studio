@@ -50,7 +50,6 @@ function severityClass(severity: string): string {
 
 export default function AdminPage() {
   const { showToast } = useToast();
-  const [confirm, setConfirm] = useState<{open: boolean; title: string; message?: string; tone?: "danger"|"primary"; onConfirm: () => void} | null>(null);
   const { askConfirm, dialog: confirmDialog } = useConfirm();
   const [token, setToken] = useState<string>(() => {
     if (typeof window === "undefined") return "";
@@ -94,6 +93,7 @@ export default function AdminPage() {
     loadAll();
     const interval = setInterval(loadAll, 5000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAll closes over filter state; polling on token change only
   }, [token]);
 
   // Research tab
@@ -101,6 +101,7 @@ export default function AdminPage() {
     if (activeTab === "research") {
       loadResearchRuns();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadResearchRuns closes over filters; re-run on filter change only
   }, [activeTab, researchSearch, researchStatusFilter]);
 
   async function loadResearchRuns() {
@@ -174,6 +175,14 @@ export default function AdminPage() {
         const data = await sRes.json();
         setWebhookStats(data.webhook || null);
       }
+      // Dashboard stats (research/shares/alerts aggregates) come from a
+      // dedicated endpoint so they can be cached independently of the list polls.
+      const statsRes = await apiCall("/api/admin/stats");
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setStats(data || null);
+      }
+      setStatsLoading(false);
       setError(null);
     } catch (e: unknown) {
       setError(formatApiError(e, { prefix: "Load failed:" }));
@@ -729,6 +738,7 @@ export default function AdminPage() {
         )}
 
       </main>
+      {confirmDialog}
     </div>
   );
 }

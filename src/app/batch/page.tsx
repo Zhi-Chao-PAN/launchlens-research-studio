@@ -4,10 +4,8 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ScheduleManager } from "@/components/scheduler/ScheduleManager";
 import { fetchWithCsrfStrict, formatApiError } from "@/lib/api/csrf-client";
-import { useToast } from "@/components/toast/ToastContext";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface BatchRun {
@@ -31,8 +29,6 @@ interface BatchInfo {
 }
 
 export default function BatchPage() {
-  const { showToast } = useToast();
-  const router = useRouter();
   const { t } = useLocale();
   const [queries, setQueries] = useState("");
   const [keywords, setKeywords] = useState("");
@@ -109,12 +105,14 @@ export default function BatchPage() {
   }, []);
 
   // Poll current batch status
+  const batchId = currentBatch?.id;
+  const batchStatus = currentBatch?.status;
   useEffect(() => {
-    if (!currentBatch || currentBatch.status === "completed") return;
+    if (!batchId || batchStatus === "completed") return;
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/research/batch/${currentBatch.id}`);
+        const res = await fetch(`/api/research/batch/${batchId}`);
         if (res.ok) {
           const data = await res.json();
           setCurrentBatch(data);
@@ -128,7 +126,7 @@ export default function BatchPage() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [currentBatch?.id, currentBatch?.status, loadRecent]);
+  }, [batchId, batchStatus, loadRecent]);
 
   // Load recent on mount
   useEffect(() => {

@@ -73,7 +73,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       console.error("Copy failed:", err);
       showToast("Copy failed. Please try downloading instead.", "error");
     }
-  }, [flashCopied]);
+  }, [flashCopied, showToast]);
 
   const handleExportMarkdown = useCallback(() => {
     setIsExporting(true);
@@ -94,7 +94,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     } finally {
       setIsExporting(false);
     }
-  }, [sessionId, query, keywords, outputs]);
+  }, [sessionId, query, keywords, outputs, showToast]);
 
   const handleExportJSON = useCallback(() => {
     setIsExporting(true);
@@ -122,7 +122,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     } finally {
       setIsExporting(false);
     }
-  }, [sessionId, query, keywords, outputs]);
+  }, [sessionId, query, keywords, outputs, showToast]);
 
   const handleExportCSV = useCallback(() => {
     setIsExporting(true);
@@ -145,7 +145,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     } finally {
       setIsExporting(false);
     }
-  }, [sessionId, query, outputs]);
+  }, [outputs, showToast]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
 
@@ -157,7 +157,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     }
     const brief = generateBriefOnly(outputs);
     copyToClipboard(brief, "brief");
-  }, [outputs, copyToClipboard]);
+  }, [outputs, copyToClipboard, showToast]);
 
   const handleCopyFullMarkdown = useCallback(() => {
     const notes = getNotes(sessionId);

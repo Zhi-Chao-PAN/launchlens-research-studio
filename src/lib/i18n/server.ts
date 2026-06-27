@@ -92,14 +92,14 @@ function readAcceptLanguage(source: LocaleSource): string | undefined {
   return undefined;
 }
 
-function readLocaleCookie(_source: LocaleSource): string | undefined {
+function readLocaleCookie(): string | undefined {
   // Client stores locale in localStorage, not cookies — server has no access.
   return undefined;
 }
 
 function resolveLocale(source: LocaleSource): Locale {
   // 1. Cookie override (placeholder for future cookie-based locale selection)
-  const cookieVal = readLocaleCookie(source);
+  const cookieVal = readLocaleCookie();
   if (cookieVal && SUPPORTED_LOCALES.includes(cookieVal as Locale)) {
     return cookieVal as Locale;
   }

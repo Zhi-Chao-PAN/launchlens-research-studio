@@ -1,6 +1,6 @@
 ﻿import { describe, it, expect } from "vitest";
 import { buildResearchExport, serializeJSON, EXPORT_SCHEMA_VERSION } from "@/lib/export/json-formatter";
-import type { ResearchSession, AgentOutput, AgentId } from "@/lib/schema/research-schema";
+import type { AgentOutput, AgentId } from "@/lib/schema/research-schema";
 
 const mockOutputs: Record<AgentId, AgentOutput | null> = {
   "market-sizer": {

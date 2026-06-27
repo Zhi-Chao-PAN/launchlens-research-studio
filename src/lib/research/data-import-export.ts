@@ -77,14 +77,6 @@ export interface ImportOptions {
   includeTemplates?: boolean;
 }
 
-const DEFAULT_EXPORT_OPTIONS: Required<ExportOptions> = {
-  includeRuns: true,
-  includeNotes: true,
-  includeFolders: true,
-  includeTemplates: true,
-  maxRuns: 1000,
-};
-
 const DEFAULT_IMPORT_OPTIONS: Required<ImportOptions> = {
   strategy: "merge",
   includeRuns: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useHotkey, getCommands, subscribeToCommands, type Command } from "@/lib/hooks/use-hotkey";
 
 interface CommandPaletteProps {
