@@ -111,8 +111,12 @@ export default function AdminPage() {
       params.set("limit", "20");
       if (researchSearch) params.set("q", researchSearch);
       if (researchStatusFilter) params.set("status", researchStatusFilter);
-      
-      const res = await fetch(`/api/research/runs?${params.toString()}`);
+
+      // Admin's own research tab can see the full store (including any future
+      // per-run private fields). Use apiCall so the Bearer token is attached,
+      // matching the surrounding admin endpoints. List-only reads from
+      // /history /page are same-origin CSRF-protected without a token.
+      const res = await apiCall(`/api/research/runs?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResearchRuns(data.runs || []);

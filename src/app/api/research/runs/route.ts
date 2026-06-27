@@ -6,22 +6,23 @@ import { getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns 
 import { requireAdmin } from "@/lib/api/require-admin";
 
 // List/search/export runs.
-// Requires an admin-scope bearer token — run summaries expose query text,
-// keywords, provider ids, and timestamps, and exports dump the full store.
-// Prior to R202 this endpoint was unauthenticated.
+//
+// Authorization model (R211):
+//   - List/search (no `format` query): same-origin read, CSRF cookie prevents
+//     cross-site enumeration, summary rows are non-sensitive. No admin token
+//     required — matches the pre-R202 behavior so History / Dashboard /
+//     RelatedRuns / DataManager can render.
+//   - Export (format=json|csv|jsonl): dumps the full store, including query
+//     text and any per-run sensitive data. Requires an admin-scope bearer
+//     token.
 export async function GET(request: NextRequest) {
-  const auth = requireAdmin(request);
-  if (!auth.ok) return auth.response;
   const url = new URL(request.url);
   const format = url.searchParams.get("format");
-  const q = url.searchParams.get("q") || "";
-  const statusFilter = url.searchParams.get("status") as "completed" | "failed" | null;
-  const providerFilter = url.searchParams.get("provider");
-  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10) || 20));
-  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
 
-  // Export formats
+  // Bulk export requires admin.
   if (format === "json" || format === "csv" || format === "jsonl") {
+    const auth = requireAdmin(request);
+    if (!auth.ok) return auth.response;
     const exported = exportRuns(format);
     const contentType = format === "csv" ? "text/csv" : "application/json";
     return new Response(exported, {
@@ -31,6 +32,12 @@ export async function GET(request: NextRequest) {
       },
     });
   }
+
+  const q = url.searchParams.get("q") || "";
+  const statusFilter = url.searchParams.get("status") as "completed" | "failed" | null;
+  const providerFilter = url.searchParams.get("provider");
+  const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10) || 20));
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
 
   // Search/filter
   const result = searchResearchRuns({

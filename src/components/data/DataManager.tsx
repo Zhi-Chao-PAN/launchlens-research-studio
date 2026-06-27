@@ -38,6 +38,35 @@ export function DataManager() {
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // R211: the server-side `/api/data/import` endpoint is admin-gated and
+  // destructive (it can overwrite the entire research-run store). The
+  // client-side export (`handleExport`) builds the package locally from
+  // /api/research/runs summaries + localStorage, so it doesn't need a token.
+  // For import we surface an inline admin-token input, remembered in
+  // localStorage so the user only enters it once per browser.
+  const [adminToken, setAdminToken] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("data_admin_token") || "";
+  });
+  const [adminTokenInput, setAdminTokenInput] = useState<string>("");
+
+  function saveAdminToken() {
+    const trimmed = adminTokenInput.trim();
+    setAdminToken(trimmed);
+    if (typeof window !== "undefined") {
+      if (trimmed) localStorage.setItem("data_admin_token", trimmed);
+      else localStorage.removeItem("data_admin_token");
+    }
+  }
+
+  function clearAdminToken() {
+    setAdminToken("");
+    setAdminTokenInput("");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("data_admin_token");
+    }
+  }
+
   const fetchRuns = async (): Promise<ResearchRun[]> => {
     try {
       const res = await fetch("/api/research/runs?limit=1000");
@@ -121,20 +150,33 @@ export function DataManager() {
 
       // Import runs via API
       if (pkg.data.runs?.length) {
-        try {
-          const res = await fetchWithCsrf(`/api/data/import?strategy=${importStrategy}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(pkg),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            result.imported.runs = data.imported ?? 0;
-            result.skipped.runs = data.skipped ?? 0;
-            result.totalRuns = data.total ?? 0;
+        if (!adminToken) {
+          result.errors.push(
+            "Run import requires an admin token. Enter your admin token in the field above to enable server-side restore.",
+          );
+        } else {
+          try {
+            const res = await fetchWithCsrf(`/api/data/import?strategy=${importStrategy}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${adminToken}`,
+              },
+              body: JSON.stringify(pkg),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              result.imported.runs = data.imported ?? 0;
+              result.skipped.runs = data.skipped ?? 0;
+              result.totalRuns = data.total ?? 0;
+            } else if (res.status === 401) {
+              result.errors.push("Admin token rejected (401). Clear and re-enter it.");
+            } else {
+              result.errors.push(`Run import failed: HTTP ${res.status}`);
+            }
+          } catch (err) {
+            result.errors.push(formatApiError(err, { prefix: "Run import failed:" }));
           }
-        } catch (err) {
-          result.errors.push(formatApiError(err, { prefix: "Run import failed:" }));
         }
       }
 
@@ -323,6 +365,48 @@ export function DataManager() {
               <option value="overwrite">Overwrite existing</option>
               <option value="skip">Skip existing</option>
             </select>
+          </div>
+
+          <div className="data-manager-options">
+            <label className="data-manager-label">
+              Admin token (required for server-side run restore)
+            </label>
+            {adminToken ? (
+              <div className="data-manager-token-saved">
+                <span className="data-manager-token-status">
+                  ✓ Token saved in this browser
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary data-manager-token-clear"
+                  onClick={clearAdminToken}
+                >
+                  Clear
+                </button>
+              </div>
+            ) : (
+              <div className="data-manager-token-input-row">
+                <input
+                  type="password"
+                  className="data-manager-token-input"
+                  placeholder="Paste an admin-scope token"
+                  value={adminTokenInput}
+                  onChange={(e) => setAdminTokenInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={saveAdminToken}
+                  disabled={!adminTokenInput.trim()}
+                >
+                  Save
+                </button>
+              </div>
+            )}
+            <p className="data-manager-hint">
+              Notes, folders, and templates restore locally and don&apos;t need a
+              token. Only server-stored research runs require admin scope.
+            </p>
           </div>
 
           <div className="data-manager-actions">
