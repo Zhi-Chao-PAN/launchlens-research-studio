@@ -10,6 +10,9 @@ import { getRunTags, getTagDetails, bulkAddTags, type RunTag } from "@/lib/resea
 import { useToast } from "@/components/toast/ToastContext";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { UndoManager } from "@/lib/utils/undo-manager";
+import { generateMarkdownReport } from "@/lib/export/markdown-formatter";
+import { parseSynthesis } from "@/lib/research/synthesis-parser";
+import type { AgentOutput } from "@/lib/schema/research-schema";
 
 interface HistoryRun {
   id: string;
@@ -235,25 +238,105 @@ export default function HistoryPage() {
     }
   };
 
-  const handleBulkExport = () => {
+  const handleBulkExport = async () => {
     if (selectedIds.size === 0) return;
-    // Use the export endpoint with a filter ? but since we have IDs on client side,
-    // we can fetch individual runs and build the export
-    // For simplicity, let's just trigger a download from the export endpoint with query matching
-    // Actually let's build the export client-side for selected runs
     const selectedRuns = runs.filter((r) => selectedIds.has(r.id));
     if (selectedRuns.length === 0) return;
 
-    // We only have summary data here. For full export, user should go to individual pages.
-    // Export summaries as JSON.
-    const data = JSON.stringify(selectedRuns, null, 2);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `selected-runs-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // R213: bulk export now produces a single Markdown file containing every
+    // selected run's full report (not just the summary rows that fit in the
+    // history table). Each run is fetched individually from the public
+    // /api/research/runs/[id] endpoint, parsed into per-agent outputs, and
+    // routed through the shared markdown formatter so the bulk export
+    // matches what users get from a single-run export.
+    setBulkActionLoading(true);
+    try {
+      const sections: string[] = [];
+      sections.push(`# Bulk Research Export`);
+      sections.push(``);
+      sections.push(`**Generated at:** ${new Date().toISOString()}  `);
+      sections.push(`**Runs included:** ${selectedRuns.length}`);
+      sections.push(``);
+      sections.push(`---`);
+      sections.push(``);
+
+      let succeeded = 0;
+      let failed = 0;
+      for (const summary of selectedRuns) {
+        try {
+          const res = await fetch(`/api/research/runs/${summary.id}`);
+          if (!res.ok) {
+            failed++;
+            sections.push(`## ⚠ ${summary.query || summary.id}`);
+            sections.push(``);
+            sections.push(`Failed to fetch full run (HTTP ${res.status}).`);
+            sections.push(``);
+            sections.push(`---`);
+            sections.push(``);
+            continue;
+          }
+          const full = await res.json();
+          // Reconstruct per-agent outputs from the persisted run.
+          // The run stores synthesis JSON in `result`; per-agent outputs are
+          // not persisted individually, so we surface the synthesis as the
+          // canonical content. For runs that produced partial agent outputs
+          // (e.g. cancelled mid-flight), the synthesis payload is the most
+          // complete artifact available.
+          const outputs: Record<string, AgentOutput | null> = {
+            "market-sizer": null,
+            "competitor-analyst": null,
+            "pain-detective": null,
+            "pricing-scout": null,
+            "channel-scout": null,
+            synthesis: null,
+          };
+          try {
+            const parsed = parseSynthesis(full.result);
+            outputs.synthesis = parsed as unknown as AgentOutput;
+          } catch {
+            // Leave synthesis null — the markdown formatter tolerates that.
+          }
+          sections.push(
+            generateMarkdownReport({
+              sessionId: full.id,
+              query: full.query,
+              keywords: full.keywords || [],
+              outputs,
+              includeTableOfContents: false,
+            }),
+          );
+          sections.push(``);
+          sections.push(`---`);
+          sections.push(``);
+          succeeded++;
+        } catch (e) {
+          failed++;
+          console.error("bulk-export fetch failed", summary.id, e);
+          sections.push(`## ⚠ ${summary.query || summary.id}`);
+          sections.push(``);
+          sections.push(`Fetch failed: ${e instanceof Error ? e.message : String(e)}`);
+          sections.push(``);
+          sections.push(`---`);
+          sections.push(``);
+        }
+      }
+
+      const blob = new Blob([sections.join("\n")], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `research-bulk-${Date.now()}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      if (failed > 0) {
+        showToast(`Exported ${succeeded} run(s); ${failed} failed.`, "warning");
+      } else {
+        showToast(`Exported ${succeeded} run(s).`, "success");
+      }
+    } finally {
+      setBulkActionLoading(false);
+    }
   };
 
   const handleBulkMoveToFolder = (folderId: string) => {

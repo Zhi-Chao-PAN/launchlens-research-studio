@@ -60,6 +60,60 @@ export type DictionaryKey =
   | "common.settings"
   | "common.share"
   | "common.templates"
+  | "compare.title"
+  | "compare.backToHistory"
+  | "compare.optionA"
+  | "compare.optionB"
+  | "compare.loading"
+  | "compare.error.selectTwo"
+  | "compare.error.loadA"
+  | "compare.error.loadB"
+  | "compare.error.loadFailed"
+  | "compare.error.title"
+  | "compare.view.sideBySide"
+  | "compare.view.diff"
+  | "compare.changesSuffix"
+  | "compare.section.scoreCompare"
+  | "compare.section.execSummary"
+  | "compare.section.diffOverview"
+  | "compare.section.keywords"
+  | "compare.section.sources"
+  | "compare.section.insights"
+  | "compare.section.opportunities"
+  | "compare.section.risks"
+  | "compare.section.nextStep"
+  | "compare.score.opportunity"
+  | "compare.score.risk"
+  | "compare.score.opportunityShort"
+  | "compare.score.riskShort"
+  | "compare.score.unit"
+  | "compare.diff.added"
+  | "compare.diff.removed"
+  | "compare.diff.modified"
+  | "compare.diff.insightsAdded"
+  | "compare.diff.insightsRemoved"
+  | "compare.diff.insightsModified"
+  | "compare.diff.opportunitiesAdded"
+  | "compare.diff.opportunitiesRemoved"
+  | "compare.diff.opportunitiesModified"
+  | "compare.diff.risksAdded"
+  | "compare.diff.risksRemoved"
+  | "compare.diff.risksModified"
+  | "compare.diff.nextStepChanged"
+  | "compare.diff.before"
+  | "compare.diff.after"
+  | "compare.diff.empty"
+  | "compare.keywords.shared"
+  | "compare.keywords.onlyA"
+  | "compare.keywords.onlyB"
+  | "compare.sources.similarity"
+  | "compare.sources.sourcesA"
+  | "compare.sources.shared"
+  | "compare.sources.sourcesB"
+  | "compare.sources.sharedDomains"
+  | "compare.sources.domainsOnlyA"
+  | "compare.sources.domainsOnlyB"
+  | "compare.insightsCount"
   | "crash.body"
   | "crash.copied"
   | "crash.copyTrace"
@@ -299,6 +353,60 @@ const en: Dict = {
   "common.home": "Home",
   "common.history": "History",
   "common.templates": "Templates",
+  "compare.title": "Research Compare",
+  "compare.backToHistory": "← Back to History",
+  "compare.optionA": "Option A",
+  "compare.optionB": "Option B",
+  "compare.loading": "Loading…",
+  "compare.error.selectTwo": "Select two research runs to compare.",
+  "compare.error.loadA": "Failed to load run A (HTTP {status})",
+  "compare.error.loadB": "Failed to load run B (HTTP {status})",
+  "compare.error.loadFailed": "Load failed",
+  "compare.error.title": "Compare failed",
+  "compare.view.sideBySide": "📊 Side-by-side",
+  "compare.view.diff": "🔍 Differences",
+  "compare.changesSuffix": "changes",
+  "compare.section.scoreCompare": "Score comparison",
+  "compare.section.execSummary": "Executive summary",
+  "compare.section.diffOverview": "Difference overview",
+  "compare.section.keywords": "Keyword overlap",
+  "compare.section.sources": "Source overlap",
+  "compare.section.insights": "Key insights (A: {a} · B: {b})",
+  "compare.section.opportunities": "Top opportunities",
+  "compare.section.risks": "Top risks",
+  "compare.section.nextStep": "Recommended next step",
+  "compare.score.opportunity": "Opportunity score",
+  "compare.score.risk": "Risk score",
+  "compare.score.opportunityShort": "Opp.",
+  "compare.score.riskShort": "Risk",
+  "compare.score.unit": "pts",
+  "compare.diff.added": "added",
+  "compare.diff.removed": "removed",
+  "compare.diff.modified": "modified",
+  "compare.diff.insightsAdded": "Added insights ({count})",
+  "compare.diff.insightsRemoved": "Removed insights ({count})",
+  "compare.diff.insightsModified": "Modified insights ({count})",
+  "compare.diff.opportunitiesAdded": "Added opportunities ({count})",
+  "compare.diff.opportunitiesRemoved": "Removed opportunities ({count})",
+  "compare.diff.opportunitiesModified": "Modified opportunities ({count})",
+  "compare.diff.risksAdded": "Added risks ({count})",
+  "compare.diff.risksRemoved": "Removed risks ({count})",
+  "compare.diff.risksModified": "Modified risks ({count})",
+  "compare.diff.nextStepChanged": "Recommended next step (changed)",
+  "compare.diff.before": "Before",
+  "compare.diff.after": "After",
+  "compare.diff.empty": "✨ The two runs are identical",
+  "compare.keywords.shared": "Shared ({count})",
+  "compare.keywords.onlyA": "Only A ({count})",
+  "compare.keywords.onlyB": "Only B ({count})",
+  "compare.sources.similarity": "Similarity {pct}%",
+  "compare.sources.sourcesA": "Option A sources",
+  "compare.sources.shared": "Shared",
+  "compare.sources.sourcesB": "Option B sources",
+  "compare.sources.sharedDomains": "Shared domains ({count})",
+  "compare.sources.domainsOnlyA": "Domains only in A",
+  "compare.sources.domainsOnlyB": "Domains only in B",
+  "compare.insightsCount": "Key insights",
   "common.confirm": "Confirm",
 };
 
@@ -443,6 +551,60 @@ const zhCN: Dict = {
   "common.home": "首页",
   "common.history": "历史",
   "common.templates": "模板",
+  "compare.title": "研究对比",
+  "compare.backToHistory": "← 返回历史",
+  "compare.optionA": "方案 A",
+  "compare.optionB": "方案 B",
+  "compare.loading": "加载中...",
+  "compare.error.selectTwo": "请选择两个研究进行对比。",
+  "compare.error.loadA": "研究 A 加载失败 (HTTP {status})",
+  "compare.error.loadB": "研究 B 加载失败 (HTTP {status})",
+  "compare.error.loadFailed": "加载失败",
+  "compare.error.title": "对比失败",
+  "compare.view.sideBySide": "📊 并排视图",
+  "compare.view.diff": "🔍 差异视图",
+  "compare.changesSuffix": "处变化",
+  "compare.section.scoreCompare": "评分对比",
+  "compare.section.execSummary": "执行摘要",
+  "compare.section.diffOverview": "差异概览",
+  "compare.section.keywords": "关键词重合度",
+  "compare.section.sources": "来源重合度",
+  "compare.section.insights": "关键洞察 (A: {a} · B: {b})",
+  "compare.section.opportunities": "核心机遇",
+  "compare.section.risks": "主要风险",
+  "compare.section.nextStep": "建议下一步",
+  "compare.score.opportunity": "机遇指数",
+  "compare.score.risk": "风险指数",
+  "compare.score.opportunityShort": "机遇",
+  "compare.score.riskShort": "风险",
+  "compare.score.unit": "分",
+  "compare.diff.added": "新增",
+  "compare.diff.removed": "移除",
+  "compare.diff.modified": "变更",
+  "compare.diff.insightsAdded": "新增洞察 ({count})",
+  "compare.diff.insightsRemoved": "移除洞察 ({count})",
+  "compare.diff.insightsModified": "修改洞察 ({count})",
+  "compare.diff.opportunitiesAdded": "新增机遇 ({count})",
+  "compare.diff.opportunitiesRemoved": "移除机遇 ({count})",
+  "compare.diff.opportunitiesModified": "修改机遇 ({count})",
+  "compare.diff.risksAdded": "新增风险 ({count})",
+  "compare.diff.risksRemoved": "移除风险 ({count})",
+  "compare.diff.risksModified": "修改风险 ({count})",
+  "compare.diff.nextStepChanged": "建议下一步（已变更）",
+  "compare.diff.before": "之前",
+  "compare.diff.after": "现在",
+  "compare.diff.empty": "✨ 两份研究完全相同",
+  "compare.keywords.shared": "共有 ({count})",
+  "compare.keywords.onlyA": "仅 A ({count})",
+  "compare.keywords.onlyB": "仅 B ({count})",
+  "compare.sources.similarity": "相似度 {pct}%",
+  "compare.sources.sourcesA": "方案 A 来源",
+  "compare.sources.shared": "共有",
+  "compare.sources.sourcesB": "方案 B 来源",
+  "compare.sources.sharedDomains": "共有域名 ({count})",
+  "compare.sources.domainsOnlyA": "仅 A 域名",
+  "compare.sources.domainsOnlyB": "仅 B 域名",
+  "compare.insightsCount": "关键洞察",
   "common.confirm": "确认",
 };
 
@@ -587,6 +749,60 @@ const ja: Dict = {
   "common.home": "ホーム",
   "common.history": "履歴",
   "common.templates": "テンプレート",
+  "compare.title": "リサーチ比較",
+  "compare.backToHistory": "← 履歴に戻る",
+  "compare.optionA": "案 A",
+  "compare.optionB": "案 B",
+  "compare.loading": "読み込み中...",
+  "compare.error.selectTwo": "比較する 2 件のリサーチを選択してください。",
+  "compare.error.loadA": "案 A の読み込みに失敗しました (HTTP {status})",
+  "compare.error.loadB": "案 B の読み込みに失敗しました (HTTP {status})",
+  "compare.error.loadFailed": "読み込みに失敗しました",
+  "compare.error.title": "比較に失敗しました",
+  "compare.view.sideBySide": "📊 並べて表示",
+  "compare.view.diff": "🔍 差分表示",
+  "compare.changesSuffix": "件の変更",
+  "compare.section.scoreCompare": "スコアの比較",
+  "compare.section.execSummary": "エグゼクティブサマリー",
+  "compare.section.diffOverview": "差分の概要",
+  "compare.section.keywords": "キーワードの重なり",
+  "compare.section.sources": "情報源の重なり",
+  "compare.section.insights": "主な洞察 (A: {a} · B: {b})",
+  "compare.section.opportunities": "主なチャンス",
+  "compare.section.risks": "主なリスク",
+  "compare.section.nextStep": "推奨される次のステップ",
+  "compare.score.opportunity": "チャンス指数",
+  "compare.score.risk": "リスク指数",
+  "compare.score.opportunityShort": "チャンス",
+  "compare.score.riskShort": "リスク",
+  "compare.score.unit": "点",
+  "compare.diff.added": "追加",
+  "compare.diff.removed": "削除",
+  "compare.diff.modified": "変更",
+  "compare.diff.insightsAdded": "追加された洞察 ({count})",
+  "compare.diff.insightsRemoved": "削除された洞察 ({count})",
+  "compare.diff.insightsModified": "変更された洞察 ({count})",
+  "compare.diff.opportunitiesAdded": "追加されたチャンス ({count})",
+  "compare.diff.opportunitiesRemoved": "削除されたチャンス ({count})",
+  "compare.diff.opportunitiesModified": "変更されたチャンス ({count})",
+  "compare.diff.risksAdded": "追加されたリスク ({count})",
+  "compare.diff.risksRemoved": "削除されたリスク ({count})",
+  "compare.diff.risksModified": "変更されたリスク ({count})",
+  "compare.diff.nextStepChanged": "推奨される次のステップ（変更あり）",
+  "compare.diff.before": "変更前",
+  "compare.diff.after": "変更後",
+  "compare.diff.empty": "✨ 2 件のリサーチは同一です",
+  "compare.keywords.shared": "共通 ({count})",
+  "compare.keywords.onlyA": "A のみ ({count})",
+  "compare.keywords.onlyB": "B のみ ({count})",
+  "compare.sources.similarity": "類似度 {pct}%",
+  "compare.sources.sourcesA": "案 A の情報源",
+  "compare.sources.shared": "共通",
+  "compare.sources.sourcesB": "案 B の情報源",
+  "compare.sources.sharedDomains": "共通ドメイン ({count})",
+  "compare.sources.domainsOnlyA": "A のみのドメイン",
+  "compare.sources.domainsOnlyB": "B のみのドメイン",
+  "compare.insightsCount": "主な洞察",
   "common.confirm": "確認",
 };
 
@@ -639,6 +855,60 @@ const ko: Dict = {
   "common.settings": "설정",
   "common.share": "공유",
   "common.templates": "템플릿",
+  "compare.title": "리서치 비교",
+  "compare.backToHistory": "← 기록으로 돌아가기",
+  "compare.optionA": "옵션 A",
+  "compare.optionB": "옵션 B",
+  "compare.loading": "불러오는 중...",
+  "compare.error.selectTwo": "비교할 리서치 두 개를 선택하세요.",
+  "compare.error.loadA": "옵션 A 불러오기 실패 (HTTP {status})",
+  "compare.error.loadB": "옵션 B 불러오기 실패 (HTTP {status})",
+  "compare.error.loadFailed": "불러오기 실패",
+  "compare.error.title": "비교 실패",
+  "compare.view.sideBySide": "📊 나란히 보기",
+  "compare.view.diff": "🔍 차이 보기",
+  "compare.changesSuffix": "개의 변경",
+  "compare.section.scoreCompare": "점수 비교",
+  "compare.section.execSummary": "요약",
+  "compare.section.diffOverview": "차이 개요",
+  "compare.section.keywords": "키워드 중복",
+  "compare.section.sources": "출처 중복",
+  "compare.section.insights": "핵심 통찰 (A: {a} · B: {b})",
+  "compare.section.opportunities": "주요 기회",
+  "compare.section.risks": "주요 위험",
+  "compare.section.nextStep": "권장 다음 단계",
+  "compare.score.opportunity": "기회 지수",
+  "compare.score.risk": "위험 지수",
+  "compare.score.opportunityShort": "기회",
+  "compare.score.riskShort": "위험",
+  "compare.score.unit": "점",
+  "compare.diff.added": "추가",
+  "compare.diff.removed": "삭제",
+  "compare.diff.modified": "변경",
+  "compare.diff.insightsAdded": "추가된 통찰 ({count})",
+  "compare.diff.insightsRemoved": "삭제된 통찰 ({count})",
+  "compare.diff.insightsModified": "변경된 통찰 ({count})",
+  "compare.diff.opportunitiesAdded": "추가된 기회 ({count})",
+  "compare.diff.opportunitiesRemoved": "삭제된 기회 ({count})",
+  "compare.diff.opportunitiesModified": "변경된 기회 ({count})",
+  "compare.diff.risksAdded": "추가된 위험 ({count})",
+  "compare.diff.risksRemoved": "삭제된 위험 ({count})",
+  "compare.diff.risksModified": "변경된 위험 ({count})",
+  "compare.diff.nextStepChanged": "권장 다음 단계 (변경됨)",
+  "compare.diff.before": "이전",
+  "compare.diff.after": "현재",
+  "compare.diff.empty": "✨ 두 리서치가 동일합니다",
+  "compare.keywords.shared": "공통 ({count})",
+  "compare.keywords.onlyA": "A만 ({count})",
+  "compare.keywords.onlyB": "B만 ({count})",
+  "compare.sources.similarity": "유사도 {pct}%",
+  "compare.sources.sourcesA": "옵션 A 출처",
+  "compare.sources.shared": "공통",
+  "compare.sources.sourcesB": "옵션 B 출처",
+  "compare.sources.sharedDomains": "공통 도메인 ({count})",
+  "compare.sources.domainsOnlyA": "A만 있는 도메인",
+  "compare.sources.domainsOnlyB": "B만 있는 도메인",
+  "compare.insightsCount": "핵심 통찰",
   "crash.body": "예기치 않은 오류가 발생했습니다. 작업 내용은 손실되지 않았습니다.",
   "crash.copied": "복사됨",
   "crash.copyTrace": "오류 세부 정보 복사",
