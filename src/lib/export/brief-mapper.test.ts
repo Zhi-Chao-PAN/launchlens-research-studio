@@ -1,0 +1,252 @@
+import { describe, it, expect } from "vitest";
+import {
+  toLaunchLensBrief,
+  serializeBrief,
+  LAUNCHLENS_BRIEF_SCHEMA_VERSION,
+  LAUNCHLENS_FIELD_MAX,
+  LAUNCHLENS_IDEA_MIN,
+} from "@/lib/export/brief-mapper";
+import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
+
+// A fully-populated session fixture mirroring the shape research-engine leaves
+// behind after a successful 6-agent run. Built once, reused with overrides.
+function fullOutputs(): Record<AgentId, AgentOutput> {
+  return {
+    "market-sizer": {
+      agent: "market-sizer",
+      summary: "Sizing summary",
+      marketSize: { tam: 5_000_000_000, sam: 800_000_000, som: 50_000_000, currency: "USD", growthRate: 18, growthTrend: "accelerating", unit: "revenue", sources: [], confidence: "high" },
+      keyTrends: [],
+      targetSegments: [
+        { name: "Indie SaaS founders", size: 120000, description: "Solo or two-person teams shipping B2B tools" },
+      ],
+      citations: [],
+    },
+    "competitor-analyst": {
+      agent: "competitor-analyst",
+      summary: "Comp summary",
+      competitors: [
+        { id: "c1", name: "AcmeCorp", tagline: "x", strengths: [], weaknesses: [], pricing: { min: 0, max: 0, model: "free", currency: "USD" }, positioning: "mid-market", differentiation: "x", citations: [] },
+        { id: "c2", name: "BetaCo", tagline: "x", strengths: [], weaknesses: [], pricing: { min: 0, max: 0, model: "free", currency: "USD" }, positioning: "niche", differentiation: "x", citations: [] },
+      ],
+      competitiveMatrix: [],
+      gaps: [{ gap: "No mobile-first onboarding", opportunity: "Ship a mobile-native flow", difficulty: "medium" }],
+      citations: [],
+    },
+    "pain-detective": {
+      agent: "pain-detective",
+      summary: "Pain summary",
+      painPoints: [],
+      unmetNeeds: [{ need: "Real-time churn signal", whyUnmet: "Existing tools are batch", opportunity: "Stream signals" }],
+      userPersonas: [
+        { name: "Solo Founder", role: "CEO", goals: ["Ship faster"], frustrations: ["Too many tools"] },
+        { name: "Growth Lead", role: "Marketing", goals: ["Reduce churn"], frustrations: ["No data"] },
+      ],
+      citations: [],
+    },
+    "pricing-scout": {
+      agent: "pricing-scout",
+      summary: "Pricing summary",
+      priceBands: [],
+      competitorPricing: [],
+      monetizationModels: [],
+      willingnessToPay: [],
+      recommendations: [
+        { tier: "Starter", price: 29, rationale: "Below AcmeCorp entry to lower switching cost", period: "monthly" },
+        { tier: "Pro", price: 79, rationale: "Captures willingness-to-pay from growth teams", period: "monthly" },
+      ],
+      citations: [],
+    },
+    "channel-scout": {
+      agent: "channel-scout",
+      summary: "Channel summary",
+      channels: [],
+      communityHubs: [],
+      contentTopics: [],
+      recommendedChannels: [],
+      citations: [],
+    },
+    synthesis: {
+      agent: "synthesis",
+      execSummary: "A focused opportunity in indie SaaS onboarding with clear willingness to pay.",
+      opportunityScore: 78,
+      riskScore: 42,
+      keyInsights: [],
+      topThreeOpportunities: [{ title: "Mobile-first onboarding gap", description: "d", rationale: "r" }],
+      topThreeRisks: [{ title: "AcmeCorp may ship mobile", description: "d", mitigation: "Ship faster and own the niche" }],
+      recommendedNextStep: "Validate with 10 founders",
+      launchlensBrief: "legacy free-text brief — should not be used by the structured mapper",
+      citations: [],
+    },
+  };
+}
+
+function buildSession(overrides: Partial<ResearchSession> = {}): ResearchSession {
+  const outputs = fullOutputs();
+  const agents = {} as ResearchSession["agents"];
+  (Object.keys(outputs) as AgentId[]).forEach((id) => {
+    agents[id] = { id, status: "done", progress: 100, currentStep: "Done", output: outputs[id] };
+  });
+  return {
+    id: "sess-abc123",
+    query: "AI onboarding analyst for indie SaaS founders",
+    keywords: ["onboarding", "saas"],
+    createdAt: "2026-06-01T00:00:00Z",
+    updatedAt: "2026-06-01T00:05:00Z",
+    status: "completed",
+    agents,
+    citations: [],
+    ...overrides,
+  };
+}
+
+describe("toLaunchLensBrief — envelope", () => {
+  it("stamps schema version and source", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.schemaVersion).toBe(LAUNCHLENS_BRIEF_SCHEMA_VERSION);
+    expect(brief.source).toBe("launchlens-research-studio");
+  });
+
+  it("carries session id and query for provenance", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.sessionId).toBe("sess-abc123");
+    expect(brief.query).toBe("AI onboarding analyst for indie SaaS founders");
+  });
+
+  it("emits an ISO exportedAt timestamp", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+  });
+});
+
+describe("toLaunchLensBrief — field mapping", () => {
+  it("maps idea from query + exec summary", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.idea).toContain("AI onboarding analyst for indie SaaS founders");
+    expect(brief.input.idea).toContain("focused opportunity in indie SaaS onboarding");
+  });
+
+  it("maps audience from pain personas + market segments", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.audience).toContain("Solo Founder");
+    expect(brief.input.audience).toContain("Growth Lead");
+    expect(brief.input.audience).toContain("Indie SaaS founders");
+  });
+
+  it("maps market from TAM/growth + competitors + gaps", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.market).toContain("$5,000,000,000");
+    expect(brief.input.market).toContain("18%/yr");
+    expect(brief.input.market).toContain("AcmeCorp");
+    expect(brief.input.market).toContain("No mobile-first onboarding");
+  });
+
+  it("maps constraints from pricing recs + unmet needs + risks", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.constraints).toContain("Starter");
+    expect(brief.input.constraints).toContain("Real-time churn signal");
+    expect(brief.input.constraints).toContain("AcmeCorp may ship mobile");
+  });
+
+  it("uses the fixed default tone (no tone agent exists)", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.tone).toBe("Practical, crisp, and founder-friendly");
+  });
+
+  it("records opportunity/risk scores and completed agents in meta", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.meta.opportunityScore).toBe(78);
+    expect(brief.meta.riskScore).toBe(42);
+    expect(brief.meta.completedAgents).toContain("market-sizer");
+    expect(brief.meta.completedAgents).toContain("synthesis");
+  });
+});
+
+describe("toLaunchLensBrief — truncation", () => {
+  it("clamps every field to the launchlens limit", () => {
+    const long = "x".repeat(LAUNCHLENS_FIELD_MAX + 500);
+    const session = buildSession({
+      query: long,
+      agents: {
+        ...buildSession().agents,
+        synthesis: { id: "synthesis", status: "done", progress: 100, currentStep: "Done", output: { ...fullOutputs().synthesis as SynthesisOutput, execSummary: long } },
+      },
+    });
+    const brief = toLaunchLensBrief(session);
+    for (const field of ["idea", "audience", "market", "constraints"] as const) {
+      expect(brief.input[field].length).toBeLessThanOrEqual(LAUNCHLENS_FIELD_MAX);
+    }
+    // tone is a fixed short string, never truncated
+    expect(brief.meta.truncated).not.toContain("tone");
+    expect(brief.meta.truncated.length).toBeGreaterThan(0);
+  });
+
+  it("does not mark truncation when nothing was cut", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.meta.truncated).toEqual([]);
+  });
+});
+
+describe("toLaunchLensBrief — empty / missing outputs", () => {
+  it("falls back to neutral copy when no agent produced output", () => {
+    const emptyAgents = {} as ResearchSession["agents"];
+    (["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout", "synthesis"] as AgentId[]).forEach((id) => {
+      emptyAgents[id] = { id, status: "idle", progress: 0, currentStep: "" };
+    });
+    const brief = toLaunchLensBrief(buildSession({ agents: emptyAgents }));
+    // Still produces a valid five-field object...
+    expect(brief.input.idea.length).toBeGreaterThanOrEqual(LAUNCHLENS_IDEA_MIN);
+    expect(brief.input.audience.length).toBeGreaterThan(0);
+    expect(brief.input.market.length).toBeGreaterThan(0);
+    expect(brief.input.constraints.length).toBeGreaterThan(0);
+    expect(brief.input.tone).toBe("Practical, crisp, and founder-friendly");
+    // ...with null scores and no completed agents.
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    expect(brief.meta.completedAgents).toEqual([]);
+  });
+
+  it("guarantees idea clears the 12-char server gate even with empty query + summary", () => {
+    const emptyAgents = {} as ResearchSession["agents"];
+    (["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout", "synthesis"] as AgentId[]).forEach((id) => {
+      emptyAgents[id] = { id, status: "idle", progress: 0, currentStep: "" };
+    });
+    const brief = toLaunchLensBrief(buildSession({ query: "", agents: emptyAgents }));
+    expect(brief.input.idea.length).toBeGreaterThanOrEqual(LAUNCHLENS_IDEA_MIN);
+    expect(brief.input.idea.length).toBeLessThanOrEqual(LAUNCHLENS_FIELD_MAX);
+  });
+
+  it("uses query alone when synthesis has no exec summary", () => {
+    const session = buildSession({
+      agents: {
+        ...buildSession().agents,
+        synthesis: { id: "synthesis", status: "done", progress: 100, currentStep: "Done", output: { ...fullOutputs().synthesis as SynthesisOutput, execSummary: "" } },
+      },
+    });
+    const brief = toLaunchLensBrief(session);
+    expect(brief.input.idea).toBe("AI onboarding analyst for indie SaaS founders");
+  });
+
+  it("ignores the legacy free-text launchlensBrief string", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.idea).not.toContain("legacy free-text brief");
+  });
+});
+
+describe("serializeBrief", () => {
+  it("round-trips through JSON.parse", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    const s = serializeBrief(brief);
+    const parsed = JSON.parse(s);
+    expect(parsed.schemaVersion).toBe(brief.schemaVersion);
+    expect(parsed.source).toBe(brief.source);
+    expect(parsed.input.idea).toBe(brief.input.idea);
+    expect(parsed.meta.opportunityScore).toBe(brief.meta.opportunityScore);
+  });
+
+  it("produces pretty JSON by default and compact when asked", () => {
+    const brief = toLaunchLensBrief(buildSession());
+    expect(serializeBrief(brief)).toContain("\n  ");
+    expect(serializeBrief(brief, false)).not.toContain("\n  ");
+  });
+});

@@ -3,9 +3,10 @@
 
 import { useState, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";
-import type { AgentId, AgentOutput, SynthesisOutput } from "@/lib/schema/research-schema";
+import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
 import { generateMarkdownReport, generateBriefOnly } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
+import { toLaunchLensBrief, serializeBrief } from "@/lib/export/brief-mapper";
 import { generateCSVBundle } from "@/lib/export/csv-formatter";
 import { getNotes } from "@/lib/research/notes";
 
@@ -40,7 +41,7 @@ function downloadMultipleFiles(files: Record<string, string>): void {
   downloadNext();
 }
 
-type CopyKind = "brief" | "full-md" | "json" | null;
+type CopyKind = "brief" | "full-md" | "json" | "launchlens" | null;
 
 export function ExportActions({ sessionId, query, keywords, outputs }: ExportActionsProps) {
   const { showToast } = useToast();
@@ -192,6 +193,43 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     copyToClipboard(json, "json");
   }, [sessionId, query, keywords, outputs, copyToClipboard]);
 
+  // Build a minimal ResearchSession from the props the panel already has, so the
+  // structured brief mapper can run client-side without fetching the full session.
+  const handleExportLaunchLens = useCallback(() => {
+    setIsExporting(true);
+    try {
+      const agents = {} as ResearchSession["agents"];
+      (Object.keys(outputs) as AgentId[]).forEach((id) => {
+        const output = outputs[id];
+        agents[id] = {
+          id,
+          status: output ? "done" : "idle",
+          progress: output ? 100 : 0,
+          currentStep: output ? "Done" : "",
+          output: output ?? undefined,
+        };
+      });
+      const session: ResearchSession = {
+        id: sessionId,
+        query,
+        keywords,
+        createdAt: "",
+        updatedAt: "",
+        status: "completed",
+        agents,
+        citations: [],
+      };
+      const brief = toLaunchLensBrief(session);
+      const json = serializeBrief(brief, true);
+      downloadFile(json, `launchlens-brief-${sessionId.slice(0, 8)}.json`, "application/json;charset=utf-8");
+    } catch (err) {
+      console.error("LaunchLens brief export failed:", err);
+      showToast("LaunchLens brief export failed.", "error");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [sessionId, query, keywords, outputs, showToast]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
@@ -240,6 +278,19 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
           <span aria-hidden>{copied === "json" ? "✅" : "🔗"}</span>
           <span className="flex-1">{copied === "json" ? "Copied!" : "Copy JSON"}</span>
         </button>
+
+        <div className="pt-2 mt-2 border-t border-slate-100">
+          <p className="text-[10px] uppercase tracking-wide text-slate-400 mb-2">Send to LaunchLens AI</p>
+        </div>
+
+        <button onClick={handleExportLaunchLens} disabled={isExporting}
+          className="w-full py-2 px-3 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50">
+          <span aria-hidden>🚀</span>
+          <span className="flex-1">Export LaunchLens brief (.json)</span>
+        </button>
+        <p className="text-[11px] text-slate-500 px-1 leading-snug">
+          Downloads a structured brief you can import into launchlens-ai to generate a full GTM workspace.
+        </p>
       </div>
     </div>
   );

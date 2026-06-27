@@ -91,6 +91,7 @@ Every report can be exported in multiple formats:
 - **Markdown** (`.md`) — Full report with TOC, citations, and confidence badges
 - **JSON** (`.json`) — Versioned schema (v1.0.0) with metadata, citation stats, and full structured data
 - **CSV** (`.csv`) — Per-domain spreadsheets: market, competitors, pain points, pricing, channels
+- **LaunchLens brief** (`.json`) — Structured five-field brief (`idea` / `audience` / `market` / `tone` / `constraints`) derived deterministically from agent outputs, ready to import into launchlens-ai. Available via the **Export LaunchLens brief** button and `GET /api/research/[sessionId]/brief`.
 - **Clipboard** — Copy Markdown, JSON, or a launchlens-ai-compatible brief
 
 Each report section also has its own **"Copy section"** button for sharing individual agent findings.
@@ -257,7 +258,7 @@ This same script is run in CI on every push.
 ## 🤝 Related Projects
 
 - **[launchlens-ai](https://github.com/Zhi-Chao-PAN/launchlens-ai)** — GTM strategy tool (parent project)
-- Export a `launchlensBrief` from Research Studio → import into launchlens-ai for GTM strategy generation
+- Export a structured **LaunchLens brief** (`launchlens-brief-*.json`) from Research Studio's Export panel → import it into launchlens-ai to generate a full GTM workspace (target users, MVP scope, backlog, pricing, launch plan). The brief's five fields map deterministically from the six agents' outputs; each field is clamped to launchlens-ai's 1200-character limit.
 
 ---
 
