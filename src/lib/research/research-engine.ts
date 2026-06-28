@@ -42,21 +42,25 @@ const MIN_AGENT_TIMEOUT_MS = 1000;
 // time before emitting the first token (they "think" first). Opening all 5
 // streams in the same tick stresses the provider gateway: connections stall,
 // drop mid-stream, or never close cleanly, which surfaces as flaky
-// `network_error` degradations on whichever agents lose the race (typically
-// the first 3 to fire). Serializing through a small concurrency window
-// spreads the connections across a few seconds instead of one thundering
-// herd, which is enough for the gateway to keep every stream healthy.
+// `network_error` degradations on whichever agents lose the race.
 //
-// Default 3: lets 3 agents stream while 2 wait, so a 5-agent session still
-// finishes in roughly 2 waves rather than 5 serial round-trips. Tunable via
-// LAUNCHLENS_PROVIDER_CONCURRENCY (1 = fully serial, safest for flaky
-// upstreams). The mock provider bypasses the limiter so unit tests that
-// force mock aren't serialized.
+// Default 1 (fully serial): the upstream gateway proved fragile even at 2-3
+// concurrent streams — competitor-analyst and pain-detective repeatedly
+// degraded to mock with network_error when 5 agents fired in the same tick
+// against MiniMax-M3, and even dropping to 2 in flight was not enough on
+// some sessions. Serializing keeps every stream's first-byte latency low
+// and avoids the thundering-herd altogether. Cost is real: a 5-agent session
+// runs in roughly 5x the slowest single-agent time, but the Vercel function
+// has maxDuration=300s and the slowest single agent is well under 60s, so
+// the total stays inside the budget. Tunable via
+// LAUNCHLENS_PROVIDER_CONCURRENCY (raise to 2-3 only after the gateway is
+// confirmed stable). The mock provider bypasses the limiter so unit tests
+// that force mock aren't serialized.
 const PROVIDER_CONCURRENCY = (() => {
   const raw = process.env.LAUNCHLENS_PROVIDER_CONCURRENCY;
-  if (!raw) return 3;
+  if (!raw) return 1;
   const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 3;
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 1;
 })();
 const providerLimiter = createConcurrencyLimiter(PROVIDER_CONCURRENCY);
 
