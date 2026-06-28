@@ -24,6 +24,21 @@ export const LAUNCHLENS_BRIEF_SCHEMA_VERSION = "1.0.0";
  *  /api/generate validateInput). Keep exports within the same bound. */
 export const LAUNCHLENS_FIELD_MAX = 1200;
 
+/** launchlens-ai's workspace form shows advisory ("aim under") limits that are
+ *  much tighter than the 1200-char server gate. Exceeding them renders the
+ *  field count red and warns "Too long", which is alarming even though
+ *  Generate still works. We clamp each field to its advisory limit so an
+ *  exported brief lands in launchlens-ai with no warnings — the full detail
+ *  stays in the research report (linked via reportUrl), not crammed into a
+ *  five-field brief. Mirrors launch-workspace.tsx char thresholds. */
+const FIELD_ADVISORY_LIMITS: Record<keyof LaunchLensInput, number> = {
+  idea: 500,
+  audience: 240,
+  market: 120,
+  tone: 1200, // tone is not surfaced with an advisory limit; keep server cap
+  constraints: 320,
+};
+
 /** Minimum idea length launchlens-ai enforces server-side. The mapper pads a
  *  too-short idea with the exec summary so the import never trips the gate. */
 export const LAUNCHLENS_IDEA_MIN = 12;
@@ -66,13 +81,16 @@ export interface LaunchLensImportBrief {
  *  own sample briefs use this exact phrasing as their default. */
 const DEFAULT_TONE = "Practical, crisp, and founder-friendly";
 
-/** Truncate to the field limit on a character boundary, appending an ellipsis
- *  only when something was actually cut. */
+/** Truncate to the field's advisory limit (or the 1200-char server cap,
+ *  whichever is tighter), on a character boundary, appending an ellipsis
+ *  only when something was actually cut. Records the field name in
+ *  `truncated` so the envelope meta can flag it. */
 function clampField(value: string, field: keyof LaunchLensInput, truncated: (keyof LaunchLensInput)[]): string {
-  if (value.length <= LAUNCHLENS_FIELD_MAX) return value;
+  const limit = Math.min(FIELD_ADVISORY_LIMITS[field] ?? LAUNCHLENS_FIELD_MAX, LAUNCHLENS_FIELD_MAX);
+  if (value.length <= limit) return value;
   truncated.push(field);
   // Reserve 3 chars for the ellipsis so the final string stays within the limit.
-  return value.slice(0, LAUNCHLENS_FIELD_MAX - 3) + "…";
+  return value.slice(0, limit - 3) + "…";
 }
 
 /** Best-effort first-N join that skips empty strings. */
@@ -88,11 +106,28 @@ function asOutput<T extends AgentOutput>(output: AgentOutput | null | undefined,
 
 /** Build the idea field from the original query (the founder's intent) plus the
  *  synthesis exec summary for context. Falls back to the query alone, then to a
- *  placeholder that still clears the 12-char server gate. */
+ *  placeholder that still clears the 12-char server gate.
+ *
+ *  The query is always preserved in full (it's the founder's own words and the
+ *  most important signal). The exec summary is appended only when it fits within
+ *  the advisory limit; if not, it's truncated at a sentence boundary rather than
+ *  mid-word so the idea reads naturally in the launchlens-ai form. */
 function buildIdea(session: ResearchSession, synthesis: SynthesisOutput | null): string {
   const query = (session.query || "").trim();
   const execSummary = (synthesis?.execSummary || "").trim();
-  if (query && execSummary) return joinNonEmpty([query, execSummary]);
+  const limit = FIELD_ADVISORY_LIMITS.idea;
+
+  if (query && execSummary) {
+    // Always keep the full query; append as much exec summary as fits.
+    if (query.length >= limit) return query.slice(0, limit);
+    const remaining = limit - query.length - 1; // -1 for the joining space
+    if (execSummary.length <= remaining) return joinNonEmpty([query, execSummary]);
+    // Truncate the exec summary at the last sentence boundary within budget.
+    const slice = execSummary.slice(0, Math.max(0, remaining - 1));
+    const lastStop = Math.max(slice.lastIndexOf("."), slice.lastIndexOf("!"), slice.lastIndexOf(";"));
+    const trimmed = lastStop > remaining * 0.5 ? slice.slice(0, lastStop + 1) : slice;
+    return `${query} ${trimmed.trim()}…`;
+  }
   if (query) return query;
   if (execSummary) return execSummary;
   return "Market opportunity researched by LaunchLens Research Studio";

@@ -185,8 +185,73 @@ describe("toLaunchLensBrief — truncation", () => {
   });
 
   it("does not mark truncation when nothing was cut", () => {
-    const brief = toLaunchLensBrief(buildSession());
+    // Use a session whose agent outputs are short enough to fit every field's
+    // advisory limit (idea≤500, audience≤240, market≤120, constraints≤320).
+    // The shared fullOutputs() fixture's market field (TAM + 2 competitors +
+    // gap + opportunity) exceeds the 120-char advisory, so it would be cut.
+    const lean = buildSession({
+      agents: {
+        ...buildSession().agents,
+        "market-sizer": {
+          id: "market-sizer",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            agent: "market-sizer",
+            summary: "Sizing",
+            marketSize: { tam: 5_000_000_000, sam: 1, som: 1, currency: "USD", growthRate: 18, growthTrend: "accelerating", unit: "revenue", sources: [], confidence: "high" },
+            keyTrends: [],
+            targetSegments: [],
+            citations: [],
+          },
+        },
+        "competitor-analyst": {
+          id: "competitor-analyst",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            agent: "competitor-analyst",
+            summary: "Comp",
+            competitors: [{ id: "c1", name: "Acme", tagline: "x", strengths: [], weaknesses: [], pricing: { min: 0, max: 0, model: "free", currency: "USD" }, positioning: "mid-market", differentiation: "x", citations: [] }],
+            competitiveMatrix: [],
+            gaps: [],
+            citations: [],
+          },
+        },
+        synthesis: {
+          id: "synthesis",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            agent: "synthesis",
+            execSummary: "A focused opportunity in indie SaaS onboarding with clear willingness to pay.",
+            opportunityScore: 78,
+            riskScore: 42,
+            keyInsights: [],
+            topThreeOpportunities: [],
+            topThreeRisks: [],
+            recommendedNextStep: "Validate",
+            launchlensBrief: "legacy",
+            citations: [],
+          },
+        },
+      },
+    });
+    const brief = toLaunchLensBrief(lean);
     expect(brief.meta.truncated).toEqual([]);
+  });
+
+  it("clamps each field to its advisory limit (idea 500, audience 240, market 120, constraints 320)", () => {
+    // A realistic session whose agent outputs overflow every advisory limit.
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.input.idea.length).toBeLessThanOrEqual(500);
+    expect(brief.input.audience.length).toBeLessThanOrEqual(240);
+    expect(brief.input.market.length).toBeLessThanOrEqual(120);
+    expect(brief.input.constraints.length).toBeLessThanOrEqual(320);
+    expect(brief.input.tone.length).toBeLessThanOrEqual(1200);
   });
 });
 

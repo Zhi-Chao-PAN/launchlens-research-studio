@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getResearchSession } from "@/lib/research/research-engine";
+import { getResearchSession, hydrateSessionFromRedis } from "@/lib/research/research-engine";
 import { getResearchRun } from "@/lib/research/storage";
 import { toLaunchLensBrief, serializeBrief } from "@/lib/export/brief-mapper";
 import { jsonErrorLocalized } from "@/lib/api/validation";
@@ -22,7 +22,13 @@ export async function GET(
     });
   }
 
-  const session = getResearchSession(sessionId);
+  // Try the in-process map first; hydrate from Redis so a completed session
+  // is exportable even when this GET lands on a different instance than the
+  // one that ran it (same cross-instance pattern as [sessionId]/route.ts).
+  let session = getResearchSession(sessionId);
+  if (!session) {
+    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
+  }
   if (!session) {
     // Mirror [sessionId]/route.ts: distinguish an evicted live session (the
     // completed run is still on disk) from a true not-found.
