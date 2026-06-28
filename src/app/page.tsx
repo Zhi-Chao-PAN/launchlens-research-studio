@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 ﻿"use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
@@ -62,6 +62,12 @@ export default function Home() {
     : 0;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Tracks whether the user has manually clicked an agent tab during the
+  // current research run. The auto-switch effect (below) follows progress by
+  // jumping to the next completing agent, but must NOT override an explicit
+  // user selection — otherwise clicking a tab mid-run gets yanked away ~0.4s
+  // later. Reset to false whenever a new research starts.
+  const userSelectedTabRef = useRef(false);
   const [, setTick] = useState(0);
   // Re-render at ~2Hz while any countdown/polling state is visible so the
   // seconds labels in aria-live/banner text stay in sync with wall-clock.
@@ -180,6 +186,7 @@ export default function Home() {
   const handleSubmit = useCallback(
     (query: string, keywords: string[]) => {
       setSidebarOpen(false);
+      userSelectedTabRef.current = false;
       startResearch(query, keywords);
     },
     [startResearch],
@@ -192,6 +199,7 @@ export default function Home() {
     if (!cached.outputs) return;
     // Hydrate from cache by re-submitting the query (mock provider is deterministic,
     // but the cached outputs may include user-specific state).
+    userSelectedTabRef.current = false;
     startResearch(cached.query, cached.keywords);
   }, [startResearch]);
 
@@ -211,9 +219,14 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [hasSession, isRunning, reset]);
 
-  // Auto-switch tab to the first agent that completes
+  // Auto-switch tab to the first agent that completes — but only until the
+  // user manually selects a tab. Once they've clicked one, we stop
+  // overriding their choice so they can read a completed agent's content in
+  // peace while synthesis is still running (the original "follow progress"
+  // behaviour yanked the tab away ~0.4s after a click).
   useEffect(() => {
     if (state.status !== "running") return;
+    if (userSelectedTabRef.current) return;
     const nextDone = allAgentIds.find(
       (id) => state.agents[id]?.status === "done" && state.activeAgentTab !== id,
     );
@@ -294,7 +307,10 @@ export default function Home() {
               {
                 label: t("errors.tryAgain"),
                 onClick: () => {
-                  if (state.query) startResearch(state.query, state.keywords ?? []);
+                  if (state.query) {
+                    userSelectedTabRef.current = false;
+                    startResearch(state.query, state.keywords ?? []);
+                  }
                 },
               },
               {
@@ -562,7 +578,10 @@ export default function Home() {
                           : {}),
                       }}
                       isActive={state.activeAgentTab === agentId}
-                      onClick={() => setActiveAgentTab(agentId)}
+                      onClick={() => {
+                        userSelectedTabRef.current = true;
+                        setActiveAgentTab(agentId);
+                      }}
                       error={state.agentErrors[agentId]}
                     />
                   ))}
@@ -588,7 +607,10 @@ export default function Home() {
                 activeAgent={state.activeAgentTab}
                 outputs={state.agentOutputs}
                 isLoading={isRunning}
-                onSwitchTab={setActiveAgentTab}
+                onSwitchTab={(id) => {
+                  userSelectedTabRef.current = true;
+                  setActiveAgentTab(id);
+                }}
               />
             </section>
           </div>
