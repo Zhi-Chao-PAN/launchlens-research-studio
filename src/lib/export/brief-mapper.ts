@@ -55,7 +55,7 @@ export interface LaunchLensInput {
 }
 
 /** Envelope around the five-field input, carrying provenance + version so the
- *  importer can distinguish a Research Studio export from a hand-written brief. */
+ * importer can distinguish a Research Studio export from a hand-written brief. */
 export interface LaunchLensImportBrief {
   schemaVersion: string;
   source: "launchlens-research-studio";
@@ -74,6 +74,13 @@ export interface LaunchLensImportBrief {
     riskScore: number | null;
     completedAgents: AgentId[];
     truncated: (keyof LaunchLensInput)[];
+    // R254: research-studio has no tone/style agent, so the tone field is a
+    // fixed default rather than a researched recommendation. Flagging it lets
+    // launchlens-ai preserve the user's existing tone on import instead of
+    // clobbering it with "Practical, crisp, and founder-friendly". Importers
+    // written before R254 ignore this field (default false), so the flag is
+    // purely additive.
+    toneDefault?: boolean;
   };
 }
 
@@ -276,6 +283,9 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
       riskScore: synthesis ? synthesis.riskScore : null,
       completedAgents,
       truncated,
+      // R254: tone is the fixed default, not a researched recommendation —
+      // flag it so the importer can preserve the user's existing tone.
+      toneDefault: true,
     },
   };
 }

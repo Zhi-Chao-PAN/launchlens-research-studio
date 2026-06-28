@@ -9,6 +9,7 @@ import {
   LAUNCHLENS_FIELD_MAX,
   LAUNCHLENS_IDEA_MIN,
 } from "@/lib/export/brief-mapper";
+import { briefHashFor, encodeBase64UrlUtf8, BRIEF_HASH_PREFIX } from "@/lib/export/base64url";
 import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
 
 // A fully-populated session fixture mirroring the shape research-engine leaves
@@ -396,5 +397,62 @@ describe("URL helpers (R231)", () => {
     expect(buildReportUrl("abc")).toBe(
       "https://launchlens-research-studio.vercel.app/research/abc",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R251/R254 cross-repo contract: pins the wire shape launchlens-ai's
+// brief-from-json.ts decodes. The symmetric decoder-side test lives in
+// launchlens-ai's brief-from-json.test.ts. If either repo drifts on the
+// envelope shape, the #brief= handoff silently breaks — these tests catch
+// that before it ships.
+// ---------------------------------------------------------------------------
+describe("toLaunchLensBrief — handoff contract (mirrors launchlens-ai decoder)", () => {
+  it("flags tone as default so the importer can preserve user tone", () => {
+    // R254: meta.toneDefault must be true because research-studio has no
+    // tone/style agent — the tone field is a fixed placeholder, not research.
+    const brief = toLaunchLensBrief(buildSession());
+    expect(brief.meta.toneDefault).toBe(true);
+  });
+
+  it("emits the #brief= hash prefix launchlens-ai expects", () => {
+    // launchlens-ai's briefFromHashFragment checks hash.startsWith("#brief=").
+    // If this prefix drifts, the hash handoff breaks silently.
+    const brief = toLaunchLensBrief(buildSession());
+    const compact = serializeBrief(brief, false);
+    const hash = briefHashFor(compact);
+    expect(hash.startsWith(BRIEF_HASH_PREFIX)).toBe(true);
+  });
+
+  it("round-trips through base64url: encode → decode yields the original JSON", () => {
+    // launchlens-ai's decodeBase64UrlUtf8 reverses encodeBase64UrlUtf8. This
+    // guards the symmetric codec: UTF-8 bytes → base64url (no padding) → back.
+    const brief = toLaunchLensBrief(buildSession());
+    const compact = serializeBrief(brief, false);
+    const encoded = encodeBase64UrlUtf8(compact);
+    // base64url alphabet only: A-Z a-z 0-9 - _  (no + / =)
+    expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    // The launchlens-ai decoder pads + swaps alphabet back; we simulate it
+    // here to prove the round-trip is lossless.
+    const restored = atob(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(restored, (c) => c.charCodeAt(0));
+    const decoded = new TextDecoder().decode(bytes);
+    expect(decoded).toBe(compact);
+    // And the decoded JSON parses back to the same envelope.
+    expect(JSON.parse(decoded)).toMatchObject({
+      schemaVersion: LAUNCHLENS_BRIEF_SCHEMA_VERSION,
+      source: "launchlens-research-studio",
+      meta: { toneDefault: true },
+    });
+  });
+
+  it("produces a compact JSON small enough for a URL hash fragment", () => {
+    // Browsers cap URL length (~2k chars for IE-era, 64k+ in modern ones).
+    // The hash must stay well under that. A full 6-agent brief compact-encoded
+    // should be a few KB at most.
+    const brief = toLaunchLensBrief(buildSession());
+    const compact = serializeBrief(brief, false);
+    const hash = briefHashFor(compact);
+    expect(hash.length).toBeLessThan(8000);
   });
 });

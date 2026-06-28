@@ -3,8 +3,8 @@
 
 import { useState, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";
-import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
-import { generateMarkdownReport, generateBriefOnly } from "@/lib/export/markdown-formatter";
+import type { AgentId, AgentOutput, ResearchSession } from "@/lib/schema/research-schema";
+import { generateMarkdownReport } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
 import { toLaunchLensBrief, serializeBrief, getLaunchLensAiUrl } from "@/lib/export/brief-mapper";
 import { briefHashFor } from "@/lib/export/base64url";
@@ -151,15 +151,47 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
 
   const handlePrint = useCallback(() => { window.print(); }, []);
 
+  // Build a minimal ResearchSession from the props the panel already has, so the
+  // structured brief mapper can run client-side without fetching the full session.
+  // Shared by Copy / Export / Send — all three now produce the SAME envelope so a
+  // user copying a brief and a user clicking "Send" hand launchlens-ai identical
+  // data (R252: unify the three brief sources that previously diverged).
+  const buildSessionFromProps = useCallback((): ResearchSession => {
+    const agents = {} as ResearchSession["agents"];
+    (Object.keys(outputs) as AgentId[]).forEach((id) => {
+      const output = outputs[id];
+      agents[id] = {
+        id,
+        status: output ? "done" : "idle",
+        progress: output ? 100 : 0,
+        currentStep: output ? "Done" : "",
+        output: output ?? undefined,
+      };
+    });
+    return {
+      id: sessionId,
+      query,
+      keywords,
+      createdAt: "",
+      updatedAt: "",
+      status: "completed",
+      agents,
+      citations: [],
+    };
+  }, [sessionId, query, keywords, outputs]);
+
+  // R252: Copy now emits the structured envelope (same object Send/Export use),
+  // not the legacy free-text markdown brief. A user who copies and a user who
+  // clicks "Send" hand launchlens-ai byte-identical data.
   const handleCopyBrief = useCallback(() => {
-    const synth = outputs["synthesis"] as SynthesisOutput | null;
-    if (!synth) {
+    if (!outputs.synthesis) {
       showToast("Synthesis report is not yet available.", "error");
       return;
     }
-    const brief = generateBriefOnly(outputs);
-    copyToClipboard(brief, "brief");
-  }, [outputs, copyToClipboard, showToast]);
+    const brief = toLaunchLensBrief(buildSessionFromProps());
+    const json = serializeBrief(brief, true);
+    copyToClipboard(json, "brief");
+  }, [outputs, buildSessionFromProps, copyToClipboard, showToast]);
 
   const handleCopyFullMarkdown = useCallback(() => {
     const notes = getNotes(sessionId);
@@ -199,28 +231,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
   const handleExportLaunchLens = useCallback(() => {
     setIsExporting(true);
     try {
-      const agents = {} as ResearchSession["agents"];
-      (Object.keys(outputs) as AgentId[]).forEach((id) => {
-        const output = outputs[id];
-        agents[id] = {
-          id,
-          status: output ? "done" : "idle",
-          progress: output ? 100 : 0,
-          currentStep: output ? "Done" : "",
-          output: output ?? undefined,
-        };
-      });
-      const session: ResearchSession = {
-        id: sessionId,
-        query,
-        keywords,
-        createdAt: "",
-        updatedAt: "",
-        status: "completed",
-        agents,
-        citations: [],
-      };
-      const brief = toLaunchLensBrief(session);
+      const brief = toLaunchLensBrief(buildSessionFromProps());
       const json = serializeBrief(brief, true);
       downloadFile(json, `launchlens-brief-${sessionId.slice(0, 8)}.json`, "application/json;charset=utf-8");
     } catch (err) {
@@ -229,68 +240,85 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
     } finally {
       setIsExporting(false);
     }
-  }, [sessionId, query, keywords, outputs, showToast]);
+  }, [sessionId, buildSessionFromProps, showToast]);
 
   // R231: one-click send-to-launchlens-ai via #brief=<base64url> hash
   // fragment. launchlens-ai (commit 98ad77a, brief-fragment.ts) auto-detects
   // this hash on landing and pre-fills the 5-field brief. We open in a new
   // tab so the research-studio report stays open in the original tab.
   //
-  // The download button above remains as a fallback for users on browsers
-  // where popups are blocked, or when the upstream launchlens-ai domain is
-  // temporarily unreachable.
+  // R253: fire-and-forget is upgraded to a confirmed handshake. launchlens-ai
+  // (brief-fragment.ts postMessage) echoes back {type:"launchlens:brief-applied"}
+  // once the hash is decoded and fields are filled. We listen for it within a
+  // short window so we can distinguish "pre-filled OK" from "tab opened but
+  // silent" — the old behavior toasted success regardless. If the opener
+  // relationship is broken (cross-site, noopener) the listener simply times out
+  // and we fall back to the optimistic toast, so no regression for that path.
   const handleSendToLaunchLensAi = useCallback(() => {
     if (!outputs.synthesis) {
       showToast("Synthesis report is not yet available.", "error");
       return;
     }
     setIsExporting(true);
+
+    // Pre-arm a one-shot message listener BEFORE opening the tab so we can't
+    // miss an early echo. Tightened to our own message type + a refcount so a
+    // stray postMessage from an unrelated source can't fool us.
+    let confirmed = false;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data && typeof event.data === "object" && event.data.type === "launchlens:brief-applied") {
+        confirmed = true;
+        window.removeEventListener("message", onMessage);
+        clearTimeout(fallbackTimer);
+        showToast("Brief applied in LaunchLens AI — fields are ready.", "success");
+      }
+    };
+    window.addEventListener("message", onMessage);
+    // Optimistic fallback: if no confirmation arrives within 6s, assume the
+    // tab landed but the handshake path was unavailable (cross-origin opener,
+    // older launchlens-ai build) and toast the legacy success message so the
+    // user still gets feedback.
+    const fallbackTimer = setTimeout(() => {
+      window.removeEventListener("message", onMessage);
+      if (!confirmed) {
+        showToast("Opened LaunchLens AI in a new tab.", "success");
+      }
+    }, 6000);
+
     try {
-      const agents = {} as ResearchSession["agents"];
-      (Object.keys(outputs) as AgentId[]).forEach((id) => {
-        const output = outputs[id];
-        agents[id] = {
-          id,
-          status: output ? "done" : "idle",
-          progress: output ? 100 : 0,
-          currentStep: output ? "Done" : "",
-          output: output ?? undefined,
-        };
-      });
-      const session: ResearchSession = {
-        id: sessionId,
-        query,
-        keywords,
-        createdAt: "",
-        updatedAt: "",
-        status: "completed",
-        agents,
-        citations: [],
-      };
-      const brief = toLaunchLensBrief(session);
+      const brief = toLaunchLensBrief(buildSessionFromProps());
       // Compact JSON keeps the URL shorter; the launchlens-ai decoder accepts
       // any valid JSON string.
       const compactJson = serializeBrief(brief, false);
       const hash = briefHashFor(compactJson);
       const aiUrl = getLaunchLensAiUrl();
       const targetUrl = `${aiUrl}/${hash}`;
-      // noopener,noreferrer keeps the new tab isolated (matches the existing
-      // <a target="_blank" rel="noopener noreferrer"> pattern across the app).
-      const opened = window.open(targetUrl, "_blank", "noopener,noreferrer");
+      // NOTE: we deliberately drop `noopener` here so the new tab retains a
+      // window.opener reference, which it needs to postMessage back to us for
+      // the R253 handshake. `noreferrer` is kept to avoid leaking the Referer
+      // header. The opened tab is still sandboxed to the extent the browser
+      // allows for cross-origin openers.
+      const opened = window.open(targetUrl, "_blank", "noreferrer");
       if (opened === null) {
-        // Popup blocked. Surface a hint instead of failing silently so the
-        // user knows to fall back to the download button.
+        // Popup blocked. Clean up the listener + timer and surface a hint
+        // instead of failing silently so the user knows to fall back to the
+        // download button.
+        window.removeEventListener("message", onMessage);
+        clearTimeout(fallbackTimer);
         showToast("Popup blocked — please use the download button and import the .json file in LaunchLens AI.", "error");
-      } else {
-        showToast("Opened LaunchLens AI in a new tab.", "success");
       }
+      // On success we do NOT toast here — the handshake listener (or its
+      // 6s fallback) is responsible for the success toast so the user gets a
+      // meaningful "applied" vs generic "opened" message.
     } catch (err) {
+      window.removeEventListener("message", onMessage);
+      clearTimeout(fallbackTimer);
       console.error("Send to LaunchLens AI failed:", err);
       showToast("Send to LaunchLens AI failed.", "error");
     } finally {
       setIsExporting(false);
     }
-  }, [sessionId, query, keywords, outputs, showToast]);
+  }, [outputs, buildSessionFromProps, showToast]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">

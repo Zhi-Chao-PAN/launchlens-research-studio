@@ -143,7 +143,11 @@ describe("ExportActions — Send to LaunchLens AI button (R231)", () => {
     expect(openSpy).toHaveBeenCalledTimes(1);
     const [url, target, features] = openSpy.mock.calls[0] as [string, string, string];
     expect(target).toBe("_blank");
-    expect(features).toContain("noopener");
+    // R253: noopener is deliberately dropped so the new tab retains an opener
+    // reference for the postMessage handshake back to research-studio. Only
+    // noreferrer is kept (avoids leaking Referer). The launchlens-ai side
+    // posts {type:"launchlens:brief-applied"} to window.opener on success.
+    expect(features).not.toContain("noopener");
     expect(features).toContain("noreferrer");
     expect(url.startsWith("https://launchlens-ai-two.vercel.app/#brief=")).toBe(true);
 
