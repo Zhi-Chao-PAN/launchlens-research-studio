@@ -68,4 +68,31 @@ describe("GET /api/research/[sessionId]/brief", () => {
       sourceStatus: "completed",
     });
   });
+
+  it("carries Stage 2 context into the handoff milestone", async () => {
+    const stage2Tracking = {
+      stage2Participant: "P01",
+      stage2Batch: "pilot-1",
+    };
+    getResearchSession.mockReturnValue(undefined);
+    hydrateSessionFromRedis.mockResolvedValue({
+      id: "session123",
+      status: "completed",
+      stage2Tracking,
+    });
+
+    const response = await GET(
+      new NextRequest(
+        "https://example.test/api/research/session123/brief",
+      ),
+      { params: Promise.resolve({ sessionId: "session123" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "brief_exported",
+      "session123",
+      { stage2: stage2Tracking },
+    );
+  });
 });

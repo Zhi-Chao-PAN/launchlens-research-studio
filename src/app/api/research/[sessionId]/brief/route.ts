@@ -45,7 +45,13 @@ export async function GET(
   }
 
   const brief = toLaunchLensBrief(session);
-  await recordResearchFunnelEvent("brief_exported", session.id);
+  if (session.stage2Tracking) {
+    await recordResearchFunnelEvent("brief_exported", session.id, {
+      stage2: session.stage2Tracking,
+    });
+  } else {
+    await recordResearchFunnelEvent("brief_exported", session.id);
+  }
 
   // Allow ?raw=1 to get the compact JSON string body (handy for curl pipes);
   // default returns the parsed envelope as a JSON object.

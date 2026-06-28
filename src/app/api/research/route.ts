@@ -12,6 +12,7 @@ import {
 } from "@/lib/research/research-engine";
 import { storeSession } from "@/lib/research/session-store";
 import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
+import { stage2ContextFromRequest } from "@/lib/analytics/stage2-context";
 import {
   validateResearchRequest,
   jsonValidationError,
@@ -113,7 +114,13 @@ export async function POST(request: NextRequest) {
   }
 
   const { query, keywords } = validation.value;
-  const session = createResearchSession(query, keywords);
+  const stage2 = stage2ContextFromRequest(request);
+  const session = createResearchSession(
+    query,
+    keywords,
+    undefined,
+    stage2 ? { stage2 } : undefined,
+  );
 
   // R231: execution-model change. Previously this route kicked off
   // runResearchSession in the background (fire-and-forget) so the client
@@ -137,7 +144,13 @@ export async function POST(request: NextRequest) {
   // the client ever connects. storeSession is a no-op (returns immediately)
   // when Redis is not configured, so local dev / tests are unaffected.
   await storeSession(session);
-  await recordResearchFunnelEvent("research_started", session.id);
+  if (session.stage2Tracking) {
+    await recordResearchFunnelEvent("research_started", session.id, {
+      stage2: session.stage2Tracking,
+    });
+  } else {
+    await recordResearchFunnelEvent("research_started", session.id);
+  }
 
   logRequest(201, true);
   const response = NextResponse.json(

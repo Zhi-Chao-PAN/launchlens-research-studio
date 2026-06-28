@@ -14,6 +14,7 @@ vi.mock("@/components/toast/ToastContext", () => ({
 // Stub URL.createObjectURL / Blob / document for the download handler.
 // We don't actually want to trigger file downloads during tests.
 beforeEach(() => {
+  window.history.pushState({}, "", "/");
   vi.stubGlobal("URL", {
     createObjectURL: () => "blob:test",
     revokeObjectURL: () => {},
@@ -168,6 +169,25 @@ describe("ExportActions — Send to LaunchLens AI button (R231)", () => {
     expect(json.meta.riskScore).toBe(32);
     // R231: reportUrl is populated so launchlens-ai can back-link.
     expect(json.reportUrl).toBe("https://launchlens-research-studio.vercel.app/research/sess-abc12345");
+  });
+
+  it("preserves Stage 2 test context before the #brief handoff hash", () => {
+    window.history.pushState(
+      {},
+      "",
+      "/?stage2Participant=P01&stage2Batch=pilot-1",
+    );
+    const openSpy = vi.spyOn(window, "open").mockReturnValue({} as Window);
+
+    render(<ExportActions {...baseProps} outputs={fullOutputs()} />);
+    fireEvent.click(screen.getByTestId("send-to-launchlens-ai"));
+
+    const [url] = openSpy.mock.calls[0] as [string, string, string];
+    expect(
+      url.startsWith(
+        "https://launchlens-ai-two.vercel.app/?stage2Participant=P01&stage2Batch=pilot-1#brief=",
+      ),
+    ).toBe(true);
   });
 
   it("honors NEXT_PUBLIC_LAUNCHLENS_AI_URL env override", () => {

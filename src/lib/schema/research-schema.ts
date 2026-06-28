@@ -210,6 +210,13 @@ export interface ResearchSession {
   keywords: string[];
   /** Persona/agent style ID that shapes all research outputs */
   personaId?: string;
+  /** Optional privacy-safe user-test labels used to connect Stage 2 funnel evidence.
+   *  Values are short pseudonymous labels such as P01 / pilot-1; analytics sinks
+   *  hash them before persistence and must not store names, emails, or contact data. */
+  stage2Tracking?: {
+    stage2Participant?: string;
+    stage2Batch?: string;
+  };
   /** Provider id used for the run ("mock", "openai", "anthropic").
    *  Captured at run start so history records the actual provider, not a
    *  hardcoded "mock" placeholder. */

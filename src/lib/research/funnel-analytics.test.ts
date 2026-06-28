@@ -12,6 +12,7 @@ vi.mock("./redis-client", () => ({
 import {
   recordResearchFunnelEvent,
   summarizeResearchFunnel,
+  summarizeResearchStage2Funnel,
 } from "./funnel-analytics";
 
 function redisFake() {
@@ -69,6 +70,51 @@ describe("research funnel analytics", () => {
       completionRate: 0.5,
       handoffRate: 1,
     });
+  });
+
+  it("tracks Stage 2 journeys by hashed participant and batch labels", async () => {
+    const now = new Date("2026-06-29T00:00:00.000Z");
+    const stage2 = {
+      stage2Participant: "P01",
+      stage2Batch: "pilot-1",
+    };
+
+    await recordResearchFunnelEvent("research_started", "session-a", {
+      occurredAt: now,
+      stage2,
+    });
+    await recordResearchFunnelEvent("research_completed", "session-a", {
+      occurredAt: now,
+      stage2,
+    });
+    await recordResearchFunnelEvent("research_started", "session-b", now);
+
+    await expect(
+      summarizeResearchStage2Funnel(stage2, 30, now),
+    ).resolves.toMatchObject({
+      configured: true,
+      windowDays: 30,
+      started: 1,
+      completed: 1,
+      handoff: 0,
+      completionRate: 1,
+      handoffRate: 0,
+      stage2ParticipantTracked: true,
+      stage2BatchTracked: true,
+    });
+    await expect(summarizeResearchFunnel(30, now)).resolves.toMatchObject({
+      started: 2,
+      completed: 1,
+    });
+
+    const persistedRedisText = JSON.stringify(
+      Array.from(zsets.entries()).map(([key, value]) => [
+        key,
+        Array.from(value.keys()),
+      ]),
+    );
+    expect(persistedRedisText).not.toContain("P01");
+    expect(persistedRedisText).not.toContain("pilot-1");
   });
 
   it("degrades safely when Redis is unavailable", async () => {

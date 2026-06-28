@@ -10,6 +10,7 @@ import { toLaunchLensBrief, serializeBrief, getLaunchLensAiUrl } from "@/lib/exp
 import { briefHashFor } from "@/lib/export/base64url";
 import { generateCSVBundle } from "@/lib/export/csv-formatter";
 import { getNotes } from "@/lib/research/notes";
+import { stage2SearchFromCurrentUrl } from "@/lib/analytics/stage2-context";
 
 interface ExportActionsProps {
   sessionId: string;
@@ -292,7 +293,7 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       const compactJson = serializeBrief(brief, false);
       const hash = briefHashFor(compactJson);
       const aiUrl = getLaunchLensAiUrl();
-      const targetUrl = `${aiUrl}/${hash}`;
+      const targetUrl = `${aiUrl}/${stage2SearchFromCurrentUrl()}${hash}`;
       // NOTE: we deliberately drop `noopener` here so the new tab retains a
       // window.opener reference, which it needs to postMessage back to us for
       // the R253 handshake. `noreferrer` is kept to avoid leaking the Referer

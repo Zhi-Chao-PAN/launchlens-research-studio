@@ -42,4 +42,37 @@ describe("POST /api/research product events", () => {
       body.sessionId,
     );
   });
+
+  it("attaches sanitized Stage 2 context to the start milestone", async () => {
+    const response = await POST(
+      new NextRequest(
+        "http://localhost/api/research?stage2Participant=P01&stage2Batch=pilot-1",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": "test-csrf",
+            cookie: "csrf_token=test-csrf",
+          },
+          body: JSON.stringify({
+            query: "AI evidence workspace for product research teams",
+            keywords: ["AI", "research"],
+          }),
+        },
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "research_started",
+      body.sessionId,
+      {
+        stage2: {
+          stage2Participant: "P01",
+          stage2Batch: "pilot-1",
+        },
+      },
+    );
+  });
 });

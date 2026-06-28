@@ -5,6 +5,7 @@
   ResearchEvent,
   AgentOutput,
 } from "@/lib/schema/research-schema";
+import type { Stage2TrackingContext } from "@/lib/analytics/stage2-context";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { applyPersona } from "@/lib/providers/mock-persona";
 import { selectProvider } from "@/lib/providers/provider-registry";
@@ -190,7 +191,16 @@ function createInitialAgentState(id: AgentId): AgentState {
   };
 }
 
-export function createResearchSession(query: string, keywords: string[], personaId?: string): ResearchSession {
+export type CreateResearchSessionOptions = {
+  stage2?: Stage2TrackingContext | null;
+};
+
+export function createResearchSession(
+  query: string,
+  keywords: string[],
+  personaId?: string,
+  options: CreateResearchSessionOptions = {},
+): ResearchSession {
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -229,6 +239,7 @@ export function createResearchSession(query: string, keywords: string[], persona
     // shadowed the loop variable and was always undefined). The persona
     // flows from the API/batch path all the way to provider context.
     ...(personaId ? { personaId } : {}),
+    ...(options.stage2 ? { stage2Tracking: options.stage2 } : {}),
     // R203: record real provider so history is accurate.
     providerId: provider.id,
     // R205: record the resolved model name for accurate history rows.
@@ -924,7 +935,13 @@ export async function runResearchSession(
   // Persist completed snapshot (R212: routed through helper for parity with
   // the cancelled/failed paths).
   persistRunSnapshot(session, "completed");
-  await recordResearchFunnelEvent("research_completed", session.id);
+  if (session.stage2Tracking) {
+    await recordResearchFunnelEvent("research_completed", session.id, {
+      stage2: session.stage2Tracking,
+    });
+  } else {
+    await recordResearchFunnelEvent("research_completed", session.id);
+  }
 
   emitEvent(session.id, {
     type: "complete",

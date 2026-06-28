@@ -97,4 +97,27 @@ describe("completed session persistence", () => {
       session.id,
     );
   });
+
+  it("carries Stage 2 context through completion analytics", async () => {
+    const {
+      createResearchSession,
+      runResearchSession,
+    } = await import("@/lib/research/research-engine");
+    const stage2 = { stage2Participant: "P01", stage2Batch: "pilot-1" };
+    const session = createResearchSession(
+      "completed stage2 funnel run",
+      ["funnel"],
+      undefined,
+      { stage2 },
+    );
+
+    await runResearchSession(session.id, { speedMultiplier: 1_000 });
+
+    expect(session.status).toBe("completed");
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "research_completed",
+      session.id,
+      { stage2 },
+    );
+  });
 });

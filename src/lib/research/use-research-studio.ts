@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
+import { stage2HeadersFromCurrentUrl } from "@/lib/analytics/stage2-context";
 import type { AgentId, AgentOutput, AgentState } from "@/lib/schema/research-schema";
 
 export interface ResearchStudioState {
@@ -552,7 +553,10 @@ export function useResearchStudio() {
       try {
         const res = await fetchWithCsrfStrict("/api/research", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...stage2HeadersFromCurrentUrl(),
+          },
           body: JSON.stringify({ query, keywords }),
         });
 
