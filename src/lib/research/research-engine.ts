@@ -241,14 +241,32 @@ export function getResearchSession(id: string): ResearchSession | undefined {
  */
 export async function hydrateSessionFromRedis(id: string): Promise<ResearchSession | undefined> {
   const local = sessions.get(id);
-  if (local) return local;
-  const remote = await fetchSession(id);
-  if (!remote) return undefined;
-  sessions.set(id, remote);
-  if (!sessionAborts.has(id)) {
-    sessionAborts.set(id, new AbortController());
+  // If we have a local copy that is already terminal (completed/cancelled/
+  // error), it is the most authoritative state — the run finished on this
+  // instance — so return it without a Redis round-trip. But if the local
+  // copy is still pending/running, it may be a stale creation snapshot on
+  // an instance where the actual run is happening elsewhere: re-fetch from
+  // Redis and prefer the fresher copy. This is what lets the post-run GET
+  // (which often lands on the POST instance holding the initial pending
+  // snapshot) return the completed state written by the SSE instance.
+  if (local && (local.status === "completed" || local.status === "cancelled" || local.status === "error")) {
+    return local;
   }
-  return remote;
+  const remote = await fetchSession(id);
+  if (!remote) return local;
+  // Prefer whichever copy is newer by updatedAt. The remote is usually
+  // fresher when the run happened on another instance; local wins only if
+  // this instance advanced it more recently (rare for a GET-only instance).
+  const localTs = local ? Date.parse(local.updatedAt) : 0;
+  const remoteTs = Date.parse(remote.updatedAt) || 0;
+  const fresher = remoteTs >= localTs ? remote : local;
+  if (fresher === remote) {
+    sessions.set(id, remote);
+    if (!sessionAborts.has(id)) {
+      sessionAborts.set(id, new AbortController());
+    }
+  }
+  return fresher;
 }
 
 export function cancelSession(id: string): boolean {

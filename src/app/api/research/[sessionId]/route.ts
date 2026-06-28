@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getResearchSession, deleteSession } from "@/lib/research/research-engine";
+import { getResearchSession, deleteSession, hydrateSessionFromRedis } from "@/lib/research/research-engine";
 import { getResearchRun } from "@/lib/research/storage";
 import { jsonErrorLocalized } from "@/lib/api/validation";
 
@@ -17,7 +17,16 @@ export async function GET(
     });
   }
 
-  const session = getResearchSession(sessionId);
+  // Try the in-process map first (fast path for same-instance requests). If
+  // absent, hydrate from Redis — on Vercel serverless this GET frequently
+  // lands on a different instance than the one that ran the session, so the
+  // local Map is empty even though the session completed successfully. Without
+  // this hydration the route returned 404, which the client interpreted as
+  // "Session expired" right after a successful SSE run.
+  let session = getResearchSession(sessionId);
+  if (!session) {
+    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
+  }
   if (!session) {
     // R217: distinguish "the live engine session was evicted" (the
     // completed run is still on disk and renderable) from a true
