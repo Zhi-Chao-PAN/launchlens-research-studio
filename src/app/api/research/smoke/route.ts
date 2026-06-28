@@ -6,7 +6,13 @@ import { requireAdmin } from "@/lib/api/require-admin";
 import { checkCors, handleOptions } from "@/lib/api/cors";
 import { recordRequest, hashIp } from "@/lib/telemetry/request-log";
 import { selectProvider } from "@/lib/providers/provider-registry";
-import { runResearchSession, createResearchSession, getResearchSession, pruneStaleSessions } from "@/lib/research/research-engine";
+import {
+  cancelSession,
+  runResearchSession,
+  createResearchSession,
+  getResearchSession,
+  pruneStaleSessions,
+} from "@/lib/research/research-engine";
 import type { AgentId, AgentState } from "@/lib/schema/research-schema";
 
 export const runtime = "nodejs";
@@ -88,8 +94,8 @@ export async function POST(request: NextRequest) {
     return rotateCsrf(NextResponse.json({ error: "Admin token required" }, { status: 401 }));
   }
 
-  const csrfOk = await checkCsrfToken(request);
-  if (!csrfOk) {
+  const csrfResult = checkCsrfToken(request);
+  if (!csrfResult.ok) {
     logRequest(403, false);
     return rotateCsrf(NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 }));
   }
@@ -118,14 +124,25 @@ export async function POST(request: NextRequest) {
   // cap it at SMOKE_TIMEOUT_MS so a smoke call from CI can't take 10
   // minutes.
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-  }, SMOKE_TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const runPromise = runResearchSession(sessionId, { speedMultiplier: 1 });
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      cancelSession(sessionId);
+      resolve();
+    }, SMOKE_TIMEOUT_MS);
+  });
 
   try {
-    await runResearchSession(sessionId, { speedMultiplier: 1 });
+    await Promise.race([runPromise, timeoutPromise]);
+    if (timedOut) {
+      // The abort should settle quickly. Await it so no provider work keeps
+      // running after the health-check response has been returned.
+      await runPromise.catch(() => undefined);
+    }
   } catch (e) {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     // Best-effort cleanup; smoke sessions are throwaway.
     logRequest(500, false);
     return rotateCsrf(
@@ -140,7 +157,7 @@ export async function POST(request: NextRequest) {
       ),
     );
   }
-  clearTimeout(timer);
+  if (timer) clearTimeout(timer);
 
   // Best-effort eviction so the smoke session doesn't pollute the
   // in-memory map for the rest of the process lifetime.
@@ -176,7 +193,7 @@ export async function POST(request: NextRequest) {
   }
 
   const status = refreshed.status;
-  const ok = !timedOut && !anyFailed && status === "completed";
+  const ok = !timedOut && !anyDegraded && !anyFailed && status === "completed";
   const statusCode = ok ? 200 : 503;
   logRequest(statusCode, ok);
 

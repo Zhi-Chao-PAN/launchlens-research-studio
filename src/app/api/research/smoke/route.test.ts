@@ -28,10 +28,15 @@ import { POST } from "./route";
 
 const ORIGINAL_LAUNCHLENS_PROVIDER = process.env.LAUNCHLENS_PROVIDER;
 
-function makeRequest(opts: { auth?: string; csrf?: string } = {}): NextRequest {
+function makeRequest(
+  opts: { auth?: string; csrf?: string; csrfCookie?: string } = {},
+): NextRequest {
   const headers: Record<string, string> = {};
   if (opts.auth) headers.authorization = `Bearer ${opts.auth}`;
-  if (opts.csrf !== undefined) headers["x-csrf-token"] = opts.csrf;
+  if (opts.csrf !== undefined) {
+    headers["x-csrf-token"] = opts.csrf;
+    headers.cookie = `csrf_token=${opts.csrfCookie ?? opts.csrf}`;
+  }
   return new NextRequest(new Request("http://localhost/api/research/smoke", { method: "POST", headers }));
 }
 
@@ -47,7 +52,16 @@ describe("/api/research/smoke (R218)", () => {
 
   it("rejects requests without an admin token", async () => {
     const res = await POST(makeRequest());
-    expect([401, 403]).toContain(res.status);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an admin request without a matching CSRF cookie and header", async () => {
+    const res = await POST(makeRequest({
+      auth: "smoke-test-admin",
+      csrf: "header-token",
+      csrfCookie: "different-cookie-token",
+    }));
+    expect(res.status).toBe(403);
   });
 
   it("runs the full 6-agent pipeline with the mock provider and reports per-agent status", async () => {
@@ -92,17 +106,14 @@ describe("/api/research/smoke (R218)", () => {
     try {
       const res = await POST(makeRequest({ auth: "smoke-test-admin", csrf: "x" }));
       const body = await res.json();
-      // CSRF may still reject (cookie-based); the meaningful signal is
-      // that the handler didn't 500 catastrophically.
-      expect([200, 403]).toContain(res.status);
-      if (res.status === 200) {
-        expect(body.anyDegraded).toBe(true);
-        for (const id of ["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout"]) {
-          expect(body.agents[id].degraded).toBe(true);
-        }
-        // Mock fallback never produces 5 agents "error".
-        expect(body.anyFailed).toBe(false);
+      expect(res.status).toBe(503);
+      expect(body.ok).toBe(false);
+      expect(body.anyDegraded).toBe(true);
+      for (const id of ["market-sizer", "competitor-analyst", "pain-detective", "pricing-scout", "channel-scout"]) {
+        expect(body.agents[id].degraded).toBe(true);
       }
+      // Mock fallback never produces 5 agents "error".
+      expect(body.anyFailed).toBe(false);
     } finally {
       globalThis.fetch = origFetch;
     }

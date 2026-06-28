@@ -20,6 +20,12 @@ import { detectQueryLanguage } from "@/lib/providers/query-language";
 import { extractJsonObject } from "@/lib/providers/json-extract";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseOpenAiSse } from "@/lib/utils/sse-reconnect";
+import {
+  classifyProviderRequestError,
+  isAbortError,
+  isRetriableProviderError,
+  ProviderRequestError,
+} from "@/lib/providers/provider-request-error";
 
 export interface OpenAIProviderConfig {
   apiKey: string;
@@ -80,49 +86,31 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               }),
             });
           } catch (e) {
-            // fetchImpl threw before any response — DNS, connection refused,
-            // timeout, etc. Aborts are a user cancel, not a degradation, so
-            // let them propagate untouched. Network errors are retriable for
-            // the breaker's sake but we tag them as the fallback reason.
-            const isAbort = e instanceof Error && (e.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
-            if (!isAbort) reportFallback("network_error");
-            throw e;
+            // Preserve explicit cancellation. Other transport failures are
+            // tagged so the retry policy can distinguish them from 4xx and
+            // only report degradation after all attempts are exhausted.
+            if (isAbortError(e, ctx.signal)) throw e;
+            throw new ProviderRequestError(
+              "network",
+              "retriable provider network error",
+              { cause: e },
+            );
           }
           if (!r.ok && (r.status >= 500 || r.status === 429)) {
-            throw new Error("retriable HTTP " + r.status);
+            throw new ProviderRequestError(
+              "http",
+              "retriable provider HTTP " + r.status,
+              { status: r.status },
+            );
           }
           return r;
         };
 
-        let res: Response;
-        try {
-          res = await retryWithBackoff(doFetch, {
-            maxAttempts: 3,
-            baseDelayMs: 200,
-            maxDelayMs: 2000,
-            shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
-          });
-        } catch (err) {
-          // Retries exhausted on a retriable HTTP error (5xx/429), or a
-          // network error propagated from doFetch (already reported there).
-          // Tag HTTP exhaustion so the UI can show an accurate reason;
-          // network errors were already tagged inside doFetch.
-          const isHttp = err instanceof Error && err.message.startsWith("retriable HTTP");
-          if (isHttp) reportFallback("http_error");
-          throw err;
-        }
-
-        if (!res.ok) {
-          // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
-          reportFallback("http_error");
-          throw new Error("provider HTTP " + res.status);
-        }
-
         let text: string;
         if (wantsStream) {
-          // We already have a Response from the first request, but the
-          // reconnect helper needs a factory so it can restart on drop.
-          // Reuse the same fetch factory for reconnects.
+          // Let the reconnect reader own the first request as well as any
+          // retries. The old path fetched once here and then fetched again
+          // inside readSseWithReconnect, doubling live upstream concurrency.
           try {
             text = await readSseWithReconnect(
               doFetch,
@@ -136,6 +124,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
                 baseDelayMs: 300,
                 maxDelayMs: 2000,
                 signal: ctx.signal,
+                shouldRetry: isRetriableProviderError,
               },
             );
           } catch (streamErr) {
@@ -144,12 +133,33 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
             // reason, so a stream that dropped after retries (or returned an
             // HTTP error / empty body mid-stream) degraded to mock with no
             // "demo" badge. Classify the SSE error so the UI shows the cause.
-            const isAbort = streamErr instanceof Error && (streamErr.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
-            if (!isAbort) reportFallback("network_error");
+            if (!isAbortError(streamErr, ctx.signal)) {
+              reportFallback(classifyProviderRequestError(streamErr));
+            }
             throw streamErr;
           }
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
+          let res: Response;
+          try {
+            res = await retryWithBackoff(doFetch, {
+              maxAttempts: 3,
+              baseDelayMs: 200,
+              maxDelayMs: 2000,
+              signal: ctx.signal,
+              shouldRetry: isRetriableProviderError,
+            });
+          } catch (err) {
+            if (!isAbortError(err, ctx.signal)) {
+              reportFallback(classifyProviderRequestError(err));
+            }
+            throw err;
+          }
+          if (!res.ok) {
+            // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
+            reportFallback("http_error");
+            throw new Error("provider HTTP " + res.status);
+          }
           const json: any = await res.json();
           text = json?.choices?.[0]?.message?.content || "";
         }

@@ -163,6 +163,53 @@ describe("createOpenAIProvider", () => {
     expect(out.agent).toBe("market-sizer");
   });
 
+  it("retries a transient network error without reporting a fallback", async () => {
+    let attempt = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempt++;
+      if (attempt === 1) throw new Error("ECONNRESET");
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(validPayload) } }] }),
+      } as any;
+    });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+
+    const out = await p.generate("channel-scout", {
+      query: "q",
+      keywords: [],
+      onFallback: (reason) => reasons.push(reason),
+    });
+
+    expect(out.agent).toBe("channel-scout");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(reasons).toEqual([]);
+  });
+
+  it("opens only one upstream request for a successful SSE response", async () => {
+    const sse = `data: ${JSON.stringify({
+      choices: [{ delta: { content: JSON.stringify(validPayload) } }],
+    })}\n\ndata: [DONE]\n\n`;
+    const fetchImpl = vi.fn(async () => new Response(sse, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    }));
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl });
+    const reasons: string[] = [];
+
+    const out = await p.generate("channel-scout", {
+      query: "q",
+      keywords: [],
+      onProgress: vi.fn(),
+      onFallback: (reason) => reasons.push(reason),
+    });
+
+    expect(out.agent).toBe("channel-scout");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(reasons).toEqual([]);
+  });
+
   it("does not report onFallback on a successful real call", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,

@@ -158,23 +158,33 @@ describe("bypass-tokens", () => {
       expect(info!.expiresAt!).toBeGreaterThan(Date.now());
     });
 
-    it("rejects an expired token via isBypassToken", async () => {
-      // Create a token with a 1ms TTL, then wait for it to expire.
-      const tok = createBypassToken("bypass", "expired", 1);
-      expect(isBypassToken(tok)).toBe(true); // still valid immediately
-      await new Promise((r) => setTimeout(r, 10));
-      // After the TTL elapses, the token is rejected and pruned.
-      expect(isBypassToken(tok)).toBe(false);
+    it("rejects an expired token via isBypassToken", () => {
+      const now = Date.now();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try {
+        const tok = createBypassToken("bypass", "expired", 1);
+        expect(isBypassToken(tok)).toBe(true);
+        clock.mockReturnValue(now + 2);
+        expect(isBypassToken(tok)).toBe(false);
+      } finally {
+        clock.mockRestore();
+      }
     });
 
-    it("evicts expired tokens from listBypassTokens", async () => {
-      createBypassToken("bypass", "alive");
-      createBypassToken("bypass", "dead", 1);
-      await new Promise((r) => setTimeout(r, 10));
-      const list = listBypassTokens();
-      // The expired one is pruned, only the alive token remains.
-      expect(list).toHaveLength(1);
-      expect(list[0].label).toBe("alive");
+    it("evicts expired tokens from listBypassTokens", () => {
+      const now = Date.now();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try {
+        createBypassToken("bypass", "alive");
+        createBypassToken("bypass", "dead", 1);
+        clock.mockReturnValue(now + 2);
+        const list = listBypassTokens();
+        // The expired one is pruned, only the alive token remains.
+        expect(list).toHaveLength(1);
+        expect(list[0].label).toBe("alive");
+      } finally {
+        clock.mockRestore();
+      }
     });
 
     it("applies LAUNCHLENS_TOKEN_DEFAULT_TTL_MS when no explicit ttlMs", () => {

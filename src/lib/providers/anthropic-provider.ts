@@ -19,6 +19,12 @@ import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconne
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
 import { detectQueryLanguage } from "@/lib/providers/query-language";
 import { extractJsonObject } from "@/lib/providers/json-extract";
+import {
+  classifyProviderRequestError,
+  isAbortError,
+  isRetriableProviderError,
+  ProviderRequestError,
+} from "@/lib/providers/provider-request-error";
 
 export interface AnthropicProviderConfig {
   apiKey: string;
@@ -87,41 +93,22 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
               }),
             });
           } catch (e) {
-            // fetchImpl threw before any response — DNS, connection refused,
-            // timeout, etc. Aborts are a user cancel, not a degradation, so
-            // let them propagate untouched. Network errors are retriable for
-            // the breaker's sake but we tag them as the fallback reason.
-            const isAbort = e instanceof Error && (e.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
-            if (!isAbort) reportFallback("network_error");
-            throw e;
+            if (isAbortError(e, ctx.signal)) throw e;
+            throw new ProviderRequestError(
+              "network",
+              "retriable provider network error",
+              { cause: e },
+            );
           }
           if (!r.ok && (r.status >= 500 || r.status === 429)) {
-            throw new Error("retriable HTTP " + r.status);
+            throw new ProviderRequestError(
+              "http",
+              "retriable provider HTTP " + r.status,
+              { status: r.status },
+            );
           }
           return r;
         };
-
-        let res: Response;
-        try {
-          res = await retryWithBackoff(doFetch, {
-            maxAttempts: 3,
-            baseDelayMs: 200,
-            maxDelayMs: 2000,
-            shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
-          });
-        } catch (err) {
-          // Retries exhausted on a retriable HTTP error (5xx/429), or a
-          // network error propagated from doFetch (already reported there).
-          const isHttp = err instanceof Error && err.message.startsWith("retriable HTTP");
-          if (isHttp) reportFallback("http_error");
-          throw err;
-        }
-
-        if (!res.ok) {
-          // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
-          reportFallback("http_error");
-          throw new Error("anthropic HTTP " + res.status);
-        }
 
         let text: string;
         if (wantsStream) {
@@ -138,6 +125,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
                 baseDelayMs: 300,
                 maxDelayMs: 2000,
                 signal: ctx.signal,
+                shouldRetry: isRetriableProviderError,
               },
             );
           } catch (streamErr) {
@@ -146,12 +134,33 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
             // reason, so a stream that dropped after retries (or returned an
             // HTTP error / empty body mid-stream) degraded to mock with no
             // "demo" badge. Classify the SSE error so the UI shows the cause.
-            const isAbort = streamErr instanceof Error && (streamErr.name === "AbortError" || (ctx.signal && ctx.signal.aborted));
-            if (!isAbort) reportFallback("network_error");
+            if (!isAbortError(streamErr, ctx.signal)) {
+              reportFallback(classifyProviderRequestError(streamErr));
+            }
             throw streamErr;
           }
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
+          let res: Response;
+          try {
+            res = await retryWithBackoff(doFetch, {
+              maxAttempts: 3,
+              baseDelayMs: 200,
+              maxDelayMs: 2000,
+              signal: ctx.signal,
+              shouldRetry: isRetriableProviderError,
+            });
+          } catch (err) {
+            if (!isAbortError(err, ctx.signal)) {
+              reportFallback(classifyProviderRequestError(err));
+            }
+            throw err;
+          }
+          if (!res.ok) {
+            // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
+            reportFallback("http_error");
+            throw new Error("anthropic HTTP " + res.status);
+          }
           const json: any = await res.json();
           text = extractJsonFromMessages(json);
         }

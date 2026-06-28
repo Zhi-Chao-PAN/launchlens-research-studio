@@ -142,6 +142,34 @@ describe("sse-reconnect", () => {
       expect(callCount).toBe(1);
     });
 
+    it("retries request-establishment errors approved by the caller", async () => {
+      const frames = [
+        JSON.stringify({ choices: [{ delta: { content: "recovered" } }] }),
+      ];
+      let callCount = 0;
+      const result = await readSseWithReconnect(
+        () => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.reject(new Error("temporary gateway reset"));
+          }
+          return Promise.resolve(makeSseResponse(frames));
+        },
+        () => {},
+        parseOpenAiSse,
+        {
+          maxAttempts: 3,
+          baseDelayMs: 1,
+          maxDelayMs: 1,
+          shouldRetry: (error) =>
+            error instanceof Error && error.message.includes("gateway reset"),
+        },
+      );
+
+      expect(result).toBe("recovered");
+      expect(callCount).toBe(2);
+    });
+
     it("respects pre-aborted signal", async () => {
       const controller = new AbortController();
       controller.abort();

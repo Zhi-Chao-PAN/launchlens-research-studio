@@ -19,6 +19,7 @@ export interface SseReconnectOptions {
   maxDelayMs?: number;
   signal?: AbortSignal;
   onAttempt?: (attempt: number, error: unknown | null) => void;
+  shouldRetry?: (error: unknown, attempt: number) => boolean;
 }
 
 export type SseEventParser = (eventPayload: string) => string | null;
@@ -99,7 +100,9 @@ export async function readSseWithReconnect(
     maxDelayMs: opts.maxDelayMs ?? 3000,
     signal: opts.signal,
     onAttempt: opts.onAttempt,
-    shouldRetry: (err) => err instanceof RetriableSseError,
+    shouldRetry: (err, retryAttempt) =>
+      err instanceof RetriableSseError ||
+      opts.shouldRetry?.(err, retryAttempt) === true,
   });
 }
 
