@@ -10,6 +10,7 @@ import { createServerI18n } from "@/lib/i18n/server";
 import {
   createResearchSession,
 } from "@/lib/research/research-engine";
+import { storeSession } from "@/lib/research/session-store";
 import {
   validateResearchRequest,
   jsonValidationError,
@@ -125,6 +126,16 @@ export async function POST(request: NextRequest) {
   // route only creates the session and returns 201; the session is mirrored
   // to Upstash Redis (if configured) so the SSE route can hydrate it from a
   // different instance if necessary.
+  //
+  // CRITICAL: we AWAIT the Redis mirror before responding. createResearchSession
+  // fires storeSession as fire-and-forget, but on Vercel serverless the lambda
+  // is suspended the moment the response is sent — any unawaited promise is
+  // killed mid-flight. If the SSE GET lands on a different instance (the common
+  // case), hydrateSessionFromRedis would find nothing and emit terminal
+  // not-found. Awaiting here guarantees the session is durably in Redis before
+  // the client ever connects. storeSession is a no-op (returns immediately)
+  // when Redis is not configured, so local dev / tests are unaffected.
+  await storeSession(session);
 
   logRequest(201, true);
   const response = NextResponse.json(
