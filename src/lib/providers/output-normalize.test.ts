@@ -332,6 +332,55 @@ describe("normalizeAgentOutput (R214 string-array + enum + period)", () => {
     }));
   });
 
+  it("uses citation title or URL as a last-resort non-empty snippet", () => {
+    const out = asAny(normalizeAgentOutput("pain-detective", {
+      agent: "pain-detective",
+      summary: "ok",
+      painPoints: [],
+      citations: [
+        { title: "Applicant forums discuss confusing postgraduate requirements" },
+        { url: "https://example.com/admissions-thread" },
+      ],
+    })) as { citations: Array<{ title: string; snippet: string; agent: string }> };
+
+    expect(out.citations[0]).toEqual(expect.objectContaining({
+      title: "Applicant forums discuss confusing postgraduate requirements",
+      snippet: "Applicant forums discuss confusing postgraduate requirements",
+      agent: "pain-detective",
+    }));
+    expect(out.citations[1]).toEqual(expect.objectContaining({
+      snippet: "https://example.com/admissions-thread",
+      agent: "pain-detective",
+    }));
+  });
+
+  it("uses pain-point quotes as fallback citations when top-level citations are omitted", () => {
+    const out = asAny(normalizeAgentOutput("pain-detective", {
+      agent: "pain-detective",
+      summary: "ok",
+      painPoints: [
+        {
+          id: "pain1",
+          pain: "Applicants struggle to compare program requirements",
+          quotes: [
+            {
+              text: "Students repeatedly mention spreadsheeting requirements across many university pages.",
+              source: "Applicant forum discussions",
+            },
+          ],
+        },
+      ],
+    })) as { citations: Array<{ title: string; snippet: string; agent: string }> };
+
+    expect(out.citations).toEqual([
+      expect.objectContaining({
+        title: "Applicant forum discussions",
+        snippet: "Students repeatedly mention spreadsheeting requirements across many university pages.",
+        agent: "pain-detective",
+      }),
+    ]);
+  });
+
   it("uses fallback source arrays when top-level citations are omitted", () => {
     const out = asAny(normalizeAgentOutput("market-sizer", {
       agent: "market-sizer",

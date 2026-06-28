@@ -89,8 +89,10 @@ function normalizeCitation(c: unknown, index = 0, agentId?: AgentId) {
     o.description,
     o.reasoning,
     o.source,
+    o.title,
+    o.url,
   );
-  const title = firstNonEmptyString(o.title, o.name, o.source, snippet);
+  const title = firstNonEmptyString(o.title, o.name, o.source, snippet, o.url);
   return {
     id: asString(o.id, "c" + (index + 1)),
     title: title ? truncateForTitle(title) : "Untitled source",
@@ -121,6 +123,24 @@ function fallbackCitationItems(values: unknown[]): unknown[] {
     if (candidates.length > 0) return candidates;
   }
   return [];
+}
+
+function citationItemsFromPainQuotes(value: unknown): unknown[] {
+  return asArray(value).flatMap((painPoint) => {
+    const p = asObject<Record<string, unknown>>(painPoint);
+    return asArray(p.quotes)
+      .map((quote) => {
+        const q = asObject<Record<string, unknown>>(quote);
+        const snippet = firstNonEmptyString(q.text, q.quote, q.snippet, q.evidence);
+        if (!snippet) return null;
+        return {
+          title: firstNonEmptyString(q.source, p.pain, "Voice-of-customer quote"),
+          snippet,
+          confidence: "low" as const,
+        };
+      })
+      .filter((item) => item !== null);
+  });
 }
 
 function normalizeCitations(v: unknown, agentId: AgentId, ...fallbacks: unknown[]) {
@@ -290,7 +310,7 @@ function normalizePainDetective(o: Record<string, unknown>) {
         frustrations: asStringArray(x.frustrations),
       };
     }),
-    citations: normalizeCitations(o.citations, "pain-detective", o.references, o.sources),
+    citations: normalizeCitations(o.citations, "pain-detective", o.references, o.sources, citationItemsFromPainQuotes(o.painPoints)),
   };
 }
 
