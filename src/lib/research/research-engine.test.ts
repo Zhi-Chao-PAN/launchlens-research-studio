@@ -279,7 +279,7 @@ describe("provider fallback visibility (round 205)", () => {
  * R216: per-agent wall-clock timeout. When a real provider hangs, the
  * engine must abort the call within AGENT_TIMEOUT_MS and fall back to
  * mock data with degradedReason set, instead of sitting in "running"
- * forever. The default budget is 120s, so this test uses a tiny
+ * forever. The default budget is 150s, so this test uses a tiny
  * override (LAUNCHLENS_AGENT_TIMEOUT_MS=200) to keep the suite fast.
  */
 describe("per-agent wall-clock timeout (R216)", () => {
@@ -343,13 +343,10 @@ describe("per-agent wall-clock timeout (R216)", () => {
     expect(getAgentTimeoutMs()).toBe(2000);
   });
 
-  it("falls back to 120s default when env var is invalid", async () => {
+  it("falls back to a safe default when env var is invalid", async () => {
     const { getAgentTimeoutMs } = await import("@/lib/research/research-engine");
-    // The module already loaded with AGENT_TIMEOUT_MS=200 above; verify
-    // the parser is tolerant of garbage by checking the function works
-    // and returns a positive number.
-    const v = getAgentTimeoutMs();
-    expect(v).toBeGreaterThanOrEqual(1000);
+    process.env.LAUNCHLENS_AGENT_TIMEOUT_MS = "not-a-number";
+    expect(getAgentTimeoutMs()).toBe(150_000);
   });
 });
 

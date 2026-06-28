@@ -32,7 +32,7 @@ const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
 const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const SSE_IDLE_GRACE_MS = 12000;
-const DEFAULT_AGENT_TIMEOUT_MS = 120_000;
+const DEFAULT_AGENT_TIMEOUT_MS = 150_000;
 const MIN_AGENT_TIMEOUT_MS = 1000;
 
 // R241: cap how many real-provider (LLM) calls may be in flight at once.
@@ -79,7 +79,10 @@ const SESSION_RETENTION_MS = (() => {
 // R216: per-agent wall-clock timeout. A real LLM call or retrieval query
 // can hang on a flaky network or a slow upstream; without a budget the
 // session sits in "running" forever and only an explicit user-cancel
-// recovers it. Default 120s, env-overridable for ops.
+// recovers it. Default 150s, env-overridable for ops. Production evidence
+// from the reasoning-model gateway showed the competitor agent can need
+// slightly more than 120s while the full two-at-a-time pipeline still fits
+// inside the 300s serverless request budget.
 //
 // Read on every invocation so test setups that mutate process.env between
 // cases see the updated value, and so ops can change the budget without a
@@ -566,7 +569,7 @@ async function runAgent(
         // R241: the actual generate() call, factored out so it can be run
         // either directly (mock) or through the concurrency limiter (real
         // provider). The wall-clock timeout is armed INSIDE the limiter
-        // closure so an agent queued behind siblings doesn't burn its 120s
+        // closure so an agent queued behind siblings doesn't burn its 150s
         // budget merely waiting for a slot — the budget covers the LLM call
         // itself, not the queue wait.
         const runGenerate = async () => {
