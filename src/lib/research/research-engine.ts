@@ -168,7 +168,10 @@ export function pruneStaleSessions(now: number = Date.now()): number {
         session.status === "error") &&
       now - new Date(session.updatedAt).getTime() > SESSION_RETENTION_MS
     ) {
-      deleteSession(id);
+      // Local pruning is memory hygiene, not a user-requested deletion.
+      // Keep the durable Redis snapshot so report and brief URLs remain
+      // recoverable for the terminal-session retention window.
+      evictSessionFromMemory(id);
       evicted++;
     }
   }
@@ -263,12 +266,14 @@ export function getResearchSession(id: string): ResearchSession | undefined {
 
 /**
  * Best-effort cross-instance session recovery. Looks up a session id in
- * Redis and, if found, installs it into the local in-memory Map. Returns
+ * Redis and returns the freshest snapshot. It installs the remote snapshot
+ * into the local Map only when no local object exists; replacing an active
+ * local run object would detach the agent loop from future mirrors. Returns
  * the recovered session, or undefined if no Redis session exists. Callers
  * that need cross-instance visibility (e.g. the SSE stream route) should
  * invoke this before falling back to the "session not found" terminal.
  *
- * Re-installing into the local Map also restores the AbortController if
+ * Installing into an empty local Map also restores the AbortController if
  * the recovered session is still running, so cancel propagation continues
  * to work on the recovering instance.
  */
@@ -293,7 +298,7 @@ export async function hydrateSessionFromRedis(id: string): Promise<ResearchSessi
   const localTs = local ? Date.parse(local.updatedAt) : 0;
   const remoteTs = Date.parse(remote.updatedAt) || 0;
   const fresher = remoteTs >= localTs ? remote : local;
-  if (fresher === remote) {
+  if (!local && fresher === remote) {
     sessions.set(id, remote);
     if (!sessionAborts.has(id)) {
       sessionAborts.set(id, new AbortController());
@@ -391,6 +396,25 @@ function persistRunSnapshot(session: ResearchSession, status: "completed" | "can
   }
 }
 
+function evictSessionFromMemory(id: string): boolean {
+  if (!sessions.has(id)) return false;
+
+  const listeners = eventListeners.get(id);
+  if (listeners) listeners.clear();
+  eventListeners.delete(id);
+
+  const pending = sseIdleTimers.get(id);
+  if (pending) clearTimeout(pending);
+  sseIdleTimers.delete(id);
+
+  sessionAborts.delete(id);
+  cancelledSessions.delete(id);
+  sessions.delete(id);
+  redisMirrorPending.delete(id);
+  redisMirrorLastFlush.delete(id);
+  return true;
+}
+
 /** Hard-delete a session from the in-memory store. Aborts any running work
  *  and releases SSE listeners. Used by DELETE /api/research/:id so clients
  *  (and tests) can deterministically clean up. Returns true if the session
@@ -413,19 +437,7 @@ export function deleteSession(id: string): boolean {
     cancelledSessions.add(id);
     sessionAborts.get(id)?.abort();
   }
-  const listeners = eventListeners.get(id);
-  if (listeners) listeners.clear();
-  eventListeners.delete(id);
-  const pending = sseIdleTimers.get(id);
-  if (pending) { clearTimeout(pending); sseIdleTimers.delete(id); }
-  sessionAborts.delete(id);
-  cancelledSessions.delete(id);
-  sessions.delete(id);
-  // R231: clear the Redis-mirror throttle bookkeeping so a reused id (very
-  // unlikely given random ids, but cheap to be correct) doesn't inherit a
-  // stale throttle window.
-  redisMirrorPending.delete(id);
-  redisMirrorLastFlush.delete(id);
+  evictSessionFromMemory(id);
   // Cross-instance: remove from Redis so deleted sessions don't resurface
   // on a future instance. Best-effort.
   void removeSession(id);

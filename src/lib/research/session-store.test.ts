@@ -109,6 +109,7 @@ describe("session-store — with mocked Upstash client", () => {
   // here. It mirrors the subset of @upstash/redis we use so we can assert
   // exactly how each session-store helper interacts with the client.
   const mockStore = new Map<string, string>();
+  const mockExpiry = new Map<string, number>();
   const publishedMessages: Array<{ channel: string; message: unknown }> = [];
   const mockSubscribers: Array<{
     channels: string[];
@@ -121,6 +122,7 @@ describe("session-store — with mocked Upstash client", () => {
 
   beforeEach(() => {
     mockStore.clear();
+    mockExpiry.clear();
     mockSubscribers.length = 0;
     publishedMessages.length = 0;
     setRedisEnv();
@@ -130,9 +132,19 @@ describe("session-store — with mocked Upstash client", () => {
         async set(key: string, value: unknown, opts?: { ex?: number; nx?: boolean }) {
           if (opts?.nx && mockStore.has(key)) return null;
           mockStore.set(key, typeof value === "string" ? value : JSON.stringify(value));
+          if (opts?.ex) {
+            mockExpiry.set(key, Date.now() + opts.ex * 1000);
+          } else {
+            mockExpiry.delete(key);
+          }
           return "OK";
         }
         async get<T = unknown>(key: string): Promise<T | null> {
+          const expiresAt = mockExpiry.get(key);
+          if (expiresAt !== undefined && expiresAt <= Date.now()) {
+            mockStore.delete(key);
+            mockExpiry.delete(key);
+          }
           const v = mockStore.get(key);
           if (v === undefined) return null;
           // Mirror Upstash's auto-deserialization (parses JSON values).
@@ -143,6 +155,7 @@ describe("session-store — with mocked Upstash client", () => {
           }
         }
         async del(key: string) {
+          mockExpiry.delete(key);
           return mockStore.delete(key) ? 1 : 0;
         }
         async publish(channel: string, message: unknown): Promise<number> {
@@ -196,6 +209,26 @@ describe("session-store — with mocked Upstash client", () => {
     const got = await fetchSession(s.id);
     expect(got?.id).toBe(s.id);
     expect(got?.query).toBe(s.query);
+  });
+
+  it("keeps completed sessions recoverable after the live-session window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-29T00:00:00.000Z"));
+    try {
+      const { storeSession, fetchSession } = await import("./session-store");
+      const completed = makeFakeSession();
+      completed.status = "completed";
+
+      await storeSession(completed);
+      vi.setSystemTime(new Date("2026-06-29T00:31:00.000Z"));
+
+      await expect(fetchSession(completed.id)).resolves.toMatchObject({
+        id: completed.id,
+        status: "completed",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fetchSession returns null when key is absent", async () => {

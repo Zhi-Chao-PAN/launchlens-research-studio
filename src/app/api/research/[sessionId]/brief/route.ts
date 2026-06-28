@@ -25,10 +25,11 @@ export async function GET(
   // Try the in-process map first; hydrate from Redis so a completed session
   // is exportable even when this GET lands on a different instance than the
   // one that ran it (same cross-instance pattern as [sessionId]/route.ts).
-  let session = getResearchSession(sessionId);
-  if (!session) {
-    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
-  }
+  // Reconcile with Redis even when this instance has a local creation
+  // snapshot; the completed run may have advanced on the SSE instance.
+  const session =
+    (await hydrateSessionFromRedis(sessionId)) ??
+    getResearchSession(sessionId);
   if (!session) {
     // Mirror [sessionId]/route.ts: distinguish an evicted live session (the
     // completed run is still on disk) from a true not-found.

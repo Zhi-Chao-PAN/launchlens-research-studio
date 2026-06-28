@@ -23,10 +23,13 @@ export async function GET(
   // local Map is empty even though the session completed successfully. Without
   // this hydration the route returned 404, which the client interpreted as
   // "Session expired" right after a successful SSE run.
-  let session = getResearchSession(sessionId);
-  if (!session) {
-    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
-  }
+  // Always ask the hydration seam to reconcile local and Redis state. A
+  // POST instance can retain its original "pending" snapshot while the SSE
+  // run advances on another instance; only hydrating when local state is
+  // absent would return that stale snapshot indefinitely.
+  const session =
+    (await hydrateSessionFromRedis(sessionId)) ??
+    getResearchSession(sessionId);
   if (!session) {
     // R217: distinguish "the live engine session was evicted" (the
     // completed run is still on disk and renderable) from a true

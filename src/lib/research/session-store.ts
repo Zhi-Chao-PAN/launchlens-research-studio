@@ -28,9 +28,30 @@ const CANCEL_KEY = (id: string) => `rs:cancel:${id}`;
 const LOCK_KEY = (id: string) => `rs:lock:${id}`;
 const EVENT_CHANNEL = (id: string) => `rs:events:${id}`;
 
-// How long a session stays recoverable in Redis. Matches the engine's
-// SESSION_RETENTION_MS default (30 min). Kept here so the store owns TTL.
-const SESSION_TTL_SECONDS = 30 * 60;
+// Active sessions only need a short recovery window. Terminal sessions are
+// user artifacts: their report and LaunchLens brief URLs must survive
+// serverless instance recycling and remain recoverable well beyond the live
+// SSE window. Keep those snapshots for 30 days by default.
+const ACTIVE_SESSION_TTL_SECONDS = 30 * 60;
+const DEFAULT_TERMINAL_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+const MIN_TERMINAL_SESSION_TTL_SECONDS = 60 * 60;
+
+function terminalSessionTtlSeconds(): number {
+  const raw = process.env.LAUNCHLENS_TERMINAL_SESSION_TTL_SECONDS;
+  if (!raw) return DEFAULT_TERMINAL_SESSION_TTL_SECONDS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= MIN_TERMINAL_SESSION_TTL_SECONDS
+    ? parsed
+    : DEFAULT_TERMINAL_SESSION_TTL_SECONDS;
+}
+
+function sessionTtlSeconds(session: ResearchSession): number {
+  return session.status === "completed" ||
+    session.status === "cancelled" ||
+    session.status === "error"
+    ? terminalSessionTtlSeconds()
+    : ACTIVE_SESSION_TTL_SECONDS;
+}
 
 // Cancellation polls are cheap, but we still cache the "not cancelled" result
 // locally for a short window to avoid hammering Redis on every agent step.
@@ -51,7 +72,7 @@ export async function storeSession(session: ResearchSession): Promise<void> {
   if (!redis) return;
   try {
     await redis.set(SESSION_KEY(session.id), JSON.stringify(session), {
-      ex: SESSION_TTL_SECONDS,
+      ex: sessionTtlSeconds(session),
     });
   } catch (err) {
     console.error(`[session-store] storeSession(${session.id}) failed:`, err);
@@ -108,7 +129,9 @@ export async function setCancelFlag(id: string): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(CANCEL_KEY(id), "1", { ex: SESSION_TTL_SECONDS });
+    await redis.set(CANCEL_KEY(id), "1", {
+      ex: ACTIVE_SESSION_TTL_SECONDS,
+    });
     cancelCache.set(id, { value: true, expires: Date.now() + CANCEL_CACHE_MS });
   } catch (err) {
     console.error(`[session-store] setCancelFlag(${id}) failed:`, err);
@@ -162,7 +185,10 @@ export async function acquireRunLock(id: string): Promise<boolean> {
   if (!redis) return true;
   try {
     // SET NX with EX returns "OK" on success, null if the key already exists.
-    const res = await redis.set(LOCK_KEY(id), "1", { nx: true, ex: SESSION_TTL_SECONDS });
+    const res = await redis.set(LOCK_KEY(id), "1", {
+      nx: true,
+      ex: ACTIVE_SESSION_TTL_SECONDS,
+    });
     return res === "OK";
   } catch (err) {
     console.error(`[session-store] acquireRunLock(${id}) failed:`, err);
