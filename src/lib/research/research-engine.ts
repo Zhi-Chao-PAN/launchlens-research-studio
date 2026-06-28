@@ -44,23 +44,22 @@ const MIN_AGENT_TIMEOUT_MS = 1000;
 // drop mid-stream, or never close cleanly, which surfaces as flaky
 // `network_error` degradations on whichever agents lose the race.
 //
-// Default 1 (fully serial): the upstream gateway proved fragile even at 2-3
-// concurrent streams — competitor-analyst and pain-detective repeatedly
-// degraded to mock with network_error when 5 agents fired in the same tick
-// against MiniMax-M3, and even dropping to 2 in flight was not enough on
-// some sessions. Serializing keeps every stream's first-byte latency low
-// and avoids the thundering-herd altogether. Cost is real: a 5-agent session
-// runs in roughly 5x the slowest single-agent time, but the Vercel function
-// has maxDuration=300s and the slowest single agent is well under 60s, so
-// the total stays inside the budget. Tunable via
-// LAUNCHLENS_PROVIDER_CONCURRENCY (raise to 2-3 only after the gateway is
-// confirmed stable). The mock provider bypasses the limiter so unit tests
-// that force mock aren't serialized.
+// R244 default 2: earlier default 1 (fully serial) was too slow (≈ 5× the
+// slowest single agent, near Vercel's 300s ceiling); default 3 was too
+// aggressive and degraded 2 of 5 agents under load. Two-in-flight is the
+// observed sweet spot — the gateway can handle 2 reasoning-model streams
+// without dropping connections, and the "lightest first" dispatch order
+// (R244) finishes the two small-output agents (pricing-scout, channel-scout)
+// in the first wave, so the heavy agents (market-sizer) get the leftover
+// capacity as soon as one of them completes. Tunable via
+// LAUNCHLENS_PROVIDER_CONCURRENCY (1 = fully serial; raise to 3-5 only
+// after the gateway is confirmed stable). The mock provider bypasses the
+// limiter so unit tests that force mock aren't serialized.
 const PROVIDER_CONCURRENCY = (() => {
   const raw = process.env.LAUNCHLENS_PROVIDER_CONCURRENCY;
-  if (!raw) return 1;
+  if (!raw) return 2;
   const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 1;
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 2;
 })();
 const providerLimiter = createConcurrencyLimiter(PROVIDER_CONCURRENCY);
 
@@ -838,12 +837,21 @@ export async function runResearchSession(
   // Run research agents in parallel. A single agent failure should not stop
   // the rest; we collect all results and report the failure via the session
   // status.
+  //
+  // R244: dispatch order is "lightest first" so the heaviest agent
+  // (market-sizer) runs last. The first wave under PROVIDER_CONCURRENCY=2 is
+  // (pricing-scout + channel-scout) — the small-output pair, so channel-scout
+  // finishes quickly without waiting behind three earlier agents. The
+  // remaining three agents form the second wave, then the slowest single
+  // agent gates total runtime. Combined with the limit of 2 in flight this
+  // keeps every agent from holding an open reasoning-model stream at the
+  // same instant while still being roughly 2.5x faster than fully serial.
   const researchAgentIds: AgentId[] = [
-    "market-sizer",
-    "competitor-analyst",
-    "pain-detective",
     "pricing-scout",
     "channel-scout",
+    "pain-detective",
+    "competitor-analyst",
+    "market-sizer",
   ];
 
   const settled = await Promise.allSettled(
