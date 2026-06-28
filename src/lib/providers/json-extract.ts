@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+
 /**
  * Robust extraction of the first valid JSON object from an LLM response.
  *
@@ -83,7 +85,15 @@ function parseLenient(s: string): unknown {
   // produced often enough by LLMs that tolerating it is worth it. Only
   // touch commas that are directly followed by whitespace* and a closer.
   const normalized = s.replace(/,\s*([}\]])/g, "$1");
-  return JSON.parse(normalized);
+  try {
+    return JSON.parse(normalized);
+  } catch (error) {
+    const trimmed = normalized.trimStart();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      throw error;
+    }
+    return JSON.parse(jsonrepair(normalized));
+  }
 }
 
 /**

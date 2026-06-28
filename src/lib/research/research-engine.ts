@@ -14,6 +14,7 @@ import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { saveResearchRun } from "@/lib/research/storage";
 import { sleep } from "@/lib/utils/sleep";
 import { createConcurrencyLimiter } from "@/lib/utils/concurrency-limiter";
+import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 import {
   storeSession,
   fetchSession,
@@ -923,6 +924,7 @@ export async function runResearchSession(
   // Persist completed snapshot (R212: routed through helper for parity with
   // the cancelled/failed paths).
   persistRunSnapshot(session, "completed");
+  await recordResearchFunnelEvent("research_completed", session.id);
 
   emitEvent(session.id, {
     type: "complete",

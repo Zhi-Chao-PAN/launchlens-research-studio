@@ -1,10 +1,16 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getResearchSession, hydrateSessionFromRedis, toLaunchLensBrief } =
+const {
+  getResearchSession,
+  hydrateSessionFromRedis,
+  toLaunchLensBrief,
+  recordResearchFunnelEvent,
+} =
   vi.hoisted(() => ({
     getResearchSession: vi.fn(),
     hydrateSessionFromRedis: vi.fn(),
+    recordResearchFunnelEvent: vi.fn(),
     toLaunchLensBrief: vi.fn((value: { status: string }) => ({
       sourceStatus: value.status,
     })),
@@ -17,6 +23,10 @@ vi.mock("@/lib/research/research-engine", () => ({
 
 vi.mock("@/lib/research/storage", () => ({
   getResearchRun: vi.fn(() => null),
+}));
+
+vi.mock("@/lib/research/funnel-analytics", () => ({
+  recordResearchFunnelEvent,
 }));
 
 vi.mock("@/lib/export/brief-mapper", () => ({
@@ -49,6 +59,10 @@ describe("GET /api/research/[sessionId]/brief", () => {
     expect(hydrateSessionFromRedis).toHaveBeenCalledWith("session123");
     expect(toLaunchLensBrief).toHaveBeenCalledWith(
       expect.objectContaining({ status: "completed" }),
+    );
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "brief_exported",
+      "session123",
     );
     await expect(response.json()).resolves.toEqual({
       sourceStatus: "completed",

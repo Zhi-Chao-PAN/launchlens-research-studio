@@ -11,6 +11,7 @@ import {
   createResearchSession,
 } from "@/lib/research/research-engine";
 import { storeSession } from "@/lib/research/session-store";
+import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 import {
   validateResearchRequest,
   jsonValidationError,
@@ -136,6 +137,7 @@ export async function POST(request: NextRequest) {
   // the client ever connects. storeSession is a no-op (returns immediately)
   // when Redis is not configured, so local dev / tests are unaffected.
   await storeSession(session);
+  await recordResearchFunnelEvent("research_started", session.id);
 
   logRequest(201, true);
   const response = NextResponse.json(

@@ -3,6 +3,7 @@ import { getResearchSession, hydrateSessionFromRedis } from "@/lib/research/rese
 import { getResearchRun } from "@/lib/research/storage";
 import { toLaunchLensBrief, serializeBrief } from "@/lib/export/brief-mapper";
 import { jsonErrorLocalized } from "@/lib/api/validation";
+import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 
 // GET /api/research/[sessionId]/brief
 // Returns a structured, importable LaunchLens brief derived from the completed
@@ -44,6 +45,7 @@ export async function GET(
   }
 
   const brief = toLaunchLensBrief(session);
+  await recordResearchFunnelEvent("brief_exported", session.id);
 
   // Allow ?raw=1 to get the compact JSON string body (handy for curl pipes);
   // default returns the parsed envelope as a JSON object.

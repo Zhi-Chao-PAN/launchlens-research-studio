@@ -191,6 +191,10 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full architecture d
 
 ## ☁️ Deploy to Vercel
 
+Production journey measurement is documented in
+[`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
+privacy-minimized, server-confirmed Redis funnel milestones.
+
 A `vercel.json` ships with this repo (R230): the `/api/research/[id]/stream` SSE route is configured for `maxDuration=60s` and the `setInterval`-based scheduler is replaced by a Vercel Cron entry that POSTs to `/api/cron/scheduler` every minute.
 
 **One-time setup**

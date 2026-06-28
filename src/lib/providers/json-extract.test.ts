@@ -57,6 +57,11 @@ describe("extractJsonObject", () => {
     expect(extractJsonObject(raw)).toEqual({ items: [1, 2, 3] });
   });
 
+  it("repairs a missing comma in otherwise complete model JSON", () => {
+    const raw = '{"a": 1 "b": 2}';
+    expect(extractJsonObject(raw)).toEqual({ a: 1, b: 2 });
+  });
+
   it("handles a <think> block that contains a fake JSON-looking string", () => {
     // The reasoning block must not be mistaken for the answer.
     const raw = '<think>maybe {\"not\": \"this\"}</think>\n{\"ok\": true}';

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResearchSession } from "@/lib/schema/research-schema";
 
-const { remoteSessions } = vi.hoisted(() => ({
+const { remoteSessions, recordResearchFunnelEvent } = vi.hoisted(() => ({
   remoteSessions: new Map<string, ResearchSession>(),
+  recordResearchFunnelEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/research/session-store", () => ({
@@ -22,9 +23,15 @@ vi.mock("@/lib/research/session-store", () => ({
   subscribeEvents: () => () => {},
 }));
 
+vi.mock("@/lib/research/funnel-analytics", () => ({
+  recordResearchFunnelEvent,
+}));
+
 describe("completed session persistence", () => {
   beforeEach(() => {
     remoteSessions.clear();
+    recordResearchFunnelEvent.mockReset();
+    recordResearchFunnelEvent.mockResolvedValue(true);
   });
 
   it("keeps the durable snapshot when stale local state is pruned", async () => {
@@ -73,5 +80,21 @@ describe("completed session persistence", () => {
       status: "completed",
     });
     expect(getResearchSession(local.id)).toBe(local);
+  });
+
+  it("records completion after all research agents finish", async () => {
+    const {
+      createResearchSession,
+      runResearchSession,
+    } = await import("@/lib/research/research-engine");
+    const session = createResearchSession("completed funnel run", ["funnel"]);
+
+    await runResearchSession(session.id, { speedMultiplier: 1_000 });
+
+    expect(session.status).toBe("completed");
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "research_completed",
+      session.id,
+    );
   });
 });
