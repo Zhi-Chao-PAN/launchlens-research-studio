@@ -102,8 +102,31 @@ function normalizeCitation(c: unknown, index = 0, agentId?: AgentId) {
   };
 }
 
-function normalizeCitations(v: unknown, agentId: AgentId) {
-  return asArray(v).map((c, index) => normalizeCitation(c, index, agentId));
+function isFallbackCitationCandidate(item: unknown): boolean {
+  if (item && typeof item === "object" && !Array.isArray(item)) return true;
+  if (typeof item !== "string") return false;
+  const clean = item.trim();
+  if (clean.length === 0) return false;
+  if (/^https?:\/\//i.test(clean)) return true;
+  // Filter out bare citation ids such as "c1" or "source_2"; those are
+  // pointers, not evidence snippets. A longer string is likely a source title,
+  // URL + note, or reasoning sentence and can safely become a low-confidence
+  // snippet.
+  return clean.length >= 16;
+}
+
+function fallbackCitationItems(values: unknown[]): unknown[] {
+  for (const value of values) {
+    const candidates = asArray(value).filter(isFallbackCitationCandidate);
+    if (candidates.length > 0) return candidates;
+  }
+  return [];
+}
+
+function normalizeCitations(v: unknown, agentId: AgentId, ...fallbacks: unknown[]) {
+  const primary = asArray(v);
+  const items = primary.length > 0 ? primary : fallbackCitationItems(fallbacks);
+  return items.map((c, index) => normalizeCitation(c, index, agentId));
 }
 
 /** Normalize the output of any agent. Always returns a valid object the
@@ -168,7 +191,7 @@ function normalizeMarketSizer(o: Record<string, unknown>) {
         description: asString(x.description),
       };
     }),
-    citations: normalizeCitations(o.citations, "market-sizer"),
+    citations: normalizeCitations(o.citations, "market-sizer", o.references, o.sources, ms.sources),
   };
 }
 
@@ -224,7 +247,7 @@ function normalizeCompetitorAnalyst(o: Record<string, unknown>) {
           difficulty === "low" || difficulty === "medium" || difficulty === "high" ? difficulty : "medium",
       };
     }),
-    citations: normalizeCitations(o.citations, "competitor-analyst"),
+    citations: normalizeCitations(o.citations, "competitor-analyst", o.references, o.sources),
   };
 }
 
@@ -267,7 +290,7 @@ function normalizePainDetective(o: Record<string, unknown>) {
         frustrations: asStringArray(x.frustrations),
       };
     }),
-    citations: normalizeCitations(o.citations, "pain-detective"),
+    citations: normalizeCitations(o.citations, "pain-detective", o.references, o.sources),
   };
 }
 
@@ -340,7 +363,7 @@ function normalizePricingScout(o: Record<string, unknown>) {
             : "monthly",
       };
     }),
-    citations: normalizeCitations(o.citations, "pricing-scout"),
+    citations: normalizeCitations(o.citations, "pricing-scout", o.references, o.sources),
   };
 }
 
@@ -407,7 +430,7 @@ function normalizeChannelScout(o: Record<string, unknown>) {
         why: asString(x.why),
       };
     }),
-    citations: normalizeCitations(o.citations, "channel-scout"),
+    citations: normalizeCitations(o.citations, "channel-scout", o.references, o.sources),
   };
 }
 
@@ -448,6 +471,6 @@ function normalizeSynthesis(o: Record<string, unknown>) {
     }),
     recommendedNextStep: asString(o.recommendedNextStep),
     launchlensBrief: asString(o.launchlensBrief),
-    citations: normalizeCitations(o.citations, "synthesis"),
+    citations: normalizeCitations(o.citations, "synthesis", o.references, o.sources),
   };
 }

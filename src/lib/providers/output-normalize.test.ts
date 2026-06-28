@@ -332,6 +332,32 @@ describe("normalizeAgentOutput (R214 string-array + enum + period)", () => {
     }));
   });
 
+  it("uses fallback source arrays when top-level citations are omitted", () => {
+    const out = asAny(normalizeAgentOutput("market-sizer", {
+      agent: "market-sizer",
+      summary: "ok",
+      marketSize: {
+        tam: 100,
+        sam: 50,
+        som: 10,
+        sources: [
+          "https://example.com/report shows the market is expanding among postgraduate applicants",
+          "c2",
+        ],
+      },
+      keyTrends: [],
+      targetSegments: [],
+    })) as { citations: Array<{ id: string; title: string; snippet: string; agent: string }> };
+
+    expect(out.citations).toEqual([
+      expect.objectContaining({
+        id: "c1",
+        snippet: "https://example.com/report shows the market is expanding among postgraduate applicants",
+        agent: "market-sizer",
+      }),
+    ]);
+  });
+
   it("coerces non-string elements in competitor.strengths to strings", () => {
     const out = asAny(normalizeAgentOutput("competitor-analyst", {
       agent: "competitor-analyst",
