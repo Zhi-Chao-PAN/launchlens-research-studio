@@ -62,6 +62,33 @@ describe("createAnthropicProvider", () => {
     expect(out.agent).toBe("channel-scout");
   });
 
+  it("normalizes recoverable real output instead of falling back to mock", async () => {
+    const recoverablePayload = {
+      agent: "pain-detective",
+      summary: "Real user pain evidence from the provider",
+      citations: [{ id: "c1", title: "Interview evidence", snippet: "buyers mention manual review delays" }],
+    };
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ content: [{ type: "text", text: JSON.stringify(recoverablePayload) }] }),
+    }) as any);
+    const reasons: string[] = [];
+    const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+
+    const out = await p.generate("pain-detective", {
+      query: "q",
+      keywords: [],
+      onFallback: (reason) => reasons.push(reason),
+    });
+
+    expect(out.agent).toBe("pain-detective");
+    if (out.agent !== "pain-detective") throw new Error("expected pain-detective output");
+    expect(out.summary).toBe("Real user pain evidence from the provider");
+    expect(out.painPoints).toEqual([]);
+    expect(out.citations).toHaveLength(1);
+    expect(reasons).toEqual([]);
+  });
+
   it("targets configured baseUrl, model, and headers", async () => {
     let url = "";
     let init: any = null;

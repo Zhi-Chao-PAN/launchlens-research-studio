@@ -12,8 +12,7 @@
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ProviderFallbackReason, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
-import { validateAgentOutput } from "@/lib/providers/output-validator";
-import { normalizeAgentOutput } from "@/lib/providers/output-normalize";
+import { validateOrNormalizeAgentOutput } from "@/lib/providers/output-coerce";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconnect";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
@@ -180,10 +179,10 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           throw new Error("provider returned non-JSON");
         }
         try {
-          // R210: validate top-level shape then normalize nested fields so
-          // the UI can render any returned object without throwing. See
-          // openai-provider.ts for the same pattern.
-          return normalizeAgentOutput(agentId, validateAgentOutput(agentId, parsed));
+          // R244: strict validate first; if the real provider only omitted
+          // recoverable structural fields, normalize once and validate again.
+          // Invalid citations / malformed evidence still fail into mock.
+          return validateOrNormalizeAgentOutput(agentId, parsed);
         } catch {
           reportFallback("validation_error");
           throw new Error("provider output failed schema validation");

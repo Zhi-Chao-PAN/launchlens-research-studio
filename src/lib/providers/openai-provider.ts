@@ -13,8 +13,7 @@
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ProviderFallbackReason, ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
-import { validateAgentOutput } from "@/lib/providers/output-validator";
-import { normalizeAgentOutput } from "@/lib/providers/output-normalize";
+import { validateOrNormalizeAgentOutput } from "@/lib/providers/output-coerce";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
 import { detectQueryLanguage } from "@/lib/providers/query-language";
 import { extractJsonObject } from "@/lib/providers/json-extract";
@@ -178,14 +177,10 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           throw new Error("provider returned non-JSON");
         }
         try {
-          // R210: validate (top-level shape + a couple of deep checks) then
-          // normalize (fill in safe defaults for every nested field the UI
-          // reads). Validation is the contract; normalization is the
-          // defensive backstop for the cases validation doesn't cover
-          // (e.g. an LLM returning `competitors: [{name: "X"}]` with all
-          // other required fields missing). The UI must never receive an
-          // object that throws on field access.
-          return normalizeAgentOutput(agentId, validateAgentOutput(agentId, parsed));
+          // R244: strict validate first; if the real provider only omitted
+          // recoverable structural fields, normalize once and validate again.
+          // Invalid citations / malformed evidence still fail into mock.
+          return validateOrNormalizeAgentOutput(agentId, parsed);
         } catch {
           reportFallback("validation_error");
           throw new Error("provider output failed schema validation");
