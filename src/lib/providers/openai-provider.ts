@@ -16,6 +16,7 @@ import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { normalizeAgentOutput } from "@/lib/providers/output-normalize";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
+import { detectQueryLanguage } from "@/lib/providers/query-language";
 import { extractJsonObject } from "@/lib/providers/json-extract";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseOpenAiSse } from "@/lib/utils/sse-reconnect";
@@ -39,6 +40,14 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
     supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       const wantsStream = typeof ctx.onProgress === "function";
+      // R243: detect the user's language from the query so the agent can be
+      // told to produce human-readable strings in the same language. The
+      // schema, enum values, and URLs stay in English (validated by the
+      // schema validator), but the summary, names, taglines, and snippets
+      // come back localized. This is the cheapest way to give non-English
+      // users a readable report without rewriting the schema validators
+      // for every locale.
+      const outputLanguage = detectQueryLanguage(ctx.query);
       // Classify a thrown error into a fallback reason so the engine can
       // surface "demo data" with an accurate tooltip. Without this the
       // catch below silently returned mock and the user had no idea the
@@ -65,8 +74,8 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
                 stream: wantsStream,
                 response_format: { type: "json_object" },
                 messages: [
-                  { role: "system", content: buildSystemPrompt(agentId) },
-                  { role: "user", content: buildUserPrompt(agentId, ctx) },
+                  { role: "system", content: buildSystemPrompt(agentId, outputLanguage) },
+                  { role: "user", content: buildUserPrompt(agentId, { query: ctx.query, keywords: ctx.keywords, upstream: ctx.upstream, outputLanguage, retrievedSources: undefined }) },
                 ],
               }),
             });

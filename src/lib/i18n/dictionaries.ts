@@ -262,6 +262,113 @@ export type DictionaryKey =
   | "provider.streaming"
   | "report.degradedBanner.body"
   | "report.degradedBanner.title"
+  | "report.common.copied"
+  | "report.common.copySection"
+  | "report.common.item"
+  | "report.common.items"
+  | "report.confidence.high"
+  | "report.confidence.low"
+  | "report.confidence.medium"
+  | "report.marketSizer.title"
+  | "report.marketSizer.copySection"
+  | "report.marketSizer.marketSizeEstimate"
+  | "report.marketSizer.tamLabel"
+  | "report.marketSizer.samLabel"
+  | "report.marketSizer.somLabel"
+  | "report.marketSizer.growthRate"
+  | "report.marketSizer.growthRateValue"
+  | "report.marketSizer.growthLabel"
+  | "report.marketSizer.trendPrefix"
+  | "report.marketSizer.trendAccelerating"
+  | "report.marketSizer.trendStable"
+  | "report.marketSizer.trendDeclining"
+  | "report.marketSizer.keyTrends"
+  | "report.marketSizer.targetSegments"
+  | "report.marketSizer.percentOf"
+  | "report.competitor.title"
+  | "report.competitor.copySection"
+  | "report.competitor.competitors"
+  | "report.competitor.strengths"
+  | "report.competitor.weaknesses"
+  | "report.competitor.marketShareSuffix"
+  | "report.competitor.visit"
+  | "report.competitor.matrix"
+  | "report.competitor.gaps"
+  | "report.competitor.gapOpportunity"
+  | "report.competitor.positioning.premium"
+  | "report.competitor.positioning.midMarket"
+  | "report.competitor.positioning.budget"
+  | "report.competitor.positioning.niche"
+  | "report.pain.title"
+  | "report.pain.copySection"
+  | "report.pain.critical"
+  | "report.pain.significant"
+  | "report.pain.minor"
+  | "report.pain.personas"
+  | "report.pain.unmetNeeds"
+  | "report.pain.topPainPoints"
+  | "report.pain.affectsPrefix"
+  | "report.pain.whyUnmet"
+  | "report.pain.opportunity"
+  | "report.pain.userPersonas"
+  | "report.pain.goals"
+  | "report.pain.frustrations"
+  | "report.pain.frequency.common"
+  | "report.pain.frequency.occasional"
+  | "report.pain.frequency.rare"
+  | "report.pricing.title"
+  | "report.pricing.copySection"
+  | "report.pricing.priceBands"
+  | "report.pricing.typicalMarker"
+  | "report.pricing.typicalPrefix"
+  | "report.pricing.recommendedTiers"
+  | "report.pricing.perUserMonth"
+  | "report.pricing.perUserYear"
+  | "report.pricing.oneTime"
+  | "report.pricing.perUsage"
+  | "report.pricing.monetizationModels"
+  | "report.pricing.prevalenceSuffix"
+  | "report.pricing.examplesPrefix"
+  | "report.pricing.willingnessToPay"
+  | "report.pricing.perMonth"
+  | "report.pricing.band.budget"
+  | "report.pricing.band.midMarket"
+  | "report.pricing.band.premium"
+  | "report.pricing.band.enterprise"
+  | "report.channel.title"
+  | "report.channel.copySection"
+  | "report.channel.recommendedChannels"
+  | "report.channel.landscape"
+  | "report.channel.effectivenessPrefix"
+  | "report.channel.reach"
+  | "report.channel.costEfficiency"
+  | "report.channel.communityHubs"
+  | "report.channel.contentTopics"
+  | "report.channel.competitionSuffix"
+  | "report.synthesis.title"
+  | "report.synthesis.copySection"
+  | "report.synthesis.opportunity"
+  | "report.synthesis.risk"
+  | "report.synthesis.netScore"
+  | "report.synthesis.netScoreFormula"
+  | "report.synthesis.basedOnInsights"
+  | "report.synthesis.topOpportunities"
+  | "report.synthesis.whyWorks"
+  | "report.synthesis.topRisks"
+  | "report.synthesis.mitigation"
+  | "report.synthesis.crossValidated"
+  | "report.synthesis.supportedBy"
+  | "report.synthesis.nextStep"
+  | "report.synthesis.importBrief"
+  | "report.synthesis.importBriefSubtitle"
+  | "report.synthesis.charactersSuffix"
+  | "report.synthesis.copyBrief"
+  | "report.synthesis.copiedBrief"
+  | "report.synthesis.opportunityLabel.strong"
+  | "report.synthesis.opportunityLabel.promising"
+  | "report.synthesis.opportunityLabel.moderate"
+  | "report.synthesis.opportunityLabel.challenging"
+  | "report.synthesis.opportunityLabel.highRisk"
   | "search.matchCount"
   | "search.next"
   | "search.noMatches"
@@ -444,6 +551,113 @@ const en: Dict = {
   "provider.probe.error": "Error: {message}",
   "report.degradedBanner.title": "{count} agent(s) showing demo data",
   "report.degradedBanner.body": "Some agents could not reach the real LLM provider and fell back to illustrative mock data. Check your API key and provider configuration, then re-run for authoritative results.",
+  "report.common.copied": "Copied",
+  "report.common.copySection": "Copy section",
+  "report.common.item": "item",
+  "report.common.items": "items",
+  "report.confidence.high": "High confidence",
+  "report.confidence.low": "Low confidence",
+  "report.confidence.medium": "Medium confidence",
+  "report.marketSizer.title": "Market Sizer",
+  "report.marketSizer.copySection": "Copy market section",
+  "report.marketSizer.marketSizeEstimate": "Market Size Estimate",
+  "report.marketSizer.tamLabel": "Total addressable market",
+  "report.marketSizer.samLabel": "Serviceable addressable market",
+  "report.marketSizer.somLabel": "3-year obtainable market",
+  "report.marketSizer.growthRate": "growth",
+  "report.marketSizer.growthRateValue": "{value}%/yr growth",
+  "report.marketSizer.growthLabel": "growth",
+  "report.marketSizer.trendPrefix": "trend",
+  "report.marketSizer.trendAccelerating": "Accelerating trend",
+  "report.marketSizer.trendStable": "Stable trend",
+  "report.marketSizer.trendDeclining": "Declining trend",
+  "report.marketSizer.keyTrends": "Key Trends",
+  "report.marketSizer.targetSegments": "Target Segments",
+  "report.marketSizer.percentOf": "% of",
+  "report.competitor.title": "Competitor Analyst",
+  "report.competitor.copySection": "Copy competitor section",
+  "report.competitor.competitors": "Competitors",
+  "report.competitor.strengths": "Strengths",
+  "report.competitor.weaknesses": "Weaknesses",
+  "report.competitor.marketShareSuffix": "market share",
+  "report.competitor.visit": "Visit",
+  "report.competitor.matrix": "Competitive Matrix",
+  "report.competitor.gaps": "Market Gaps & Opportunities",
+  "report.competitor.gapOpportunity": "Opportunity:",
+  "report.competitor.positioning.premium": "Premium",
+  "report.competitor.positioning.midMarket": "Mid-market",
+  "report.competitor.positioning.budget": "Budget",
+  "report.competitor.positioning.niche": "Niche",
+  "report.pain.title": "Pain Detective",
+  "report.pain.copySection": "Copy pain section",
+  "report.pain.critical": "Critical",
+  "report.pain.significant": "Significant",
+  "report.pain.minor": "Minor",
+  "report.pain.personas": "Personas",
+  "report.pain.unmetNeeds": "Unmet needs",
+  "report.pain.topPainPoints": "Top Pain Points",
+  "report.pain.affectsPrefix": "Affects:",
+  "report.pain.whyUnmet": "Why unmet:",
+  "report.pain.opportunity": "Opportunity:",
+  "report.pain.userPersonas": "User Personas",
+  "report.pain.goals": "Goals",
+  "report.pain.frustrations": "Frustrations",
+  "report.pain.frequency.common": "Common",
+  "report.pain.frequency.occasional": "Occasional",
+  "report.pain.frequency.rare": "Rare",
+  "report.pricing.title": "Pricing Scout",
+  "report.pricing.copySection": "Copy pricing section",
+  "report.pricing.priceBands": "Price Bands",
+  "report.pricing.typicalMarker": "Typical",
+  "report.pricing.typicalPrefix": "Typical:",
+  "report.pricing.recommendedTiers": "Recommended Pricing Tiers",
+  "report.pricing.perUserMonth": "per user / month",
+  "report.pricing.perUserYear": "per user / year",
+  "report.pricing.oneTime": "one-time",
+  "report.pricing.perUsage": "per usage",
+  "report.pricing.monetizationModels": "Monetization Models",
+  "report.pricing.prevalenceSuffix": "prevalence",
+  "report.pricing.examplesPrefix": "Examples:",
+  "report.pricing.willingnessToPay": "Willingness to Pay by Segment",
+  "report.pricing.perMonth": "/mo",
+  "report.pricing.band.budget": "Budget",
+  "report.pricing.band.midMarket": "Mid-market",
+  "report.pricing.band.premium": "Premium",
+  "report.pricing.band.enterprise": "Enterprise",
+  "report.channel.title": "Channel Scout",
+  "report.channel.copySection": "Copy channel section",
+  "report.channel.recommendedChannels": "Recommended Channels",
+  "report.channel.landscape": "Channel Landscape",
+  "report.channel.effectivenessPrefix": "Effectiveness:",
+  "report.channel.reach": "Reach",
+  "report.channel.costEfficiency": "Cost-efficiency",
+  "report.channel.communityHubs": "Community Hubs",
+  "report.channel.contentTopics": "Content Topics",
+  "report.channel.competitionSuffix": "comp",
+  "report.synthesis.title": "Synthesis",
+  "report.synthesis.copySection": "Copy synthesis section",
+  "report.synthesis.opportunity": "Opportunity",
+  "report.synthesis.risk": "Risk",
+  "report.synthesis.netScore": "Net score",
+  "report.synthesis.netScoreFormula": "Opportunity − Risk",
+  "report.synthesis.basedOnInsights": "Based on cross-agent validation across {count} insights",
+  "report.synthesis.topOpportunities": "Top 3 Opportunities",
+  "report.synthesis.whyWorks": "Why this works:",
+  "report.synthesis.topRisks": "Top 3 Risks",
+  "report.synthesis.mitigation": "Mitigation:",
+  "report.synthesis.crossValidated": "Cross-Validated Insights",
+  "report.synthesis.supportedBy": "Supported by:",
+  "report.synthesis.nextStep": "Recommended Next Step",
+  "report.synthesis.importBrief": "LaunchLens Import Brief",
+  "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.charactersSuffix": "characters",
+  "report.synthesis.copyBrief": "Copy brief",
+  "report.synthesis.copiedBrief": "Copied!",
+  "report.synthesis.opportunityLabel.strong": "Strong opportunity",
+  "report.synthesis.opportunityLabel.promising": "Promising",
+  "report.synthesis.opportunityLabel.moderate": "Moderate",
+  "report.synthesis.opportunityLabel.challenging": "Challenging",
+  "report.synthesis.opportunityLabel.highRisk": "High risk",
   "crash.title": "Something went wrong",
   "crash.body": "An unexpected error occurred. Your work hasn't been lost.",
   "crash.tryAgain": "Try again",
@@ -727,6 +941,113 @@ const zhCN: Dict = {
   "provider.probe.error": "错误：{message}",
   "report.degradedBanner.title": "{count} 个智能体显示示例数据",
   "report.degradedBanner.body": "部分智能体无法连接真实 LLM 提供方，已回退到示例数据。请检查 API 密钥与提供方配置后重新运行以获取权威结果。",
+  "report.common.copied": "已复制",
+  "report.common.copySection": "复制本节",
+  "report.common.item": "项",
+  "report.common.items": "项",
+  "report.confidence.high": "高置信度",
+  "report.confidence.low": "低置信度",
+  "report.confidence.medium": "中置信度",
+  "report.marketSizer.title": "市场规模分析师",
+  "report.marketSizer.copySection": "复制市场章节",
+  "report.marketSizer.marketSizeEstimate": "市场规模估算",
+  "report.marketSizer.tamLabel": "潜在市场总规模（TAM）",
+  "report.marketSizer.samLabel": "可服务市场（SAM）",
+  "report.marketSizer.somLabel": "3 年可获取市场（SOM）",
+  "report.marketSizer.growthRate": "增长率",
+  "report.marketSizer.growthRateValue": "年增长 {value}%",
+  "report.marketSizer.growthLabel": "增长",
+  "report.marketSizer.trendPrefix": "趋势",
+  "report.marketSizer.trendAccelerating": "加速增长趋势",
+  "report.marketSizer.trendStable": "稳定趋势",
+  "report.marketSizer.trendDeclining": "下降趋势",
+  "report.marketSizer.keyTrends": "关键趋势",
+  "report.marketSizer.targetSegments": "目标细分",
+  "report.marketSizer.percentOf": "占",
+  "report.competitor.title": "竞争分析师",
+  "report.competitor.copySection": "复制竞争章节",
+  "report.competitor.competitors": "竞争对手",
+  "report.competitor.strengths": "优势",
+  "report.competitor.weaknesses": "劣势",
+  "report.competitor.marketShareSuffix": "市场份额",
+  "report.competitor.visit": "访问",
+  "report.competitor.matrix": "竞争矩阵",
+  "report.competitor.gaps": "市场空白与机会",
+  "report.competitor.gapOpportunity": "机会：",
+  "report.competitor.positioning.premium": "高端",
+  "report.competitor.positioning.midMarket": "中端",
+  "report.competitor.positioning.budget": "平价",
+  "report.competitor.positioning.niche": "利基",
+  "report.pain.title": "痛点侦探",
+  "report.pain.copySection": "复制痛点章节",
+  "report.pain.critical": "关键",
+  "report.pain.significant": "重要",
+  "report.pain.minor": "次要",
+  "report.pain.personas": "用户画像",
+  "report.pain.unmetNeeds": "未满足的需求",
+  "report.pain.topPainPoints": "核心痛点",
+  "report.pain.affectsPrefix": "影响人群：",
+  "report.pain.whyUnmet": "未满足原因：",
+  "report.pain.opportunity": "机会：",
+  "report.pain.userPersonas": "用户画像",
+  "report.pain.goals": "目标",
+  "report.pain.frustrations": "痛点",
+  "report.pain.frequency.common": "常见",
+  "report.pain.frequency.occasional": "偶尔",
+  "report.pain.frequency.rare": "罕见",
+  "report.pricing.title": "价格侦察兵",
+  "report.pricing.copySection": "复制价格章节",
+  "report.pricing.priceBands": "价格区间",
+  "report.pricing.typicalMarker": "典型",
+  "report.pricing.typicalPrefix": "典型：",
+  "report.pricing.recommendedTiers": "推荐定价档位",
+  "report.pricing.perUserMonth": "每人 / 月",
+  "report.pricing.perUserYear": "每人 / 年",
+  "report.pricing.oneTime": "一次性",
+  "report.pricing.perUsage": "按用量",
+  "report.pricing.monetizationModels": "变现模式",
+  "report.pricing.prevalenceSuffix": "普及率",
+  "report.pricing.examplesPrefix": "示例：",
+  "report.pricing.willingnessToPay": "按细分市场的支付意愿",
+  "report.pricing.perMonth": "/月",
+  "report.pricing.band.budget": "平价",
+  "report.pricing.band.midMarket": "中端",
+  "report.pricing.band.premium": "高端",
+  "report.pricing.band.enterprise": "企业",
+  "report.channel.title": "渠道侦察兵",
+  "report.channel.copySection": "复制渠道章节",
+  "report.channel.recommendedChannels": "推荐渠道",
+  "report.channel.landscape": "渠道全景",
+  "report.channel.effectivenessPrefix": "效果：",
+  "report.channel.reach": "覆盖",
+  "report.channel.costEfficiency": "成本效率",
+  "report.channel.communityHubs": "社区阵地",
+  "report.channel.contentTopics": "内容选题",
+  "report.channel.competitionSuffix": "竞争",
+  "report.synthesis.title": "综合分析",
+  "report.synthesis.copySection": "复制综合章节",
+  "report.synthesis.opportunity": "机会",
+  "report.synthesis.risk": "风险",
+  "report.synthesis.netScore": "净分",
+  "report.synthesis.netScoreFormula": "机会 − 风险",
+  "report.synthesis.basedOnInsights": "基于跨智能体验证的 {count} 条洞察",
+  "report.synthesis.topOpportunities": "Top 3 机会",
+  "report.synthesis.whyWorks": "为何有效：",
+  "report.synthesis.topRisks": "Top 3 风险",
+  "report.synthesis.mitigation": "缓解措施：",
+  "report.synthesis.crossValidated": "交叉验证洞察",
+  "report.synthesis.supportedBy": "依据：",
+  "report.synthesis.nextStep": "推荐下一步",
+  "report.synthesis.importBrief": "LaunchLens 导入简报",
+  "report.synthesis.importBriefSubtitle": "可粘贴到 launchlens-ai 生成 GTM 策略",
+  "report.synthesis.charactersSuffix": "字符",
+  "report.synthesis.copyBrief": "复制简报",
+  "report.synthesis.copiedBrief": "已复制！",
+  "report.synthesis.opportunityLabel.strong": "强机会",
+  "report.synthesis.opportunityLabel.promising": "有前景",
+  "report.synthesis.opportunityLabel.moderate": "一般",
+  "report.synthesis.opportunityLabel.challenging": "有挑战",
+  "report.synthesis.opportunityLabel.highRisk": "高风险",
   "crash.title": "出错了",
   "crash.body": "发生了意外错误。你的工作并未丢失。",
   "crash.tryAgain": "重试",
@@ -1010,6 +1331,113 @@ const ja: Dict = {
   "provider.probe.error": "エラー：{message}",
   "report.degradedBanner.title": "{count} 個のエージェントがデモデータを表示中",
   "report.degradedBanner.body": "一部のエージェントが実際の LLM プロバイダに接続できず、例示用のモックデータにフォールバックしました。API キーとプロバイダ設定を確認し、信頼できる結果を得るために再実行してください。",
+  "report.common.copied": "Copied",
+  "report.common.copySection": "Copy section",
+  "report.common.item": "item",
+  "report.common.items": "items",
+  "report.confidence.high": "High confidence",
+  "report.confidence.low": "Low confidence",
+  "report.confidence.medium": "Medium confidence",
+  "report.marketSizer.title": "Market Sizer",
+  "report.marketSizer.copySection": "Copy market section",
+  "report.marketSizer.marketSizeEstimate": "Market Size Estimate",
+  "report.marketSizer.tamLabel": "Total addressable market",
+  "report.marketSizer.samLabel": "Serviceable addressable market",
+  "report.marketSizer.somLabel": "3-year obtainable market",
+  "report.marketSizer.growthRate": "growth",
+  "report.marketSizer.growthRateValue": "{value}%/yr growth",
+  "report.marketSizer.growthLabel": "growth",
+  "report.marketSizer.trendPrefix": "trend",
+  "report.marketSizer.trendAccelerating": "Accelerating trend",
+  "report.marketSizer.trendStable": "Stable trend",
+  "report.marketSizer.trendDeclining": "Declining trend",
+  "report.marketSizer.keyTrends": "Key Trends",
+  "report.marketSizer.targetSegments": "Target Segments",
+  "report.marketSizer.percentOf": "% of",
+  "report.competitor.title": "Competitor Analyst",
+  "report.competitor.copySection": "Copy competitor section",
+  "report.competitor.competitors": "Competitors",
+  "report.competitor.strengths": "Strengths",
+  "report.competitor.weaknesses": "Weaknesses",
+  "report.competitor.marketShareSuffix": "market share",
+  "report.competitor.visit": "Visit",
+  "report.competitor.matrix": "Competitive Matrix",
+  "report.competitor.gaps": "Market Gaps & Opportunities",
+  "report.competitor.gapOpportunity": "Opportunity:",
+  "report.competitor.positioning.premium": "Premium",
+  "report.competitor.positioning.midMarket": "Mid-market",
+  "report.competitor.positioning.budget": "Budget",
+  "report.competitor.positioning.niche": "Niche",
+  "report.pain.title": "Pain Detective",
+  "report.pain.copySection": "Copy pain section",
+  "report.pain.critical": "Critical",
+  "report.pain.significant": "Significant",
+  "report.pain.minor": "Minor",
+  "report.pain.personas": "Personas",
+  "report.pain.unmetNeeds": "Unmet needs",
+  "report.pain.topPainPoints": "Top Pain Points",
+  "report.pain.affectsPrefix": "Affects:",
+  "report.pain.whyUnmet": "Why unmet:",
+  "report.pain.opportunity": "Opportunity:",
+  "report.pain.userPersonas": "User Personas",
+  "report.pain.goals": "Goals",
+  "report.pain.frustrations": "Frustrations",
+  "report.pain.frequency.common": "Common",
+  "report.pain.frequency.occasional": "Occasional",
+  "report.pain.frequency.rare": "Rare",
+  "report.pricing.title": "Pricing Scout",
+  "report.pricing.copySection": "Copy pricing section",
+  "report.pricing.priceBands": "Price Bands",
+  "report.pricing.typicalMarker": "Typical",
+  "report.pricing.typicalPrefix": "Typical:",
+  "report.pricing.recommendedTiers": "Recommended Pricing Tiers",
+  "report.pricing.perUserMonth": "per user / month",
+  "report.pricing.perUserYear": "per user / year",
+  "report.pricing.oneTime": "one-time",
+  "report.pricing.perUsage": "per usage",
+  "report.pricing.monetizationModels": "Monetization Models",
+  "report.pricing.prevalenceSuffix": "prevalence",
+  "report.pricing.examplesPrefix": "Examples:",
+  "report.pricing.willingnessToPay": "Willingness to Pay by Segment",
+  "report.pricing.perMonth": "/mo",
+  "report.pricing.band.budget": "Budget",
+  "report.pricing.band.midMarket": "Mid-market",
+  "report.pricing.band.premium": "Premium",
+  "report.pricing.band.enterprise": "Enterprise",
+  "report.channel.title": "Channel Scout",
+  "report.channel.copySection": "Copy channel section",
+  "report.channel.recommendedChannels": "Recommended Channels",
+  "report.channel.landscape": "Channel Landscape",
+  "report.channel.effectivenessPrefix": "Effectiveness:",
+  "report.channel.reach": "Reach",
+  "report.channel.costEfficiency": "Cost-efficiency",
+  "report.channel.communityHubs": "Community Hubs",
+  "report.channel.contentTopics": "Content Topics",
+  "report.channel.competitionSuffix": "comp",
+  "report.synthesis.title": "Synthesis",
+  "report.synthesis.copySection": "Copy synthesis section",
+  "report.synthesis.opportunity": "Opportunity",
+  "report.synthesis.risk": "Risk",
+  "report.synthesis.netScore": "Net score",
+  "report.synthesis.netScoreFormula": "Opportunity − Risk",
+  "report.synthesis.basedOnInsights": "Based on cross-agent validation across {count} insights",
+  "report.synthesis.topOpportunities": "Top 3 Opportunities",
+  "report.synthesis.whyWorks": "Why this works:",
+  "report.synthesis.topRisks": "Top 3 Risks",
+  "report.synthesis.mitigation": "Mitigation:",
+  "report.synthesis.crossValidated": "Cross-Validated Insights",
+  "report.synthesis.supportedBy": "Supported by:",
+  "report.synthesis.nextStep": "Recommended Next Step",
+  "report.synthesis.importBrief": "LaunchLens Import Brief",
+  "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.charactersSuffix": "characters",
+  "report.synthesis.copyBrief": "Copy brief",
+  "report.synthesis.copiedBrief": "Copied!",
+  "report.synthesis.opportunityLabel.strong": "Strong opportunity",
+  "report.synthesis.opportunityLabel.promising": "Promising",
+  "report.synthesis.opportunityLabel.moderate": "Moderate",
+  "report.synthesis.opportunityLabel.challenging": "Challenging",
+  "report.synthesis.opportunityLabel.highRisk": "High risk",
   "crash.title": "エラーが発生しました",
   "crash.body": "予期しないエラーが発生しました。作業は失われていません。",
   "crash.tryAgain": "再試行",
@@ -1397,6 +1825,113 @@ const ko: Dict = {
   "provider.probe.error": "오류: {message}",
   "report.degradedBanner.title": "{count}개 에이전트가 데모 데이터 표시 중",
   "report.degradedBanner.body": "일부 에이전트가 실제 LLM 프로바이더에 연결하지 못해 예시용 목업 데이터로 폴백했습니다. API 키와 프로바이더 설정을 확인한 뒤 신뢰할 수 있는 결과를 위해 다시 실행하세요.",
+  "report.common.copied": "Copied",
+  "report.common.copySection": "Copy section",
+  "report.common.item": "item",
+  "report.common.items": "items",
+  "report.confidence.high": "High confidence",
+  "report.confidence.low": "Low confidence",
+  "report.confidence.medium": "Medium confidence",
+  "report.marketSizer.title": "Market Sizer",
+  "report.marketSizer.copySection": "Copy market section",
+  "report.marketSizer.marketSizeEstimate": "Market Size Estimate",
+  "report.marketSizer.tamLabel": "Total addressable market",
+  "report.marketSizer.samLabel": "Serviceable addressable market",
+  "report.marketSizer.somLabel": "3-year obtainable market",
+  "report.marketSizer.growthRate": "growth",
+  "report.marketSizer.growthRateValue": "{value}%/yr growth",
+  "report.marketSizer.growthLabel": "growth",
+  "report.marketSizer.trendPrefix": "trend",
+  "report.marketSizer.trendAccelerating": "Accelerating trend",
+  "report.marketSizer.trendStable": "Stable trend",
+  "report.marketSizer.trendDeclining": "Declining trend",
+  "report.marketSizer.keyTrends": "Key Trends",
+  "report.marketSizer.targetSegments": "Target Segments",
+  "report.marketSizer.percentOf": "% of",
+  "report.competitor.title": "Competitor Analyst",
+  "report.competitor.copySection": "Copy competitor section",
+  "report.competitor.competitors": "Competitors",
+  "report.competitor.strengths": "Strengths",
+  "report.competitor.weaknesses": "Weaknesses",
+  "report.competitor.marketShareSuffix": "market share",
+  "report.competitor.visit": "Visit",
+  "report.competitor.matrix": "Competitive Matrix",
+  "report.competitor.gaps": "Market Gaps & Opportunities",
+  "report.competitor.gapOpportunity": "Opportunity:",
+  "report.competitor.positioning.premium": "Premium",
+  "report.competitor.positioning.midMarket": "Mid-market",
+  "report.competitor.positioning.budget": "Budget",
+  "report.competitor.positioning.niche": "Niche",
+  "report.pain.title": "Pain Detective",
+  "report.pain.copySection": "Copy pain section",
+  "report.pain.critical": "Critical",
+  "report.pain.significant": "Significant",
+  "report.pain.minor": "Minor",
+  "report.pain.personas": "Personas",
+  "report.pain.unmetNeeds": "Unmet needs",
+  "report.pain.topPainPoints": "Top Pain Points",
+  "report.pain.affectsPrefix": "Affects:",
+  "report.pain.whyUnmet": "Why unmet:",
+  "report.pain.opportunity": "Opportunity:",
+  "report.pain.userPersonas": "User Personas",
+  "report.pain.goals": "Goals",
+  "report.pain.frustrations": "Frustrations",
+  "report.pain.frequency.common": "Common",
+  "report.pain.frequency.occasional": "Occasional",
+  "report.pain.frequency.rare": "Rare",
+  "report.pricing.title": "Pricing Scout",
+  "report.pricing.copySection": "Copy pricing section",
+  "report.pricing.priceBands": "Price Bands",
+  "report.pricing.typicalMarker": "Typical",
+  "report.pricing.typicalPrefix": "Typical:",
+  "report.pricing.recommendedTiers": "Recommended Pricing Tiers",
+  "report.pricing.perUserMonth": "per user / month",
+  "report.pricing.perUserYear": "per user / year",
+  "report.pricing.oneTime": "one-time",
+  "report.pricing.perUsage": "per usage",
+  "report.pricing.monetizationModels": "Monetization Models",
+  "report.pricing.prevalenceSuffix": "prevalence",
+  "report.pricing.examplesPrefix": "Examples:",
+  "report.pricing.willingnessToPay": "Willingness to Pay by Segment",
+  "report.pricing.perMonth": "/mo",
+  "report.pricing.band.budget": "Budget",
+  "report.pricing.band.midMarket": "Mid-market",
+  "report.pricing.band.premium": "Premium",
+  "report.pricing.band.enterprise": "Enterprise",
+  "report.channel.title": "Channel Scout",
+  "report.channel.copySection": "Copy channel section",
+  "report.channel.recommendedChannels": "Recommended Channels",
+  "report.channel.landscape": "Channel Landscape",
+  "report.channel.effectivenessPrefix": "Effectiveness:",
+  "report.channel.reach": "Reach",
+  "report.channel.costEfficiency": "Cost-efficiency",
+  "report.channel.communityHubs": "Community Hubs",
+  "report.channel.contentTopics": "Content Topics",
+  "report.channel.competitionSuffix": "comp",
+  "report.synthesis.title": "Synthesis",
+  "report.synthesis.copySection": "Copy synthesis section",
+  "report.synthesis.opportunity": "Opportunity",
+  "report.synthesis.risk": "Risk",
+  "report.synthesis.netScore": "Net score",
+  "report.synthesis.netScoreFormula": "Opportunity − Risk",
+  "report.synthesis.basedOnInsights": "Based on cross-agent validation across {count} insights",
+  "report.synthesis.topOpportunities": "Top 3 Opportunities",
+  "report.synthesis.whyWorks": "Why this works:",
+  "report.synthesis.topRisks": "Top 3 Risks",
+  "report.synthesis.mitigation": "Mitigation:",
+  "report.synthesis.crossValidated": "Cross-Validated Insights",
+  "report.synthesis.supportedBy": "Supported by:",
+  "report.synthesis.nextStep": "Recommended Next Step",
+  "report.synthesis.importBrief": "LaunchLens Import Brief",
+  "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.charactersSuffix": "characters",
+  "report.synthesis.copyBrief": "Copy brief",
+  "report.synthesis.copiedBrief": "Copied!",
+  "report.synthesis.opportunityLabel.strong": "Strong opportunity",
+  "report.synthesis.opportunityLabel.promising": "Promising",
+  "report.synthesis.opportunityLabel.moderate": "Moderate",
+  "report.synthesis.opportunityLabel.challenging": "Challenging",
+  "report.synthesis.opportunityLabel.highRisk": "High risk",
   "search.matchCount": "of",
   "search.next": "다음",
   "search.noMatches": "일치하는 항목 없음",

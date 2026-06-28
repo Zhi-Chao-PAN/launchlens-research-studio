@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-﻿"use client";
+"use client";
 
 import type { ChannelScoutOutput } from "@/lib/schema/research-schema";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 const CATEGORY_STYLE: Record<string, { bg: string; text: string; emoji: string }> = {
   social: { bg: "bg-blue-100", text: "text-blue-700", emoji: "📱" },
@@ -33,6 +34,7 @@ const VOL_STYLE = {
 export function ChannelScoutReport({ output }: { output: any }) {
   const data = output as ChannelScoutOutput;
   const { copied, copy } = useCopyText();
+  const { t } = useLocale();
 
   // Effectiveness dot color
   function effDot(e: string): string {
@@ -42,20 +44,20 @@ export function ChannelScoutReport({ output }: { output: any }) {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Channel Scout"
+        title={t("report.channel.title")}
         description={data.summary}
         icon="🚀"
         count={data.channels.length}
         accent="sky"
         onCopy={() => copy(generateAgentMarkdown("channel-scout", data), "channel-scout")}
         copied={copied === "channel-scout"}
-        copyLabel="Copy section"
+        copyLabel={t("report.channel.copySection")}
       />
 
       {/* Recommended channels with priority bars */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          Recommended Channels <span className="text-xs text-slate-400 font-normal">({data.recommendedChannels.length})</span>
+          {t("report.channel.recommendedChannels")} <span className="text-xs text-slate-400 font-normal">({data.recommendedChannels.length})</span>
         </h3>
         <div className="space-y-2">
           {data.recommendedChannels.map((rec: any, i: number) => {
@@ -81,7 +83,7 @@ export function ChannelScoutReport({ output }: { output: any }) {
 
       {/* All channels with effectiveness dots */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Channel Landscape</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.landscape")}</h3>
         <div className="space-y-2">
           {data.channels.map((c, i) => {
             const cat = CATEGORY_STYLE[c.category] || CATEGORY_STYLE.community;
@@ -95,7 +97,7 @@ export function ChannelScoutReport({ output }: { output: any }) {
                     </span>
                     <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0" title={`Effectiveness: ${c.effectiveness}`}>
+                  <div className="flex items-center gap-1.5 flex-shrink-0" title={t("report.channel.effectivenessPrefix") + " " + c.effectiveness}>
                     <span className={`w-2 h-2 rounded-full ${effDot(c.effectiveness)}`} />
                     <span className="text-[10px] text-slate-500 capitalize">{c.effectiveness}</span>
                   </div>
@@ -107,14 +109,14 @@ export function ChannelScoutReport({ output }: { output: any }) {
                 {/* Reach vs cost visualization */}
                 <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
                   <div>
-                    <p className="text-slate-500 mb-0.5">Reach</p>
+                    <p className="text-slate-500 mb-0.5">{t("report.channel.reach")}</p>
                     <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-400" style={{ width: `${((REACH_RANK[c.reach] || 3) / 5) * 100}%` }} />
                     </div>
                     <p className="text-slate-600 capitalize mt-0.5">{c.reach}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-0.5">Cost-efficiency</p>
+                    <p className="text-slate-500 mb-0.5">{t("report.channel.costEfficiency")}</p>
                     <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
                       <div className="h-full bg-emerald-400" style={{ width: `${((COST_RANK[c.cost] || 3) / 5) * 100}%` }} />
                     </div>
@@ -130,7 +132,7 @@ export function ChannelScoutReport({ output }: { output: any }) {
       {/* Community Hubs */}
       {data.communityHubs && data.communityHubs.length > 0 && (
         <div>
-          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Community Hubs</h3>
+          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.communityHubs")}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {data.communityHubs.map((h: any, i: number) => (
               <a
@@ -151,18 +153,18 @@ export function ChannelScoutReport({ output }: { output: any }) {
 
       {/* Content topics */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Content Topics</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.contentTopics")}</h3>
         <div className="space-y-1.5">
-          {data.contentTopics.map((t: any, i: number) => {
-            const vol = VOL_STYLE[t.searchVolume as keyof typeof VOL_STYLE] || VOL_STYLE.medium;
+          {data.contentTopics.map((topic: any, i: number) => {
+            const vol = VOL_STYLE[topic.searchVolume as keyof typeof VOL_STYLE] || VOL_STYLE.medium;
             return (
               <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-xs">
-                <span className="text-slate-800 flex-1 truncate">{t.topic}</span>
+                <span className="text-slate-800 flex-1 truncate">{topic.topic}</span>
                 <span className={`px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5 ${vol.bg} ${vol.text}`}>
                   <span aria-hidden>{vol.emoji}</span>
-                  <span className="capitalize">{t.searchVolume}</span>
+                  <span className="capitalize">{topic.searchVolume}</span>
                 </span>
-                <span className="text-slate-500 font-mono w-20 text-right">{t.competition} comp</span>
+                <span className="text-slate-500 font-mono w-20 text-right">{topic.competition} {t("report.channel.competitionSuffix")}</span>
               </div>
             );
           })}

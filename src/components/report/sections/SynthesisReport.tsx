@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import type { SynthesisOutput } from "@/lib/schema/research-schema";
@@ -8,23 +8,25 @@ import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { Donut } from "../primitives/Meter";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
-function opportunityLabel(score: number): { label: string; emoji: string; color: string } {
-  if (score >= 75) return { label: "Strong opportunity", emoji: "🚀", color: "text-emerald-700" };
-  if (score >= 55) return { label: "Promising", emoji: "📈", color: "text-emerald-600" };
-  if (score >= 40) return { label: "Moderate", emoji: "⚖️", color: "text-amber-600" };
-  if (score >= 25) return { label: "Challenging", emoji: "⚠️", color: "text-orange-600" };
-  return { label: "High risk", emoji: "🛑", color: "text-rose-600" };
+function opportunityMeta(score: number, t: (k: string) => string): { label: string; emoji: string; color: string } {
+  if (score >= 75) return { label: t("report.synthesis.opportunityLabel.strong"), emoji: "🚀", color: "text-emerald-700" };
+  if (score >= 55) return { label: t("report.synthesis.opportunityLabel.promising"), emoji: "📈", color: "text-emerald-600" };
+  if (score >= 40) return { label: t("report.synthesis.opportunityLabel.moderate"), emoji: "⚖️", color: "text-amber-600" };
+  if (score >= 25) return { label: t("report.synthesis.opportunityLabel.challenging"), emoji: "⚠️", color: "text-orange-600" };
+  return { label: t("report.synthesis.opportunityLabel.highRisk"), emoji: "🛑", color: "text-rose-600" };
 }
 
 export function SynthesisReport({ output }: { output: any }) {
   const data = output as SynthesisOutput;
   const { copied, copy } = useCopyText();
+  const { t } = useLocale();
   const [briefExpanded, setBriefExpanded] = useState(false);
 
   const opp = data.opportunityScore;
   const risk = data.riskScore;
-  const oppMeta = opportunityLabel(opp);
+  const oppMeta = opportunityMeta(opp, t);
 
   // Color the opportunity score based on value
   const oppColor = opp >= 70 ? "#10b981" : opp >= 50 ? "#f59e0b" : "#ef4444";
@@ -33,25 +35,25 @@ export function SynthesisReport({ output }: { output: any }) {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Synthesis"
+        title={t("report.synthesis.title")}
         description={data.execSummary}
         icon="🧠"
         accent="violet"
         onCopy={() => copy(generateAgentMarkdown("synthesis", data), "synthesis")}
         copied={copied === "synthesis"}
-        copyLabel="Copy section"
+        copyLabel={t("report.synthesis.copySection")}
       />
 
       {/* Scores with rich context */}
       <div className="bg-gradient-to-br from-violet-50 via-indigo-50 to-purple-50 rounded-2xl p-6 border border-violet-100">
         <div className="flex items-center justify-around">
-          <Donut value={opp} label="Opportunity" color={oppColor} size={110} />
+          <Donut value={opp} label={t("report.synthesis.opportunity")} color={oppColor} size={110} />
           <div className="text-center">
             <p className="text-3xl font-bold text-slate-800">{opp - risk > 0 ? "+" : ""}{opp - risk}</p>
-            <p className="text-xs text-slate-500 mt-1">Net score</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Opportunity − Risk</p>
+            <p className="text-xs text-slate-500 mt-1">{t("report.synthesis.netScore")}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">{t("report.synthesis.netScoreFormula")}</p>
           </div>
-          <Donut value={risk} label="Risk" color={riskColor} size={110} />
+          <Donut value={risk} label={t("report.synthesis.risk")} color={riskColor} size={110} />
         </div>
         <div className="mt-4 text-center">
           <p className={`text-sm font-semibold ${oppMeta.color} flex items-center justify-center gap-1.5`}>
@@ -59,7 +61,7 @@ export function SynthesisReport({ output }: { output: any }) {
             <span>{oppMeta.label}</span>
           </p>
           <p className="text-xs text-slate-500 mt-1">
-            Based on cross-agent validation across {data.keyInsights.length} insights
+            {t("report.synthesis.basedOnInsights", { count: data.keyInsights.length })}
           </p>
         </div>
       </div>
@@ -67,7 +69,7 @@ export function SynthesisReport({ output }: { output: any }) {
       {/* Top opportunities */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-emerald-500">📈</span> Top 3 Opportunities
+          <span className="text-emerald-500">📈</span> {t("report.synthesis.topOpportunities")}
         </h3>
         <div className="space-y-2">
           {data.topThreeOpportunities.map((opp, i) => (
@@ -81,7 +83,7 @@ export function SynthesisReport({ output }: { output: any }) {
                   <p className="text-sm text-emerald-800 mt-1">{opp.description}</p>
                   <div className="mt-2 p-2 bg-white/60 rounded-lg">
                     <p className="text-xs text-emerald-700">
-                      <span className="font-semibold">Why this works:</span> {opp.rationale}
+                      <span className="font-semibold">{t("report.synthesis.whyWorks")}</span> {opp.rationale}
                     </p>
                   </div>
                 </div>
@@ -94,7 +96,7 @@ export function SynthesisReport({ output }: { output: any }) {
       {/* Top risks */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-rose-500">⚠️</span> Top 3 Risks
+          <span className="text-rose-500">⚠️</span> {t("report.synthesis.topRisks")}
         </h3>
         <div className="space-y-2">
           {data.topThreeRisks.map((r, i) => (
@@ -108,7 +110,7 @@ export function SynthesisReport({ output }: { output: any }) {
                   <p className="text-sm text-rose-800 mt-1">{r.description}</p>
                   <div className="mt-2 p-2 bg-white/60 rounded-lg">
                     <p className="text-xs text-emerald-700">
-                      <span className="font-semibold">Mitigation:</span> {r.mitigation}
+                      <span className="font-semibold">{t("report.synthesis.mitigation")}</span> {r.mitigation}
                     </p>
                   </div>
                 </div>
@@ -121,7 +123,7 @@ export function SynthesisReport({ output }: { output: any }) {
       {/* Key insights with cross-agent validation */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-indigo-500">🔬</span> Cross-Validated Insights
+          <span className="text-indigo-500">🔬</span> {t("report.synthesis.crossValidated")}
           <span className="text-xs text-slate-400 font-normal">({data.keyInsights.length})</span>
         </h3>
         <div className="space-y-2">
@@ -132,7 +134,7 @@ export function SynthesisReport({ output }: { output: any }) {
                 <ConfidenceBadge level={ins.confidence} size="xs" />
               </div>
               <div className="flex items-center gap-1 flex-wrap">
-                <span className="text-[10px] text-slate-500">Supported by:</span>
+                <span className="text-[10px] text-slate-500">{t("report.synthesis.supportedBy")}</span>
                 {ins.supportingAgents.map((a) => (
                   <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">
                     {a}
@@ -148,7 +150,7 @@ export function SynthesisReport({ output }: { output: any }) {
       <div className="bg-gradient-to-r from-indigo-500 to-violet-600 rounded-2xl p-6 text-white">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-2xl" aria-hidden>🎯</span>
-          <h3 className="text-lg font-bold">Recommended Next Step</h3>
+          <h3 className="text-lg font-bold">{t("report.synthesis.nextStep")}</h3>
         </div>
         <p className="text-sm text-indigo-100 leading-relaxed">{data.recommendedNextStep}</p>
       </div>
@@ -162,10 +164,10 @@ export function SynthesisReport({ output }: { output: any }) {
           <div>
             <h3 className="font-semibold text-slate-800 flex items-center gap-2">
               <span aria-hidden>📋</span>
-              LaunchLens Import Brief
+              {t("report.synthesis.importBrief")}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ready to paste into launchlens-ai for GTM strategy generation
+              {t("report.synthesis.importBriefSubtitle")}
             </p>
           </div>
           <span className={`text-slate-400 transition-transform ${briefExpanded ? "rotate-180" : ""}`} aria-hidden>
@@ -179,14 +181,14 @@ export function SynthesisReport({ output }: { output: any }) {
             </pre>
             <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <p className="text-xs text-slate-500">
-                {data.launchlensBrief.length.toLocaleString()} characters
+                {data.launchlensBrief.length.toLocaleString()} {t("report.synthesis.charactersSuffix")}
               </p>
               <button
                 onClick={() => copy(data.launchlensBrief, "brief-content")}
                 className="text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5"
               >
                 <span aria-hidden>{copied === "brief-content" ? "✅" : "📋"}</span>
-                <span>{copied === "brief-content" ? "Copied!" : "Copy brief"}</span>
+                <span>{copied === "brief-content" ? t("report.synthesis.copiedBrief") : t("report.synthesis.copyBrief")}</span>
               </button>
             </div>
           </div>

@@ -1,4 +1,6 @@
-﻿"use client";
+"use client";
+
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface SectionHeaderProps {
   title: string;
@@ -35,10 +37,16 @@ export function SectionHeader({
   icon,
   count,
   onCopy,
-  copyLabel = "Copy section",
+  copyLabel,
   copied = false,
   accent = "indigo",
 }: SectionHeaderProps) {
+  const { t } = useLocale();
+  // Default copy label from the i18n dictionary; callers can still override
+  // with a section-specific key by passing `copyLabel` directly. We pick
+  // the common "Copy section" so the report copy buttons localize by
+  // default without every section having to thread a t() call in.
+  const resolvedCopyLabel = copyLabel ?? t("report.common.copySection");
   return (
     <div className={`bg-gradient-to-r ${ACCENT_SOFT[accent]} rounded-xl p-5 relative`}>
       <div className="flex items-start justify-between gap-3">
@@ -56,7 +64,7 @@ export function SectionHeader({
               <span>{title}</span>
               {typeof count === "number" && (
                 <span className="text-[10px] font-mono uppercase tracking-wide text-slate-500 bg-white/70 px-2 py-0.5 rounded-full">
-                  {count} {count === 1 ? "item" : "items"}
+                  {count} {count === 1 ? t("report.common.item") : t("report.common.items")}
                 </span>
               )}
             </h3>
@@ -67,10 +75,10 @@ export function SectionHeader({
           <button
             onClick={onCopy}
             className="flex-shrink-0 text-[10px] font-medium text-slate-600 hover:text-slate-800 bg-white/70 hover:bg-white px-2 py-1 rounded transition-colors flex items-center gap-1"
-            title={copyLabel}
+            title={resolvedCopyLabel}
           >
             <span aria-hidden>{copied ? "✅" : "📋"}</span>
-            <span className="hidden sm:inline">{copied ? "Copied" : copyLabel}</span>
+            <span className="hidden sm:inline">{copied ? t("report.common.copied") : resolvedCopyLabel}</span>
           </button>
         )}
       </div>

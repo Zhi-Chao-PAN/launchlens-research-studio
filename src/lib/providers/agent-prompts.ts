@@ -13,6 +13,7 @@
 // in sync. Pure functions — safe to unit-test without any network.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
+import { outputLanguageLabel, type OutputLanguage } from "./query-language";
 
 /**
  * A per-agent prompt spec: the role coaching the model should adopt, and a
@@ -255,9 +256,20 @@ const AGENT_SPECS: Record<AgentId, AgentPromptSpec> = {
   },
 };
 
-/** Build the system prompt for an agent: role + schema + coaching. */
-export function buildSystemPrompt(agentId: AgentId): string {
+/**
+ * Build the system prompt for an agent: role + schema + coaching.
+ *
+ * The `outputLanguage` parameter tells the model to produce the human-readable
+ * string fields (summary, names, taglines, descriptions, snippets) in the
+ * user's language. The JSON shape, enum values, and citation format stay in
+ * English so the schema validator can still parse the response. This avoids
+ * the common i18n mistake of also localizing the schema (e.g. enum string
+ * "high" → "高" would break the schema validator and require per-language
+ * output validators).
+ */
+export function buildSystemPrompt(agentId: AgentId, outputLanguage: OutputLanguage = "en"): string {
   const spec = AGENT_SPECS[agentId];
+  const lang = outputLanguageLabel(outputLanguage);
   return [
     spec.role,
     "",
@@ -273,6 +285,8 @@ export function buildSystemPrompt(agentId: AgentId): string {
     "- When you are unsure of a real source, prefer an honest confidence level of \"low\" over inventing a URL. A citation with reasoning in the snippet is acceptable; a fabricated URL is not.",
     "- R215: if the user prompt contains a 'Verified web sources' list, prefer citing those URLs over inventing your own. The engine filters out citations whose URLs were not retrieved, so invented URLs are silently dropped.",
     "- Output ONLY the JSON object.",
+    "",
+    "R243: language for human-readable string fields (summary, names, taglines, descriptions, snippets, trend text, evidence text) — write them in " + lang + ". Keep the JSON keys, schema enum values (\"high\"/\"medium\"/\"low\", \"accelerating\"/\"stable\"/\"declining\", \"premium\"/\"mid-market\"/\"budget\"/\"niche\", \"positive\"/\"negative\"/\"neutral\"), the agent identifier, currency code (\"USD\"), and citation URLs in English exactly as shown in the schema. Numbers, percentages, and unit suffixes stay in their canonical form.",
   ].join("\n");
 }
 
@@ -299,6 +313,7 @@ export function buildUserPrompt(agentId: AgentId, ctx: {
   query: string;
   keywords: string[];
   upstream?: AgentOutput[];
+  outputLanguage?: OutputLanguage;
   retrievedSources?: Array<{
     title: string;
     url: string;

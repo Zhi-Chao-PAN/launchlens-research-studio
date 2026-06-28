@@ -17,6 +17,7 @@ import { normalizeAgentOutput } from "@/lib/providers/output-normalize";
 import { retryWithBackoff } from "@/lib/utils/retry";
 import { readSseWithReconnect, parseAnthropicSse } from "@/lib/utils/sse-reconnect";
 import { buildSystemPrompt, buildUserPrompt } from "@/lib/providers/agent-prompts";
+import { detectQueryLanguage } from "@/lib/providers/query-language";
 import { extractJsonObject } from "@/lib/providers/json-extract";
 
 export interface AnthropicProviderConfig {
@@ -48,6 +49,11 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
     supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       const wantsStream = typeof ctx.onProgress === "function";
+      // R243: same query-language detection as openai-provider — pass the
+      // detected language to buildSystemPrompt / buildUserPrompt so the model
+      // produces human-readable strings in the user's language while keeping
+      // the schema keys, enum values, and URLs in English.
+      const outputLanguage = detectQueryLanguage(ctx.query);
       // Classify a thrown error into a fallback reason so the engine can
       // surface "demo data" with an accurate tooltip. Without this the
       // catch below silently returned mock and the user had no idea the
@@ -74,9 +80,9 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
                 max_tokens: 2048,
                 temperature: 0.4,
                 stream: wantsStream,
-                system: buildSystemPrompt(agentId),
+                system: buildSystemPrompt(agentId, outputLanguage),
                 messages: [
-                  { role: "user", content: buildUserPrompt(agentId, ctx) },
+                  { role: "user", content: buildUserPrompt(agentId, { query: ctx.query, keywords: ctx.keywords, upstream: ctx.upstream, outputLanguage, retrievedSources: undefined }) },
                 ],
               }),
             });
