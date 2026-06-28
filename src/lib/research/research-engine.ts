@@ -13,6 +13,7 @@ import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordF
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { saveResearchRun } from "@/lib/research/storage";
 import { sleep } from "@/lib/utils/sleep";
+import { createConcurrencyLimiter } from "@/lib/utils/concurrency-limiter";
 import {
   storeSession,
   fetchSession,
@@ -33,6 +34,32 @@ const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const SSE_IDLE_GRACE_MS = 12000;
 const DEFAULT_AGENT_TIMEOUT_MS = 120_000;
 const MIN_AGENT_TIMEOUT_MS = 1000;
+
+// R241: cap how many real-provider (LLM) calls may be in flight at once.
+// The 5 research agents run concurrently via Promise.allSettled, and each
+// issues a *streaming* request to the upstream model. Reasoning models
+// (MiniMax-M3, DeepSeek-R1, o1-style) hold the connection open for a long
+// time before emitting the first token (they "think" first). Opening all 5
+// streams in the same tick stresses the provider gateway: connections stall,
+// drop mid-stream, or never close cleanly, which surfaces as flaky
+// `network_error` degradations on whichever agents lose the race (typically
+// the first 3 to fire). Serializing through a small concurrency window
+// spreads the connections across a few seconds instead of one thundering
+// herd, which is enough for the gateway to keep every stream healthy.
+//
+// Default 3: lets 3 agents stream while 2 wait, so a 5-agent session still
+// finishes in roughly 2 waves rather than 5 serial round-trips. Tunable via
+// LAUNCHLENS_PROVIDER_CONCURRENCY (1 = fully serial, safest for flaky
+// upstreams). The mock provider bypasses the limiter so unit tests that
+// force mock aren't serialized.
+const PROVIDER_CONCURRENCY = (() => {
+  const raw = process.env.LAUNCHLENS_PROVIDER_CONCURRENCY;
+  if (!raw) return 3;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 3;
+})();
+const providerLimiter = createConcurrencyLimiter(PROVIDER_CONCURRENCY);
+
 
 // R217: cap how long a terminal (completed/cancelled/errored) session
 // stays in the in-memory map. Sessions hold AbortController closures
@@ -532,7 +559,14 @@ async function runAgent(
         // timeout-induced abort (do degrade) later on.
         const acEarly = sessionAborts.get(session.id);
         const userCancelledBeforeCall = !!(acEarly && acEarly.signal.aborted);
-        try {
+        const useLimiter = !selected.isMock;
+        // R241: the actual generate() call, factored out so it can be run
+        // either directly (mock) or through the concurrency limiter (real
+        // provider). The wall-clock timeout is armed INSIDE the limiter
+        // closure so an agent queued behind siblings doesn't burn its 120s
+        // budget merely waiting for a slot — the budget covers the LLM call
+        // itself, not the queue wait.
+        const runGenerate = async () => {
           const ac = sessionAborts.get(session.id);
           // Combine the per-session cancel signal with a per-agent
           // wall-clock budget. Either side aborts the LLM call. The
@@ -548,7 +582,12 @@ async function runAgent(
             ac && ac.signal
               ? AbortSignal.any([ac.signal, timeoutController.signal])
               : timeoutController.signal;
-          output = await provider.generate(agentId, {
+          // A user cancel that landed while we were queued for a slot should
+          // abort here rather than fire a pointless (and billable) call.
+          if (ac?.signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
+          return provider.generate(agentId, {
             query: session.query,
             keywords: session.keywords,
             upstream: allOutputs,
@@ -588,6 +627,14 @@ async function runAgent(
               telemetryErr = "provider fallback: " + reason;
             },
           });
+        };
+        try {
+          // Route real-provider calls through the concurrency limiter so at
+          // most PROVIDER_CONCURRENCY streams are open at once; mock calls
+          // run directly (tests that force mock must not be serialized).
+          output = useLimiter
+            ? await providerLimiter.run(runGenerate)
+            : await runGenerate();
         } catch (e) {
           telemetryOk = false;
           telemetryErr = e instanceof Error ? e.message : String(e);
