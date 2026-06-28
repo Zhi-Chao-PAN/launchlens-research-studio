@@ -346,7 +346,7 @@ describe("per-agent wall-clock timeout (R216)", () => {
   it("falls back to a safe default when env var is invalid", async () => {
     const { getAgentTimeoutMs } = await import("@/lib/research/research-engine");
     process.env.LAUNCHLENS_AGENT_TIMEOUT_MS = "not-a-number";
-    expect(getAgentTimeoutMs()).toBe(150_000);
+    expect(getAgentTimeoutMs()).toBe(180_000);
   });
 });
 

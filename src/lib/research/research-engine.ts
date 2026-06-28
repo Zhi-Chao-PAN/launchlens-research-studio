@@ -32,7 +32,7 @@ const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
 const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const SSE_IDLE_GRACE_MS = 12000;
-const DEFAULT_AGENT_TIMEOUT_MS = 150_000;
+const DEFAULT_AGENT_TIMEOUT_MS = 180_000;
 const MIN_AGENT_TIMEOUT_MS = 1000;
 
 // R241: cap how many real-provider (LLM) calls may be in flight at once.
@@ -44,22 +44,19 @@ const MIN_AGENT_TIMEOUT_MS = 1000;
 // drop mid-stream, or never close cleanly, which surfaces as flaky
 // `network_error` degradations on whichever agents lose the race.
 //
-// R244 default 2: earlier default 1 (fully serial) was too slow (≈ 5× the
-// slowest single agent, near Vercel's 300s ceiling); default 3 was too
-// aggressive and degraded 2 of 5 agents under load. Two-in-flight is the
-// observed sweet spot — the gateway can handle 2 reasoning-model streams
-// without dropping connections, and the "lightest first" dispatch order
-// (R244) finishes the two small-output agents (pricing-scout, channel-scout)
-// in the first wave, so the heavy agents (market-sizer) get the leftover
-// capacity as soon as one of them completes. Tunable via
-// LAUNCHLENS_PROVIDER_CONCURRENCY (1 = fully serial; raise to 3-5 only
-// after the gateway is confirmed stable). The mock provider bypasses the
-// limiter so unit tests that force mock aren't serialized.
+// R245 default 3: before the streaming adapter fix, every logical agent opened
+// two upstream requests, so a concurrency of 3 overloaded the gateway. The
+// adapter now owns one request per agent and retries only after a failure.
+// Three logical streams keep the five research agents plus synthesis inside
+// Vercel's 300s request ceiling while remaining below the old effective load
+// of four upstream streams at logical concurrency 2. Tunable via
+// LAUNCHLENS_PROVIDER_CONCURRENCY. The mock provider bypasses the limiter so
+// unit tests that force mock aren't serialized.
 const PROVIDER_CONCURRENCY = (() => {
   const raw = process.env.LAUNCHLENS_PROVIDER_CONCURRENCY;
-  if (!raw) return 2;
+  if (!raw) return 3;
   const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 2;
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 3;
 })();
 const providerLimiter = createConcurrencyLimiter(PROVIDER_CONCURRENCY);
 
@@ -79,7 +76,7 @@ const SESSION_RETENTION_MS = (() => {
 // R216: per-agent wall-clock timeout. A real LLM call or retrieval query
 // can hang on a flaky network or a slow upstream; without a budget the
 // session sits in "running" forever and only an explicit user-cancel
-// recovers it. Default 150s, env-overridable for ops. Production evidence
+// recovers it. Default 180s, env-overridable for ops. Production evidence
 // from the reasoning-model gateway showed the competitor agent can need
 // slightly more than 120s while the full two-at-a-time pipeline still fits
 // inside the 300s serverless request budget.
@@ -581,7 +578,7 @@ async function runAgent(
         // R241: the actual generate() call, factored out so it can be run
         // either directly (mock) or through the concurrency limiter (real
         // provider). The wall-clock timeout is armed INSIDE the limiter
-        // closure so an agent queued behind siblings doesn't burn its 150s
+        // closure so an agent queued behind siblings doesn't burn its 180s
         // budget merely waiting for a slot — the budget covers the LLM call
         // itself, not the queue wait.
         const runGenerate = async () => {
@@ -854,13 +851,11 @@ export async function runResearchSession(
   // status.
   //
   // R244: dispatch order is "lightest first" so the heaviest agent
-  // (market-sizer) runs last. The first wave under PROVIDER_CONCURRENCY=2 is
-  // (pricing-scout + channel-scout) — the small-output pair, so channel-scout
-  // finishes quickly without waiting behind three earlier agents. The
-  // remaining three agents form the second wave, then the slowest single
-  // agent gates total runtime. Combined with the limit of 2 in flight this
-  // keeps every agent from holding an open reasoning-model stream at the
-  // same instant while still being roughly 2.5x faster than fully serial.
+  // (market-sizer) runs last. The first wave under PROVIDER_CONCURRENCY=3 is
+  // (pricing-scout + channel-scout + pain-detective). As the two light agents
+  // finish, competitor and market immediately use their slots while the
+  // slower pain analysis continues. This reduces the critical path without
+  // opening more upstream streams than the gateway has already handled.
   const researchAgentIds: AgentId[] = [
     "pricing-scout",
     "channel-scout",
