@@ -39,6 +39,14 @@ describe("agent-prompts", () => {
       expect(prompt).toMatch(/fabricated URL/i);
     });
 
+    it("requires validator-compatible top-level citation snippets", () => {
+      const prompt = buildSystemPrompt("pricing-scout");
+      expect(prompt).toMatch(/top-level citations array/i);
+      expect(prompt).toMatch(/at least 2 citation objects/i);
+      expect(prompt).toMatch(/non-empty snippet/i);
+      expect(prompt).toMatch(/nested citation id arrays/i);
+    });
+
     it("covers all six agents", () => {
       const agents = [
         "market-sizer",

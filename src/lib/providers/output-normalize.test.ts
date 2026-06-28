@@ -245,7 +245,7 @@ describe("normalizeAgentOutput (R210 defensive backstop)", () => {
         agent: "market-sizer",
         citations: [{}],
       })) as { citations: { id: string; title: string; snippet: string; accessedAt: string; confidence: string }[] };
-      expect(out.citations[0].id).toBe("c");
+      expect(out.citations[0].id).toBe("c1");
       expect(out.citations[0].title).toBe("Untitled source");
       expect(out.citations[0].snippet).toBe("");
       expect(typeof out.citations[0].accessedAt).toBe("string");
@@ -289,6 +289,49 @@ describe("normalizeAgentOutput (R210 defensive backstop)", () => {
  * growthTrend, and rec.period surfaced from schema into normalizer.
  */
 describe("normalizeAgentOutput (R214 string-array + enum + period)", () => {
+  it("normalizes citation strings into validator-compatible evidence snippets", () => {
+    const out = asAny(normalizeAgentOutput("pain-detective", {
+      agent: "pain-detective",
+      summary: "ok",
+      painPoints: [],
+      citations: ["G2 reviews mention manual review delays and unclear admissions requirements"],
+    })) as { citations: Array<{ id: string; title: string; snippet: string; confidence: string; agent: string }> };
+
+    expect(out.citations).toEqual([
+      expect.objectContaining({
+        id: "c1",
+        title: "G2 reviews mention manual review delays and unclear admissions requirements",
+        snippet: "G2 reviews mention manual review delays and unclear admissions requirements",
+        confidence: "low",
+        agent: "pain-detective",
+      }),
+    ]);
+  });
+
+  it("uses alternate citation evidence fields as non-empty snippets", () => {
+    const out = asAny(normalizeAgentOutput("pricing-scout", {
+      agent: "pricing-scout",
+      summary: "ok",
+      priceBands: [],
+      citations: [
+        {
+          title: "Competitor pricing page",
+          url: "https://example.com/pricing",
+          evidence: "Published pricing tiers show a $49-$199 monthly range.",
+        },
+      ],
+    })) as { citations: Array<{ id: string; title: string; snippet: string; confidence: string; agent: string; url?: string }> };
+
+    expect(out.citations[0]).toEqual(expect.objectContaining({
+      id: "c1",
+      title: "Competitor pricing page",
+      url: "https://example.com/pricing",
+      snippet: "Published pricing tiers show a $49-$199 monthly range.",
+      confidence: "low",
+      agent: "pricing-scout",
+    }));
+  });
+
   it("coerces non-string elements in competitor.strengths to strings", () => {
     const out = asAny(normalizeAgentOutput("competitor-analyst", {
       agent: "competitor-analyst",

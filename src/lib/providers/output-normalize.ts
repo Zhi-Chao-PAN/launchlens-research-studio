@@ -27,6 +27,19 @@ function asString(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return "";
+}
+
+function truncateForTitle(value: string): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= 120) return clean;
+  return clean.slice(0, 117).trimEnd() + "...";
+}
+
 function asNumber(v: unknown, fallback = 0): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
@@ -54,17 +67,43 @@ function coerceConfidence(v: unknown): ConfidenceLevel {
   return VALID_CONFIDENCE.includes(v as ConfidenceLevel) ? (v as ConfidenceLevel) : "low";
 }
 
-function normalizeCitation(c: unknown) {
+function normalizeCitation(c: unknown, index = 0, agentId?: AgentId) {
+  if (typeof c === "string") {
+    const evidence = c.trim();
+    return {
+      id: "c" + (index + 1),
+      title: evidence ? truncateForTitle(evidence) : "Untitled source",
+      snippet: evidence,
+      accessedAt: new Date().toISOString(),
+      confidence: "low" as const,
+      agent: agentId ?? "",
+    };
+  }
   const o = asObject<Record<string, unknown>>(c);
+  const snippet = firstNonEmptyString(
+    o.snippet,
+    o.evidence,
+    o.excerpt,
+    o.quote,
+    o.text,
+    o.description,
+    o.reasoning,
+    o.source,
+  );
+  const title = firstNonEmptyString(o.title, o.name, o.source, snippet);
   return {
-    id: asString(o.id, "c"),
-    title: asString(o.title, "Untitled source"),
-    snippet: asString(o.snippet, ""),
+    id: asString(o.id, "c" + (index + 1)),
+    title: title ? truncateForTitle(title) : "Untitled source",
+    snippet,
     accessedAt: asString(o.accessedAt, new Date().toISOString()),
     confidence: coerceConfidence(o.confidence),
-    agent: asString(o.agent, ""),
+    agent: asString(o.agent, agentId ?? ""),
     ...(typeof o.url === "string" && o.url ? { url: o.url } : {}),
   };
+}
+
+function normalizeCitations(v: unknown, agentId: AgentId) {
+  return asArray(v).map((c, index) => normalizeCitation(c, index, agentId));
 }
 
 /** Normalize the output of any agent. Always returns a valid object the
@@ -129,7 +168,7 @@ function normalizeMarketSizer(o: Record<string, unknown>) {
         description: asString(x.description),
       };
     }),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "market-sizer"),
   };
 }
 
@@ -185,7 +224,7 @@ function normalizeCompetitorAnalyst(o: Record<string, unknown>) {
           difficulty === "low" || difficulty === "medium" || difficulty === "high" ? difficulty : "medium",
       };
     }),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "competitor-analyst"),
   };
 }
 
@@ -228,7 +267,7 @@ function normalizePainDetective(o: Record<string, unknown>) {
         frustrations: asStringArray(x.frustrations),
       };
     }),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "pain-detective"),
   };
 }
 
@@ -301,7 +340,7 @@ function normalizePricingScout(o: Record<string, unknown>) {
             : "monthly",
       };
     }),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "pricing-scout"),
   };
 }
 
@@ -368,7 +407,7 @@ function normalizeChannelScout(o: Record<string, unknown>) {
         why: asString(x.why),
       };
     }),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "channel-scout"),
   };
 }
 
@@ -409,6 +448,6 @@ function normalizeSynthesis(o: Record<string, unknown>) {
     }),
     recommendedNextStep: asString(o.recommendedNextStep),
     launchlensBrief: asString(o.launchlensBrief),
-    citations: asArray(o.citations).map(normalizeCitation),
+    citations: normalizeCitations(o.citations, "synthesis"),
   };
 }

@@ -282,6 +282,7 @@ export function buildSystemPrompt(agentId: AgentId, outputLanguage: OutputLangua
     "Rules:",
     ...spec.coaching.map((c) => "- " + c),
     "- Use the current date for accessedAt (ISO 8601).",
+    "- The top-level citations array MUST contain at least 2 citation objects. Every citation object MUST include id, title, a non-empty snippet, accessedAt, confidence, and the exact agent id. Nested citation id arrays must reference ids from the top-level citations array.",
     "- When you are unsure of a real source, prefer an honest confidence level of \"low\" over inventing a URL. A citation with reasoning in the snippet is acceptable; a fabricated URL is not.",
     "- R215: if the user prompt contains a 'Verified web sources' list, prefer citing those URLs over inventing your own. The engine filters out citations whose URLs were not retrieved, so invented URLs are silently dropped.",
     "- Output ONLY the JSON object.",
