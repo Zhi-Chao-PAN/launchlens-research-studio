@@ -139,7 +139,7 @@ describe("toLaunchLensBrief — field mapping", () => {
 
   it("maps market from TAM/growth + competitors + gaps", () => {
     const brief = toLaunchLensBrief(buildSession());
-    expect(brief.input.market).toContain("$5,000,000,000");
+    expect(brief.input.market).toContain("$5B");
     expect(brief.input.market).toContain("18%/yr");
     expect(brief.input.market).toContain("AcmeCorp");
     expect(brief.input.market).toContain("No mobile-first onboarding");
@@ -167,6 +167,166 @@ describe("toLaunchLensBrief — field mapping", () => {
 });
 
 describe("toLaunchLensBrief — truncation", () => {
+  it("compresses rich agent outputs before falling back to visible truncation", () => {
+    const rich = buildSession({
+      query:
+        "AI portfolio automation workspace for computer science students preparing international AI master applications and product-engineering careers",
+      agents: {
+        ...buildSession().agents,
+        "market-sizer": {
+          id: "market-sizer",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["market-sizer"] as any),
+            marketSize: {
+              tam: 1_500_000_000,
+              sam: 180_000_000,
+              som: 24_000_000,
+              currency: "USD",
+              growthRate: 28.5,
+              growthTrend: "accelerating",
+              unit: "revenue",
+              sources: [],
+              confidence: "medium",
+            },
+            targetSegments: [
+              {
+                name: "International AI master's applicants",
+                size: 600000,
+                description:
+                  "CS students applying to selective AI programs across the US, UK, Europe, Singapore, and Australia with many parallel application artifacts",
+              },
+              {
+                name: "Product-engineering career switchers",
+                size: 240000,
+                description:
+                  "Builders translating ML projects into product stories for AI product engineer or full-stack agent architect roles",
+              },
+            ],
+          },
+        },
+        "competitor-analyst": {
+          id: "competitor-analyst",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["competitor-analyst"] as any),
+            competitors: [
+              { ...(fullOutputs()["competitor-analyst"] as any).competitors[0], name: "GitHub" },
+              { ...(fullOutputs()["competitor-analyst"] as any).competitors[1], name: "Replit" },
+              { ...(fullOutputs()["competitor-analyst"] as any).competitors[1], id: "c3", name: "Portfolium" },
+            ],
+            gaps: [
+              {
+                gap:
+                  "No product unifies GitHub-grade project evidence, program-specific master's application positioning, and product-engineering narrative translation",
+                opportunity: "Own the GitHub-to-application workflow",
+                difficulty: "medium",
+              },
+            ],
+          },
+        },
+        "pain-detective": {
+          id: "pain-detective",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["pain-detective"] as any),
+            unmetNeeds: [
+              {
+                need: "Translate scattered ML artifacts into a coherent AI product-engineering narrative",
+                whyUnmet: "Generic portfolio tools do not understand admissions and product framing",
+                opportunity: "Narrative automation",
+              },
+            ],
+            userPersonas: [
+              {
+                name: "Final-year CS applicant",
+                role: "International AI master's candidate",
+                goals: ["Turn GitHub, Kaggle, papers, and demos into a selective-program application story"],
+                frustrations: ["Application artifacts are scattered and hard to prioritize"],
+              },
+              {
+                name: "AI product-engineering career switcher",
+                role: "Builder repositioning ML work for product roles",
+                goals: ["Explain technical work as shipped product impact"],
+                frustrations: ["General resume tools sound generic"],
+              },
+            ],
+          },
+        },
+        "pricing-scout": {
+          id: "pricing-scout",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["pricing-scout"] as any),
+            recommendations: [
+              {
+                tier: "Student Pro",
+                price: 19,
+                rationale:
+                  "Low enough for international students while monetizing serious applicants who need multi-program customization",
+                period: "monthly",
+              },
+              {
+                tier: "Applicant",
+                price: 49,
+                rationale:
+                  "Captures higher WTP from students applying to many selective programs and needing recommender coordination",
+                period: "monthly",
+              },
+            ],
+          },
+        },
+        synthesis: {
+          id: "synthesis",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs().synthesis as SynthesisOutput),
+            execSummary:
+              "An AI portfolio automation workspace targeting CS students preparing international AI master's applications sits in a fast-growing but fragmented niche with no incumbent owning the GitHub-to-application workflow.",
+            opportunityScore: 72,
+            riskScore: 52,
+            topThreeOpportunities: [
+              {
+                title: "End-to-end GitHub-to-application pipeline",
+                description: "d",
+                rationale: "r",
+              },
+            ],
+            topThreeRisks: [
+              {
+                title: "Free-substitute pressure from Notion, GitHub, and ChatGPT",
+                description: "d",
+                mitigation:
+                  "Differentiate with program-specific templates, GitHub ingestion, and recommender coordination",
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const brief = toLaunchLensBrief(rich);
+
+    expect(brief.meta.truncated).toEqual([]);
+    expect(brief.input.idea.length).toBeLessThanOrEqual(500);
+    expect(brief.input.audience.length).toBeLessThanOrEqual(240);
+    expect(brief.input.market.length).toBeLessThanOrEqual(120);
+    expect(brief.input.constraints.length).toBeLessThanOrEqual(320);
+    expect(brief.input.market).toContain("$1.5B");
+    expect(brief.input.market).toContain("28.5%/yr");
+    expect(brief.input.constraints).toContain("Student Pro $19");
+  });
+
   it("clamps every field to the launchlens limit", () => {
     const long = "x".repeat(LAUNCHLENS_FIELD_MAX + 500);
     const session = buildSession({

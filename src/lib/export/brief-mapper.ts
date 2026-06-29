@@ -105,6 +105,45 @@ function joinNonEmpty(parts: string[], sep = " "): string {
   return parts.filter((p) => p && p.trim().length > 0).join(sep).trim();
 }
 
+function trimNumber(value: number): string {
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
+function formatCompactUsd(value: number | null | undefined): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  if (value >= 1_000_000_000) return `$${trimNumber(value / 1_000_000_000)}B`;
+  if (value >= 1_000_000) return `$${trimNumber(value / 1_000_000)}M`;
+  if (value >= 1_000) return `$${trimNumber(value / 1_000)}K`;
+  return `$${Math.round(value).toLocaleString("en-US")}`;
+}
+
+function compactWords(value: string | null | undefined, maxChars: number): string {
+  const text = (value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxChars) return text;
+  const words = text.split(" ");
+  const kept: string[] = [];
+  for (const word of words) {
+    const candidate = [...kept, word].join(" ");
+    if (candidate.length > maxChars) break;
+    kept.push(word);
+  }
+  return (kept.length ? kept.join(" ") : text.slice(0, maxChars)).trim();
+}
+
+function firstSentence(value: string | null | undefined): string {
+  const text = (value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const match = text.match(/^.*?[.!?](?:\s|$)/);
+  return (match ? match[0] : text).trim();
+}
+
+function appendWithin(parts: string[], candidate: string, limit: number, sep = "; "): void {
+  const text = candidate.trim();
+  if (!text) return;
+  const joined = parts.length ? `${parts.join(sep)}${sep}${text}` : text;
+  if (joined.length <= limit) parts.push(text);
+}
+
 /** Narrow an AgentOutput to a specific agent's output via the discriminator. */
 function asOutput<T extends AgentOutput>(output: AgentOutput | null | undefined, agent: T["agent"]): T | null {
   if (!output || output.agent !== agent) return null;
@@ -121,20 +160,17 @@ function asOutput<T extends AgentOutput>(output: AgentOutput | null | undefined,
  *  mid-word so the idea reads naturally in the launchlens-ai form. */
 function buildIdea(session: ResearchSession, synthesis: SynthesisOutput | null): string {
   const query = (session.query || "").trim();
-  const execSummary = (synthesis?.execSummary || "").trim();
+  const execSummary = firstSentence(synthesis?.execSummary);
   const limit = FIELD_ADVISORY_LIMITS.idea;
 
   if (query && execSummary) {
-    // Always keep the full query; append as much exec summary as fits.
-    if (query.length >= limit) return query.slice(0, limit);
-    const remaining = limit - query.length - 1; // -1 for the joining space
-    if (execSummary.length <= remaining) return joinNonEmpty([query, execSummary]);
-    // Truncate the exec summary at the last sentence boundary within budget.
-    const slice = execSummary.slice(0, Math.max(0, remaining - 1));
-    const lastStop = Math.max(slice.lastIndexOf("."), slice.lastIndexOf("!"), slice.lastIndexOf(";"));
-    const trimmed = lastStop > remaining * 0.5 ? slice.slice(0, lastStop + 1) : slice;
-    return `${query} ${trimmed.trim()}…`;
+    const candidate = joinNonEmpty([query, execSummary]);
+    if (candidate.length <= limit) return candidate;
+    // Keep the founder's full idea and let clampField record truncation only
+    // when the idea itself is too long. Do not append a half-sentence summary.
+    return query;
   }
+
   if (query) return query;
   if (execSummary) return execSummary;
   return "Market opportunity researched by LaunchLens Research Studio";
@@ -145,6 +181,24 @@ function buildAudience(
   pain: PainDetectiveOutput | null,
   market: MarketSizerOutput | null,
 ): string {
+  const limit = FIELD_ADVISORY_LIMITS.audience;
+  const compactPersonas = (pain?.userPersonas ?? [])
+    .slice(0, 2)
+    .map((p) => {
+      const name = compactWords(p.name, 36);
+      const role = compactWords(p.role, 34);
+      return role ? `${name} (${role})` : name;
+    })
+    .filter(Boolean);
+  const compactSegments = (market?.targetSegments ?? [])
+    .slice(0, 2)
+    .map((s) => compactWords(s.name, 48))
+    .filter(Boolean);
+  const compactParts: string[] = [];
+  if (compactPersonas.length) appendWithin(compactParts, `Users: ${compactPersonas.join(", ")}`, limit);
+  if (compactSegments.length) appendWithin(compactParts, `Segments: ${compactSegments.join(", ")}`, limit);
+  if (compactParts.length) return compactParts.join("; ") + ".";
+
   const personas = (pain?.userPersonas ?? [])
     .slice(0, 3)
     .map((p) => joinNonEmpty([p.name, p.role ? `(${p.role})` : "", p.goals?.[0] ? `— ${p.goals[0]}` : ""]));
@@ -164,6 +218,27 @@ function buildMarket(
   competitor: CompetitorAnalystOutput | null,
   synthesis: SynthesisOutput | null,
 ): string {
+  const limit = FIELD_ADVISORY_LIMITS.market;
+  const compactParts: string[] = [];
+  const compactMarketSize = market?.marketSize;
+  if (compactMarketSize) {
+    const tam = formatCompactUsd(compactMarketSize.tam);
+    if (tam) appendWithin(compactParts, `${tam} TAM`, limit);
+    if (Number.isFinite(compactMarketSize.growthRate)) {
+      appendWithin(compactParts, `${compactMarketSize.growthRate}%/yr growth`, limit);
+    }
+  }
+  const compactComps = (competitor?.competitors ?? [])
+    .slice(0, 3)
+    .map((c) => compactWords(c.name, 22))
+    .filter(Boolean);
+  if (compactComps.length) appendWithin(compactParts, `comps ${compactComps.join("/")}`, limit);
+  const compactGap = (competitor?.gaps ?? [])[0]?.gap;
+  if (compactGap) appendWithin(compactParts, `gap ${compactWords(compactGap, 58)}`, limit);
+  const compactOpp = (synthesis?.topThreeOpportunities ?? [])[0]?.title;
+  if (compactOpp) appendWithin(compactParts, `opp ${compactWords(compactOpp, 54)}`, limit);
+  if (compactParts.length) return compactParts.join("; ") + ".";
+
   const parts: string[] = [];
   const ms = market?.marketSize;
   if (ms) {
@@ -188,6 +263,21 @@ function buildConstraints(
   pain: PainDetectiveOutput | null,
   synthesis: SynthesisOutput | null,
 ): string {
+  const limit = FIELD_ADVISORY_LIMITS.constraints;
+  const compactParts: string[] = [];
+  const compactRecs = (pricing?.recommendations ?? []).slice(0, 2).map((r) => {
+    const price = typeof r.price === "number" && Number.isFinite(r.price) && r.price > 0
+      ? `$${r.price}`
+      : "";
+    return joinNonEmpty([compactWords(r.tier, 28), price]);
+  }).filter(Boolean);
+  if (compactRecs.length) appendWithin(compactParts, `Pricing: ${compactRecs.join(", ")}`, limit);
+  const compactNeed = (pain?.unmetNeeds ?? [])[0]?.need;
+  if (compactNeed) appendWithin(compactParts, `Need: ${compactWords(compactNeed, 92)}`, limit);
+  const compactRisk = (synthesis?.topThreeRisks ?? [])[0]?.title;
+  if (compactRisk) appendWithin(compactParts, `Risk: ${compactWords(compactRisk, 86)}`, limit);
+  if (compactParts.length) return compactParts.join("; ") + ".";
+
   const parts: string[] = [];
   const recs = (pricing?.recommendations ?? []).slice(0, 2).map((r) => joinNonEmpty([`Tier ${r.tier}`, r.rationale]));
   if (recs.length) parts.push(`Pricing guidance: ${recs.join("; ")}.`);
