@@ -74,6 +74,11 @@ describe("SEO and metadata", () => {
     expect(layout).toContain("themeColor");
   });
 
+  it("layout.tsx suppresses expected next-themes html hydration drift", () => {
+    const layout = readFile("app/layout.tsx");
+    expect(layout).toContain("suppressHydrationWarning");
+  });
+
   it("layout.tsx has structured data (JSON-LD)", () => {
     const layout = readFile("app/layout.tsx");
     expect(layout).toContain("application/ld+json");

@@ -118,7 +118,7 @@ export default async function RootLayout({
     browserRequirements: "Requires JavaScript. Requires HTML5.",
   };
   return (
-    <html lang={ssrLocale} className={`${fontClasses} h-full antialiased`}>
+    <html lang={ssrLocale} className={`${fontClasses} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col bg-slate-50">
         <script
           type="application/ld+json"
