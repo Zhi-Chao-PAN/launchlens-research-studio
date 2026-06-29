@@ -296,6 +296,36 @@ describe("toLaunchLensBrief — empty / missing outputs", () => {
     expect(brief.input.idea).toBe("AI onboarding analyst for indie SaaS founders");
   });
 
+  it("does not let degraded synthesis pollute the LaunchLens handoff brief", () => {
+    const session = buildSession({
+      agents: {
+        ...buildSession().agents,
+        synthesis: {
+          id: "synthesis",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          degraded: true,
+          degradedReason: "http_error",
+          output: {
+            ...(fullOutputs().synthesis as SynthesisOutput),
+            execSummary: "Generic AI GTM text that does not match the researched idea.",
+            opportunityScore: 91,
+            riskScore: 12,
+          },
+        },
+      },
+    });
+
+    const brief = toLaunchLensBrief(session);
+
+    expect(brief.input.idea).toBe("AI onboarding analyst for indie SaaS founders");
+    expect(brief.input.idea).not.toContain("Generic AI GTM text");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    expect(brief.meta.completedAgents).toContain("synthesis");
+  });
+
   it("ignores the legacy free-text launchlensBrief string", () => {
     const brief = toLaunchLensBrief(buildSession());
     expect(brief.input.idea).not.toContain("legacy free-text brief");

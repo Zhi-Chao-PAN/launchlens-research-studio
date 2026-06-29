@@ -243,7 +243,15 @@ export function buildReportUrl(sessionId: string): string {
  *  five-field object. */
 export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBrief {
   const outputs = session.agents as Record<AgentId, { output?: AgentOutput | null }>;
-  const synthesis = asOutput<SynthesisOutput>(outputs.synthesis?.output, "synthesis");
+  // A degraded synthesis output is usually mock/fallback text emitted after the
+  // real synthesis provider failed. Dogfood showed this can be much more
+  // generic than the specialist-agent findings and can pollute the LaunchLens
+  // handoff brief. Keep the specialist outputs, but do not use degraded
+  // synthesis for idea/market/constraints or score metadata.
+  const synthesisState = session.agents.synthesis;
+  const synthesis = synthesisState?.degraded
+    ? null
+    : asOutput<SynthesisOutput>(outputs.synthesis?.output, "synthesis");
   const market = asOutput<MarketSizerOutput>(outputs["market-sizer"]?.output, "market-sizer");
   const competitor = asOutput<CompetitorAnalystOutput>(outputs["competitor-analyst"]?.output, "competitor-analyst");
   const pain = asOutput<PainDetectiveOutput>(outputs["pain-detective"]?.output, "pain-detective");
