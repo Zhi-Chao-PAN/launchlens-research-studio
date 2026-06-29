@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { safeEqual } from "./middleware";
+import { NextRequest } from "next/server";
+import { middleware, safeEqual } from "./middleware";
+
+type NextRequestInit = ConstructorParameters<typeof NextRequest>[1];
+
+function makeRequest(path: string, init: NextRequestInit = {}) {
+  return new NextRequest(`https://launchlens.test${path}`, init);
+}
 
 describe("safeEqual", () => {
   it("returns true for identical strings", () => {
@@ -37,5 +44,31 @@ describe("safeEqual", () => {
     const tok = "abcDEF123_-XYZdef456_-abcDEF123_-XYZdef456_-";
     expect(safeEqual(tok, tok)).toBe(true);
     expect(safeEqual(tok, tok.replace(/a/, "A"))).toBe(false);
+  });
+});
+
+describe("middleware CSRF exemptions", () => {
+  it("allows the web-vitals beacon endpoint without a CSRF header", () => {
+    const response = middleware(makeRequest("/api/vitals", { method: "POST" }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("still rejects non-exempt mutating API requests without CSRF in strict mode", async () => {
+    const previousStrict = process.env.LAUNCHLENS_CSRF_STRICT;
+    process.env.LAUNCHLENS_CSRF_STRICT = "1";
+    try {
+      const response = middleware(makeRequest("/api/research", { method: "POST" }));
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "csrf_failed",
+        reason: "missing-csrf",
+      });
+    } finally {
+      if (previousStrict === undefined) delete process.env.LAUNCHLENS_CSRF_STRICT;
+      else process.env.LAUNCHLENS_CSRF_STRICT = previousStrict;
+    }
   });
 });

@@ -64,7 +64,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
       try {
         const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
 
-        const doFetch = async () => {
+        const doFetch = async (stream: boolean) => {
           let r: Response;
           try {
             r = await fetchImpl(url, {
@@ -77,7 +77,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               body: JSON.stringify({
                 model,
                 temperature: 0.4,
-                stream: wantsStream,
+                stream,
                 response_format: { type: "json_object" },
                 messages: [
                   { role: "system", content: buildSystemPrompt(agentId, outputLanguage) },
@@ -106,6 +106,37 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           return r;
         };
 
+        const fetchNonStreamingText = async (): Promise<string> => {
+          let res: Response;
+          try {
+            res = await retryWithBackoff(() => doFetch(false), {
+              maxAttempts: 3,
+              baseDelayMs: 200,
+              maxDelayMs: 2000,
+              signal: ctx.signal,
+              shouldRetry: isRetriableProviderError,
+            });
+          } catch (err) {
+            if (!isAbortError(err, ctx.signal)) {
+              reportFallback(
+                classifyProviderRequestError(err),
+                providerRequestErrorDetail(err),
+              );
+            }
+            throw err;
+          }
+          if (!res.ok) {
+            // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
+            reportFallback("http_error", {
+              status: res.status,
+              message: "provider HTTP " + res.status,
+            });
+            throw new Error("provider HTTP " + res.status);
+          }
+          const json: any = await res.json();
+          return json?.choices?.[0]?.message?.content || "";
+        };
+
         let text: string;
         if (wantsStream) {
           // Let the reconnect reader own the first request as well as any
@@ -113,7 +144,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           // inside readSseWithReconnect, doubling live upstream concurrency.
           try {
             text = await readSseWithReconnect(
-              doFetch,
+              () => doFetch(true),
               (assembled) => {
                 const fraction = Math.min(0.95, assembled.length / 1500);
                 ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
@@ -143,34 +174,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           }
           ctx.onProgress!({ fraction: 1, step: "Validating output" });
         } else {
-          let res: Response;
-          try {
-            res = await retryWithBackoff(doFetch, {
-              maxAttempts: 3,
-              baseDelayMs: 200,
-              maxDelayMs: 2000,
-              signal: ctx.signal,
-              shouldRetry: isRetriableProviderError,
-            });
-          } catch (err) {
-            if (!isAbortError(err, ctx.signal)) {
-              reportFallback(
-                classifyProviderRequestError(err),
-                providerRequestErrorDetail(err),
-              );
-            }
-            throw err;
-          }
-          if (!res.ok) {
-            // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
-            reportFallback("http_error", {
-              status: res.status,
-              message: "provider HTTP " + res.status,
-            });
-            throw new Error("provider HTTP " + res.status);
-          }
-          const json: any = await res.json();
-          text = json?.choices?.[0]?.message?.content || "";
+          text = await fetchNonStreamingText();
         }
         if (!text) {
           reportFallback("empty_response", { message: "empty provider response" });
@@ -183,8 +187,23 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           // would fail on that scaffolding and silently degrade to mock.
           parsed = extractJsonObject(text);
         } catch {
+          if (wantsStream) {
+            try {
+              ctx.onProgress?.({ fraction: 0.98, step: "Retrying structured response" });
+              text = await fetchNonStreamingText();
+              if (!text) {
+                reportFallback("empty_response", { message: "empty provider response after parse retry" });
+                throw new Error("empty provider response");
+              }
+              parsed = extractJsonObject(text);
+            } catch {
+              reportFallback("parse_error", { message: "provider returned non-JSON" });
+              throw new Error("provider returned non-JSON");
+            }
+          } else {
           reportFallback("parse_error", { message: "provider returned non-JSON" });
           throw new Error("provider returned non-JSON");
+          }
         }
         try {
           // R244: strict validate first; if the real provider only omitted

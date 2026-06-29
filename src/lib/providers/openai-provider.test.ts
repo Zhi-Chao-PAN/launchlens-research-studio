@@ -14,6 +14,27 @@ const validPayload = {
   citations: [{ id: "c1", title: "Source", snippet: "evidence" }],
 };
 
+const validCompetitorPayload = {
+  agent: "competitor-analyst",
+  summary: "real competitor evidence",
+  competitors: [
+    {
+      id: "c1",
+      name: "GitHub",
+      tagline: "Developer portfolio surface",
+      strengths: ["large developer graph"],
+      weaknesses: ["not admissions-specific"],
+      pricing: { min: 0, max: 4, model: "freemium", currency: "USD" },
+      positioning: "niche",
+      differentiation: "developer network",
+      citations: ["src1"],
+    },
+  ],
+  competitiveMatrix: [],
+  gaps: [],
+  citations: [{ id: "src1", title: "Source", snippet: "portfolio workflows mention GitHub" }],
+};
+
 describe("createOpenAIProvider", () => {
   it("retries 5xx then falls back to mock", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500 }) as any);
@@ -231,7 +252,7 @@ describe("createOpenAIProvider", () => {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     }));
-    const p = createOpenAIProvider({ apiKey: "k", fetchImpl });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
     const reasons: string[] = [];
 
     const out = await p.generate("channel-scout", {
@@ -277,5 +298,43 @@ describe("createOpenAIProvider", () => {
     const out = await p.generate("market-sizer", { query: "q", keywords: [], onProgress, onFallback: (r) => reasons.push(r) });
     expect(reasons).toContain("network_error");
     expect(out.agent).toBe("market-sizer");
+  });
+
+  it("recovers a streaming parse_error with one non-streaming retry", async () => {
+    const malformedSse = `data: ${JSON.stringify({
+      choices: [{ delta: { content: "not json at all" } }],
+    })}\n\ndata: [DONE]\n\n`;
+    let attempt = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      attempt++;
+      const body = JSON.parse(init.body);
+      if (attempt === 1) {
+        expect(body.stream).toBe(true);
+        return new Response(malformedSse, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      expect(body.stream).toBe(false);
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(validCompetitorPayload) } }] }),
+      } as any;
+    });
+    const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+
+    const out = await p.generate("competitor-analyst", {
+      query: "AI portfolio automation",
+      keywords: ["portfolio"],
+      onProgress: vi.fn(),
+      onFallback: (reason) => reasons.push(reason),
+    });
+
+    expect(out.agent).toBe("competitor-analyst");
+    if (out.agent !== "competitor-analyst") throw new Error("expected competitor output");
+    expect(out.summary).toBe("real competitor evidence");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(reasons).toEqual([]);
   });
 });

@@ -144,6 +144,13 @@ function appendWithin(parts: string[], candidate: string, limit: number, sep = "
   if (joined.length <= limit) parts.push(text);
 }
 
+function finishCompactSentence(value: string, limit: number): string {
+  const text = value.trim();
+  if (!text) return text;
+  if (/[.!?]$/.test(text)) return text;
+  return text.length < limit ? `${text}.` : text;
+}
+
 /** Narrow an AgentOutput to a specific agent's output via the discriminator. */
 function asOutput<T extends AgentOutput>(output: AgentOutput | null | undefined, agent: T["agent"]): T | null {
   if (!output || output.agent !== agent) return null;
@@ -197,7 +204,7 @@ function buildAudience(
   const compactParts: string[] = [];
   if (compactPersonas.length) appendWithin(compactParts, `Users: ${compactPersonas.join(", ")}`, limit);
   if (compactSegments.length) appendWithin(compactParts, `Segments: ${compactSegments.join(", ")}`, limit);
-  if (compactParts.length) return compactParts.join("; ") + ".";
+  if (compactParts.length) return finishCompactSentence(compactParts.join("; "), limit);
 
   const personas = (pain?.userPersonas ?? [])
     .slice(0, 3)
@@ -237,7 +244,7 @@ function buildMarket(
   if (compactGap) appendWithin(compactParts, `gap ${compactWords(compactGap, 58)}`, limit);
   const compactOpp = (synthesis?.topThreeOpportunities ?? [])[0]?.title;
   if (compactOpp) appendWithin(compactParts, `opp ${compactWords(compactOpp, 54)}`, limit);
-  if (compactParts.length) return compactParts.join("; ") + ".";
+  if (compactParts.length) return finishCompactSentence(compactParts.join("; "), limit);
 
   const parts: string[] = [];
   const ms = market?.marketSize;
@@ -276,7 +283,7 @@ function buildConstraints(
   if (compactNeed) appendWithin(compactParts, `Need: ${compactWords(compactNeed, 92)}`, limit);
   const compactRisk = (synthesis?.topThreeRisks ?? [])[0]?.title;
   if (compactRisk) appendWithin(compactParts, `Risk: ${compactWords(compactRisk, 86)}`, limit);
-  if (compactParts.length) return compactParts.join("; ") + ".";
+  if (compactParts.length) return finishCompactSentence(compactParts.join("; "), limit);
 
   const parts: string[] = [];
   const recs = (pricing?.recommendations ?? []).slice(0, 2).map((r) => joinNonEmpty([`Tier ${r.tier}`, r.rationale]));

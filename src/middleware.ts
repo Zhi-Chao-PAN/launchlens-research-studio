@@ -31,6 +31,12 @@ import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf-constants";
  */
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const CSRF_EXEMPT_API_PATHS = new Set([
+  // Browser performance beacons use navigator.sendBeacon(), which cannot attach
+  // the X-CSRF-Token header. The route is a no-op metrics sink and does not
+  // mutate user-owned state, so keep the exception narrow to this exact path.
+  "/api/vitals",
+]);
 
 export const config = {
   matcher: "/api/:path*",
@@ -38,9 +44,14 @@ export const config = {
 
 export function middleware(request: NextRequest) {
   const method = (request.method || "GET").toUpperCase();
+  const pathname = request.nextUrl.pathname;
 
   // Safe methods always pass through; preflight is handled by route-level OPTIONS handlers.
   if (SAFE_METHODS.has(method)) return NextResponse.next();
+
+  if (CSRF_EXEMPT_API_PATHS.has(pathname)) {
+    return NextResponse.next();
+  }
 
   // Bypass-token callers skip CSRF (and rate limit, which the route applies
   // separately if it cares to). We sniff the Authorization header but do

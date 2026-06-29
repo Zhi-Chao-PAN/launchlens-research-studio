@@ -327,6 +327,64 @@ describe("toLaunchLensBrief — truncation", () => {
     expect(brief.input.constraints).toContain("Student Pro $19");
   });
 
+  it("does not visibly truncate an audience that exactly fits before final punctuation", () => {
+    const d03Like = buildSession({
+      agents: {
+        ...buildSession().agents,
+        "market-sizer": {
+          id: "market-sizer",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["market-sizer"] as Extract<AgentOutput, { agent: "market-sizer" }>),
+            targetSegments: [
+              {
+                name: "International CS undergraduates applying to AI",
+                size: 120000,
+                description: "Students preparing international applications.",
+              },
+              {
+                name: "Domestic AI master's applicants (US/UK/Canada)",
+                size: 80000,
+                description: "Applicants targeting selective domestic and international programs.",
+              },
+            ],
+          },
+        },
+        "pain-detective": {
+          id: "pain-detective",
+          status: "done",
+          progress: 100,
+          currentStep: "Done",
+          output: {
+            ...(fullOutputs()["pain-detective"] as Extract<AgentOutput, { agent: "pain-detective" }>),
+            userPersonas: [
+              {
+                name: "The Ambitious Applicant",
+                role: "Junior or senior CS undergraduate",
+                goals: ["Build an AI portfolio for applications."],
+                frustrations: ["Fragmented projects and recommender material."],
+              },
+              {
+                name: "The International Career Switcher",
+                role: "Working software engineer (3-6 years out of school)",
+                goals: ["Show credible AI engineering progression."],
+                frustrations: ["Unclear portfolio standards."],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const brief = toLaunchLensBrief(d03Like);
+
+    expect(brief.input.audience.length).toBeLessThanOrEqual(240);
+    expect(brief.meta.truncated).not.toContain("audience");
+    expect(brief.input.audience).not.toContain("…");
+  });
+
   it("clamps every field to the launchlens limit", () => {
     const long = "x".repeat(LAUNCHLENS_FIELD_MAX + 500);
     const session = buildSession({
