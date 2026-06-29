@@ -31,6 +31,28 @@ vi.mock("@/lib/research/storage", () => ({
   bulkDeleteRuns: vi.fn(() => 1),
 }));
 
+vi.mock("@/lib/research/run-store", () => ({
+  searchPersistentResearchRuns: vi.fn(() =>
+    Promise.resolve({
+      runs: [
+        {
+          id: "redis-run-1",
+          query: "Redis persisted research",
+          keywords: ["redis", "history"],
+          status: "completed",
+          provider: "minimax",
+          model: "MiniMax-M3",
+          createdAt: 1700000001000,
+          durationMs: 23456,
+          sources: [{ title: "Source", url: "https://example.com" }],
+        },
+      ],
+      total: 1,
+    }),
+  ),
+  deletePersistentResearchRuns: vi.fn(() => Promise.resolve(0)),
+}));
+
 import { GET, DELETE } from "./route";
 
 function makeRequest(path: string, opts: { method?: string; auth?: string } = {}) {
@@ -48,13 +70,18 @@ describe("/api/research/runs GET", () => {
     const res = await GET(makeRequest("/api/research/runs?limit=20"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.runs).toHaveLength(1);
+    expect(body.runs).toHaveLength(2);
     expect(body.runs[0]).toMatchObject({
+      id: "redis-run-1",
+      query: "Redis persisted research",
+      status: "completed",
+    });
+    expect(body.runs[1]).toMatchObject({
       id: "r1",
       query: "AI tools",
       status: "completed",
     });
-    expect(body.total).toBe(1);
+    expect(body.total).toBe(2);
     expect(body.storage).toBeDefined();
   });
 
@@ -64,6 +91,8 @@ describe("/api/research/runs GET", () => {
     // hasSources boolean is included; raw sources array is not.
     expect(body.runs[0].hasSources).toBe(true);
     expect(body.runs[0].sources).toBeUndefined();
+    expect(body.runs[1].hasSources).toBe(true);
+    expect(body.runs[1].sources).toBeUndefined();
   });
 
   it("returns 401 for format=json export without admin token", async () => {

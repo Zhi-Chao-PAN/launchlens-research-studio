@@ -3,6 +3,7 @@ import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns } from "@/lib/research/storage";
+import { deletePersistentResearchRuns, searchPersistentResearchRuns } from "@/lib/research/run-store";
 import { requireAdmin } from "@/lib/api/require-admin";
 
 // List/search/export runs.
@@ -43,17 +44,31 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") || "20", 10) || 20));
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10) || 0);
 
-  // Search/filter
-  const result = searchResearchRuns({
+  // Search/filter. Local storage remains the fast/dev path; Redis-backed
+  // persistent runs are merged in for Vercel production where local memory and
+  // disk are not reliable across lambda instances.
+  const localResult = searchResearchRuns({
     query: q || undefined,
     status: statusFilter || undefined,
     provider: providerFilter || undefined,
-    limit,
-    offset,
+    limit: 100,
+    offset: 0,
   });
+  const persistentResult = await searchPersistentResearchRuns({
+    query: q || undefined,
+    status: statusFilter || undefined,
+    provider: providerFilter || undefined,
+    limit: 100,
+    offset: 0,
+  });
+  const byId = new Map<string, (typeof localResult.runs)[number]>();
+  for (const run of persistentResult.runs) byId.set(run.id, run);
+  for (const run of localResult.runs) byId.set(run.id, run);
+  const mergedRuns = [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
+  const pagedRuns = mergedRuns.slice(offset, offset + limit);
 
   // Return summaries
-  const summaries = result.runs.map((r) => ({
+  const summaries = pagedRuns.map((r) => ({
     id: r.id,
     query: r.query,
     keywords: r.keywords,
@@ -69,7 +84,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     runs: summaries,
-    total: result.total,
+    total: mergedRuns.length,
     offset,
     limit,
     storage: {
@@ -100,5 +115,6 @@ export async function DELETE(request: Request) {
   }
 
   const deleted = bulkDeleteRuns(ids);
-  return rotateCsrf(NextResponse.json({ deleted, total: ids.length }));
+  const persistentDeleted = await deletePersistentResearchRuns(ids);
+  return rotateCsrf(NextResponse.json({ deleted: Math.max(deleted, persistentDeleted), total: ids.length }));
 }

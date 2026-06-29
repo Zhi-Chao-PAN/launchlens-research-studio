@@ -14,6 +14,7 @@ import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { saveResearchRun } from "@/lib/research/storage";
+import { researchRunFromSession, storePersistentResearchRun } from "@/lib/research/run-store";
 import { sleep } from "@/lib/utils/sleep";
 import { createConcurrencyLimiter } from "@/lib/utils/concurrency-limiter";
 import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
@@ -384,37 +385,9 @@ export function cancelSession(id: string): boolean {
  */
 function persistRunSnapshot(session: ResearchSession, status: "completed" | "cancelled"): void {
   try {
-    const synthesisRaw = session.agents.synthesis?.output;
-    const resultText =
-      typeof synthesisRaw === "string"
-        ? synthesisRaw
-        : synthesisRaw
-          ? JSON.stringify(synthesisRaw, null, 2)
-          : "";
-
-    const createdMs = new Date(session.createdAt).getTime();
-    const durationMs = createdMs ? Date.now() - createdMs : 0;
-
-    saveResearchRun({
-      id: session.id,
-      query: session.query,
-      keywords: session.keywords,
-      result: resultText,
-      provider: session.providerId ?? "mock",
-      model: session.providerModel ?? session.providerId ?? "default",
-      createdAt: createdMs,
-      durationMs,
-      status,
-      sources:
-        session.citations
-          ?.slice(0, 20)
-          ?.filter((c) => c.url)
-          ?.map((c) => ({
-            title: c.title,
-            url: c.url || "",
-            snippet: c.snippet,
-          })) || [],
-    });
+    const run = researchRunFromSession(session, status);
+    saveResearchRun(run);
+    void storePersistentResearchRun(run);
   } catch {
     // Storage is best-effort — never break the caller.
   }
