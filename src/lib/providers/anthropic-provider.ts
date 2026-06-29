@@ -22,6 +22,7 @@ import {
   classifyProviderRequestError,
   isAbortError,
   isRetriableProviderError,
+  providerRequestErrorDetail,
   ProviderRequestError,
 } from "@/lib/providers/provider-request-error";
 
@@ -63,8 +64,8 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
       // surface "demo data" with an accurate tooltip. Without this the
       // catch below silently returned mock and the user had no idea the
       // real call failed.
-      const reportFallback = (reason: ProviderFallbackReason) => {
-        ctx.onFallback?.(reason);
+      const reportFallback = (reason: ProviderFallbackReason, detail?: { status?: number; message?: string }) => {
+        ctx.onFallback?.(reason, detail);
       };
       try {
         const url = baseUrl.replace(/\/$/, "") + "/v1/messages";
@@ -134,7 +135,10 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
             // HTTP error / empty body mid-stream) degraded to mock with no
             // "demo" badge. Classify the SSE error so the UI shows the cause.
             if (!isAbortError(streamErr, ctx.signal)) {
-              reportFallback(classifyProviderRequestError(streamErr));
+              reportFallback(
+                classifyProviderRequestError(streamErr),
+                providerRequestErrorDetail(streamErr),
+              );
             }
             throw streamErr;
           }
@@ -151,20 +155,26 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
             });
           } catch (err) {
             if (!isAbortError(err, ctx.signal)) {
-              reportFallback(classifyProviderRequestError(err));
+              reportFallback(
+                classifyProviderRequestError(err),
+                providerRequestErrorDetail(err),
+              );
             }
             throw err;
           }
           if (!res.ok) {
             // Non-retriable 4xx (e.g. 401 bad key) — report and fall back.
-            reportFallback("http_error");
+            reportFallback("http_error", {
+              status: res.status,
+              message: "anthropic HTTP " + res.status,
+            });
             throw new Error("anthropic HTTP " + res.status);
           }
           const json: any = await res.json();
           text = extractJsonFromMessages(json);
         }
         if (!text) {
-          reportFallback("empty_response");
+          reportFallback("empty_response", { message: "empty provider response" });
           throw new Error("empty provider response");
         }
         let parsed: unknown;
@@ -175,7 +185,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           // fail on that scaffolding and silently degrade to mock.
           parsed = extractJsonObject(text);
         } catch {
-          reportFallback("parse_error");
+          reportFallback("parse_error", { message: "provider returned non-JSON" });
           throw new Error("provider returned non-JSON");
         }
         try {
@@ -184,7 +194,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           // Invalid citations / malformed evidence still fail into mock.
           return validateOrNormalizeAgentOutput(agentId, parsed);
         } catch {
-          reportFallback("validation_error");
+          reportFallback("validation_error", { message: "provider output failed schema validation" });
           throw new Error("provider output failed schema validation");
         }
       } catch {

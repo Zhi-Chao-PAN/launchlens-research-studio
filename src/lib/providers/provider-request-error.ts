@@ -1,4 +1,4 @@
-import type { ProviderFallbackReason } from "@/lib/providers/provider.types";
+import type { ProviderFallbackDetail, ProviderFallbackReason } from "@/lib/providers/provider.types";
 
 export class ProviderRequestError extends Error {
   readonly kind: "network" | "http";
@@ -37,4 +37,29 @@ export function classifyProviderRequestError(
     return "http_error";
   }
   return "network_error";
+}
+
+export function providerRequestErrorDetail(
+  error: unknown,
+): ProviderFallbackDetail | undefined {
+  if (error instanceof ProviderRequestError) {
+    return {
+      ...(typeof error.status === "number" ? { status: error.status } : {}),
+      message: error.message,
+    };
+  }
+  if (error instanceof Error) {
+    const sseStatus = /^sse HTTP (\d+)/.exec(error.message);
+    if (sseStatus) {
+      return {
+        status: Number(sseStatus[1]),
+        message: error.message,
+      };
+    }
+    return { message: error.message };
+  }
+  if (error != null) {
+    return { message: String(error) };
+  }
+  return undefined;
 }

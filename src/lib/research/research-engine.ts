@@ -6,6 +6,7 @@
   AgentOutput,
 } from "@/lib/schema/research-schema";
 import type { Stage2TrackingContext } from "@/lib/analytics/stage2-context";
+import type { ProviderFallbackDetail, ProviderFallbackReason } from "@/lib/providers/provider.types";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { applyPersona } from "@/lib/providers/mock-persona";
 import { selectProvider } from "@/lib/providers/provider-registry";
@@ -61,6 +62,20 @@ const PROVIDER_CONCURRENCY = (() => {
   return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10 ? parsed : 3;
 })();
 const providerLimiter = createConcurrencyLimiter(PROVIDER_CONCURRENCY);
+
+function formatProviderFallbackTelemetry(
+  reason: ProviderFallbackReason,
+  detail?: ProviderFallbackDetail,
+): string {
+  const parts = ["provider fallback: " + reason];
+  if (typeof detail?.status === "number") {
+    parts.push("status=" + detail.status);
+  }
+  if (detail?.message) {
+    parts.push("message=" + detail.message.slice(0, 180));
+  }
+  return parts.join(" ");
+}
 
 
 // R217: cap how long a terminal (completed/cancelled/errored) session
@@ -646,12 +661,12 @@ async function runAgent(
             // isDegradedHere and capture the reason; the resolvedProviderId
             // stays as the real provider's id (the call was attempted
             // against it) so history is accurate.
-            onFallback: (reason) => {
+            onFallback: (reason, detail) => {
               if (selected.isMock) return;
               isDegradedHere = true;
               degradedReasonCaptured = reason;
               telemetryOk = false;
-              telemetryErr = "provider fallback: " + reason;
+              telemetryErr = formatProviderFallbackTelemetry(reason, detail);
             },
           });
         };

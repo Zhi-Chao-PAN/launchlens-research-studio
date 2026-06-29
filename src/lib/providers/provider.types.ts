@@ -35,7 +35,12 @@ export interface ProviderContext {
    *  from a silent fallback, so the user would see demo data with no
    *  "demo" badge. The engine wires this to set the agent's `degraded`
    *  flag and surface the reason in the UI. Optional for back-compat. */
-  onFallback?: (reason: ProviderFallbackReason) => void;
+  onFallback?: (reason: ProviderFallbackReason, detail?: ProviderFallbackDetail) => void;
+}
+
+export interface ProviderFallbackDetail {
+  status?: number;
+  message?: string;
 }
 
 /** Why a real provider fell back to mock. Surfaced to the UI as the

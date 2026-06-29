@@ -153,8 +153,17 @@ describe("createAnthropicProvider", () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
     const reasons: string[] = [];
-    await p.generate("market-sizer", { query: "q", keywords: [], onFallback: (r) => reasons.push(r) });
+    const details: unknown[] = [];
+    await p.generate("market-sizer", {
+      query: "q",
+      keywords: [],
+      onFallback: (r, detail) => {
+        reasons.push(r);
+        details.push(detail);
+      },
+    });
     expect(reasons).toContain("http_error");
+    expect(details).toContainEqual(expect.objectContaining({ status: 401 }));
   });
 
   it("reports onFallback(validation_error) when the LLM output fails schema validation", async () => {
