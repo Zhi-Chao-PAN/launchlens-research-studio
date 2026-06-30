@@ -2,7 +2,7 @@
 
 /* eslint-disable */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { use, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -51,6 +51,134 @@ interface ResearchRun {
   error?: string;
 }
 
+type OutputProfile = "idea" | "founder" | "analyst";
+type ExplanationKey =
+  | "output-profile"
+  | "opportunity-score"
+  | "risk-score"
+  | "evidence-sources"
+  | "citations"
+  | "confidence"
+  | "agents"
+  | "scores"
+  | "keywords"
+  | "opportunities"
+  | "risks"
+  | "next-step"
+  | "raw-output";
+
+const OUTPUT_PROFILE_STORAGE_KEY = "launchlens:research-output-profile";
+
+const OUTPUT_PROFILES: Array<{
+  id: OutputProfile;
+  label: string;
+  eyebrow: string;
+  description: string;
+}> = [
+  {
+    id: "idea",
+    label: "Idea",
+    eyebrow: "Plain-language validation",
+    description: "For individual builders who need the answer, the risk, and the next move without analyst-heavy detail.",
+  },
+  {
+    id: "founder",
+    label: "Founder",
+    eyebrow: "Execution-ready brief",
+    description: "For early teams that need enough evidence to decide, prioritize, and hand off into GTM execution.",
+  },
+  {
+    id: "analyst",
+    label: "Analyst",
+    eyebrow: "Full evidence mode",
+    description: "For expert reviewers who want scores, citation trails, raw evidence, and all intermediate detail.",
+  },
+];
+
+function isOutputProfile(value: string | null): value is OutputProfile {
+  return value === "idea" || value === "founder" || value === "analyst";
+}
+
+const EXPLANATION_COPY: Record<ExplanationKey, { title: string; summary: string; guidance: string }> = {
+  "output-profile": {
+    title: "Output profile",
+    summary: "This changes the report's information density without deleting the underlying evidence.",
+    guidance: "Use Idea when you want plain-language validation, Founder when you are preparing execution, and Analyst when you need to audit scores, citations, and assumptions.",
+  },
+  "opportunity-score": {
+    title: "Opportunity signal",
+    summary: "A quick read on whether the market, pain, willingness to pay, and channel signals point toward a usable opportunity.",
+    guidance: "Treat it as a prioritization aid, not a verdict. A high score still needs interviews, pricing proof, and channel tests before you commit.",
+  },
+  "risk-score": {
+    title: "Risk signal",
+    summary: "A compact view of competitive, adoption, pricing, channel, and execution risk visible in the current evidence.",
+    guidance: "High risk is not automatically bad. It tells you what must be de-risked first before spending more build time.",
+  },
+  "evidence-sources": {
+    title: "Evidence sources",
+    summary: "Sources are the references used to ground the report instead of relying only on model intuition.",
+    guidance: "Prefer recent, primary, or domain-specific sources. If sources are weak, use the report as a hypothesis list rather than a decision memo.",
+  },
+  citations: {
+    title: "Citation marker",
+    summary: "Citation markers connect a sentence back to a source in the evidence trail.",
+    guidance: "Click a citation to jump to the source. If the marker feels important but the source is weak, downgrade your confidence.",
+  },
+  confidence: {
+    title: "Confidence",
+    summary: "Confidence describes how strongly the report believes a specific insight is supported by the available evidence.",
+    guidance: "Low confidence can still be useful: it often points to the exact question you should validate next.",
+  },
+  agents: {
+    title: "Supporting agents",
+    summary: "Agents are specialized analysis passes such as market sizing, competitors, pains, pricing, channels, and synthesis.",
+    guidance: "When several agents support the same conclusion, the insight is usually more robust than a single-agent observation.",
+  },
+  scores: {
+    title: "Scores",
+    summary: "Scores compress several signals into a quick comparison view.",
+    guidance: "Use scores to compare ideas or decide where to dig deeper. Do not present them as precise financial truth.",
+  },
+  keywords: {
+    title: "Keyword analysis",
+    summary: "Keywords show the themes the report associated with this research run.",
+    guidance: "For non-analyst readers, keywords are usually secondary. For analysts, they help inspect whether the report is focusing on the right market language.",
+  },
+  opportunities: {
+    title: "Top opportunities",
+    summary: "These are the most promising product, positioning, or go-to-market openings found in the research.",
+    guidance: "In Idea mode, look for one simple next experiment. In Analyst mode, compare each opportunity against evidence and risk.",
+  },
+  risks: {
+    title: "Top risks",
+    summary: "These are the failure modes most likely to invalidate the idea or slow execution.",
+    guidance: "A good next step usually targets the sharpest risk, not the easiest feature to build.",
+  },
+  "next-step": {
+    title: "Recommended next step",
+    summary: "The next step converts the report into one concrete action.",
+    guidance: "If the next step is vague, rewrite it as a testable action: who to contact, what to ask, what evidence would change the decision.",
+  },
+  "raw-output": {
+    title: "Raw output",
+    summary: "Raw output is the unpolished model/report text before the product UI turns it into sections.",
+    guidance: "Keep this for Analyst mode. It is useful for auditing parser mistakes, but too noisy for most readers.",
+  },
+};
+
+function scoreBand(score: number | null | undefined, positive: boolean): string {
+  if (typeof score !== "number" || !Number.isFinite(score)) return "Not enough signal yet";
+  if (positive) {
+    if (score >= 75) return "Strong signal";
+    if (score >= 55) return "Promising but needs proof";
+    return "Weak or early signal";
+  }
+  if (score >= 70) return "High risk";
+  if (score >= 45) return "Manageable risk";
+  return "Low visible risk";
+}
+
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleString();
 }
@@ -66,6 +194,38 @@ function formatDuration(ms: number): string {
 function ConfidenceBadge({ level }: { level: string }) {
   const cls = `confidence-badge confidence-${level}`;
   return <span className={cls}>{level} confidence</span>;
+}
+
+function AnalysisCompanion({
+  entry,
+  profileLabel,
+}: {
+  entry: { title: string; summary: string; guidance: string };
+  profileLabel: string;
+}) {
+  return (
+    <section
+      className="mt-4 rounded-2xl border border-stone-200 bg-[#fbfaf6] p-4 text-left shadow-[0_18px_55px_-48px_rgba(15,23,42,0.5)]"
+      aria-live="polite"
+      aria-label="Analysis companion"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+          Analysis companion
+        </p>
+        <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-stone-600">
+          {profileLabel}
+        </span>
+      </div>
+      <h3 className="mt-3 text-sm font-semibold tracking-[-0.01em] text-slate-950">
+        {entry.title}
+      </h3>
+      <p className="mt-2 text-xs leading-5 text-slate-600">{entry.summary}</p>
+      <p className="mt-3 rounded-xl border border-teal-100 bg-teal-50/70 px-3 py-2 text-xs leading-5 text-teal-950">
+        {entry.guidance}
+      </p>
+    </section>
+  );
 }
 
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
@@ -85,7 +245,15 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 /**
  * Renders text with [n] citation markers turned into clickable links.
  */
-function CitationText({ text, onCitationClick }: { text: string; onCitationClick: (index: number) => void }) {
+function CitationText({
+  text,
+  onCitationClick,
+  onCitationHover,
+}: {
+  text: string;
+  onCitationClick: (index: number) => void;
+  onCitationHover?: () => void;
+}) {
   // Split by [n] patterns
   const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
@@ -102,6 +270,8 @@ function CitationText({ text, onCitationClick }: { text: string; onCitationClick
         key={match.index}
         className="citation-link"
         onClick={() => onCitationClick(num - 1)}
+        onMouseEnter={onCitationHover}
+        onFocus={onCitationHover}
         title="View source"
       >
         [{num}]
@@ -151,12 +321,15 @@ function computeSourceCitationMap(
 // dynamic-imported above.
 
 
-export default function ResearchDetailPage({ params }: { params: { id: string } }) {
+export default function ResearchDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: queryId } = use(params);
   const [run, setRun] = useState<ResearchRun | null>(null);
   const [synthesis, setSynthesis] = useState<SynthesisOutput | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [outputProfile, setOutputProfile] = useState<OutputProfile>("founder");
+  const [activeExplanationKey, setActiveExplanationKey] = useState<ExplanationKey>("output-profile");
   const [isStarred, setIsStarred] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -178,7 +351,16 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
   const router = useRouter();
   const { t } = useLocale();
   const [isRunning, setIsRunning] = useState(false);
-  const queryId = params.id;
+
+  const showToast = useCallback((msg: string) => {
+    setCopySuccess(msg);
+    setTimeout(() => setCopySuccess(null), 2000);
+  }, []);
+
+  const activeOutputProfile = OUTPUT_PROFILES.find((profile) => profile.id === outputProfile) ?? OUTPUT_PROFILES[1];
+  const activeExplanation = EXPLANATION_COPY[activeExplanationKey];
+  const isIdeaProfile = outputProfile === "idea";
+  const isAnalystProfile = outputProfile === "analyst";
 
   // Handle add to compare
   const handleAddToCompare = useCallback(() => {
@@ -199,7 +381,7 @@ export default function ResearchDetailPage({ params }: { params: { id: string } 
 
 async function loadRun() {
     try {
-      const res = await fetch(`/api/research/runs/${params.id}`);
+      const res = await fetch(`/api/research/runs/${queryId}`);
       if (!res.ok) {
         if (res.status === 404) {
           throw new Error("Research run not found. It may have expired or been deleted.");
@@ -216,13 +398,41 @@ async function loadRun() {
     } finally {
       setLoading(false);
       // Check star status after load
-      setIsStarred(isRunStarred(params.id));
+      setIsStarred(isRunStarred(queryId));
     }
   }
 
   useEffect(() => {
     loadRun();
-  }, [params.id]);
+  }, [queryId]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(OUTPUT_PROFILE_STORAGE_KEY);
+      if (isOutputProfile(saved)) {
+        setOutputProfile(saved);
+      }
+    } catch {
+      // Ignore storage failures; founder mode is the safe middle default.
+    }
+  }, []);
+
+  const handleOutputProfileChange = useCallback((profile: OutputProfile) => {
+    setOutputProfile(profile);
+    setActiveExplanationKey("output-profile");
+    if (profile !== "analyst") {
+      setShowRaw(false);
+    }
+    try {
+      localStorage.setItem(OUTPUT_PROFILE_STORAGE_KEY, profile);
+    } catch {
+      // Non-critical preference persistence.
+    }
+  }, []);
+
+  const activateExplanation = useCallback((key: ExplanationKey) => {
+    setActiveExplanationKey(key);
+  }, []);
 
   
 
@@ -254,7 +464,7 @@ async function loadRun() {
     setTimeout(() => URL.revokeObjectURL(url), 100);
   }
 
-  async function handleExport(format: "md" | "json" | "txt" | "pdf") {
+  const handleExport = useCallback(async (format: "md" | "json" | "txt" | "pdf") => {
     if (!run) return;
 
     if (format === "pdf") {
@@ -288,7 +498,7 @@ async function loadRun() {
     downloadFile(content, filename, mimeType);
     setShowExportMenu(false);
     showToast("Exported " + format.toUpperCase());
-  }
+  }, [run, showToast, synthesis]);
 
   function buildPlainText(r: ResearchRun, s: SynthesisOutput | null): string {
     const lines: string[] = [];
@@ -502,9 +712,9 @@ async function loadRun() {
   }
 
   const handleToggleStar = useCallback(() => {
-    const newState = toggleStar(params.id);
+    const newState = toggleStar(queryId);
     setIsStarred(newState);
-  }, [params.id]);
+  }, [queryId]);
 
   const handleRerun = useCallback(() => {
     if (!run) return;
@@ -523,11 +733,6 @@ async function loadRun() {
     setTemplateSaved(false);
     setShowTemplateDialog(true);
   }, [run]);
-
-  const showToast = useCallback((msg: string) => {
-    setCopySuccess(msg);
-    setTimeout(() => setCopySuccess(null), 2000);
-  }, []);
 
   const handleCopyMarkdown = useCallback(async () => {
     if (!run) return;
@@ -597,27 +802,51 @@ async function loadRun() {
     }, 1200);
   }, [run, templateName]);
 
+  const visibleInsights = useMemo(() => {
+    if (!synthesis?.keyInsights) return [];
+    return isIdeaProfile ? synthesis.keyInsights.slice(0, 3) : synthesis.keyInsights;
+  }, [isIdeaProfile, synthesis]);
+
+  const visibleOpportunities = useMemo(() => {
+    if (!synthesis?.topThreeOpportunities) return [];
+    return isIdeaProfile ? synthesis.topThreeOpportunities.slice(0, 2) : synthesis.topThreeOpportunities;
+  }, [isIdeaProfile, synthesis]);
+
+  const visibleRisks = useMemo(() => {
+    if (!synthesis?.topThreeRisks) return [];
+    return isIdeaProfile ? synthesis.topThreeRisks.slice(0, 2) : synthesis.topThreeRisks;
+  }, [isIdeaProfile, synthesis]);
+
+  const visibleCitations = useMemo(() => {
+    if (!synthesis?.citations) return [];
+    return isAnalystProfile ? synthesis.citations : synthesis.citations.slice(0, 6);
+  }, [isAnalystProfile, synthesis]);
+
   // Build table of contents from available sections
   const tocItems = useMemo(() => {
     const items: { id: string; label: string }[] = [];
     if (synthesis) {
       items.push({ id: "exec-summary", label: "Executive Summary" });
-      items.push({ id: "scores", label: "Scores" });
-      if (synthesis.keyInsights?.length) {
-        items.push({ id: "key-insights", label: `Key Insights (${synthesis.keyInsights.length})` });
+      if (!isIdeaProfile) {
+        items.push({ id: "scores", label: "Scores" });
+      }
+      if (visibleInsights.length) {
+        items.push({ id: "key-insights", label: `Key Insights (${visibleInsights.length})` });
       }
       items.push({ id: "opportunities", label: "Top Opportunities" });
       items.push({ id: "risks", label: "Top Risks" });
       items.push({ id: "next-step", label: "Recommended Next Step" });
       if (synthesis.citations?.length) {
-        items.push({ id: "sources", label: `Sources (${synthesis.citations.length})` });
+        items.push({ id: "sources", label: `Sources (${visibleCitations.length}${isAnalystProfile ? "" : "+"})` });
       }
     } else if (run?.result) {
       items.push({ id: "result", label: "Result" });
     }
-    items.push({ id: "raw-output", label: "Raw Output" });
+    if (isAnalystProfile) {
+      items.push({ id: "raw-output", label: "Raw Output" });
+    }
     return items;
-  }, [synthesis, run]);
+  }, [isAnalystProfile, isIdeaProfile, run, synthesis, visibleCitations.length, visibleInsights.length]);
 
   const toggleSection = useCallback((id: string) => {
     setCollapsedSections((prev) => {
@@ -645,11 +874,22 @@ async function loadRun() {
   // Handle citation click ? scroll to source and highlight
   const handleCitationClick = useCallback((sourceIndex: number) => {
     setHighlightedSource(sourceIndex);
-    // Scroll to sources section first
-    const sourcesSection = document.getElementById("sources");
-    if (sourcesSection) {
-      sourcesSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!isAnalystProfile && sourceIndex >= visibleCitations.length) {
+      handleOutputProfileChange("analyst");
     }
+    setCollapsedSections((prev) => {
+      if (!prev.has("sources")) return prev;
+      const next = new Set(prev);
+      next.delete("sources");
+      return next;
+    });
+    // Scroll to sources section first
+    window.setTimeout(() => {
+      const sourcesSection = document.getElementById("sources");
+      if (sourcesSection) {
+        sourcesSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 50);
     // Then scroll to the specific source item after a short delay
     setTimeout(() => {
       const el = sourceRefs.current[sourceIndex];
@@ -661,7 +901,7 @@ async function loadRun() {
     setTimeout(() => {
       setHighlightedSource((prev) => (prev === sourceIndex ? null : prev));
     }, 3000);
-  }, []);
+  }, [handleOutputProfileChange, isAnalystProfile, visibleCitations.length]);
 
   // Register detail page commands
   useEffect(() => {
@@ -998,6 +1238,88 @@ async function loadRun() {
               ))}
             </div>
           ) : null}
+          <section
+            className="mt-5 rounded-2xl border border-stone-200 bg-[#fbfaf6]/90 p-4 shadow-[0_18px_60px_-52px_rgba(15,23,42,0.45)]"
+            aria-label="Report output profile"
+            onMouseEnter={() => activateExplanation("output-profile")}
+            onFocus={() => activateExplanation("output-profile")}
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-2xl">
+                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
+                  Output profile
+                </p>
+                <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-slate-950">
+                  {activeOutputProfile.eyebrow}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {activeOutputProfile.description}
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="Choose report output profile">
+                {OUTPUT_PROFILES.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => handleOutputProfileChange(profile.id)}
+                    aria-pressed={outputProfile === profile.id}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold ring-1 transition ${
+                      outputProfile === profile.id
+                        ? "bg-slate-950 text-white ring-slate-950 shadow-md shadow-slate-200"
+                        : "bg-white/80 text-slate-600 ring-stone-200 hover:text-teal-800 hover:ring-teal-200"
+                    }`}
+                  >
+                    {profile.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {synthesis && (
+              <div className="mt-4 grid gap-3 border-t border-stone-200 pt-4 sm:grid-cols-3">
+                <div
+                  className="rounded-xl border border-stone-200 bg-white/75 p-3"
+                  tabIndex={0}
+                  onMouseEnter={() => activateExplanation("opportunity-score")}
+                  onFocus={() => activateExplanation("opportunity-score")}
+                >
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+                    Opportunity
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {scoreBand(synthesis.opportunityScore, true)}
+                  </p>
+                </div>
+                <div
+                  className="rounded-xl border border-stone-200 bg-white/75 p-3"
+                  tabIndex={0}
+                  onMouseEnter={() => activateExplanation("risk-score")}
+                  onFocus={() => activateExplanation("risk-score")}
+                >
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+                    Risk
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {scoreBand(synthesis.riskScore, false)}
+                  </p>
+                </div>
+                <div
+                  className="rounded-xl border border-stone-200 bg-white/75 p-3"
+                  tabIndex={0}
+                  onMouseEnter={() => activateExplanation("evidence-sources")}
+                  onFocus={() => activateExplanation("evidence-sources")}
+                >
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
+                    Evidence
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {isAnalystProfile
+                      ? `${synthesis.citations.length} sources`
+                      : `${visibleCitations.length} shown · full trail in Analyst`}
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </header>
 
@@ -1043,6 +1365,11 @@ async function loadRun() {
                 <kbd>j</kbd><kbd>k</kbd> nav &middot; <kbd>t</kbd> top &middot; <kbd>b</kbd> bottom
               </div>
 
+              <AnalysisCompanion
+                entry={activeExplanation}
+                profileLabel={activeOutputProfile.label}
+              />
+
              {run && (
                <RelatedRuns
                  runId={run.id}
@@ -1080,6 +1407,8 @@ async function loadRun() {
               <h2
                 className="research-section-title collapsible"
                 onClick={() => toggleSection("exec-summary")}
+                onMouseEnter={() => activateExplanation("output-profile")}
+                onFocus={() => activateExplanation("output-profile")}
               >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("exec-summary") ? "▸" : "▾"}
@@ -1088,10 +1417,23 @@ async function loadRun() {
               </h2>
               {!collapsedSections.has("exec-summary") && (
                 <>
-                  <p className="research-exec-summary"><CitationText text={synthesis.execSummary} onCitationClick={handleCitationClick} /></p>
-                  {(run?.keywords?.length ?? 0) > 0 && (
+                  <p className="research-exec-summary">
+                    <CitationText
+                      text={synthesis.execSummary}
+                      onCitationClick={handleCitationClick}
+                      onCitationHover={() => activateExplanation("citations")}
+                    />
+                  </p>
+                  {!isIdeaProfile && (run?.keywords?.length ?? 0) > 0 && (
                     <div className="research-kw-cloud-section">
-                      <h4 className="research-subsection-title">Keyword Analysis</h4>
+                      <h4
+                        className="research-subsection-title"
+                        tabIndex={0}
+                        onMouseEnter={() => activateExplanation("keywords")}
+                        onFocus={() => activateExplanation("keywords")}
+                      >
+                        Keyword Analysis
+                      </h4>
                       <KeywordCloud keywords={run?.keywords ?? []} />
                     </div>
                   )}
@@ -1099,11 +1441,14 @@ async function loadRun() {
               )}
             </section>
 
+            {!isIdeaProfile && (
             <section className="research-section research-scores-section" id="scores">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("scores")}
-              >
+                <h2
+                  className="research-section-title collapsible"
+                  onClick={() => toggleSection("scores")}
+                  onMouseEnter={() => activateExplanation("scores")}
+                  onFocus={() => activateExplanation("scores")}
+                >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("scores") ? "▸" : "▾"}
                 </span>
@@ -1111,38 +1456,64 @@ async function loadRun() {
               </h2>
               {!collapsedSections.has("scores") && (
                 <div className="research-scores-visual">
-                  <div className="research-gauges">
+                  <div
+                    className="research-gauges"
+                    onMouseEnter={() => activateExplanation("scores")}
+                    onFocus={() => activateExplanation("scores")}
+                  >
                     <ScoreGauge value={synthesis.opportunityScore} label="Opportunity" color="#4ade80" />
                     <ScoreGauge value={synthesis.riskScore} label="Risk" color="#f87171" />
                   </div>
-                  {synthesis.citations?.length > 0 && (
+                  {isAnalystProfile && synthesis.citations?.length > 0 && (
                     <SourceChart sources={synthesis.citations} />
                   )}
                 </div>
               )}
             </section>
+            )}
 
             <section className="research-section" id="key-insights">
               <h2
                 className="research-section-title collapsible"
                 onClick={() => toggleSection("key-insights")}
+                onMouseEnter={() => activateExplanation("confidence")}
+                onFocus={() => activateExplanation("confidence")}
               >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("key-insights") ? "▸" : "▾"}
                 </span>
-                Key Insights ({synthesis.keyInsights.length})
+                Key Insights ({visibleInsights.length})
               </h2>
               {!collapsedSections.has("key-insights") && (
               <div className="research-insights">
-                {synthesis.keyInsights.map((insight, i) => (
+                {visibleInsights.map((insight, i) => (
                   <div key={i} className="research-insight-item">
                     <div className="research-insight-header">
                       <span className="research-insight-number">{i + 1}</span>
-                      <ConfidenceBadge level={insight.confidence} />
+                      {!isIdeaProfile && (
+                        <span
+                          tabIndex={0}
+                          onMouseEnter={() => activateExplanation("confidence")}
+                          onFocus={() => activateExplanation("confidence")}
+                        >
+                          <ConfidenceBadge level={insight.confidence} />
+                        </span>
+                      )}
                     </div>
-                    <p className="research-insight-text"><CitationText text={insight.insight} onCitationClick={handleCitationClick} /></p>
-                    {insight.supportingAgents.length > 0 && (
-                      <div className="research-insight-agents">
+                    <p className="research-insight-text">
+                      <CitationText
+                        text={insight.insight}
+                        onCitationClick={handleCitationClick}
+                        onCitationHover={() => activateExplanation("citations")}
+                      />
+                    </p>
+                    {!isIdeaProfile && insight.supportingAgents.length > 0 && (
+                      <div
+                        className="research-insight-agents"
+                        tabIndex={0}
+                        onMouseEnter={() => activateExplanation("agents")}
+                        onFocus={() => activateExplanation("agents")}
+                      >
                         Agents: {insight.supportingAgents.join(", ")}
                       </div>
                     )}
@@ -1156,6 +1527,8 @@ async function loadRun() {
               <h2
                 className="research-section-title collapsible"
                 onClick={() => toggleSection("opportunities")}
+                onMouseEnter={() => activateExplanation("opportunities")}
+                onFocus={() => activateExplanation("opportunities")}
               >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("opportunities") ? "▸" : "▾"}
@@ -1164,15 +1537,26 @@ async function loadRun() {
               </h2>
               {!collapsedSections.has("opportunities") && (
               <div className="research-cards">
-                {synthesis.topThreeOpportunities.map((opp, i) => (
+                {visibleOpportunities.map((opp, i) => (
                   <div key={i} className="research-card research-card-opportunity">
                     <div className="research-card-header">
                       <span className="research-card-number">{i + 1}</span>
                       <h3 className="research-card-title">{opp.title}</h3>
                     </div>
-                    <p className="research-card-desc"><CitationText text={opp.description} onCitationClick={handleCitationClick} /></p>
+                    <p className="research-card-desc">
+                      <CitationText
+                        text={opp.description}
+                        onCitationClick={handleCitationClick}
+                        onCitationHover={() => activateExplanation("citations")}
+                      />
+                    </p>
                     <div className="research-card-rationale">
-                      <strong>Rationale:</strong> <CitationText text={opp.rationale} onCitationClick={handleCitationClick} />
+                      <strong>Rationale:</strong>{" "}
+                      <CitationText
+                        text={opp.rationale}
+                        onCitationClick={handleCitationClick}
+                        onCitationHover={() => activateExplanation("citations")}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1184,6 +1568,8 @@ async function loadRun() {
               <h2
                 className="research-section-title collapsible"
                 onClick={() => toggleSection("risks")}
+                onMouseEnter={() => activateExplanation("risks")}
+                onFocus={() => activateExplanation("risks")}
               >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("risks") ? "▸" : "▾"}
@@ -1192,15 +1578,26 @@ async function loadRun() {
               </h2>
               {!collapsedSections.has("risks") && (
               <div className="research-cards">
-                {synthesis.topThreeRisks.map((risk, i) => (
+                {visibleRisks.map((risk, i) => (
                   <div key={i} className="research-card research-card-risk">
                     <div className="research-card-header">
                       <span className="research-card-number">{i + 1}</span>
                       <h3 className="research-card-title">{risk.title}</h3>
                     </div>
-                    <p className="research-card-desc"><CitationText text={risk.description} onCitationClick={handleCitationClick} /></p>
+                    <p className="research-card-desc">
+                      <CitationText
+                        text={risk.description}
+                        onCitationClick={handleCitationClick}
+                        onCitationHover={() => activateExplanation("citations")}
+                      />
+                    </p>
                     <div className="research-card-mitigation">
-                      <strong>Mitigation:</strong> <CitationText text={risk.mitigation} onCitationClick={handleCitationClick} />
+                      <strong>Mitigation:</strong>{" "}
+                      <CitationText
+                        text={risk.mitigation}
+                        onCitationClick={handleCitationClick}
+                        onCitationHover={() => activateExplanation("citations")}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1212,6 +1609,8 @@ async function loadRun() {
               <h2
                 className="research-section-title collapsible"
                 onClick={() => toggleSection("next-step")}
+                onMouseEnter={() => activateExplanation("next-step")}
+                onFocus={() => activateExplanation("next-step")}
               >
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("next-step") ? "▸" : "▾"}
@@ -1230,18 +1629,29 @@ async function loadRun() {
                 <h2
                   className="research-section-title collapsible"
                   onClick={() => toggleSection("sources")}
+                  onMouseEnter={() => activateExplanation("evidence-sources")}
+                  onFocus={() => activateExplanation("evidence-sources")}
                 >
                   <span className="research-section-collapse-icon">
                     {collapsedSections.has("sources") ? "▸" : "▾"}
                   </span>
-                  Sources ({synthesis.citations.length})
+                  Sources ({visibleCitations.length}{isAnalystProfile ? "" : "+"})
                 </h2>
                 {!collapsedSections.has("sources") && (
+                <>
+                {!isAnalystProfile && synthesis.citations.length > visibleCitations.length && (
+                  <div className="mb-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
+                    Showing the first {visibleCitations.length} sources for readability. Switch to Analyst for the complete citation trail.
+                  </div>
+                )}
                 <ul className="research-sources">
-                  {synthesis.citations.map((s, i) => (
+                  {visibleCitations.map((s, i) => (
                     <li key={i}
                     ref={(el) => { sourceRefs.current[i] = el; }}
                     className={`research-source-item ${highlightedSource === i ? "highlighted" : ""}`}
+                    tabIndex={0}
+                    onMouseEnter={() => activateExplanation("evidence-sources")}
+                    onFocus={() => activateExplanation("evidence-sources")}
                   >
                       <a href={s.url} target="_blank" rel="noopener noreferrer" className="research-source-title">
                         {s.title}
@@ -1258,6 +1668,7 @@ async function loadRun() {
                     </li>
                   ))}
                 </ul>
+                </>
               )}
               </section>
             )}
@@ -1283,16 +1694,23 @@ async function loadRun() {
           </section>
         )}
 
-        <section className="research-section" id="raw-output">
-          <button onClick={() => setShowRaw(!showRaw)} className="research-toggle-btn">
-            {showRaw ? "Hide" : "Show"} raw output
-          </button>
-          {showRaw && (
-            <div className="research-raw-output">
-              <pre>{run?.result}</pre>
-            </div>
-          )}
-        </section>
+        {isAnalystProfile && (
+          <section
+            className="research-section"
+            id="raw-output"
+            onMouseEnter={() => activateExplanation("raw-output")}
+            onFocus={() => activateExplanation("raw-output")}
+          >
+            <button onClick={() => setShowRaw(!showRaw)} className="research-toggle-btn">
+              {showRaw ? "Hide" : "Show"} raw output
+            </button>
+            {showRaw && (
+              <div className="research-raw-output">
+                <pre>{run?.result}</pre>
+              </div>
+            )}
+          </section>
+        )}
       </main>
       </div>
 

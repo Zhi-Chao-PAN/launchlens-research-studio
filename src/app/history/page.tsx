@@ -370,26 +370,26 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 text-slate-950">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="overflow-hidden rounded-[2rem] border border-white/80 bg-white/85 shadow-xl shadow-indigo-100/60 backdrop-blur">
-          <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:items-center lg:p-8">
+    <div className="min-h-screen bg-[#f7f5ef] bg-[radial-gradient(circle_at_top_left,rgba(15,23,42,0.06),transparent_32rem),linear-gradient(180deg,rgba(255,255,255,0.74),rgba(247,245,239,0))] text-slate-950">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="overflow-hidden rounded-[1.5rem] border border-stone-200/90 bg-[#fbfaf6]/95 shadow-[0_24px_80px_-60px_rgba(15,23,42,0.45)] backdrop-blur">
+          <div className="grid gap-6 border-b border-stone-200/80 p-6 lg:grid-cols-[1fr_auto] lg:items-center lg:p-8">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-indigo-700">
+                <span className="rounded-full border border-stone-300 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-600">
                   Research Studio
                 </span>
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  Persistent history enabled
+                <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-semibold text-teal-800">
+                  Evidence archive
                 </span>
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-                  Research history
+                <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-5xl">
+                  Research runs, reports, and proof trails.
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                  Find completed reports, recover recent outputs, and export evidence without
-                  depending on the serverless instance that generated the report.
+                <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+                  Recover completed reports, audit sources, and hand off research evidence without
+                  depending on the transient worker that generated the run.
                 </p>
               </div>
             </div>
@@ -398,19 +398,19 @@ export default function HistoryPage() {
                 type="button"
                 onClick={() => void loadRuns()}
                 disabled={loading}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Refresh
               </button>
               <Link
                 href="/"
-                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-800"
               >
                 Back to studio
               </Link>
               <Link
                 href="/"
-                className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:from-indigo-700 hover:to-violet-700"
+                className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_40px_-24px_rgba(15,23,42,0.9)] transition hover:bg-teal-800"
               >
                 New research
               </Link>
@@ -426,14 +426,14 @@ export default function HistoryPage() {
           <SummaryCard label="Cancelled" value={summary.cancelled + summary.running} hint="Stopped or still running" tone="amber" />
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-lg shadow-slate-200/50">
+        <section className="rounded-[1.5rem] border border-stone-200 bg-[#fbfaf6]/95 p-4 shadow-[0_18px_70px_-58px_rgba(15,23,42,0.38)]">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
             <label className="block">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
                 Search
               </span>
-              <div className="mt-2 flex overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 focus-within:border-indigo-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-100">
-                <span className="flex items-center pl-4 text-sm font-semibold text-slate-400" aria-hidden="true">
+              <div className="mt-2 flex overflow-hidden rounded-2xl border border-stone-200 bg-white/80 focus-within:border-teal-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-teal-100">
+                <span className="flex items-center pl-4 text-sm font-semibold text-stone-400" aria-hidden="true">
                   /
                 </span>
                 <input
@@ -444,7 +444,7 @@ export default function HistoryPage() {
                     setPage(1);
                   }}
                   placeholder="Search queries or keywords..."
-                  className="min-h-12 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                  className="min-h-12 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-stone-400"
                 />
                 {searchQuery && (
                   <button
@@ -453,7 +453,7 @@ export default function HistoryPage() {
                       setSearchQuery("");
                       setPage(1);
                     }}
-                    className="px-4 text-sm font-semibold text-slate-500 transition hover:text-slate-900"
+                    className="px-4 text-sm font-semibold text-stone-500 transition hover:text-slate-900"
                   >
                     Clear
                   </button>
@@ -463,7 +463,7 @@ export default function HistoryPage() {
 
             <div className="flex flex-wrap items-end gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
                   Status
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -476,10 +476,10 @@ export default function HistoryPage() {
                         setPage(1);
                       }}
                       aria-pressed={statusFilter === filter.value}
-                      className={`rounded-xl px-3 py-2 text-sm font-semibold ring-1 transition ${
+                      className={`rounded-full px-3 py-2 text-sm font-semibold ring-1 transition ${
                         statusFilter === filter.value
-                          ? "bg-indigo-600 text-white ring-indigo-600 shadow-md shadow-indigo-200"
-                          : "bg-white text-slate-600 ring-slate-200 hover:text-indigo-700 hover:ring-indigo-200"
+                          ? "bg-slate-950 text-white ring-slate-950 shadow-md shadow-slate-200"
+                          : "bg-white/80 text-slate-600 ring-stone-200 hover:text-teal-800 hover:ring-teal-200"
                       }`}
                     >
                       {filter.label}
@@ -489,7 +489,7 @@ export default function HistoryPage() {
               </div>
 
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
                   Focus
                 </div>
                 <button
@@ -499,10 +499,10 @@ export default function HistoryPage() {
                     setPage(1);
                   }}
                   aria-pressed={starredOnly}
-                  className={`mt-2 rounded-xl px-3 py-2 text-sm font-semibold ring-1 transition ${
+                  className={`mt-2 rounded-full px-3 py-2 text-sm font-semibold ring-1 transition ${
                     starredOnly
-                      ? "bg-amber-400 text-amber-950 ring-amber-400 shadow-md shadow-amber-100"
-                      : "bg-white text-slate-600 ring-slate-200 hover:text-amber-700 hover:ring-amber-200"
+                      ? "bg-amber-300 text-amber-950 ring-amber-300 shadow-md shadow-amber-100"
+                      : "bg-white/80 text-slate-600 ring-stone-200 hover:text-amber-800 hover:ring-amber-200"
                   }`}
                 >
                   Starred only
@@ -510,7 +510,7 @@ export default function HistoryPage() {
               </div>
 
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
                   Sort
                 </span>
                 <select
@@ -519,7 +519,7 @@ export default function HistoryPage() {
                     setSortBy(event.target.value as HistorySortBy);
                     setPage(1);
                   }}
-                  className="mt-2 min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100"
+                  className="mt-2 min-h-10 rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm outline-none transition focus:border-teal-300 focus:ring-4 focus:ring-teal-100"
                 >
                   {SORT_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -531,7 +531,7 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-4">
             <p className="text-sm text-slate-600">
               {loading
                 ? "Loading saved research..."
@@ -545,7 +545,7 @@ export default function HistoryPage() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
+                  className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
                   Clear filters
                 </button>
@@ -554,7 +554,7 @@ export default function HistoryPage() {
                 <button
                   type="button"
                   onClick={() => setSelectMode(true)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
+                  className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
                   Select reports
                 </button>
@@ -563,7 +563,7 @@ export default function HistoryPage() {
                 <button
                   type="button"
                   onClick={clearSelection}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
+                  className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
                   Exit selection
                 </button>
@@ -573,9 +573,9 @@ export default function HistoryPage() {
         </section>
 
         {selectMode && (
-          <section className="rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 shadow-sm">
+          <section className="rounded-[1.5rem] border border-teal-100 bg-teal-50/70 p-4 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <label className="flex items-center gap-3 text-sm font-semibold text-indigo-950">
+              <label className="flex items-center gap-3 text-sm font-semibold text-teal-950">
                 <input
                   type="checkbox"
                   checked={allVisibleSelected}
@@ -583,7 +583,7 @@ export default function HistoryPage() {
                     if (input) input.indeterminate = someVisibleSelected && !allVisibleSelected;
                   }}
                   onChange={toggleSelectAll}
-                  className="h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-teal-300 text-teal-700 focus:ring-teal-500"
                 />
                 {selectedCount > 0
                   ? `${selectedCount} selected on this page`
@@ -599,7 +599,7 @@ export default function HistoryPage() {
                       setShowTagMenu(false);
                     }}
                     disabled={selectedCount === 0 || bulkActionLoading}
-                    className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Move to folder
                   </button>
@@ -613,7 +613,7 @@ export default function HistoryPage() {
                             key={folder.id}
                             type="button"
                             onClick={() => handleBulkMoveToFolder(folder.id)}
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
+                            className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-teal-50 hover:text-teal-800"
                           >
                             {folder.name}
                           </button>
@@ -631,7 +631,7 @@ export default function HistoryPage() {
                       setShowFolderMenu(false);
                     }}
                     disabled={selectedCount === 0 || bulkActionLoading}
-                    className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Add tag
                   </button>
@@ -645,7 +645,7 @@ export default function HistoryPage() {
                             key={tag.id}
                             type="button"
                             onClick={() => handleBulkAddTag(tag.id)}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-teal-50 hover:text-teal-800"
                           >
                             <span
                               className="h-2.5 w-2.5 rounded-full"
@@ -664,7 +664,7 @@ export default function HistoryPage() {
                   type="button"
                   onClick={() => void handleBulkExport()}
                   disabled={selectedCount === 0 || bulkActionLoading}
-                  className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Export Markdown
                 </button>
@@ -681,7 +681,7 @@ export default function HistoryPage() {
           </section>
         )}
 
-        <main className="rounded-[2rem] border border-slate-200 bg-white/90 p-4 shadow-xl shadow-slate-200/50 sm:p-5">
+        <main className="rounded-[1.5rem] border border-stone-200 bg-[#fbfaf6]/95 p-4 shadow-[0_22px_80px_-62px_rgba(15,23,42,0.45)] sm:p-5">
           {loading ? (
             <HistorySkeletonList />
           ) : error ? (
@@ -751,18 +751,20 @@ function SummaryCard({
 }) {
   const toneClassName =
     tone === "rose"
-      ? "from-rose-50 to-white text-rose-700 ring-rose-100"
+      ? "border-rose-100 text-rose-700 before:bg-rose-500"
       : tone === "amber"
-        ? "from-amber-50 to-white text-amber-700 ring-amber-100"
-        : "from-indigo-50 to-white text-indigo-700 ring-indigo-100";
+        ? "border-amber-100 text-amber-800 before:bg-amber-400"
+        : "border-stone-200 text-teal-800 before:bg-teal-600";
 
   return (
-    <div className={`rounded-3xl bg-gradient-to-br p-4 shadow-sm ring-1 ${toneClassName}`}>
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div
+      className={`relative overflow-hidden rounded-[1.35rem] border bg-[#fbfaf6] p-4 shadow-[0_16px_50px_-42px_rgba(15,23,42,0.55)] before:absolute before:inset-x-4 before:top-0 before:h-px ${toneClassName}`}
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
         {label}
       </div>
-      <div className="mt-3 text-3xl font-bold text-slate-950">{value}</div>
-      <div className="mt-1 text-sm font-medium">{hint}</div>
+      <div className="mt-3 font-mono text-3xl font-semibold tabular-nums text-slate-950">{value}</div>
+      <div className="mt-1 text-sm font-medium text-stone-600">{hint}</div>
     </div>
   );
 }
@@ -783,10 +785,10 @@ function HistoryRunCard({
   onToggleSelect: () => void;
 }) {
   const status = HISTORY_STATUS_META[run.status];
-  const cardClassName = `group rounded-2xl border p-4 transition ${
+  const cardClassName = `group rounded-[1.25rem] border p-4 transition ${
     selected
-      ? "border-indigo-300 bg-indigo-50 shadow-md shadow-indigo-100"
-      : "border-slate-200 bg-white hover:border-indigo-200 hover:shadow-md hover:shadow-indigo-100/60"
+      ? "border-teal-300 bg-teal-50 shadow-md shadow-teal-100"
+      : "border-stone-200 bg-white/82 hover:border-teal-200 hover:bg-white hover:shadow-[0_18px_55px_-44px_rgba(15,23,42,0.55)]"
   }`;
 
   return (
@@ -814,36 +816,36 @@ function HistoryRunCard({
             onClick={(event) => event.stopPropagation()}
             onChange={onToggleSelect}
             aria-label={`Select ${run.query}`}
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 lg:mt-1"
+            className="h-4 w-4 rounded border-stone-300 text-teal-700 focus:ring-teal-500 lg:mt-1"
           />
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${status.badgeClassName}`}
+              className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${status.badgeClassName}`}
             >
               <span className={`h-2 w-2 rounded-full ${status.dotClassName}`} aria-hidden="true" />
               {status.label}
             </span>
             {starred && (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
                 Starred
               </span>
             )}
             {run.hasSources && (
-              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-700 ring-1 ring-sky-200">
+              <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-800 ring-1 ring-teal-100">
                 Sources
               </span>
             )}
-            <span className="text-xs font-medium text-slate-400">ID {shortId(run.id)}</span>
+            <span className="font-mono text-[11px] font-medium text-stone-400">ID {shortId(run.id)}</span>
           </div>
 
-          <h2 className="mt-3 line-clamp-2 text-lg font-bold leading-snug text-slate-950">
+          <h2 className="mt-3 line-clamp-2 text-lg font-semibold leading-snug tracking-[-0.02em] text-slate-950">
             {run.query || "Untitled research"}
           </h2>
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500">
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] text-stone-500">
             <span>{formatDateTime(run.createdAt)}</span>
             <span>{formatDuration(run.durationMs)}</span>
             <span>
@@ -856,7 +858,7 @@ function HistoryRunCard({
               {run.keywords?.slice(0, 6).map((keyword) => (
                 <span
                   key={keyword}
-                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
+                  className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600"
                 >
                   {keyword}
                 </span>
@@ -871,7 +873,7 @@ function HistoryRunCard({
                 </span>
               ))}
               {tags.length > 4 && (
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">
                   +{tags.length - 4} tags
                 </span>
               )}
@@ -882,7 +884,7 @@ function HistoryRunCard({
         {!selectMode && (
           <Link
             href={`/research/${run.id}`}
-            className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+            className="inline-flex shrink-0 items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
           >
             Open report
           </Link>
@@ -896,18 +898,18 @@ function HistorySkeletonList() {
   return (
     <div className="grid gap-3" aria-label="Loading history">
       {Array.from({ length: 5 }).map((_, index) => (
-        <div key={index} className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div key={index} className="rounded-[1.25rem] border border-stone-200 bg-white/85 p-4">
           <div className="flex animate-pulse flex-col gap-4 lg:flex-row lg:items-center">
             <div className="min-w-0 flex-1">
-              <div className="h-5 w-32 rounded-full bg-slate-100" />
-              <div className="mt-4 h-6 w-3/4 rounded-lg bg-slate-100" />
+              <div className="h-5 w-32 rounded-full bg-stone-100" />
+              <div className="mt-4 h-6 w-3/4 rounded-lg bg-stone-100" />
               <div className="mt-3 flex gap-3">
-                <div className="h-4 w-24 rounded bg-slate-100" />
-                <div className="h-4 w-20 rounded bg-slate-100" />
-                <div className="h-4 w-32 rounded bg-slate-100" />
+                <div className="h-4 w-24 rounded bg-stone-100" />
+                <div className="h-4 w-20 rounded bg-stone-100" />
+                <div className="h-4 w-32 rounded bg-stone-100" />
               </div>
             </div>
-            <div className="h-10 w-28 rounded-xl bg-slate-100" />
+            <div className="h-10 w-28 rounded-full bg-stone-100" />
           </div>
         </div>
       ))}
@@ -923,12 +925,12 @@ function EmptyState({
   onClearFilters: () => void;
 }) {
   return (
-    <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-8 text-center">
+    <div className="flex min-h-[360px] items-center justify-center rounded-[1.5rem] border border-dashed border-stone-300 bg-white/58 p-8 text-center">
       <div className="max-w-md">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-sm font-black text-indigo-700 shadow-sm ring-1 ring-slate-200">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fbfaf6] font-mono text-sm font-semibold text-teal-800 shadow-sm ring-1 ring-stone-200">
           RS
         </div>
-        <h2 className="mt-5 text-2xl font-bold text-slate-950">
+        <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
           {isFiltered ? "No matching reports" : "No saved research yet"}
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -941,14 +943,14 @@ function EmptyState({
             <button
               type="button"
               onClick={onClearFilters}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:text-indigo-700"
+              className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-teal-300 hover:text-teal-800"
             >
               Clear filters
             </button>
           )}
           <Link
             href="/"
-            className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:from-indigo-700 hover:to-violet-700"
+            className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_40px_-24px_rgba(15,23,42,0.9)] transition hover:bg-teal-800"
           >
             Start research
           </Link>
@@ -960,7 +962,7 @@ function EmptyState({
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6">
+    <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-bold text-rose-950">History could not load</h2>
@@ -969,7 +971,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
+          className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
         >
           Try again
         </button>
@@ -987,7 +989,7 @@ function DropdownPanel({
 }) {
   return (
     <div
-      className={`absolute z-20 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-200 ${
+      className={`absolute z-20 mt-2 w-64 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl shadow-stone-200 ${
         align === "right" ? "right-0" : "left-0"
       }`}
     >
