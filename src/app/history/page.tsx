@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { generateMarkdownReport } from "@/lib/export/markdown-formatter";
 import { bulkAddRunsToFolder, getFolders } from "@/lib/research/folders";
+import { useResearchHistory } from "@/lib/research/history";
 import { parseSynthesis } from "@/lib/research/synthesis-parser";
 import { getStarredRunIds } from "@/lib/research/starred";
 import {
@@ -21,6 +22,7 @@ import { useConfirm } from "@/components/ui/useConfirm";
 import {
   formatDuration,
   HISTORY_STATUS_META,
+  mergeServerRunsWithLocalHistory,
   sortHistoryRuns,
   summarizeHistoryRuns,
   type HistoryRunForView,
@@ -81,6 +83,7 @@ export default function HistoryPage() {
   const [showTagMenu, setShowTagMenu] = useState(false);
   const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [allTags, setAllTags] = useState<RunTag[]>([]);
+  const { history: localHistory, hydrated: localHistoryHydrated } = useResearchHistory();
   const { showToast } = useToast();
   const { askConfirm, dialog: confirmDialog } = useConfirm();
 
@@ -133,6 +136,12 @@ export default function HistoryPage() {
 
       const data = (await response.json()) as RunsResponse;
       let nextRuns = Array.isArray(data.runs) ? data.runs : [];
+      if (localHistoryHydrated) {
+        nextRuns = mergeServerRunsWithLocalHistory(nextRuns, localHistory, {
+          query: searchQuery,
+          status: statusFilter === "all" ? undefined : statusFilter,
+        });
+      }
 
       if (useClientSideStarredFilter) {
         nextRuns = nextRuns.filter((run) => starredIds.has(run.id));
@@ -140,7 +149,7 @@ export default function HistoryPage() {
 
       const sorted = sortHistoryRuns(nextRuns, sortBy);
       const serverTotal = typeof data.total === "number" ? data.total : sorted.length;
-      const nextTotal = useClientSideStarredFilter ? sorted.length : serverTotal;
+      const nextTotal = useClientSideStarredFilter ? sorted.length : Math.max(serverTotal, sorted.length);
       const nextTotalPages = useClientSideStarredFilter
         ? 1
         : Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
@@ -154,14 +163,32 @@ export default function HistoryPage() {
       });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : "Unable to load research history.";
-      setError(message);
-      setRuns([]);
-      setTotalRuns(0);
-      setTotalPages(1);
+      const localFallback = localHistoryHydrated
+        ? sortHistoryRuns(
+            mergeServerRunsWithLocalHistory([], localHistory, {
+              query: searchQuery,
+              status: statusFilter === "all" ? undefined : statusFilter,
+            }),
+            sortBy,
+          )
+        : [];
+
+      if (localFallback.length > 0) {
+        setError(null);
+        setRuns(localFallback);
+        setTotalRuns(localFallback.length);
+        setTotalPages(1);
+        showToast(`Showing ${localFallback.length} locally remembered report link(s). Server history failed: ${message}`, "warning");
+      } else {
+        setError(message);
+        setRuns([]);
+        setTotalRuns(0);
+        setTotalPages(1);
+      }
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, sortBy, starredIds, starredOnly, statusFilter]);
+  }, [localHistory, localHistoryHydrated, page, searchQuery, showToast, sortBy, starredIds, starredOnly, statusFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -836,6 +863,11 @@ function HistoryRunCard({
             {run.hasSources && (
               <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-800 ring-1 ring-teal-100">
                 Sources
+              </span>
+            )}
+            {run.recoverySource === "local" && (
+              <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100">
+                Local recovery
               </span>
             )}
             <span className="font-mono text-[11px] font-medium text-stone-400">ID {shortId(run.id)}</span>

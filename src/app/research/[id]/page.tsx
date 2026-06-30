@@ -1141,8 +1141,12 @@ async function loadRun() {
     <div className="research-detail">
       <header className="research-detail-header">
         <div className="research-detail-header-inner">
-          <Link href="/history" className="research-back-link">← History</Link>
+          <Link href="/history" className="research-back-link">← Research history</Link>
+          <p className="research-detail-kicker">LaunchLens Research Studio · Evidence-backed market report</p>
           <h1 className="research-detail-title">{run?.query}</h1>
+          <p className="research-detail-subtitle">
+            Audience-aware reading, citation recovery, and decision-ready synthesis for the current report.
+          </p>
     <div className="research-detail-tags">
             <TagList runId={queryId} />
           </div>
@@ -1158,22 +1162,22 @@ async function loadRun() {
               className={`research-star-btn ${isStarred ? "starred" : ""}`}
               aria-label={isStarred ? "Unstar" : "Star"}
             >
-              {isStarred ? "★" : "☆"} {isStarred ? "Starred" : "Star"}
+              {isStarred ? "★ Starred" : "☆ Star"}
             </button>
             <button onClick={handleRerun} className="research-action-btn">
-              🔄 Rerun
+              Rerun
             </button>
             <button onClick={handleSaveAsTemplate} className="research-action-btn">
-              📑 Save as template
+              Save as template
             </button>
             <button onClick={() => setShowShareDialog(true)} className="research-action-btn">
-              🔗 Share
+              Share
             </button>
             <button onClick={handleCopyMarkdown} className="research-action-btn">
-              📋 Copy
+              Copy Markdown
             </button>
             <button onClick={handleAddToCompare} className="research-action-btn">
-              ⚖️ Compare
+              Compare
               {compareCount > 0 && <span className="research-action-badge">{compareCount}</span>}
             </button>
             <div className="research-export-menu" ref={exportMenuRef}>

@@ -23,8 +23,10 @@ import {
   groupHistoryByDate,
   exportHistoryJson,
   deduplicateHistoryEntries,
+  createHistoryEntry,
   getRecentQueries,
   historyToMarkdown,
+  upsertHistoryEntry,
 } from "@/lib/research/history";
 import type { HistoryEntry } from "@/lib/research/history";
 
@@ -139,6 +141,32 @@ describe("history utilities (round 139)", () => {
     const md = historyToMarkdown(entries);
     expect(md).toContain("# Research History");
     expect(md).toContain("AI in healthcare");
+  });
+
+  it("createHistoryEntry can preserve the real research session id", () => {
+    const entry = createHistoryEntry("AI market brief", ["ai"], {
+      id: "sess_real_123",
+      status: "completed",
+      createdAt: "2026-06-30T00:00:00.000Z",
+    });
+
+    expect(entry).toMatchObject({
+      id: "sess_real_123",
+      query: "AI market brief",
+      status: "completed",
+      createdAt: "2026-06-30T00:00:00.000Z",
+    });
+  });
+
+  it("upsertHistoryEntry replaces duplicate queries instead of keeping stale random ids", () => {
+    const stale = makeEntry("random-browser-id", "AI market brief", ["old"], 1);
+    const fresh = createHistoryEntry("AI Market Brief", ["new"], {
+      id: "sess_real_123",
+      status: "completed",
+      createdAt: "2026-06-30T00:00:00.000Z",
+    });
+
+    expect(upsertHistoryEntry([stale], fresh)).toEqual([fresh]);
   });
 });
 

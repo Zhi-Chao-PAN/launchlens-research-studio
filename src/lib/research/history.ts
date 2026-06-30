@@ -9,6 +9,7 @@ export interface HistoryEntry {
   query: string;
   keywords: string[];
   createdAt: string;
+  status?: "completed" | "failed" | "cancelled" | "running";
 }
 
 const STORAGE_KEY = "launchlens:research-history";
@@ -51,19 +52,14 @@ export function useResearchHistory() {
     setHydrated(true);
   }, []);
 
-  const addEntry = useCallback((query: string, keywords: string[]) => {
-    const entry: HistoryEntry = {
-      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      query: query.trim(),
-      keywords: [...keywords],
-      createdAt: new Date().toISOString(),
-    };
+  const addEntry = useCallback((
+    query: string,
+    keywords: string[],
+    options: { id?: string; status?: HistoryEntry["status"]; createdAt?: string } = {},
+  ) => {
+    const entry = createHistoryEntry(query, keywords, options);
     setHistory((prev) => {
-      // Deduplicate identical query (case-insensitive), keep most recent
-      const filtered = prev.filter(
-        (e) => e.query.toLowerCase().trim() !== entry.query.toLowerCase().trim(),
-      );
-      const next = [entry, ...filtered].slice(0, MAX_ENTRIES);
+      const next = upsertHistoryEntry(prev, entry);
       safeWrite(next);
       return next;
     });
@@ -83,6 +79,33 @@ export function useResearchHistory() {
   }, []);
 
   return { history, addEntry, removeEntry, clearAll, hydrated };
+}
+
+export function createHistoryEntry(
+  query: string,
+  keywords: string[],
+  options: { id?: string; status?: HistoryEntry["status"]; createdAt?: string } = {},
+): HistoryEntry {
+  return {
+    id: options.id?.trim() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    query: query.trim(),
+    keywords: [...keywords],
+    createdAt: options.createdAt || new Date().toISOString(),
+    ...(options.status ? { status: options.status } : {}),
+  };
+}
+
+export function upsertHistoryEntry(
+  entries: HistoryEntry[],
+  entry: HistoryEntry,
+  limit: number = MAX_ENTRIES,
+): HistoryEntry[] {
+  const normalizedQuery = entry.query.toLowerCase().trim();
+  const filtered = entries.filter((existing) => {
+    if (existing.id === entry.id) return false;
+    return existing.query.toLowerCase().trim() !== normalizedQuery;
+  });
+  return [entry, ...filtered].slice(0, limit);
 }
 
 export function formatRelativeTime(iso: string): string {

@@ -12,6 +12,7 @@ export interface HistoryRunForView {
   model: string;
   keywords?: string[];
   hasSources?: boolean;
+  recoverySource?: "server" | "local";
 }
 
 export const HISTORY_STATUS_META: Record<
@@ -85,6 +86,83 @@ export function sortHistoryRuns<T extends Pick<HistoryRunForView, "createdAt" | 
         return b.createdAt - a.createdAt;
     }
   });
+}
+
+export interface LocalHistoryEntryForMerge {
+  id: string;
+  query: string;
+  keywords?: string[];
+  createdAt: string;
+  status?: HistoryStatus | "failed" | "completed" | "cancelled";
+}
+
+export interface MergeLocalHistoryOptions {
+  query?: string;
+  status?: Exclude<HistoryStatus, "running">;
+}
+
+function localStatus(entry: LocalHistoryEntryForMerge): HistoryStatus {
+  if (
+    entry.status === "completed" ||
+    entry.status === "failed" ||
+    entry.status === "cancelled" ||
+    entry.status === "running"
+  ) {
+    return entry.status;
+  }
+  return "completed";
+}
+
+function localCreatedAt(entry: LocalHistoryEntryForMerge): number {
+  const timestamp = new Date(entry.createdAt).getTime();
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : Date.now();
+}
+
+function matchesLocalFilters(entry: LocalHistoryEntryForMerge, options: MergeLocalHistoryOptions): boolean {
+  const status = localStatus(entry);
+  if (status === "running") return false;
+  if (options.status && status !== options.status) return false;
+
+  const query = options.query?.trim().toLowerCase();
+  if (!query) return true;
+  return (
+    entry.query.toLowerCase().includes(query) ||
+    (entry.keywords ?? []).some((keyword) => keyword.toLowerCase().includes(query))
+  );
+}
+
+export function historyRunFromLocalEntry(entry: LocalHistoryEntryForMerge): HistoryRunForView {
+  return {
+    id: entry.id,
+    query: entry.query,
+    keywords: entry.keywords ?? [],
+    status: localStatus(entry),
+    createdAt: localCreatedAt(entry),
+    durationMs: 0,
+    provider: "browser",
+    model: "local recovery",
+    hasSources: false,
+    recoverySource: "local",
+  };
+}
+
+export function mergeServerRunsWithLocalHistory<T extends HistoryRunForView>(
+  serverRuns: T[],
+  localEntries: LocalHistoryEntryForMerge[],
+  options: MergeLocalHistoryOptions = {},
+): HistoryRunForView[] {
+  const byId = new Map<string, HistoryRunForView>();
+  for (const run of serverRuns) {
+    byId.set(run.id, { ...run, recoverySource: run.recoverySource ?? "server" });
+  }
+
+  for (const entry of localEntries) {
+    const id = entry.id.trim();
+    if (!id || byId.has(id) || !matchesLocalFilters(entry, options)) continue;
+    byId.set(id, historyRunFromLocalEntry({ ...entry, id }));
+  }
+
+  return [...byId.values()];
 }
 
 export interface HistorySummary {

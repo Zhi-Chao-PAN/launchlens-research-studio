@@ -161,12 +161,21 @@ export default function Home() {
     void loadSuggestions();
   }, []);
 
-  // Persist a history entry on every successful session start
+  // Persist a history entry with the real session id so local recovery links
+  // point at /research/<sessionId> instead of a random browser-only id.
   useEffect(() => {
     if (state.sessionId && state.query) {
-      addEntry(state.query, state.keywords);
+      addEntry(state.query, state.keywords, {
+        id: state.sessionId,
+        status:
+          state.status === "completed"
+            ? "completed"
+            : state.status === "error"
+              ? "failed"
+              : "running",
+      });
     }
-  }, [state.sessionId, state.query, state.keywords, addEntry]);
+  }, [state.sessionId, state.query, state.keywords, state.status, addEntry]);
 
   // Trigger cache refresh when a session completes (so the CachedSessionsList updates)
   useEffect(() => {
