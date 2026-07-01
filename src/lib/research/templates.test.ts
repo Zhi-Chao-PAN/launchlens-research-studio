@@ -349,6 +349,49 @@ describe("custom categories", () => {
   });
 });
 
+describe("corrupted template storage (round validation)", () => {
+  beforeEach(() => localStorage.removeItem("launchlens:templates"));
+
+  it("falls back to defaults when every stored entry is invalid", () => {
+    const payload = [
+      { id: "no-name" }, // missing name, query, keywords
+      { name: "ok", query: "q", keywords: ["k"], createdAt: 1, updatedAt: 1, useCount: 0 }, // missing id
+      { id: "ok", name: "ok", query: "q", keywords: "not-an-array", createdAt: 1, updatedAt: 1, useCount: 0 }, // bad keywords
+      { id: "ok", name: "ok", query: "q", keywords: [], createdAt: 1, updatedAt: 1, useCount: "lots" }, // bad useCount
+      "string-not-object",
+    ];
+    localStorage.setItem("launchlens:templates", JSON.stringify(payload));
+    // All entries are invalid so we should get the built-in defaults
+    // rather than an empty array.
+    const all = listTemplates();
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((t) => typeof t.id === "string" && typeof t.useCount === "number")).toBe(true);
+  });
+
+  it("keeps valid entries and drops the corrupt ones", () => {
+    const good = {
+      id: "good",
+      name: "good",
+      query: "q",
+      keywords: ["k"],
+      createdAt: 1,
+      updatedAt: 1,
+      useCount: 3,
+    };
+    const payload = [
+      good,
+      { id: "no-name", query: "q", keywords: [], createdAt: 1, updatedAt: 1, useCount: 0 },
+      { id: "bad-keywords", name: "x", query: "q", keywords: [1, 2, 3], createdAt: 1, updatedAt: 1, useCount: 0 },
+    ];
+    localStorage.setItem("launchlens:templates", JSON.stringify(payload));
+    const all = listTemplates();
+    const customOnly = all.filter((t) => !t.isDefault);
+    expect(customOnly.length).toBe(1);
+    expect(customOnly[0].id).toBe("good");
+    expect(customOnly[0].useCount).toBe(3);
+  });
+});
+
 describe("template stats", () => {
   beforeEach(() => {
     mockStorage.clear();

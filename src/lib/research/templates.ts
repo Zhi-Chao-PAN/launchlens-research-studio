@@ -35,8 +35,12 @@ function readTemplates(): ResearchTemplate[] {
     if (!raw) return getDefaultTemplates();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return getDefaultTemplates();
-    // Backfill category for old templates
-    return parsed.map((t) => ({
+    // Defensively drop entries that don't match the ResearchTemplate shape
+    // before backfilling, so a single corrupt entry can't poison the rest
+    // (e.g. by sneaking a non-number useCount into a Math.max downstream).
+    const valid = parsed.filter(isValidTemplate);
+    if (valid.length === 0) return getDefaultTemplates();
+    return valid.map((t) => ({
       ...t,
       category: t.category || "Custom",
       isDefault: t.isDefault ?? false,
@@ -44,6 +48,24 @@ function readTemplates(): ResearchTemplate[] {
   } catch {
     return getDefaultTemplates();
   }
+}
+
+function isValidTemplate(v: unknown): v is ResearchTemplate {
+  if (!v || typeof v !== "object") return false;
+  const t = v as Record<string, unknown>;
+  if (typeof t.id !== "string" || !t.id) return false;
+  if (typeof t.name !== "string") return false;
+  if (typeof t.query !== "string") return false;
+  if (!Array.isArray(t.keywords) || !t.keywords.every((k) => typeof k === "string")) return false;
+  if (typeof t.createdAt !== "number" || !Number.isFinite(t.createdAt)) return false;
+  if (typeof t.updatedAt !== "number" || !Number.isFinite(t.updatedAt)) return false;
+  if (typeof t.useCount !== "number" || !Number.isFinite(t.useCount)) return false;
+  if (t.description !== undefined && typeof t.description !== "string") return false;
+  if (t.category !== undefined && typeof t.category !== "string") return false;
+  if (t.isDefault !== undefined && typeof t.isDefault !== "boolean") return false;
+  if (t.agents !== undefined && (!Array.isArray(t.agents) || !t.agents.every((a) => typeof a === "string"))) return false;
+  if (t.model !== undefined && typeof t.model !== "string") return false;
+  return true;
 }
 
 function writeTemplates(templates: ResearchTemplate[]): void {
