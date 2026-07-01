@@ -1122,14 +1122,11 @@ export function sessionsEqual(a: ResearchSession, b: ResearchSession): boolean {
   if (a.query !== b.query) return false;
   if (a.status !== b.status) return false;
   if (a.keywords.length !== b.keywords.length) return false;
-  if (a.keywords.join("\u0000") !== b.keywords.join("\u0000")) return false;
+  if (a.keywords.join(" ") !== b.keywords.join(" ")) return false;
   if (a.citations.length !== b.citations.length) return false;
   const aIds = Object.keys(a.agents).sort().join(",");
   const bIds = Object.keys(b.agents).sort().join(",");
   if (aIds !== bIds) return false;
-  if (a.query !== b.query) return false;
-  if (a.status !== b.status) return false;
-  if (a.citations.length !== b.citations.length) return false;
   if ((a.createdAt || "") !== (b.createdAt || "")) return false;
   return true;
 }
