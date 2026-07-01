@@ -6,6 +6,7 @@ import { useCommandPalette } from "./CommandPaletteContext";
 import { useTheme } from "next-themes";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 import { useChord, type ChordMap } from "@/lib/hooks/use-chord";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 
 /**
@@ -15,6 +16,7 @@ import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 export function GlobalCommands() {
   const { registerCommands, togglePalette } = useCommandPalette();
   const { setTheme, resolvedTheme } = useTheme();
+  const { t } = useLocale();
   const router = useRouter();
 
   // Cmd+K / Ctrl+K to toggle command palette
@@ -59,8 +61,8 @@ export function GlobalCommands() {
     const unregister = registerCommands([
       {
         id: "nav:home",
-        label: "Go to Home",
-        description: "Return to the research studio home page",
+        label: t("commands.navHome.label", "Go to Home"),
+        description: t("commands.navHome.description", "Return to the research studio home page"),
         icon: "🏠",
         shortcut: "g h",
         category: "navigation",
@@ -69,8 +71,8 @@ export function GlobalCommands() {
       },
       {
         id: "nav:history",
-        label: "Go to History",
-        description: "View all past research sessions",
+        label: t("commands.navHistory.label", "Go to History"),
+        description: t("commands.navHistory.description", "View all past research sessions"),
         icon: "📜",
         shortcut: "g s",
         category: "navigation",
@@ -79,8 +81,8 @@ export function GlobalCommands() {
       },
       {
         id: "nav:templates",
-        label: "Go to Templates",
-        description: "Browse and manage research templates",
+        label: t("commands.navTemplates.label", "Go to Templates"),
+        description: t("commands.navTemplates.description", "Browse and manage research templates"),
         icon: "📋",
         shortcut: "g t",
         category: "navigation",
@@ -89,8 +91,8 @@ export function GlobalCommands() {
       },
       {
         id: "nav:batch",
-        label: "Go to Batch Research",
-        description: "Run multiple research queries at once",
+        label: t("commands.navBatch.label", "Go to Batch Research"),
+        description: t("commands.navBatch.description", "Run multiple research queries at once"),
         icon: "⚡",
         shortcut: "g b",
         category: "navigation",
@@ -99,8 +101,8 @@ export function GlobalCommands() {
       },
       {
         id: "nav:compare",
-        label: "Go to Compare",
-        description: "Compare two research reports side by side",
+        label: t("commands.navCompare.label", "Go to Compare"),
+        description: t("commands.navCompare.description", "Compare two research reports side by side"),
         icon: "⚖️",
         shortcut: "g c",
         category: "navigation",
@@ -109,8 +111,8 @@ export function GlobalCommands() {
       },
       {
         id: "nav:starred",
-        label: "Go to Starred",
-        description: "View your starred research",
+        label: t("commands.navStarred.label", "Go to Starred"),
+        description: t("commands.navStarred.description", "View your starred research"),
         icon: "⭐",
         shortcut: "g *",
         category: "navigation",
@@ -119,8 +121,8 @@ export function GlobalCommands() {
       },
       {
         id: "theme:toggle",
-        label: "Toggle Theme",
-        description: "Switch between light and dark mode",
+        label: t("commands.themeToggle.label", "Toggle Theme"),
+        description: t("commands.themeToggle.description", "Switch between light and dark mode"),
         icon: "🌗",
         shortcut: "t",
         category: "setting",
@@ -131,8 +133,8 @@ export function GlobalCommands() {
       },
       {
         id: "theme:dark",
-        label: "Dark Mode",
-        description: "Switch to dark theme",
+        label: t("commands.themeDark.label", "Dark Mode"),
+        description: t("commands.themeDark.description", "Switch to dark theme"),
         icon: "🌙",
         category: "setting",
         keywords: ["dark", "night", "theme"],
@@ -140,8 +142,8 @@ export function GlobalCommands() {
       },
       {
         id: "theme:light",
-        label: "Light Mode",
-        description: "Switch to light theme",
+        label: t("commands.themeLight.label", "Light Mode"),
+        description: t("commands.themeLight.description", "Switch to light theme"),
         icon: "☀️",
         category: "setting",
         keywords: ["light", "day", "theme"],
@@ -149,8 +151,8 @@ export function GlobalCommands() {
       },
       {
         id: "palette:open",
-        label: "Command Palette",
-        description: "Open the command palette",
+        label: t("commands.paletteOpen.label", "Command Palette"),
+        description: t("commands.paletteOpen.description", "Open the command palette"),
         icon: "⌘",
         shortcut: "⌘K",
         category: "action",
@@ -160,18 +162,18 @@ export function GlobalCommands() {
     ]);
 
     return unregister;
-  }, [registerCommands, setTheme, resolvedTheme, router]);
+  }, [registerCommands, setTheme, resolvedTheme, router, t]);
 
   const shortcuts = [
-    { keys: "⌘ K / Ctrl K", description: "Open command palette" },
-    { keys: "?", description: "Show keyboard shortcuts" },
-    { keys: "G then H", description: "Go to home" },
-    { keys: "G then S", description: "Go to sessions / history" },
-    { keys: "G then T", description: "Go to templates" },
-    { keys: "G then B", description: "Go to batch research" },
-    { keys: "G then C", description: "Go to compare" },
-    { keys: "t", description: "Toggle theme" },
-    { keys: "Esc", description: "Close dialogs / modals" },
+    { keys: "⌘ K / Ctrl K", description: t("shortcuts.openPalette", "Open command palette") },
+    { keys: "?", description: t("shortcuts.showShortcuts", "Show keyboard shortcuts") },
+    { keys: "G then H", description: t("shortcuts.goHome", "Go to home") },
+    { keys: "G then S", description: t("shortcuts.goHistory", "Go to sessions / history") },
+    { keys: "G then T", description: t("shortcuts.goTemplates", "Go to templates") },
+    { keys: "G then B", description: t("shortcuts.goBatch", "Go to batch research") },
+    { keys: "G then C", description: t("shortcuts.goCompare", "Go to compare") },
+    { keys: "t", description: t("shortcuts.toggleTheme", "Toggle theme") },
+    { keys: "Esc", description: t("shortcuts.closeDialogs", "Close dialogs / modals") },
   ];
 
   return <KeyboardShortcutsHelp shortcuts={shortcuts} />;

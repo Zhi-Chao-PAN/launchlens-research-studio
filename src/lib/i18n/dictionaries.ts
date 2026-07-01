@@ -136,6 +136,35 @@ export type DictionaryKey =
   | "common.settings"
   | "common.share"
   | "common.templates"
+  | "commands.navHome.label"
+  | "commands.navHome.description"
+  | "commands.navHistory.label"
+  | "commands.navHistory.description"
+  | "commands.navTemplates.label"
+  | "commands.navTemplates.description"
+  | "commands.navBatch.label"
+  | "commands.navBatch.description"
+  | "commands.navCompare.label"
+  | "commands.navCompare.description"
+  | "commands.navStarred.label"
+  | "commands.navStarred.description"
+  | "commands.themeToggle.label"
+  | "commands.themeToggle.description"
+  | "commands.themeDark.label"
+  | "commands.themeDark.description"
+  | "commands.themeLight.label"
+  | "commands.themeLight.description"
+  | "commands.paletteOpen.label"
+  | "commands.paletteOpen.description"
+  | "shortcuts.openPalette"
+  | "shortcuts.showShortcuts"
+  | "shortcuts.goHome"
+  | "shortcuts.goHistory"
+  | "shortcuts.goTemplates"
+  | "shortcuts.goBatch"
+  | "shortcuts.goCompare"
+  | "shortcuts.toggleTheme"
+  | "shortcuts.closeDialogs"
   | "date.justNow"
   | "date.inFuture"
   | "date.secondsShort"
@@ -765,6 +794,35 @@ const en: Dict = {
   "common.settings": "Settings",
   "common.home": "Home",
   "common.history": "History",
+  "commands.navHome.label": "Go to Home",
+  "commands.navHome.description": "Return to the research studio home page",
+  "commands.navHistory.label": "Go to History",
+  "commands.navHistory.description": "View all past research sessions",
+  "commands.navTemplates.label": "Go to Templates",
+  "commands.navTemplates.description": "Browse and manage research templates",
+  "commands.navBatch.label": "Go to Batch Research",
+  "commands.navBatch.description": "Run multiple research queries at once",
+  "commands.navCompare.label": "Go to Compare",
+  "commands.navCompare.description": "Compare two research reports side by side",
+  "commands.navStarred.label": "Go to Starred",
+  "commands.navStarred.description": "View your starred research",
+  "commands.themeToggle.label": "Toggle Theme",
+  "commands.themeToggle.description": "Switch between light and dark mode",
+  "commands.themeDark.label": "Dark Mode",
+  "commands.themeDark.description": "Switch to dark theme",
+  "commands.themeLight.label": "Light Mode",
+  "commands.themeLight.description": "Switch to light theme",
+  "commands.paletteOpen.label": "Command Palette",
+  "commands.paletteOpen.description": "Open the command palette",
+  "shortcuts.openPalette": "Open command palette",
+  "shortcuts.showShortcuts": "Show keyboard shortcuts",
+  "shortcuts.goHome": "Go to home",
+  "shortcuts.goHistory": "Go to sessions / history",
+  "shortcuts.goTemplates": "Go to templates",
+  "shortcuts.goBatch": "Go to batch research",
+  "shortcuts.goCompare": "Go to compare",
+  "shortcuts.toggleTheme": "Toggle theme",
+  "shortcuts.closeDialogs": "Close dialogs / modals",
   "common.templates": "Templates",
   "date.justNow": "just now",
   "date.inFuture": "in the future",
@@ -1181,6 +1239,35 @@ const zhCN: Dict = {
   "common.settings": "设置",
   "common.home": "首页",
   "common.history": "历史",
+  "commands.navHome.label": "前往首页",
+  "commands.navHome.description": "返回研究工作室首页",
+  "commands.navHistory.label": "前往历史",
+  "commands.navHistory.description": "查看所有过往的研究会话",
+  "commands.navTemplates.label": "前往模板",
+  "commands.navTemplates.description": "浏览并管理研究模板",
+  "commands.navBatch.label": "前往批量研究",
+  "commands.navBatch.description": "同时运行多个研究查询",
+  "commands.navCompare.label": "前往对比",
+  "commands.navCompare.description": "并排对比两份研究报告",
+  "commands.navStarred.label": "前往收藏",
+  "commands.navStarred.description": "查看你收藏的研究",
+  "commands.themeToggle.label": "切换主题",
+  "commands.themeToggle.description": "在浅色与深色模式之间切换",
+  "commands.themeDark.label": "深色模式",
+  "commands.themeDark.description": "切换到深色主题",
+  "commands.themeLight.label": "浅色模式",
+  "commands.themeLight.description": "切换到浅色主题",
+  "commands.paletteOpen.label": "命令面板",
+  "commands.paletteOpen.description": "打开命令面板",
+  "shortcuts.openPalette": "打开命令面板",
+  "shortcuts.showShortcuts": "显示键盘快捷键",
+  "shortcuts.goHome": "前往首页",
+  "shortcuts.goHistory": "前往会话 / 历史",
+  "shortcuts.goTemplates": "前往模板",
+  "shortcuts.goBatch": "前往批量研究",
+  "shortcuts.goCompare": "前往对比",
+  "shortcuts.toggleTheme": "切换主题",
+  "shortcuts.closeDialogs": "关闭对话框 / 弹窗",
   "common.templates": "模板",
   "date.justNow": "刚刚",
   "date.inFuture": "将来",
@@ -1597,6 +1684,35 @@ const ja: Dict = {
   "common.settings": "設定",
   "common.home": "ホーム",
   "common.history": "履歴",
+  "commands.navHome.label": "ホームへ",
+  "commands.navHome.description": "リサーチスタジオのホームに戻ります",
+  "commands.navHistory.label": "履歴へ",
+  "commands.navHistory.description": "過去のリサーチセッションをすべて表示",
+  "commands.navTemplates.label": "テンプレートへ",
+  "commands.navTemplates.description": "リサーチテンプレートを閲覧・管理",
+  "commands.navBatch.label": "バッチリサーチへ",
+  "commands.navBatch.description": "複数のリサーチクエリを同時に実行",
+  "commands.navCompare.label": "比較へ",
+  "commands.navCompare.description": "2つのリサーチレポートを並べて比較",
+  "commands.navStarred.label": "スター付きへ",
+  "commands.navStarred.description": "スター付きのリサーチを表示",
+  "commands.themeToggle.label": "テーマを切り替え",
+  "commands.themeToggle.description": "ライトモードとダークモードを切り替え",
+  "commands.themeDark.label": "ダークモード",
+  "commands.themeDark.description": "ダークテーマに切り替え",
+  "commands.themeLight.label": "ライトモード",
+  "commands.themeLight.description": "ライトテーマに切り替え",
+  "commands.paletteOpen.label": "コマンドパレット",
+  "commands.paletteOpen.description": "コマンドパレットを開く",
+  "shortcuts.openPalette": "コマンドパレットを開く",
+  "shortcuts.showShortcuts": "キーボードショートカットを表示",
+  "shortcuts.goHome": "ホームへ移動",
+  "shortcuts.goHistory": "セッション / 履歴へ移動",
+  "shortcuts.goTemplates": "テンプレートへ移動",
+  "shortcuts.goBatch": "バッチリサーチへ移動",
+  "shortcuts.goCompare": "比較へ移動",
+  "shortcuts.toggleTheme": "テーマを切り替え",
+  "shortcuts.closeDialogs": "ダイアログ / モーダルを閉じる",
   "common.templates": "テンプレート",
   "date.justNow": "たった今",
   "date.inFuture": "未来",
@@ -1802,6 +1918,35 @@ const ko: Dict = {
   "common.search": "검색",
   "common.settings": "설정",
   "common.share": "공유",
+  "commands.navHome.label": "홈으로",
+  "commands.navHome.description": "리서치 스튜디오 홈으로 돌아갑니다",
+  "commands.navHistory.label": "기록으로",
+  "commands.navHistory.description": "모든 이전 리서치 세션 보기",
+  "commands.navTemplates.label": "템플릿으로",
+  "commands.navTemplates.description": "리서치 템플릿 찾아보기 및 관리",
+  "commands.navBatch.label": "일괄 리서치로",
+  "commands.navBatch.description": "여러 리서치 쿼리를 한 번에 실행",
+  "commands.navCompare.label": "비교로",
+  "commands.navCompare.description": "두 리서치 보고서를 나란히 비교",
+  "commands.navStarred.label": "즐겨찾기로",
+  "commands.navStarred.description": "즐겨찾기한 리서치 보기",
+  "commands.themeToggle.label": "테마 전환",
+  "commands.themeToggle.description": "라이트 모드와 다크 모드 사이를 전환",
+  "commands.themeDark.label": "다크 모드",
+  "commands.themeDark.description": "다크 테마로 전환",
+  "commands.themeLight.label": "라이트 모드",
+  "commands.themeLight.description": "라이트 테마로 전환",
+  "commands.paletteOpen.label": "명령 팔레트",
+  "commands.paletteOpen.description": "명령 팔레트 열기",
+  "shortcuts.openPalette": "명령 팔레트 열기",
+  "shortcuts.showShortcuts": "키보드 단축키 표시",
+  "shortcuts.goHome": "홈으로 이동",
+  "shortcuts.goHistory": "세션 / 기록으로 이동",
+  "shortcuts.goTemplates": "템플릿으로 이동",
+  "shortcuts.goBatch": "일괄 리서치로 이동",
+  "shortcuts.goCompare": "비교로 이동",
+  "shortcuts.toggleTheme": "테마 전환",
+  "shortcuts.closeDialogs": "대화상자 / 모달 닫기",
   "common.templates": "템플릿",
   "date.justNow": "방금 전",
   "date.inFuture": "미래",
