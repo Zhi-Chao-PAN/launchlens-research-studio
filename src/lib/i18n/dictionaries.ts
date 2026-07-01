@@ -145,6 +145,8 @@ export type DictionaryKey =
   | "date.minutesLong"
   | "date.hoursLong"
   | "date.daysLong"
+  | "date.today"
+  | "date.yesterday"
   | "compare.title"
   | "compare.backToHistory"
   | "compare.optionA"
@@ -761,6 +763,8 @@ const en: Dict = {
   "date.minutesLong": "{n} minutes ago",
   "date.hoursLong": "{n} hours ago",
   "date.daysLong": "{n} days ago",
+  "date.today": "Today",
+  "date.yesterday": "Yesterday",
   "compare.title": "Research Compare",
   "compare.backToHistory": "← Back to History",
   "compare.optionA": "Option A",
@@ -1163,6 +1167,8 @@ const zhCN: Dict = {
   "date.minutesLong": "{n} 分钟前",
   "date.hoursLong": "{n} 小时前",
   "date.daysLong": "{n} 天前",
+  "date.today": "今天",
+  "date.yesterday": "昨天",
   "compare.title": "研究对比",
   "compare.backToHistory": "← 返回历史",
   "compare.optionA": "方案 A",
@@ -1565,6 +1571,8 @@ const ja: Dict = {
   "date.minutesLong": "{n} 分前",
   "date.hoursLong": "{n} 時間前",
   "date.daysLong": "{n} 日前",
+  "date.today": "今日",
+  "date.yesterday": "昨日",
   "compare.title": "リサーチ比較",
   "compare.backToHistory": "← 履歴に戻る",
   "compare.optionA": "案 A",
@@ -1756,6 +1764,8 @@ const ko: Dict = {
   "date.minutesLong": "{n}분 전",
   "date.hoursLong": "{n}시간 전",
   "date.daysLong": "{n}일 전",
+  "date.today": "오늘",
+  "date.yesterday": "어제",
   "compare.title": "리서치 비교",
   "compare.backToHistory": "← 기록으로 돌아가기",
   "compare.optionA": "옵션 A",

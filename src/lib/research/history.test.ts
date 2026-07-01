@@ -116,6 +116,30 @@ describe("history utilities (round 139)", () => {
     expect(today!.entries.length).toBe(1);
   });
 
+  it("groupHistoryByDate localizes Today / Yesterday labels", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const makeOnDate = (id: string, date: string): HistoryEntry => ({
+      id, query: "q-" + id, keywords: [],
+      createdAt: date + "T12:00:00.000Z",
+    });
+    const en = groupHistoryByDate([makeOnDate("1", today), makeOnDate("2", yesterday)], "en");
+    const zh = groupHistoryByDate([makeOnDate("1", today), makeOnDate("2", yesterday)], "zh-CN");
+    const ja = groupHistoryByDate([makeOnDate("1", today), makeOnDate("2", yesterday)], "ja");
+    const ko = groupHistoryByDate([makeOnDate("1", today), makeOnDate("2", yesterday)], "ko");
+    expect(en.find((g) => g.date === today)?.label).toBe("Today");
+    expect(en.find((g) => g.date === yesterday)?.label).toBe("Yesterday");
+    expect(zh.find((g) => g.date === today)?.label).toBe("今天");
+    expect(zh.find((g) => g.date === yesterday)?.label).toBe("昨天");
+    expect(ja.find((g) => g.date === today)?.label).toBe("今日");
+    expect(ja.find((g) => g.date === yesterday)?.label).toBe("昨日");
+    expect(ko.find((g) => g.date === today)?.label).toBe("오늘");
+    expect(ko.find((g) => g.date === yesterday)?.label).toBe("어제");
+    // Default (no-locale) path still falls back to English.
+    const def = groupHistoryByDate([makeOnDate("1", today)]);
+    expect(def.find((g) => g.date === today)?.label).toBe("Today");
+  });
+
   it("exportHistoryJson produces valid JSON", () => {
     const json = exportHistoryJson(entries);
     const parsed = JSON.parse(json);

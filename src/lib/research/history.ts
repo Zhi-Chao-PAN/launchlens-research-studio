@@ -3,6 +3,7 @@
 // Stores query + keywords + timestamp. Read on app boot, written on completion.
 
 import { useEffect, useState, useCallback } from "react";
+import { translate, type Locale, DEFAULT_LOCALE } from "@/lib/i18n/dictionaries";
 
 export interface HistoryEntry {
   id: string;
@@ -189,7 +190,10 @@ export interface HistoryGroup {
   entries: HistoryEntry[];
 }
 
-export function groupHistoryByDate(entries: HistoryEntry[]): HistoryGroup[] {
+export function groupHistoryByDate(
+  entries: HistoryEntry[],
+  locale: Locale = DEFAULT_LOCALE,
+): HistoryGroup[] {
   const groups = new Map<string, HistoryEntry[]>();
   for (const e of entries) {
     const date = e.createdAt.slice(0, 10);
@@ -199,10 +203,12 @@ export function groupHistoryByDate(entries: HistoryEntry[]): HistoryGroup[] {
   const result: HistoryGroup[] = [];
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const todayLabel = translate(locale, "date.today", "Today");
+  const yesterdayLabel = translate(locale, "date.yesterday", "Yesterday");
   for (const [date, items] of groups) {
     let label = date;
-    if (date === today) label = "Today";
-    else if (date === yesterday) label = "Yesterday";
+    if (date === today) label = todayLabel;
+    else if (date === yesterday) label = yesterdayLabel;
     result.push({ date, label, entries: items });
   }
   return result.sort((a, b) => b.date.localeCompare(a.date));
