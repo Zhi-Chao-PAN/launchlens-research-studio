@@ -66,14 +66,36 @@ function getStore(): ResearchFolder[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return normalizePositions([...DEFAULT_FOLDERS]);
-    const parsed = JSON.parse(raw) as ResearchFolder[];
-    const systemIds = new Set(parsed.filter((f) => f.isSystem).map((f) => f.id));
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return normalizePositions([...DEFAULT_FOLDERS]);
+    // Defensively drop any entry that isn't a valid folder so a partial
+    // localStorage write cannot crash the rest of the store (e.g. via
+    // .map on an item missing runIds).
+    const valid = parsed.filter(isValidResearchFolder);
+    const systemIds = new Set(valid.filter((f) => f.isSystem).map((f) => f.id));
     const missingSystem = DEFAULT_FOLDERS.filter((f) => !systemIds.has(f.id)).map((f) => ({ ...f }));
-    const merged = [...missingSystem, ...parsed.map((f) => ({ ...f }))];
+    const merged = [...missingSystem, ...valid.map((f) => ({ ...f }))];
     return normalizePositions(merged);
   } catch {
     return normalizePositions([...DEFAULT_FOLDERS]);
   }
+}
+
+function isValidResearchFolder(v: unknown): v is ResearchFolder {
+  if (!v || typeof v !== "object") return false;
+  const f = v as Record<string, unknown>;
+  if (typeof f.id !== "string" || !f.id) return false;
+  if (typeof f.name !== "string") return false;
+  if (!Array.isArray(f.runIds)) return false;
+  if (!f.runIds.every((id) => typeof id === "string")) return false;
+  if (typeof f.createdAt !== "number" || !Number.isFinite(f.createdAt)) return false;
+  if (typeof f.updatedAt !== "number" || !Number.isFinite(f.updatedAt)) return false;
+  if (f.description !== undefined && typeof f.description !== "string") return false;
+  if (f.icon !== undefined && typeof f.icon !== "string") return false;
+  if (f.color !== undefined && typeof f.color !== "string") return false;
+  if (f.isSystem !== undefined && typeof f.isSystem !== "boolean") return false;
+  if (f.position !== undefined && (typeof f.position !== "number" || !Number.isFinite(f.position))) return false;
+  return true;
 }
 
 function saveStore(folders: ResearchFolder[]): void {

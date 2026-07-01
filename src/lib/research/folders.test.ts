@@ -507,3 +507,30 @@ describe("folder extensions (round 153)", () => {
     expect(foldersEqual(a, mk({ id: "x" }))).toBe(false);
   });
 });
+
+describe("corrupted folder storage (round validation)", () => {
+  beforeEach(() => localStorage.removeItem("launchlens:folders"));
+
+  it("getFolders drops invalid entries but keeps the system defaults", () => {
+    const payload = [
+      { id: "good", name: "ok", runIds: ["r1"], createdAt: 1, updatedAt: 1 },
+      { id: "no-runIds", name: "broken", createdAt: 1, updatedAt: 1 },
+      { id: "bad-runIds", name: "broken", runIds: "not-array", createdAt: 1, updatedAt: 1 },
+      { id: "bad-updatedAt", name: "broken", runIds: [], createdAt: 1, updatedAt: "now" },
+      "not-an-object",
+    ];
+    localStorage.setItem("launchlens:folders", JSON.stringify(payload));
+    const folders = getFolders();
+    const custom = folders.filter((f) => !f.isSystem);
+    expect(custom.map((f) => f.id)).toEqual(["good"]);
+    // System defaults are still present.
+    expect(folders.some((f) => f.isSystem && f.id === "folder-starred")).toBe(true);
+  });
+
+  it("getFolders falls back to defaults when the payload is not an array", () => {
+    localStorage.setItem("launchlens:folders", JSON.stringify({ not: "an array" }));
+    const folders = getFolders();
+    // System folders are restored from DEFAULT_FOLDERS.
+    expect(folders.some((f) => f.isSystem)).toBe(true);
+  });
+});
