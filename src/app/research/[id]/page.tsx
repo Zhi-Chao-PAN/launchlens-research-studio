@@ -826,27 +826,27 @@ async function loadRun() {
   const tocItems = useMemo(() => {
     const items: { id: string; label: string }[] = [];
     if (synthesis) {
-      items.push({ id: "exec-summary", label: "Executive Summary" });
+      items.push({ id: "exec-summary", label: t("report.tocExecSummary") });
       if (!isIdeaProfile) {
-        items.push({ id: "scores", label: "Scores" });
+        items.push({ id: "scores", label: t("report.tocScores") });
       }
       if (visibleInsights.length) {
-        items.push({ id: "key-insights", label: `Key Insights (${visibleInsights.length})` });
+        items.push({ id: "key-insights", label: t("report.tocKeyInsights", { n: visibleInsights.length }) });
       }
-      items.push({ id: "opportunities", label: "Top Opportunities" });
-      items.push({ id: "risks", label: "Top Risks" });
-      items.push({ id: "next-step", label: "Recommended Next Step" });
+      items.push({ id: "opportunities", label: t("report.tocOpportunities") });
+      items.push({ id: "risks", label: t("report.tocRisks") });
+      items.push({ id: "next-step", label: t("report.tocNextStep") });
       if (synthesis.citations?.length) {
-        items.push({ id: "sources", label: `Sources (${visibleCitations.length}${isAnalystProfile ? "" : "+"})` });
+        items.push({ id: "sources", label: t("report.tocSources", { n: visibleCitations.length }) + (isAnalystProfile ? "" : "+") });
       }
     } else if (run?.result) {
-      items.push({ id: "result", label: "Result" });
+      items.push({ id: "result", label: t("report.tocResult") });
     }
     if (isAnalystProfile) {
-      items.push({ id: "raw-output", label: "Raw Output" });
+      items.push({ id: "raw-output", label: t("report.tocRawOutput") });
     }
     return items;
-  }, [isAnalystProfile, isIdeaProfile, run, synthesis, visibleCitations.length, visibleInsights.length]);
+  }, [isAnalystProfile, isIdeaProfile, run, synthesis, t, visibleCitations.length, visibleInsights.length]);
 
   const toggleSection = useCallback((id: string) => {
     setCollapsedSections((prev) => {
@@ -1335,7 +1335,7 @@ async function loadRun() {
         {synthesis && (
           <aside className="research-toc">
             <div className="research-toc-header">
-              <span className="research-toc-title">Table of Contents</span>
+              <span className="research-toc-title">{t("report.tocTitle")}</span>
               <button
                 className="research-toc-toggle"
                 onClick={() => setShowToc(!showToc)}
@@ -1359,14 +1359,14 @@ async function loadRun() {
               </nav>
 
               <div className="research-toc-progress">
-                <span>{readingProgress}% read</span>
+                <span>{t("report.readingProgress", { pct: readingProgress })}</span>
                 <div className="research-toc-progress-bar">
                   <div className="research-toc-progress-fill" style={{ width: `${readingProgress}%` }} />
                 </div>
               </div>
 
               <div className="research-toc-kbd-hint">
-                <kbd>j</kbd><kbd>k</kbd> nav &middot; <kbd>t</kbd> top &middot; <kbd>b</kbd> bottom
+                {t("report.kbNavHint")}
               </div>
 
               <AnalysisCompanion
