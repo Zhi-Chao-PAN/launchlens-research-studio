@@ -342,12 +342,24 @@ export function getMatchRanges(label: string, query: string): { start: number; e
 const HISTORY_KEY = "cmd_history";
 const MAX_HISTORY = 50;
 
+function isValidCommandHistoryEntry(v: unknown): v is CommandHistoryEntry {
+  if (!v || typeof v !== "object") return false;
+  const h = v as Record<string, unknown>;
+  if (typeof h.id !== "string" || !h.id) return false;
+  if (typeof h.count !== "number" || !Number.isFinite(h.count)) return false;
+  if (typeof h.lastUsed !== "number" || !Number.isFinite(h.lastUsed)) return false;
+  return true;
+}
+
 export function loadCommandHistory(): CommandHistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Defensively drop entries with the wrong shape so a partial write
+    // can't crash recordCommandUse's `history[idx].count++` later.
+    return parsed.filter(isValidCommandHistoryEntry);
   } catch {
     return [];
   }

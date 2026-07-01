@@ -1,11 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   subsequenceMatch,
   wordStartMatch,
   scoreCommand,
   rankCommands,
   getMatchRanges,
+  loadCommandHistory,
+  saveCommandHistory,
+  recordCommandUse,
 } from "./fuzzy-search";
+
+class MockStorage {
+  private d = new Map<string, string>();
+  getItem(k: string) { return this.d.get(k) ?? null; }
+  setItem(k: string, v: string) { this.d.set(k, v); }
+  removeItem(k: string) { this.d.delete(k); }
+  clear() { this.d.clear(); }
+  get length() { return this.d.size; }
+  key(i: number) { return Array.from(this.d.keys())[i] ?? null; }
+}
+const mockStorage = new MockStorage();
+(globalThis as { localStorage?: Storage }).localStorage = mockStorage as unknown as Storage;
 
 describe("fuzzy-search", () => {
   describe("subsequenceMatch", () => {
@@ -207,5 +222,57 @@ describe("fuzzy-search", () => {
         { start: 9, end: 10 },
       ]);
     });
+  });
+});
+
+describe("command history", () => {
+  beforeEach(() => mockStorage.clear());
+
+  it("loadCommandHistory returns [] when storage is empty or invalid", () => {
+    expect(loadCommandHistory()).toEqual([]);
+    mockStorage.setItem("cmd_history", "not-json");
+    expect(loadCommandHistory()).toEqual([]);
+    mockStorage.setItem("cmd_history", JSON.stringify({ not: "an array" }));
+    expect(loadCommandHistory()).toEqual([]);
+  });
+
+  it("loadCommandHistory drops entries with the wrong shape", () => {
+    mockStorage.setItem("cmd_history", JSON.stringify([
+      { id: "ok", count: 1, lastUsed: 1 },
+      { id: "bad-count", count: "lots", lastUsed: 1 },
+      { id: "bad-time", count: 1, lastUsed: "now" },
+      { id: "", count: 1, lastUsed: 1 },
+      { count: 1, lastUsed: 1 },
+      "not-an-object",
+    ]));
+    const history = loadCommandHistory();
+    expect(history).toHaveLength(1);
+    expect(history[0].id).toBe("ok");
+  });
+
+  it("recordCommandUse does not crash on a corrupt history payload", () => {
+    // Pre-seed with a corrupt entry that would otherwise make
+    // history[idx].count++ produce NaN.
+    mockStorage.setItem("cmd_history", JSON.stringify([
+      { id: "alpha", count: 1, lastUsed: 1 },
+      { id: "bad", count: "lots", lastUsed: 1 },
+    ]));
+    const updated = recordCommandUse("alpha");
+    // The corrupt entry is dropped; the valid one is updated.
+    expect(updated.find((e) => e.id === "alpha")?.count).toBe(2);
+    expect(updated.find((e) => e.id === "bad")).toBeUndefined();
+  });
+
+  it("saveCommandHistory sorts by lastUsed and caps at 50 entries", () => {
+    const history = Array.from({ length: 60 }, (_, i) => ({
+      id: "k" + i,
+      count: 1,
+      lastUsed: 1000 + i,
+    }));
+    saveCommandHistory(history);
+    const loaded = loadCommandHistory();
+    expect(loaded).toHaveLength(50);
+    expect(loaded[0].id).toBe("k59");
+    expect(loaded[49].id).toBe("k10");
   });
 });
