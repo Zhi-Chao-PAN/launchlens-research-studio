@@ -91,48 +91,41 @@ function findBestMatch<T>(
 }
 
 // Compare two lists and categorize items as added/removed/modified
-function compareStringLists(oldList: string[], newList: string[], threshold = 0.3) {
-  const added: string[] = [];
-  const removed: string[] = [];
-  const modified: Array<{ old: string; new: string; similarity: number }> = [];
-  
-  const usedOld = new Set<number>();
-  const usedNew = new Set<number>();
-  
-  // Find matches
-  for (let i = 0; i < oldList.length; i++) {
-    const match = findBestMatch(oldList[i], (s) => s, newList);
-    if (match.index >= 0 && match.similarity >= threshold && !usedNew.has(match.index)) {
-      usedOld.add(i);
-      usedNew.add(match.index);
-      
-      if (match.similarity < 0.95) {
-        modified.push({
-          old: oldList[i],
-          new: newList[match.index],
-          similarity: match.similarity,
-        });
-      }
-    }
-  }
-  
-  for (let i = 0; i < oldList.length; i++) {
-    if (!usedOld.has(i)) removed.push(oldList[i]);
-  }
-  
-  for (let i = 0; i < newList.length; i++) {
-    if (!usedNew.has(i)) added.push(newList[i]);
-  }
-  
-  return { added, removed, modified };
+function compareStringLists(
+  oldList: string[],
+  newList: string[],
+  threshold = 0.3,
+): {
+  added: string[];
+  removed: string[];
+  modified: Array<{ old: string; new: string; similarity: number }>;
+} {
+  // Delegate to the generic list comparator with an identity extractor so
+  // the two paths stay in lockstep. If compareLists ever grows new
+  // behaviour (e.g. weighted similarity, hooks), the string variant
+  // picks it up automatically instead of silently diverging.
+  const result = compareLists<string>(oldList, newList, (s) => s, threshold);
+  return {
+    added: result.added,
+    removed: result.removed,
+    modified: result.modified.map((m) => ({
+      old: m.old,
+      new: m.new,
+      similarity: m.similarity,
+    })),
+  };
 }
 
-function compareLists<T extends { title?: string; description?: string }>(
+function compareLists<T>(
   oldList: T[],
   newList: T[],
   getText: (item: T) => string,
   threshold = 0.3,
-) {
+): {
+  added: T[];
+  removed: T[];
+  modified: Array<{ old: T; new: T; similarity: number }>;
+} {
   const added: T[] = [];
   const removed: T[] = [];
   const modified: Array<{ old: T; new: T; similarity: number }> = [];
