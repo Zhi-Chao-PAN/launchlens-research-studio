@@ -1418,7 +1418,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("exec-summary") ? "▸" : "▾"}
                 </span>
-                Executive Summary
+                {t("report.tocExecSummary")}
               </h2>
               {!collapsedSections.has("exec-summary") && (
                 <>
@@ -1437,7 +1437,7 @@ async function loadRun() {
                         onMouseEnter={() => activateExplanation("keywords")}
                         onFocus={() => activateExplanation("keywords")}
                       >
-                        Keyword Analysis
+                        {t("report.keywordAnalysis")}
                       </h4>
                       <KeywordCloud keywords={run?.keywords ?? []} />
                     </div>
@@ -1457,7 +1457,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("scores") ? "▸" : "▾"}
                 </span>
-                Scores
+                {t("report.tocScores")}
               </h2>
               {!collapsedSections.has("scores") && (
                 <div className="research-scores-visual">
@@ -1466,8 +1466,8 @@ async function loadRun() {
                     onMouseEnter={() => activateExplanation("scores")}
                     onFocus={() => activateExplanation("scores")}
                   >
-                    <ScoreGauge value={synthesis.opportunityScore} label="Opportunity" color="#4ade80" />
-                    <ScoreGauge value={synthesis.riskScore} label="Risk" color="#f87171" />
+                    <ScoreGauge value={synthesis.opportunityScore} label={t("report.opportunityLabel")} color="#4ade80" />
+                    <ScoreGauge value={synthesis.riskScore} label={t("report.riskLabel")} color="#f87171" />
                   </div>
                   {isAnalystProfile && synthesis.citations?.length > 0 && (
                     <SourceChart sources={synthesis.citations} />
@@ -1487,7 +1487,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("key-insights") ? "▸" : "▾"}
                 </span>
-                Key Insights ({visibleInsights.length})
+                {t("report.tocKeyInsights", { n: visibleInsights.length })}
               </h2>
               {!collapsedSections.has("key-insights") && (
               <div className="research-insights">
@@ -1538,7 +1538,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("opportunities") ? "▸" : "▾"}
                 </span>
-                Top Opportunities
+                {t("report.tocOpportunities")}
               </h2>
               {!collapsedSections.has("opportunities") && (
               <div className="research-cards">
@@ -1556,7 +1556,7 @@ async function loadRun() {
                       />
                     </p>
                     <div className="research-card-rationale">
-                      <strong>Rationale:</strong>{" "}
+                      <strong>{t("report.rationale")}</strong>{" "}
                       <CitationText
                         text={opp.rationale}
                         onCitationClick={handleCitationClick}
@@ -1579,7 +1579,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("risks") ? "▸" : "▾"}
                 </span>
-                Top Risks
+                {t("report.tocRisks")}
               </h2>
               {!collapsedSections.has("risks") && (
               <div className="research-cards">
@@ -1597,7 +1597,7 @@ async function loadRun() {
                       />
                     </p>
                     <div className="research-card-mitigation">
-                      <strong>Mitigation:</strong>{" "}
+                      <strong>{t("report.mitigation")}</strong>{" "}
                       <CitationText
                         text={risk.mitigation}
                         onCitationClick={handleCitationClick}
@@ -1620,7 +1620,7 @@ async function loadRun() {
                 <span className="research-section-collapse-icon">
                   {collapsedSections.has("next-step") ? "▸" : "▾"}
                 </span>
-                Recommended Next Step
+                {t("report.tocNextStep")}
               </h2>
               {!collapsedSections.has("next-step") && (
               <div className="research-next-step">
@@ -1640,13 +1640,13 @@ async function loadRun() {
                   <span className="research-section-collapse-icon">
                     {collapsedSections.has("sources") ? "▸" : "▾"}
                   </span>
-                  Sources ({visibleCitations.length}{isAnalystProfile ? "" : "+"})
+                  {t("report.tocSources", { n: visibleCitations.length })}{isAnalystProfile ? "" : "+"}
                 </h2>
                 {!collapsedSections.has("sources") && (
                 <>
                 {!isAnalystProfile && synthesis.citations.length > visibleCitations.length && (
                   <div className="mb-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
-                    Showing the first {visibleCitations.length} sources for readability. Switch to Analyst for the complete citation trail.
+                    {t("report.sourcesNoticeFull", { n: visibleCitations.length })}
                   </div>
                 )}
                 <ul className="research-sources">
@@ -1689,7 +1689,7 @@ async function loadRun() {
               <span className="research-section-collapse-icon">
                 {collapsedSections.has("result") ? "▸" : "▾"}
               </span>
-              Result
+              {t("report.tocResult")}
             </h2>
             {!collapsedSections.has("result") && (
             <div className="research-result">
@@ -1707,7 +1707,7 @@ async function loadRun() {
             onFocus={() => activateExplanation("raw-output")}
           >
             <button onClick={() => setShowRaw(!showRaw)} className="research-toggle-btn">
-              {showRaw ? "Hide" : "Show"} raw output
+              {showRaw ? t("report.hideRawOutput") : t("report.showRawOutput")}
             </button>
             {showRaw && (
               <div className="research-raw-output">

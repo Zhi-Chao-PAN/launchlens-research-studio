@@ -484,6 +484,9 @@ export type DictionaryKey =
   | "report.opportunityLabel"
   | "report.riskLabel"
   | "report.evidenceLabel"
+  | "report.rationale"
+  | "report.mitigation"
+  | "report.sourcesNoticeFull"
   | "report.sourcesUnit"
   | "report.sourcesShown"
   | "report.tocTitle"
@@ -1140,6 +1143,9 @@ const en: Dict = {
   "report.opportunityLabel": "Opportunity",
   "report.riskLabel": "Risk",
   "report.evidenceLabel": "Evidence",
+  "report.rationale": "Rationale:",
+  "report.mitigation": "Mitigation:",
+  "report.sourcesNoticeFull": "Showing the first {n} sources for readability. Switch to Analyst for the complete citation trail.",
   "report.sourcesUnit": "sources",
   "report.sourcesShown": "{n} shown · full trail in Analyst",
   "report.tocTitle": "Table of Contents",
@@ -1797,6 +1803,9 @@ const zhCN: Dict = {
   "report.opportunityLabel": "机会",
   "report.riskLabel": "风险",
   "report.evidenceLabel": "证据",
+  "report.rationale": "理由：",
+  "report.mitigation": "缓解措施：",
+  "report.sourcesNoticeFull": "为便于阅读，显示前 {n} 个来源。切换到分析师模式查看完整引用链。",
   "report.sourcesUnit": "个来源",
   "report.sourcesShown": "显示 {n} 个 · 分析师模式查看完整引用链",
   "report.tocTitle": "目录",
@@ -2454,6 +2463,9 @@ const ja: Dict = {
   "report.opportunityLabel": "機会",
   "report.riskLabel": "リスク",
   "report.evidenceLabel": "エビデンス",
+  "report.rationale": "根拠:",
+  "report.mitigation": "緩和策:",
+  "report.sourcesNoticeFull": "可読性のため最初の {n} ソースを表示しています。完全な引用トレイルはアナリストに切り替えてください。",
   "report.sourcesUnit": "ソース",
   "report.sourcesShown": "{n} 件表示 · 完全なトレイルはアナリストで",
   "report.tocTitle": "目次",
@@ -3115,6 +3127,9 @@ const ko: Dict = {
   "report.opportunityLabel": "기회",
   "report.riskLabel": "위험",
   "report.evidenceLabel": "증거",
+  "report.rationale": "근거:",
+  "report.mitigation": "완화 방안:",
+  "report.sourcesNoticeFull": "가독성을 위해 처음 {n}개 출처를 표시합니다. 전체 인용 추적을 보려면 애널리스트로 전환하세요.",
   "report.sourcesUnit": "개 출처",
   "report.sourcesShown": "{n}개 표시 · 전체 추적은 애널리스트에서",
   "report.tocTitle": "목차",
