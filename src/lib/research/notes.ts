@@ -34,11 +34,48 @@ function getStore(): Map<string, ResearchNotes> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return new Map();
-    const obj = JSON.parse(raw) as Record<string, ResearchNotes>;
-    return new Map(Object.entries(obj));
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return new Map();
+    // Defensively drop any entry that doesn't match ResearchNotes so a
+    // partial localStorage write cannot crash addAnnotation / addTag /
+    // ensureRun, which would otherwise .push onto an invalid value.
+    const out = new Map<string, ResearchNotes>();
+    for (const [k, v] of Object.entries(obj)) {
+      if (isValidResearchNotes(v)) out.set(k, v);
+    }
+    return out;
   } catch {
     return new Map();
   }
+}
+
+function isValidResearchNotes(v: unknown): v is ResearchNotes {
+  if (!v || typeof v !== "object") return false;
+  const n = v as Record<string, unknown>;
+  if (typeof n.runId !== "string" || !n.runId) return false;
+  if (!Array.isArray(n.annotations)) return false;
+  if (!n.annotations.every(isValidNoteAnnotation)) return false;
+  if (typeof n.personalNote !== "string") return false;
+  if (typeof n.rating !== "number" || !Number.isFinite(n.rating)) return false;
+  if (!Array.isArray(n.tags) || !n.tags.every((t) => typeof t === "string")) return false;
+  if (typeof n.isStarred !== "boolean") return false;
+  if (typeof n.isArchived !== "boolean") return false;
+  if (typeof n.lastOpenedAt !== "number" || !Number.isFinite(n.lastOpenedAt)) return false;
+  if (typeof n.updatedAt !== "number" || !Number.isFinite(n.updatedAt)) return false;
+  return true;
+}
+
+function isValidNoteAnnotation(a: unknown): boolean {
+  if (!a || typeof a !== "object") return false;
+  const x = a as Record<string, unknown>;
+  if (typeof x.id !== "string" || !x.id) return false;
+  if (typeof x.type !== "string") return false;
+  if (x.content !== undefined && typeof x.content !== "string") return false;
+  if (x.target !== undefined && typeof x.target !== "string") return false;
+  if (x.color !== undefined && typeof x.color !== "string") return false;
+  if (typeof x.createdAt !== "number" || !Number.isFinite(x.createdAt)) return false;
+  if (typeof x.updatedAt !== "number" || !Number.isFinite(x.updatedAt)) return false;
+  return true;
 }
 
 function saveStore(store: Map<string, ResearchNotes>): void {

@@ -806,3 +806,38 @@ describe('notes extensions (round 151)', () => {
     expect(notesEqual(a, base({ runId: 'other' }))).toBe(false);
   });
 });
+
+describe("corrupted notes storage (round validation)", () => {
+  beforeEach(() => localStorage.removeItem("launchlens:notes"));
+
+  it("getNotes drops invalid entries but keeps the valid ones", () => {
+    const good = {
+      runId: "ok",
+      annotations: [],
+      personalNote: "fine",
+      rating: 0,
+      tags: [],
+      isStarred: false,
+      isArchived: false,
+      lastOpenedAt: 1,
+      updatedAt: 1,
+    };
+    const payload = {
+      [good.runId]: good,
+      "no-runId": { annotations: [], personalNote: "", rating: 0, tags: [], isStarred: false, isArchived: false, lastOpenedAt: 1, updatedAt: 1 },
+      "bad-rating": { runId: "x", annotations: [], personalNote: "", rating: "5", tags: [], isStarred: false, isArchived: false, lastOpenedAt: 1, updatedAt: 1 },
+      "bad-annotation": { runId: "x", annotations: ["not-an-object"], personalNote: "", rating: 0, tags: [], isStarred: false, isArchived: false, lastOpenedAt: 1, updatedAt: 1 },
+      "not-an-object": "string",
+    };
+    localStorage.setItem("launchlens:notes", JSON.stringify(payload));
+    expect(getNotes("ok")).toEqual(good);
+    expect(getNotes("no-runId")).toBeNull();
+    expect(getNotes("bad-rating")).toBeNull();
+    expect(getNotes("bad-annotation")).toBeNull();
+  });
+
+  it("getStore returns empty when the payload is not an object", () => {
+    localStorage.setItem("launchlens:notes", JSON.stringify([1, 2, 3]));
+    expect(getAllNotes()).toEqual([]);
+  });
+});
