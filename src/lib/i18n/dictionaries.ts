@@ -147,6 +147,15 @@ export type DictionaryKey =
   | "date.daysLong"
   | "date.today"
   | "date.yesterday"
+  | "validation.bodyNotObject"
+  | "validation.queryRequired"
+  | "validation.queryTooShort"
+  | "validation.queryTooLong"
+  | "validation.keywordsNotArray"
+  | "validation.tooManyKeywords"
+  | "validation.keywordNotString"
+  | "validation.keywordTooLong"
+  | "validation.gotChars"
   | "compare.title"
   | "compare.backToHistory"
   | "compare.optionA"
@@ -765,6 +774,15 @@ const en: Dict = {
   "date.daysLong": "{n} days ago",
   "date.today": "Today",
   "date.yesterday": "Yesterday",
+  "validation.bodyNotObject": "Request body must be a JSON object.",
+  "validation.queryRequired": "Field 'query' is required and must be a string.",
+  "validation.queryTooShort": "Query must be at least {min} characters long.",
+  "validation.queryTooLong": "Query must be at most {max} characters long.",
+  "validation.keywordsNotArray": "Field 'keywords' must be an array of strings.",
+  "validation.tooManyKeywords": "At most {max} keywords are allowed.",
+  "validation.keywordNotString": "Keyword at index {index} must be a string.",
+  "validation.keywordTooLong": "Keyword \"{preview}...\" exceeds {max} characters.",
+  "validation.gotChars": "Got {got} characters.",
   "compare.title": "Research Compare",
   "compare.backToHistory": "← Back to History",
   "compare.optionA": "Option A",
@@ -1169,6 +1187,15 @@ const zhCN: Dict = {
   "date.daysLong": "{n} 天前",
   "date.today": "今天",
   "date.yesterday": "昨天",
+  "validation.bodyNotObject": "请求体必须是 JSON 对象。",
+  "validation.queryRequired": "字段 'query' 必填且必须是字符串。",
+  "validation.queryTooShort": "query 至少需要 {min} 个字符。",
+  "validation.queryTooLong": "query 最多 {max} 个字符。",
+  "validation.keywordsNotArray": "字段 'keywords' 必须是字符串数组。",
+  "validation.tooManyKeywords": "关键词最多 {max} 个。",
+  "validation.keywordNotString": "关键词第 {index} 项必须是字符串。",
+  "validation.keywordTooLong": "关键词 \"{preview}...\" 超过 {max} 字符。",
+  "validation.gotChars": "实际 {got} 个字符。",
   "compare.title": "研究对比",
   "compare.backToHistory": "← 返回历史",
   "compare.optionA": "方案 A",
@@ -1573,6 +1600,15 @@ const ja: Dict = {
   "date.daysLong": "{n} 日前",
   "date.today": "今日",
   "date.yesterday": "昨日",
+  "validation.bodyNotObject": "リクエストボディは JSON オブジェクトである必要があります。",
+  "validation.queryRequired": "フィールド 'query' は必須かつ文字列である必要があります。",
+  "validation.queryTooShort": "query は {min} 文字以上である必要があります。",
+  "validation.queryTooLong": "query は {max} 文字以下である必要があります。",
+  "validation.keywordsNotArray": "フィールド 'keywords' は文字列配列である必要があります。",
+  "validation.tooManyKeywords": "キーワードは最大 {max} 個までです。",
+  "validation.keywordNotString": "キーワードの {index} 番目は文字列である必要があります。",
+  "validation.keywordTooLong": "キーワード \"{preview}...\" は {max} 文字を超えています。",
+  "validation.gotChars": "{got} 文字取得しました。",
   "compare.title": "リサーチ比較",
   "compare.backToHistory": "← 履歴に戻る",
   "compare.optionA": "案 A",
@@ -1766,6 +1802,15 @@ const ko: Dict = {
   "date.daysLong": "{n}일 전",
   "date.today": "오늘",
   "date.yesterday": "어제",
+  "validation.bodyNotObject": "요청 본문은 JSON 객체여야 합니다.",
+  "validation.queryRequired": "'query' 필드는 필수이며 문자열이어야 합니다.",
+  "validation.queryTooShort": "query는 최소 {min}자 이상이어야 합니다.",
+  "validation.queryTooLong": "query는 최대 {max}자까지 허용됩니다.",
+  "validation.keywordsNotArray": "'keywords' 필드는 문자열 배열이어야 합니다.",
+  "validation.tooManyKeywords": "키워드는 최대 {max}개까지 허용됩니다.",
+  "validation.keywordNotString": "키워드의 {index}번째 항목은 문자열이어야 합니다.",
+  "validation.keywordTooLong": "키워드 \"{preview}...\"가 {max}자를 초과합니다.",
+  "validation.gotChars": "{got}자 입력됨.",
   "compare.title": "리서치 비교",
   "compare.backToHistory": "← 기록으로 돌아가기",
   "compare.optionA": "옵션 A",

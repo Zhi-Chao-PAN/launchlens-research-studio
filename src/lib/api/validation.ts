@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-﻿// Input validation and error handling for the research API.
+// Input validation and error handling for the research API.
 // Centralized so the rules and error shapes are consistent across endpoints.
 
 import { NextResponse } from "next/server";
@@ -26,16 +26,56 @@ export type ValidationSuccess<T> = {
 
 export type ValidationResult<T> = ValidationError | ValidationSuccess<T>;
 
-export function validateResearchRequest(body: unknown): ValidationResult<{ query: string; keywords: string[] }> {
+/**
+ * Localized variant of validateResearchRequest. The error messages
+ * route through the i18n dictionary (validation.* keys) so that
+ * clients see the same language as the rest of the app, with
+ * {min}, {max}, {got}, {index} placeholders interpolated.
+ */
+export function validateResearchRequestLocalized(
+  body: unknown,
+  source?: LocaleSource,
+): ValidationResult<{ query: string; keywords: string[] }> {
+  // When no LocaleSource is supplied, fall back to the English template
+  // strings verbatim and still substitute {placeholder}s so callers that
+  // do not pass a source (i.e. the existing validateResearchRequest
+  // wrapper) get the same shape they used to.
+  const fallbackT = (
+    key: string,
+    fallback: string,
+    params?: Record<string, string | number>,
+  ): string => {
+    let raw = fallback;
+    if (params) {
+      for (const [name, val] of Object.entries(params)) {
+        raw = raw.replace(new RegExp(`\\{\\s*${name}\\s*\\}`, "g"), String(val));
+      }
+    }
+    void key;
+    return raw;
+  };
+  const t = source ? createServerI18n(source).t : fallbackT;
+
   if (!body || typeof body !== "object") {
-    return { ok: false, status: 400, body: { error: "Request body must be a JSON object." } };
+    return {
+      ok: false,
+      status: 400,
+      body: { error: t("validation.bodyNotObject", "Request body must be a JSON object.") },
+    };
   }
 
   const obj = body as Record<string, unknown>;
   const { query, keywords } = obj;
 
   if (typeof query !== "string") {
-    return { ok: false, status: 400, body: { error: "Field 'query' is required and must be a string.", field: "query" } };
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: t("validation.queryRequired", "Field 'query' is required and must be a string."),
+        field: "query",
+      },
+    };
   }
 
   const trimmed = query.trim();
@@ -44,9 +84,15 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
       ok: false,
       status: 400,
       body: {
-        error: `Query must be at least ${QUERY_LIMITS.MIN_QUERY_LENGTH} characters long.`,
+        error: t(
+          "validation.queryTooShort",
+          `Query must be at least ${QUERY_LIMITS.MIN_QUERY_LENGTH} characters long.`,
+          { min: QUERY_LIMITS.MIN_QUERY_LENGTH },
+        ),
         field: "query",
-        details: `Got ${trimmed.length} characters.`,
+        details: t("validation.gotChars", `Got ${trimmed.length} characters.`, {
+          got: trimmed.length,
+        }),
       },
     };
   }
@@ -55,9 +101,15 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
       ok: false,
       status: 400,
       body: {
-        error: `Query must be at most ${QUERY_LIMITS.MAX_QUERY_LENGTH} characters long.`,
+        error: t(
+          "validation.queryTooLong",
+          `Query must be at most ${QUERY_LIMITS.MAX_QUERY_LENGTH} characters long.`,
+          { max: QUERY_LIMITS.MAX_QUERY_LENGTH },
+        ),
         field: "query",
-        details: `Got ${trimmed.length} characters.`,
+        details: t("validation.gotChars", `Got ${trimmed.length} characters.`, {
+          got: trimmed.length,
+        }),
       },
     };
   }
@@ -65,13 +117,27 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
   const cleanKeywords: string[] = [];
   if (keywords !== undefined && keywords !== null) {
     if (!Array.isArray(keywords)) {
-      return { ok: false, status: 400, body: { error: "Field 'keywords' must be an array of strings.", field: "keywords" } };
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: t("validation.keywordsNotArray", "Field 'keywords' must be an array of strings."),
+          field: "keywords",
+        },
+      };
     }
     if (keywords.length > QUERY_LIMITS.MAX_KEYWORDS) {
       return {
         ok: false,
         status: 400,
-        body: { error: `At most ${QUERY_LIMITS.MAX_KEYWORDS} keywords are allowed.`, field: "keywords" },
+        body: {
+          error: t(
+            "validation.tooManyKeywords",
+            `At most ${QUERY_LIMITS.MAX_KEYWORDS} keywords are allowed.`,
+            { max: QUERY_LIMITS.MAX_KEYWORDS },
+          ),
+          field: "keywords",
+        },
       };
     }
     for (let i = 0; i < keywords.length; i++) {
@@ -80,7 +146,10 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
         return {
           ok: false,
           status: 400,
-          body: { error: `Keyword at index ${i} must be a string.`, field: "keywords" },
+          body: {
+            error: t("validation.keywordNotString", `Keyword at index {index} must be a string.`, { index: i }),
+            field: "keywords",
+          },
         };
       }
       const trimmedK = k.trim();
@@ -89,7 +158,14 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
         return {
           ok: false,
           status: 400,
-          body: { error: `Keyword "${trimmedK.slice(0, 20)}..." exceeds ${QUERY_LIMITS.MAX_KEYWORD_LENGTH} characters.`, field: "keywords" },
+          body: {
+            error: t(
+              "validation.keywordTooLong",
+              `Keyword "${trimmedK.slice(0, 20)}..." exceeds ${QUERY_LIMITS.MAX_KEYWORD_LENGTH} characters.`,
+              { max: QUERY_LIMITS.MAX_KEYWORD_LENGTH, preview: trimmedK.slice(0, 20) },
+            ),
+            field: "keywords",
+          },
         };
       }
       if (!cleanKeywords.includes(trimmedK)) cleanKeywords.push(trimmedK);
@@ -97,6 +173,18 @@ export function validateResearchRequest(body: unknown): ValidationResult<{ query
   }
 
   return { ok: true, value: { query: trimmed, keywords: cleanKeywords } };
+}
+
+/**
+ * Backwards-compatible alias. Kept so existing callers that import
+ * the non-localized variant keep working; delegates to the localized
+ * implementation with no source, which falls back to the English
+ * fallbacks embedded in the localized helper.
+ */
+export function validateResearchRequest(
+  body: unknown,
+): ValidationResult<{ query: string; keywords: string[] }> {
+  return validateResearchRequestLocalized(body);
 }
 
 export function jsonError(

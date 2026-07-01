@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect } from "vitest";
-import { validateResearchRequest, QUERY_LIMITS, jsonError, jsonValidationError, jsonErrorLocalized } from "@/lib/api/validation";
+import { validateResearchRequest, validateResearchRequestLocalized, QUERY_LIMITS, jsonError, jsonValidationError, jsonErrorLocalized } from "@/lib/api/validation";
 
 describe("validateResearchRequest", () => {
   it("rejects non-object body", () => {
@@ -102,6 +102,64 @@ describe("validateResearchRequest", () => {
       expect(r.value.query).toBe("AI note-taking app for students");
       expect(r.value.keywords).toEqual(["AI", "students", "education"]);
     }
+  });
+});
+
+describe("validateResearchRequestLocalized", () => {
+  function reqForLang(tag: string): Request {
+    const h = new Headers();
+    h.set("accept-language", tag);
+    return new Request("https://x/api", { headers: h });
+  }
+
+  it("localizes too-short query errors into Chinese", () => {
+    const r = validateResearchRequestLocalized({ query: "ab" }, reqForLang("zh-CN"));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("query");
+      expect(r.body.error).toContain("3");
+      expect(r.body.details).toContain("2");
+    }
+  });
+
+  it("localizes keyword length errors into Japanese", () => {
+    const r = validateResearchRequestLocalized(
+      { query: "valid idea", keywords: ["x".repeat(50)] },
+      reqForLang("ja"),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("キーワード");
+      expect(r.body.error).toContain("40");
+    }
+  });
+
+  it("localizes too-many-keywords errors into Korean", () => {
+    const keywords = Array.from({ length: 13 }, (_, i) => `kw${i}`);
+    const r = validateResearchRequestLocalized(
+      { query: "valid idea here", keywords },
+      reqForLang("ko"),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("키워드");
+      expect(r.body.error).toContain("12");
+    }
+  });
+
+  it("substitutes {index} into the keyword-type error", () => {
+    const r = validateResearchRequestLocalized(
+      { query: "valid idea here", keywords: ["ok", 42] },
+      reqForLang("en"),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.body.error).toContain("index 1");
+  });
+
+  it("falls back to English when no source is supplied", () => {
+    const r = validateResearchRequestLocalized({ query: "ab" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.body.error).toContain("at least 3");
   });
 });
 
