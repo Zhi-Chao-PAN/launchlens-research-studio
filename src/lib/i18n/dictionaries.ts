@@ -115,6 +115,9 @@ export type DictionaryKey =
   | "commandPalette.noResults"
   | "commandPalette.placeholder"
   | "commandPalette.tryDifferent"
+  | "commandPalette.navigate"
+  | "commandPalette.select"
+  | "commandPalette.close"
   | "common.back"
   | "common.cancel"
   | "common.close"
@@ -693,6 +696,9 @@ const en: Dict = {
   "commandPalette.placeholder": "Type a command or search...",
   "commandPalette.noResults": "No commands found",
   "commandPalette.tryDifferent": "Try a different search term",
+  "commandPalette.navigate": "Navigate",
+  "commandPalette.select": "Select",
+  "commandPalette.close": "Close",
   "commandPalette.category.navigation": "Navigation",
   "commandPalette.category.action": "Actions",
   "commandPalette.category.setting": "Settings",
@@ -1106,6 +1112,9 @@ const zhCN: Dict = {
   "commandPalette.placeholder": "输入命令或搜索...",
   "commandPalette.noResults": "未找到命令",
   "commandPalette.tryDifferent": "试试其他关键词",
+  "commandPalette.navigate": "导航",
+  "commandPalette.select": "选择",
+  "commandPalette.close": "关闭",
   "commandPalette.category.navigation": "导航",
   "commandPalette.category.action": "操作",
   "commandPalette.category.setting": "设置",
@@ -1519,6 +1528,9 @@ const ja: Dict = {
   "commandPalette.placeholder": "コマンドまたは検索...",
   "commandPalette.noResults": "コマンドが見つかりません",
   "commandPalette.tryDifferent": "別のキーワードを試してください",
+  "commandPalette.navigate": "ナビゲート",
+  "commandPalette.select": "選択",
+  "commandPalette.close": "閉じる",
   "commandPalette.category.navigation": "ナビゲーション",
   "commandPalette.category.action": "アクション",
   "commandPalette.category.setting": "設定",
@@ -1770,6 +1782,9 @@ const ko: Dict = {
   "commandPalette.noResults": "명령을 찾을 수 없습니다",
   "commandPalette.placeholder": "명령 또는 검색어를 입력하세요...",
   "commandPalette.tryDifferent": "다른 검색어로 시도해 보세요",
+  "commandPalette.navigate": "이동",
+  "commandPalette.select": "선택",
+  "commandPalette.close": "닫기",
   "common.back": "뒤로",
   "common.cancel": "취소",
   "common.close": "닫기",

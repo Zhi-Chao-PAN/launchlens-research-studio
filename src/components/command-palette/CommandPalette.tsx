@@ -4,13 +4,16 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useCommandPalette } from "./CommandPaletteContext";
 import { rankCommands, getMatchRanges } from "@/lib/utils/fuzzy-search";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface CommandPaletteProps {
   placeholder?: string;
 }
 
-export function CommandPalette({ placeholder = "Type a command or search..." }: CommandPaletteProps) {
+export function CommandPalette({ placeholder }: CommandPaletteProps) {
   const { isOpen, closePalette, commands, runCommand } = useCommandPalette();
+  const { t } = useLocale();
+  const resolvedPlaceholder = placeholder ?? t("commandPalette.placeholder", "Type a command or search...");
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const historyMap = useMemo<Map<string, { id: string; count: number; lastUsed: number }>>(() => new Map(), []);
@@ -102,10 +105,10 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
   }, [filtered]);
 
   const categoryLabels: Record<string, string> = {
-    navigation: "Navigation",
-    action: "Actions",
-    setting: "Settings",
-    template: "Templates",
+    navigation: t("commandPalette.category.navigation", "Navigation"),
+    action: t("commandPalette.category.action", "Actions"),
+    setting: t("commandPalette.category.setting", "Settings"),
+    template: t("commandPalette.category.template", "Templates"),
   };
 
   // Early return AFTER all hooks
@@ -137,7 +140,7 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
             className={`cmdpal-cat-btn ${activeCategory === "all" ? "active" : ""}`}
             onClick={() => { setActiveCategory("all"); setSelectedIndex(0); }}
           >
-            All
+            {t("commandPalette.all", "All")}
           </button>
           {Array.from(new Set(commands.map((c) => c.category || "other"))).filter(Boolean).map((cat) => (
             <button
@@ -153,8 +156,8 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
         <div className="cmdpal-results">
           {filtered.length === 0 ? (
             <div className="cmdpal-empty">
-              <p>No commands found</p>
-              <span>Try a different search term</span>
+              <p>{t("commandPalette.noResults", "No commands found")}</p>
+              <span>{t("commandPalette.tryDifferent", "Try a different search term")}</span>
             </div>
           ) : (
             Array.from(grouped.entries()).map(([category, cmds]) => (
@@ -190,13 +193,13 @@ export function CommandPalette({ placeholder = "Type a command or search..." }: 
 
         <div className="cmdpal-footer">
           <span>
-            <kbd>??</kbd> Navigate
+            <kbd>↑↓</kbd> {t("commandPalette.navigate", "Navigate")}
           </span>
           <span>
-            <kbd>?</kbd> Select
+            <kbd>↵</kbd> {t("commandPalette.select", "Select")}
           </span>
           <span>
-            <kbd>esc</kbd> Close
+            <kbd>esc</kbd> {t("commandPalette.close", "Close")}
           </span>
         </div>
       </div>
