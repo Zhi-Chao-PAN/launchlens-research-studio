@@ -246,5 +246,39 @@ describe("star stats and search (round 134)", () => {
     starRun("a"); starRun("b");
     expect(searchStarred(getStarredRunIds(), "")).toHaveLength(2);
   });
+
+  it("unstarRunsBatch is a no-op when none of the ids are starred", () => {
+    starRun("a");
+    starRun("b");
+    const before = getStarredRunIds();
+    // None of these are starred; the call must not touch storage.
+    const out = unstarRunsBatch(["x", "y"]);
+    expect(out).toEqual(before);
+    expect(getStarredRunIds()).toEqual(before);
+  });
+
+  it("unstarRunsBatch with an empty array is a no-op", () => {
+    starRun("a");
+    const out = unstarRunsBatch([]);
+    expect(out).toEqual(["a"]);
+  });
+
+  it("getMetaMap silently drops corrupted star entries", () => {
+    starRun("a");
+    setStarNote("a", "real note");
+    // Inject a corrupt entry next to a valid one.
+    const raw = localStorage.getItem("ll:starred-meta")!;
+    const map = JSON.parse(raw);
+    map["broken"] = { starredAt: 123 }; // starredAt should be a string
+    map["alsoBroken"] = { note: "ok" }; // missing starredAt
+    map["tagsWrongType"] = { starredAt: "2025", tags: "not-an-array" };
+    localStorage.setItem("ll:starred-meta", JSON.stringify(map));
+
+    // Valid entry survives; the corrupt three are dropped.
+    expect(getStarNote("a")).toBe("real note");
+    expect(getStarMetadata("broken")).toBeUndefined();
+    expect(getStarMetadata("alsoBroken")).toBeUndefined();
+    expect(getStarMetadata("tagsWrongType")).toBeUndefined();
+  });
 });
 

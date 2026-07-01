@@ -97,10 +97,32 @@ function getMetaMap(): Record<string, StarMetadata> {
     const raw = storage.getItem(STAR_META_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    // Defensively drop any entry that doesn't match the StarMetadata
+    // shape — a partial localStorage write or a schema migration could
+    // leave a single corrupt entry that would later crash
+    // getStarNote/getStarMetadata.
+    const out: Record<string, StarMetadata> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (isValidStarMetadata(v)) out[k] = v;
+    }
+    return out;
   } catch {
     return {};
   }
+}
+
+function isValidStarMetadata(v: unknown): v is StarMetadata {
+  if (!v || typeof v !== "object") return false;
+  const m = v as Record<string, unknown>;
+  if (typeof m.starredAt !== "string") return false;
+  if (m.note !== undefined && typeof m.note !== "string") return false;
+  if (m.collection !== undefined && typeof m.collection !== "string") return false;
+  if (m.tags !== undefined) {
+    if (!Array.isArray(m.tags)) return false;
+    if (!m.tags.every((t) => typeof t === "string")) return false;
+  }
+  return true;
 }
 
 function saveMetaMap(map: Record<string, StarMetadata>): void {
@@ -191,7 +213,14 @@ export function starRunsBatch(ids: string[]): string[] {
 
 export function unstarRunsBatch(ids: string[]): string[] {
   const idSet = new Set(ids);
-  const next = getStarredRunIds().filter((id) => !idSet.has(id));
+  const current = getStarredRunIds();
+  // Only write when something actually changes; otherwise the storage
+  // write is a no-op that still risks touching mtime (and would
+  // unnecessarily notify storage event listeners).
+  if (ids.length === 0 || !current.some((id) => idSet.has(id))) {
+    return current;
+  }
+  const next = current.filter((id) => !idSet.has(id));
   const storage = getStorage();
   if (storage) { try { storage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {} }
   // Also clean up metadata for unstarred runs
