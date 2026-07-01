@@ -497,8 +497,8 @@ async function loadRun() {
     const filename = generateFilename(format);
     downloadFile(content, filename, mimeType);
     setShowExportMenu(false);
-    showToast("Exported " + format.toUpperCase());
-  }, [run, showToast, synthesis]);
+    showToast(t("report.exportedToast", { format: format.toUpperCase() }));
+  }, [run, showToast, synthesis, t]);
 
   function buildPlainText(r: ResearchRun, s: SynthesisOutput | null): string {
     const lines: string[] = [];
@@ -739,7 +739,7 @@ async function loadRun() {
     const md = buildMarkdown(run, synthesis);
     try {
       await navigator.clipboard.writeText(md);
-      showToast("Report copied to clipboard");
+      showToast(t("report.reportCopied"));
     } catch {
       const textarea = document.createElement("textarea");
       textarea.value = md;
@@ -747,20 +747,20 @@ async function loadRun() {
       textarea.select();
       document.execCommand("copy");
       document.body.removeChild(textarea);
-      showToast("Report copied to clipboard");
+      showToast(t("report.reportCopied"));
     }
-  }, [run, synthesis, showToast]);
+  }, [run, synthesis, showToast, t]);
 
   const handleCopyLink = useCallback(async () => {
     if (!run) return;
     const url = window.location.href;
     try {
       await navigator.clipboard.writeText(url);
-      showToast("Link copied to clipboard");
+      showToast(t("report.linkCopied"));
     } catch {
-      showToast("Failed to copy link");
+      showToast(t("report.copyLinkFailed"));
     }
-  }, [run, showToast]);
+  }, [run, showToast, t]);
 
   const handleGenerateShare = useCallback(async () => {
     if (!run) return;
@@ -771,20 +771,20 @@ async function loadRun() {
     setShareLoading(false);
     if (!r.ok) { setShareError(r.error || "Failed to create share link"); return; }
     setShareToken(r.token || null);
-    if (r.copied) showToast("Share link copied to clipboard");
-    else showToast("Share link created: " + buildShareUrl(r.token || ""));
-  }, [run, showToast]);
+    if (r.copied) showToast(t("report.shareLinkCopied"));
+    else showToast(t("report.shareLinkCreated", { url: buildShareUrl(r.token || "") }));
+  }, [run, showToast, t]);
 
   const handleCopyShareLink = useCallback(async () => {
     if (!shareToken) return;
     const url = `${window.location.origin}/share/${shareToken}`;
     try {
       await navigator.clipboard.writeText(url);
-      showToast("Share link copied");
+      showToast(t("report.shareCopied"));
     } catch {
-      showToast("Failed to copy");
+      showToast(t("report.shareFailed"));
     }
-  }, [shareToken, showToast]);
+  }, [shareToken, showToast, t]);
 
   const confirmSaveAsTemplate = useCallback(() => {
     if (!run || !templateName.trim()) return;
@@ -1141,18 +1141,18 @@ async function loadRun() {
     <div className="research-detail">
       <header className="research-detail-header">
         <div className="research-detail-header-inner">
-          <Link href="/history" className="research-back-link">← Research history</Link>
-          <p className="research-detail-kicker">LaunchLens Research Studio · Evidence-backed market report</p>
+          <Link href="/history" className="research-back-link">{t("report.backLink")}</Link>
+          <p className="research-detail-kicker">{t("report.kicker")}</p>
           <h1 className="research-detail-title">{run?.query}</h1>
           <p className="research-detail-subtitle">
-            Audience-aware reading, citation recovery, and decision-ready synthesis for the current report.
+            {t("report.subtitle")}
           </p>
     <div className="research-detail-tags">
             <TagList runId={queryId} />
           </div>
           <div className="research-detail-meta">
             <span className={`research-status research-status-${run?.status}`}>
-              {run?.status}
+              {run?.status === "completed" ? t("report.statusCompleted") : t("report.statusFailed")}
             </span>
             <span className="research-provider">{run?.provider} / {run?.model}</span>
             <span className="research-time">{run ? formatTime(run.createdAt) : ""}</span>
@@ -1160,24 +1160,24 @@ async function loadRun() {
             <button
               onClick={handleToggleStar}
               className={`research-star-btn ${isStarred ? "starred" : ""}`}
-              aria-label={isStarred ? "Unstar" : "Star"}
+              aria-label={isStarred ? t("report.unstar") : t("report.star")}
             >
-              {isStarred ? "★ Starred" : "☆ Star"}
+              {isStarred ? t("report.starred") : t("report.star")}
             </button>
             <button onClick={handleRerun} className="research-action-btn">
-              Rerun
+              {t("report.rerun")}
             </button>
             <button onClick={handleSaveAsTemplate} className="research-action-btn">
-              Save as template
+              {t("report.saveAsTemplate")}
             </button>
             <button onClick={() => setShowShareDialog(true)} className="research-action-btn">
-              Share
+              {t("report.share")}
             </button>
             <button onClick={handleCopyMarkdown} className="research-action-btn">
-              Copy Markdown
+              {t("report.copyMarkdown")}
             </button>
             <button onClick={handleAddToCompare} className="research-action-btn">
-              Compare
+              {t("report.compare")}
               {compareCount > 0 && <span className="research-action-badge">{compareCount}</span>}
             </button>
             <div className="research-export-menu" ref={exportMenuRef}>
@@ -1185,7 +1185,7 @@ async function loadRun() {
                 onClick={() => setShowExportMenu((v) => !v)}
                 className="research-export-btn research-export-toggle"
               >
-                <span>Export</span>
+                <span>{t("report.export")}</span>
                 <span className="research-export-caret">{showExportMenu ? "▲" : "▼"}</span>
               </button>
               {showExportMenu && (
@@ -1196,8 +1196,8 @@ async function loadRun() {
                   >
                     <span className="research-export-item-icon">📝</span>
                     <div className="research-export-item-body">
-                      <div className="research-export-item-title">Markdown</div>
-                      <div className="research-export-item-desc">.md file with formatting</div>
+                      <div className="research-export-item-title">{t("report.exportMd")}</div>
+                      <div className="research-export-item-desc">{t("report.exportMdDesc")}</div>
                     </div>
                     <kbd className="research-export-shortcut">E</kbd>
                   </button>
@@ -1207,8 +1207,8 @@ async function loadRun() {
                   >
                     <span className="research-export-item-icon">📄</span>
                     <div className="research-export-item-body">
-                      <div className="research-export-item-title">PDF</div>
-                      <div className="research-export-item-desc">Print / Save as PDF</div>
+                      <div className="research-export-item-title">{t("report.exportPdf")}</div>
+                      <div className="research-export-item-desc">{t("report.exportPdfDesc")}</div>
                     </div>
                   </button>
                   <button
@@ -1217,8 +1217,8 @@ async function loadRun() {
                   >
                     <span className="research-export-item-icon">📋</span>
                     <div className="research-export-item-body">
-                      <div className="research-export-item-title">JSON</div>
-                      <div className="research-export-item-desc">Structured data</div>
+                      <div className="research-export-item-title">{t("report.exportJson")}</div>
+                      <div className="research-export-item-desc">{t("report.exportJsonDesc")}</div>
                     </div>
                   </button>
                   <button
@@ -1227,8 +1227,8 @@ async function loadRun() {
                   >
                     <span className="research-export-item-icon">📃</span>
                     <div className="research-export-item-body">
-                      <div className="research-export-item-title">Plain Text</div>
-                      <div className="research-export-item-desc">.txt file</div>
+                      <div className="research-export-item-title">{t("report.exportTxt")}</div>
+                      <div className="research-export-item-desc">{t("report.exportTxtDesc")}</div>
                     </div>
                   </button>
                 </div>
@@ -1722,11 +1722,11 @@ async function loadRun() {
       {showShareDialog && (
         <div className="research-modal-overlay" onClick={() => setShowShareDialog(false)}>
           <div className="research-modal research-modal-share" onClick={(e) => e.stopPropagation()}>
-            <h3>Share Research</h3>
+            <h3>{t("report.shareTitle")}</h3>
             {!shareToken ? (
               <>
                 <p className="research-modal-desc">
-                  Generate a public share link for this research report.
+                  {t("report.shareDesc")}
                 </p>
                 {shareError && (
                   <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-3 py-2 mb-2" role="alert">
@@ -1738,23 +1738,23 @@ async function loadRun() {
                     className="btn btn-secondary"
                     onClick={() => setShowShareDialog(false)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                   <button
                     className="btn btn-primary"
                     onClick={handleGenerateShare}
                     disabled={shareLoading}
                   >
-                    {shareLoading ? "Generating..." : "Generate link"}
+                    {shareLoading ? t("report.shareGenerating") : t("report.shareGenerateLink")}
                   </button>
                 </div>
                 <div className="research-share-alt">
-                  <span className="research-share-alt-label">Or copy current page link:</span>
+                  <span className="research-share-alt-label">{t("report.shareOrCopyLabel")}</span>
                   <button
                     className="btn btn-sm btn-secondary research-copy-link-btn"
                     onClick={handleCopyLink}
                   >
-                    📋 Copy link
+                    {t("report.shareCopyLink")}
                   </button>
                 </div>
               </>
@@ -1762,7 +1762,7 @@ async function loadRun() {
               <>
                 <div className="research-share-success">
                   <div className="research-share-success-icon">✓</div>
-                  <p>Share link generated!</p>
+                  <p>{t("report.shareGenerated")}</p>
                 </div>
                 <div className="research-share-url">
                   <code>{typeof window !== "undefined" ? window.location.origin : ""}/share/{shareToken}</code>
@@ -1770,7 +1770,7 @@ async function loadRun() {
                     className="btn btn-sm btn-primary"
                     onClick={handleCopyShareLink}
                   >
-                    Copy
+                    {t("report.shareCopy")}
                   </button>
                 </div>
                 <div className="research-modal-actions">
@@ -1778,7 +1778,7 @@ async function loadRun() {
                     className="btn btn-secondary"
                     onClick={() => setShowShareDialog(false)}
                   >
-                    Close
+                    {t("common.close")}
                   </button>
                 </div>
               </>
@@ -1798,14 +1798,14 @@ async function loadRun() {
       {showTemplateDialog && (
         <div className="research-modal-overlay" onClick={() => setShowTemplateDialog(false)}>
           <div className="research-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Save as Template</h3>
+            <h3>{t("report.templateTitle")}</h3>
             {templateSaved ? (
               <div className="research-modal-success">
-                ✓ Template saved successfully
+                {t("report.templateSaved")}
               </div>
             ) : (
               <>
-                <label className="research-modal-label">Template name</label>
+                <label className="research-modal-label">{t("report.templateNameLabel")}</label>
                 <input
                   type="text"
                   value={templateName}
@@ -1818,14 +1818,14 @@ async function loadRun() {
                     className="btn btn-secondary"
                     onClick={() => setShowTemplateDialog(false)}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                   <button
                     className="btn btn-primary"
                     onClick={confirmSaveAsTemplate}
                     disabled={!templateName.trim()}
                   >
-                    Save
+                    {t("common.save")}
                   </button>
                 </div>
               </>

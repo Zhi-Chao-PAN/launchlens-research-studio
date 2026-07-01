@@ -430,6 +430,90 @@ export type DictionaryKey =
   | "dataManager.errorTokenRequired"
   | "dataManager.errorTokenRejected"
   | "dataManager.errorRunImportFailed"
+  | "report.backLink"
+  | "report.kicker"
+  | "report.subtitle"
+  | "report.statusCompleted"
+  | "report.statusFailed"
+  | "report.star"
+  | "report.unstar"
+  | "report.starred"
+  | "report.rerun"
+  | "report.saveAsTemplate"
+  | "report.share"
+  | "report.copyMarkdown"
+  | "report.compare"
+  | "report.export"
+  | "report.exportMd"
+  | "report.exportMdDesc"
+  | "report.exportPdf"
+  | "report.exportPdfDesc"
+  | "report.exportJson"
+  | "report.exportJsonDesc"
+  | "report.exportTxt"
+  | "report.exportTxtDesc"
+  | "report.exportedToast"
+  | "report.reportCopied"
+  | "report.linkCopied"
+  | "report.copyLinkFailed"
+  | "report.shareLinkCopied"
+  | "report.shareLinkCreated"
+  | "report.shareCopied"
+  | "report.shareFailed"
+  | "report.shareTitle"
+  | "report.shareDesc"
+  | "report.shareGenerating"
+  | "report.shareGenerateLink"
+  | "report.shareOrCopyLabel"
+  | "report.shareCopyLink"
+  | "report.shareGenerated"
+  | "report.shareCopy"
+  | "report.templateTitle"
+  | "report.templateSaved"
+  | "report.templateNameLabel"
+  | "report.outputProfileLabel"
+  | "report.profileIdea"
+  | "report.profileIdeaEyebrow"
+  | "report.profileIdeaDesc"
+  | "report.profileFounder"
+  | "report.profileFounderEyebrow"
+  | "report.profileFounderDesc"
+  | "report.profileAnalyst"
+  | "report.profileAnalystEyebrow"
+  | "report.profileAnalystDesc"
+  | "report.opportunityLabel"
+  | "report.riskLabel"
+  | "report.evidenceLabel"
+  | "report.sourcesUnit"
+  | "report.sourcesShown"
+  | "report.tocTitle"
+  | "report.tocExecSummary"
+  | "report.tocScores"
+  | "report.tocKeyInsights"
+  | "report.tocOpportunities"
+  | "report.tocRisks"
+  | "report.tocNextStep"
+  | "report.tocSources"
+  | "report.tocResult"
+  | "report.tocRawOutput"
+  | "report.showRawOutput"
+  | "report.hideRawOutput"
+  | "report.sourcesNotice"
+  | "report.analysisCompanion"
+  | "report.viewSource"
+  | "report.citedIn"
+  | "report.keywordAnalysis"
+  | "report.agentsLabel"
+  | "report.scoresLabel"
+  | "report.readingProgress"
+  | "report.kbNavHint"
+  | "report.customTemplate"
+  | "report.rerunResearch"
+  | "report.exportReport"
+  | "report.copyReport"
+  | "report.backToHistory"
+  | "report.notFound"
+  | "report.failedToLoad"
   | "language.label"
   | "notFound.backHome"
   | "notFound.body"
@@ -1002,6 +1086,90 @@ const en: Dict = {
   "dataManager.errorTokenRequired": "Run import requires an admin token. Enter your admin token in the field above to enable server-side restore.",
   "dataManager.errorTokenRejected": "Admin token rejected (401). Clear and re-enter it.",
   "dataManager.errorRunImportFailed": "Run import failed: HTTP {status}",
+  "report.backLink": "← Research history",
+  "report.kicker": "LaunchLens Research Studio · Evidence-backed market report",
+  "report.subtitle": "Audience-aware reading, citation recovery, and decision-ready synthesis for the current report.",
+  "report.statusCompleted": "completed",
+  "report.statusFailed": "failed",
+  "report.star": "☆ Star",
+  "report.unstar": "Unstar",
+  "report.starred": "★ Starred",
+  "report.rerun": "Rerun",
+  "report.saveAsTemplate": "Save as template",
+  "report.share": "Share",
+  "report.copyMarkdown": "Copy Markdown",
+  "report.compare": "Compare",
+  "report.export": "Export",
+  "report.exportMd": "Markdown",
+  "report.exportMdDesc": ".md file with formatting",
+  "report.exportPdf": "PDF",
+  "report.exportPdfDesc": "Print / Save as PDF",
+  "report.exportJson": "JSON",
+  "report.exportJsonDesc": "Structured data",
+  "report.exportTxt": "Plain Text",
+  "report.exportTxtDesc": ".txt file",
+  "report.exportedToast": "Exported {format}",
+  "report.reportCopied": "Report copied to clipboard",
+  "report.linkCopied": "Link copied to clipboard",
+  "report.copyLinkFailed": "Failed to copy link",
+  "report.shareLinkCopied": "Share link copied to clipboard",
+  "report.shareLinkCreated": "Share link created: {url}",
+  "report.shareCopied": "Share link copied",
+  "report.shareFailed": "Failed to copy",
+  "report.shareTitle": "Share Research",
+  "report.shareDesc": "Generate a public share link for this research report.",
+  "report.shareGenerating": "Generating...",
+  "report.shareGenerateLink": "Generate link",
+  "report.shareOrCopyLabel": "Or copy current page link:",
+  "report.shareCopyLink": "📋 Copy link",
+  "report.shareGenerated": "Share link generated!",
+  "report.shareCopy": "Copy",
+  "report.templateTitle": "Save as Template",
+  "report.templateSaved": "✓ Template saved successfully",
+  "report.templateNameLabel": "Template name",
+  "report.outputProfileLabel": "Output profile",
+  "report.profileIdea": "Idea",
+  "report.profileIdeaEyebrow": "Plain-language validation",
+  "report.profileIdeaDesc": "For individual builders who need the answer, the risk, and the next move without analyst-heavy detail.",
+  "report.profileFounder": "Founder",
+  "report.profileFounderEyebrow": "Execution-ready brief",
+  "report.profileFounderDesc": "For early teams that need enough evidence to decide, prioritize, and hand off into GTM execution.",
+  "report.profileAnalyst": "Analyst",
+  "report.profileAnalystEyebrow": "Full evidence mode",
+  "report.profileAnalystDesc": "For expert reviewers who want scores, citation trails, raw evidence, and all intermediate detail.",
+  "report.opportunityLabel": "Opportunity",
+  "report.riskLabel": "Risk",
+  "report.evidenceLabel": "Evidence",
+  "report.sourcesUnit": "sources",
+  "report.sourcesShown": "{n} shown · full trail in Analyst",
+  "report.tocTitle": "Table of Contents",
+  "report.tocExecSummary": "Executive Summary",
+  "report.tocScores": "Scores",
+  "report.tocKeyInsights": "Key Insights ({n})",
+  "report.tocOpportunities": "Top Opportunities",
+  "report.tocRisks": "Top Risks",
+  "report.tocNextStep": "Recommended Next Step",
+  "report.tocSources": "Sources ({n}+)",
+  "report.tocResult": "Result",
+  "report.tocRawOutput": "Raw Output",
+  "report.showRawOutput": "Show raw output",
+  "report.hideRawOutput": "Hide raw output",
+  "report.sourcesNotice": "Showing the first N sources for readability. Switch to Analyst for the complete citation trail.",
+  "report.analysisCompanion": "Analysis companion",
+  "report.viewSource": "View source",
+  "report.citedIn": "Cited in:",
+  "report.keywordAnalysis": "Keyword Analysis",
+  "report.agentsLabel": "Agents:",
+  "report.scoresLabel": "Scores",
+  "report.readingProgress": "{pct}% read",
+  "report.kbNavHint": "j k nav · t top · b bottom",
+  "report.customTemplate": "Custom",
+  "report.rerunResearch": "Rerun Research",
+  "report.exportReport": "Export Report",
+  "report.copyReport": "Copy Report",
+  "report.backToHistory": "Back to History",
+  "report.notFound": "Research run not found. It may have expired or been deleted.",
+  "report.failedToLoad": "Failed to load",
   "export.title": "Export Report",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1575,6 +1743,90 @@ const zhCN: Dict = {
   "dataManager.errorTokenRequired": "导入研究记录需要管理员令牌。请在上方输入管理员令牌以启用服务端恢复。",
   "dataManager.errorTokenRejected": "管理员令牌被拒绝（401）。请清除后重新输入。",
   "dataManager.errorRunImportFailed": "研究记录导入失败：HTTP {status}",
+  "report.backLink": "← 研究历史",
+  "report.kicker": "LaunchLens 研究工作室 · 证据驱动的市场报告",
+  "report.subtitle": "受众感知阅读、引用恢复、当前报告的决策就绪综合。",
+  "report.statusCompleted": "已完成",
+  "report.statusFailed": "失败",
+  "report.star": "☆ 收藏",
+  "report.unstar": "取消收藏",
+  "report.starred": "★ 已收藏",
+  "report.rerun": "重新运行",
+  "report.saveAsTemplate": "另存为模板",
+  "report.share": "分享",
+  "report.copyMarkdown": "复制 Markdown",
+  "report.compare": "对比",
+  "report.export": "导出",
+  "report.exportMd": "Markdown",
+  "report.exportMdDesc": "带格式的 .md 文件",
+  "report.exportPdf": "PDF",
+  "report.exportPdfDesc": "打印 / 保存为 PDF",
+  "report.exportJson": "JSON",
+  "report.exportJsonDesc": "结构化数据",
+  "report.exportTxt": "纯文本",
+  "report.exportTxtDesc": ".txt 文件",
+  "report.exportedToast": "已导出 {format}",
+  "report.reportCopied": "报告已复制到剪贴板",
+  "report.linkCopied": "链接已复制到剪贴板",
+  "report.copyLinkFailed": "复制链接失败",
+  "report.shareLinkCopied": "分享链接已复制到剪贴板",
+  "report.shareLinkCreated": "分享链接已创建: {url}",
+  "report.shareCopied": "分享链接已复制",
+  "report.shareFailed": "复制失败",
+  "report.shareTitle": "分享研究",
+  "report.shareDesc": "为这份研究报告生成公开分享链接。",
+  "report.shareGenerating": "生成中...",
+  "report.shareGenerateLink": "生成链接",
+  "report.shareOrCopyLabel": "或复制当前页面链接：",
+  "report.shareCopyLink": "📋 复制链接",
+  "report.shareGenerated": "分享链接已生成！",
+  "report.shareCopy": "复制",
+  "report.templateTitle": "另存为模板",
+  "report.templateSaved": "✓ 模板保存成功",
+  "report.templateNameLabel": "模板名称",
+  "report.outputProfileLabel": "输出配置",
+  "report.profileIdea": "创意验证",
+  "report.profileIdeaEyebrow": "通俗语言验证",
+  "report.profileIdeaDesc": "适合独立创业者，需要答案、风险提示和下一步行动，无需分析师级别的细节。",
+  "report.profileFounder": "创始人",
+  "report.profileFounderEyebrow": "可执行简报",
+  "report.profileFounderDesc": "适合早期团队，需要足够的证据来决策、排优先级并移交给 GTM 执行。",
+  "report.profileAnalyst": "分析师",
+  "report.profileAnalystEyebrow": "完整证据模式",
+  "report.profileAnalystDesc": "适合专业评审，需要评分、引用链、原始证据和所有中间细节。",
+  "report.opportunityLabel": "机会",
+  "report.riskLabel": "风险",
+  "report.evidenceLabel": "证据",
+  "report.sourcesUnit": "个来源",
+  "report.sourcesShown": "显示 {n} 个 · 分析师模式查看完整引用链",
+  "report.tocTitle": "目录",
+  "report.tocExecSummary": "执行摘要",
+  "report.tocScores": "评分",
+  "report.tocKeyInsights": "关键洞察 ({n})",
+  "report.tocOpportunities": "核心机遇",
+  "report.tocRisks": "主要风险",
+  "report.tocNextStep": "推荐下一步",
+  "report.tocSources": "来源 ({n}+)",
+  "report.tocResult": "结果",
+  "report.tocRawOutput": "原始输出",
+  "report.showRawOutput": "显示原始输出",
+  "report.hideRawOutput": "隐藏原始输出",
+  "report.sourcesNotice": "为便于阅读，仅显示前 N 个来源。切换到分析师模式查看完整引用链。",
+  "report.analysisCompanion": "分析伴侣",
+  "report.viewSource": "查看来源",
+  "report.citedIn": "引用位置：",
+  "report.keywordAnalysis": "关键词分析",
+  "report.agentsLabel": "智能体：",
+  "report.scoresLabel": "评分",
+  "report.readingProgress": "已读 {pct}%",
+  "report.kbNavHint": "j k 导航 · t 顶部 · b 底部",
+  "report.customTemplate": "自定义",
+  "report.rerunResearch": "重新运行研究",
+  "report.exportReport": "导出报告",
+  "report.copyReport": "复制报告",
+  "report.backToHistory": "返回历史",
+  "report.notFound": "未找到研究运行。它可能已过期或被删除。",
+  "report.failedToLoad": "加载失败",
   "export.title": "导出报告",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -2148,6 +2400,90 @@ const ja: Dict = {
   "dataManager.errorTokenRequired": "実行のインポートには管理者トークンが必要です。サーバー側の復元を有効にするには、上のフィールドに管理者トークンを入力してください。",
   "dataManager.errorTokenRejected": "管理者トークンが拒否されました（401）。クリアして再入力してください。",
   "dataManager.errorRunImportFailed": "実行のインポートに失敗: HTTP {status}",
+  "report.backLink": "← リサーチ履歴",
+  "report.kicker": "LaunchLens Research Studio · エビデンスに基づく市場レポート",
+  "report.subtitle": "閲覧者に合わせた可読性、引用復元、現在のレポートの意思決定対応合成。",
+  "report.statusCompleted": "完了",
+  "report.statusFailed": "失敗",
+  "report.star": "☆ スター",
+  "report.unstar": "スター解除",
+  "report.starred": "★ スター付き",
+  "report.rerun": "再実行",
+  "report.saveAsTemplate": "テンプレートとして保存",
+  "report.share": "共有",
+  "report.copyMarkdown": "Markdown をコピー",
+  "report.compare": "比較",
+  "report.export": "エクスポート",
+  "report.exportMd": "Markdown",
+  "report.exportMdDesc": "フォーマット付き .md ファイル",
+  "report.exportPdf": "PDF",
+  "report.exportPdfDesc": "印刷 / PDF として保存",
+  "report.exportJson": "JSON",
+  "report.exportJsonDesc": "構造化データ",
+  "report.exportTxt": "プレーンテキスト",
+  "report.exportTxtDesc": ".txt ファイル",
+  "report.exportedToast": "{format} をエクスポートしました",
+  "report.reportCopied": "レポートをクリップボードにコピーしました",
+  "report.linkCopied": "リンクをクリップボードにコピーしました",
+  "report.copyLinkFailed": "リンクのコピーに失敗しました",
+  "report.shareLinkCopied": "共有リンクをクリップボードにコピーしました",
+  "report.shareLinkCreated": "共有リンクが作成されました: {url}",
+  "report.shareCopied": "共有リンクをコピーしました",
+  "report.shareFailed": "コピーに失敗しました",
+  "report.shareTitle": "リサーチを共有",
+  "report.shareDesc": "このリサーチレポートの公開共有リンクを生成します。",
+  "report.shareGenerating": "生成中...",
+  "report.shareGenerateLink": "リンクを生成",
+  "report.shareOrCopyLabel": "または現在のページリンクをコピー:",
+  "report.shareCopyLink": "📋 リンクをコピー",
+  "report.shareGenerated": "共有リンクが生成されました！",
+  "report.shareCopy": "コピー",
+  "report.templateTitle": "テンプレートとして保存",
+  "report.templateSaved": "✓ テンプレートが正常に保存されました",
+  "report.templateNameLabel": "テンプレート名",
+  "report.outputProfileLabel": "出力プロファイル",
+  "report.profileIdea": "アイデア",
+  "report.profileIdeaEyebrow": "平易な言語による検証",
+  "report.profileIdeaDesc": "アナリスト向けの詳細を除いた、回答、リスク、次のアクションが必要な個人ビルダー向け。",
+  "report.profileFounder": "ファウンダー",
+  "report.profileFounderEyebrow": "実行対応ブリーフ",
+  "report.profileFounderDesc": "GTM 実行に向けて意思決定、優先順位付け、引き継ぎに十分なエビデンスが必要な初期チーム向け。",
+  "report.profileAnalyst": "アナリスト",
+  "report.profileAnalystEyebrow": "フルエビデンスモード",
+  "report.profileAnalystDesc": "スコア、引用トレイル、生のエビデンス、すべての中間詳細が必要な専門レビュアー向け。",
+  "report.opportunityLabel": "機会",
+  "report.riskLabel": "リスク",
+  "report.evidenceLabel": "エビデンス",
+  "report.sourcesUnit": "ソース",
+  "report.sourcesShown": "{n} 件表示 · 完全なトレイルはアナリストで",
+  "report.tocTitle": "目次",
+  "report.tocExecSummary": "エグゼクティブサマリー",
+  "report.tocScores": "スコア",
+  "report.tocKeyInsights": "主要な洞察 ({n})",
+  "report.tocOpportunities": "主要な機会",
+  "report.tocRisks": "主要なリスク",
+  "report.tocNextStep": "推奨される次のステップ",
+  "report.tocSources": "ソース ({n}+)",
+  "report.tocResult": "結果",
+  "report.tocRawOutput": "生の出力",
+  "report.showRawOutput": "生の出力を表示",
+  "report.hideRawOutput": "生の出力を非表示",
+  "report.sourcesNotice": "可読性のため最初の N ソースを表示しています。完全な引用トレイルにはアナリストに切り替えてください。",
+  "report.analysisCompanion": "分析コンパニオン",
+  "report.viewSource": "ソースを表示",
+  "report.citedIn": "引用箇所:",
+  "report.keywordAnalysis": "キーワード分析",
+  "report.agentsLabel": "エージェント:",
+  "report.scoresLabel": "スコア",
+  "report.readingProgress": "{pct}% 読了",
+  "report.kbNavHint": "j k ナビ · t トップ · b ボトム",
+  "report.customTemplate": "カスタム",
+  "report.rerunResearch": "リサーチを再実行",
+  "report.exportReport": "レポートをエクスポート",
+  "report.copyReport": "レポートをコピー",
+  "report.backToHistory": "履歴に戻る",
+  "report.notFound": "リサーチ実行が見つかりません。期限切れまたは削除された可能性があります。",
+  "report.failedToLoad": "読み込みに失敗しました",
   "export.title": "レポートをエクスポート",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -2725,6 +3061,90 @@ const ko: Dict = {
   "dataManager.errorTokenRequired": "실행 가져오기에는 관리자 토큰이 필요합니다. 서버 측 복원을 활성화하려면 위 필드에 관리자 토큰을 입력하세요.",
   "dataManager.errorTokenRejected": "관리자 토큰이 거부되었습니다 (401). 지우고 다시 입력하세요.",
   "dataManager.errorRunImportFailed": "실행 가져오기 실패: HTTP {status}",
+  "report.backLink": "← 리서치 기록",
+  "report.kicker": "LaunchLens Research Studio · 증거 기반 시장 보고서",
+  "report.subtitle": "독자 맞춤 가독성, 인용 복구, 현재 보고서의 의사결정 지원 종합.",
+  "report.statusCompleted": "완료됨",
+  "report.statusFailed": "실패함",
+  "report.star": "☆ 별표",
+  "report.unstar": "별표 해제",
+  "report.starred": "★ 별표됨",
+  "report.rerun": "다시 실행",
+  "report.saveAsTemplate": "템플릿으로 저장",
+  "report.share": "공유",
+  "report.copyMarkdown": "Markdown 복사",
+  "report.compare": "비교",
+  "report.export": "내보내기",
+  "report.exportMd": "Markdown",
+  "report.exportMdDesc": "서식이 적용된 .md 파일",
+  "report.exportPdf": "PDF",
+  "report.exportPdfDesc": "인쇄 / PDF로 저장",
+  "report.exportJson": "JSON",
+  "report.exportJsonDesc": "구조화된 데이터",
+  "report.exportTxt": "일반 텍스트",
+  "report.exportTxtDesc": ".txt 파일",
+  "report.exportedToast": "{format} 내보냄",
+  "report.reportCopied": "보고서가 클립보드에 복사됨",
+  "report.linkCopied": "링크가 클립보드에 복사됨",
+  "report.copyLinkFailed": "링크 복사 실패",
+  "report.shareLinkCopied": "공유 링크가 클립보드에 복사됨",
+  "report.shareLinkCreated": "공유 링크 생성됨: {url}",
+  "report.shareCopied": "공유 링크 복사됨",
+  "report.shareFailed": "복사 실패",
+  "report.shareTitle": "리서치 공유",
+  "report.shareDesc": "이 리서치 보고서에 대한 공개 공유 링크를 생성합니다.",
+  "report.shareGenerating": "생성 중...",
+  "report.shareGenerateLink": "링크 생성",
+  "report.shareOrCopyLabel": "또는 현재 페이지 링크 복사:",
+  "report.shareCopyLink": "📋 링크 복사",
+  "report.shareGenerated": "공유 링크가 생성되었습니다!",
+  "report.shareCopy": "복사",
+  "report.templateTitle": "템플릿으로 저장",
+  "report.templateSaved": "✓ 템플릿이 성공적으로 저장됨",
+  "report.templateNameLabel": "템플릿 이름",
+  "report.outputProfileLabel": "출력 프로필",
+  "report.profileIdea": "아이디어",
+  "report.profileIdeaEyebrow": "평이한 언어 검증",
+  "report.profileIdeaDesc": "애널리스트 수준의 디테일 없이 답변, 위험, 다음 조치가 필요한 개인 빌더용.",
+  "report.profileFounder": "창업자",
+  "report.profileFounderEyebrow": "실행 준비 브리프",
+  "report.profileFounderDesc": "의사결정, 우선순위 지정, GTM 실행 인계에 충분한 증거가 필요한 초기 팀용.",
+  "report.profileAnalyst": "애널리스트",
+  "report.profileAnalystEyebrow": "전체 증거 모드",
+  "report.profileAnalystDesc": "점수, 인용 추적, 원시 증거, 모든 중간 상세 정보가 필요한 전문 검토자용.",
+  "report.opportunityLabel": "기회",
+  "report.riskLabel": "위험",
+  "report.evidenceLabel": "증거",
+  "report.sourcesUnit": "개 출처",
+  "report.sourcesShown": "{n}개 표시 · 전체 추적은 애널리스트에서",
+  "report.tocTitle": "목차",
+  "report.tocExecSummary": "요약",
+  "report.tocScores": "점수",
+  "report.tocKeyInsights": "주요 통찰 ({n})",
+  "report.tocOpportunities": "주요 기회",
+  "report.tocRisks": "주요 위험",
+  "report.tocNextStep": "권장 다음 단계",
+  "report.tocSources": "출처 ({n}+)",
+  "report.tocResult": "결과",
+  "report.tocRawOutput": "원시 출력",
+  "report.showRawOutput": "원시 출력 표시",
+  "report.hideRawOutput": "원시 출력 숨기기",
+  "report.sourcesNotice": "가독성을 위해 처음 N개 출처를 표시합니다. 전체 인용 추적을 보려면 애널리스트로 전환하세요.",
+  "report.analysisCompanion": "분석 도우미",
+  "report.viewSource": "출처 보기",
+  "report.citedIn": "인용 위치:",
+  "report.keywordAnalysis": "키워드 분석",
+  "report.agentsLabel": "에이전트:",
+  "report.scoresLabel": "점수",
+  "report.readingProgress": "{pct}% 읽음",
+  "report.kbNavHint": "j k 탐색 · t 맨위 · b 맨아래",
+  "report.customTemplate": "사용자 지정",
+  "report.rerunResearch": "리서치 다시 실행",
+  "report.exportReport": "보고서 내보내기",
+  "report.copyReport": "보고서 복사",
+  "report.backToHistory": "기록으로 돌아가기",
+  "report.notFound": "리서치 실행을 찾을 수 없습니다. 만료되었거나 삭제되었을 수 있습니다.",
+  "report.failedToLoad": "불러오기 실패",
   "language.label": "언어",
   "notFound.backHome": "리서치 스튜디오로 돌아가기",
   "notFound.body": "찾으시는 페이지가 존재하지 않거나 이동되었습니다.",
