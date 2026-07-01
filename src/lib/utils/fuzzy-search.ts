@@ -260,7 +260,7 @@ export function rankCommands<T extends { id: string; label: string; description?
  */
 export function getMatchRanges(label: string, query: string): { start: number; end: number }[] {
   if (!query.trim()) return [];
-  
+
   const q = query.toLowerCase();
   const text = label.toLowerCase();
   const ranges: { start: number; end: number }[] = [];
@@ -278,12 +278,25 @@ export function getMatchRanges(label: string, query: string): { start: number; e
     return ranges;
   }
 
-  // Try word-start matches
-  const wordStartRegex = /[^a-zA-Z0-9]([a-zA-Z0-9])/g;
+  // Try initialism: collect word starts (separators + camelCase boundaries).
+  // Mirrors the logic in wordStartMatch so highlighting is consistent with
+  // what scoreCommand actually scores against.
   const wordStarts: number[] = [0];
-  let match;
-  while ((match = wordStartRegex.exec(label)) !== null) {
-    wordStarts.push(match.index + 1);
+  for (let i = 1; i < label.length; i++) {
+    const prev = label[i - 1];
+    const curr = label[i];
+    const isSeparator =
+      prev === " " || prev === "-" || prev === "_" || prev === "/" || prev === ":";
+    const isCamel =
+      prev !== undefined &&
+      curr !== undefined &&
+      prev === prev.toLowerCase() &&
+      prev !== prev.toUpperCase() && // prev is a letter
+      curr === curr.toUpperCase() &&
+      curr !== curr.toLowerCase(); // curr is an uppercase letter
+    if ((isSeparator && /[a-zA-Z]/.test(curr)) || isCamel) {
+      wordStarts.push(i);
+    }
   }
 
   // Try initialism: collect all first chars of words
@@ -304,10 +317,10 @@ export function getMatchRanges(label: string, query: string): { start: number; e
     // Group consecutive indices into ranges
     const indices = sub.indices;
     if (indices.length === 0) return [];
-    
+
     let rangeStart = indices[0];
     let rangeEnd = indices[0] + 1;
-    
+
     for (let i = 1; i < indices.length; i++) {
       if (indices[i] === indices[i - 1] + 1) {
         rangeEnd = indices[i] + 1;

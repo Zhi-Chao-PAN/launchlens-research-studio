@@ -182,5 +182,30 @@ describe("fuzzy-search", () => {
         expect(r.start).toBeLessThan(r.end);
       }
     });
+
+    it("matches camelCase initialism (consistent with wordStartMatch)", () => {
+      // Regression: getMatchRanges used to skip camelCase boundaries
+      // (e.g. "cf" on "CommandFooter" returned []), so highlighting
+      // disagreed with scoreCommand's wordStartMatch logic.
+      const ranges = getMatchRanges("CommandFooter", "cf");
+      expect(ranges.length).toBe(2);
+      expect(ranges[0]).toEqual({ start: 0, end: 1 });
+      expect(ranges[1]).toEqual({ start: 7, end: 8 });
+    });
+
+    it("matches initialism across hyphen, underscore, and slash separators", () => {
+      expect(getMatchRanges("Research-Find", "rf")).toEqual([
+        { start: 0, end: 1 },
+        { start: 9, end: 10 },
+      ]);
+      expect(getMatchRanges("Research_Find", "rf")).toEqual([
+        { start: 0, end: 1 },
+        { start: 9, end: 10 },
+      ]);
+      expect(getMatchRanges("Research/Find", "rf")).toEqual([
+        { start: 0, end: 1 },
+        { start: 9, end: 10 },
+      ]);
+    });
   });
 });
