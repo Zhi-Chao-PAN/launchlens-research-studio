@@ -3,6 +3,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { AutocompleteDropdown } from "@/components/autocomplete/AutocompleteDropdown";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { useResearchHistory } from "@/lib/research/history";
 
 interface QueryInputProps {
@@ -45,6 +46,7 @@ export function QueryInput({
   disabledUntilMs = null,
   retryReadyPulse = 0,
 }: QueryInputProps) {
+  const { t } = useLocale();
   const [query, setQuery] = useState(defaultQuery);
   const [keywordInput, setKeywordInput] = useState(defaultKeywords.join(", "));
   const [showExamples, setShowExamples] = useState(false);
@@ -80,17 +82,17 @@ export function QueryInput({
 
   const queryError = useMemo(() => {
     if (trimmed.length === 0) return null;
-    if (trimmed.length < QUERY_LIMITS.MIN) return `Minimum ${QUERY_LIMITS.MIN} characters`;
-    if (trimmed.length > QUERY_LIMITS.MAX) return `Maximum ${QUERY_LIMITS.MAX} characters`;
+    if (trimmed.length < QUERY_LIMITS.MIN) return t("queryInput.minChars", { n: QUERY_LIMITS.MIN });
+    if (trimmed.length > QUERY_LIMITS.MAX) return t("queryInput.maxChars", { n: QUERY_LIMITS.MAX });
     return null;
-  }, [trimmed]);
+  }, [trimmed, t]);
 
   const keywordError = useMemo(() => {
-    if (keywordList.length > QUERY_LIMITS.MAX_KEYWORDS) return `Max ${QUERY_LIMITS.MAX_KEYWORDS} keywords`;
+    if (keywordList.length > QUERY_LIMITS.MAX_KEYWORDS) return t("queryInput.maxKeywords", { n: QUERY_LIMITS.MAX_KEYWORDS });
     const tooLong = keywordList.find((k) => k.length > QUERY_LIMITS.MAX_KEYWORD_LENGTH);
-    if (tooLong) return `"${tooLong.slice(0, 20)}..." is too long`;
+    if (tooLong) return t("queryInput.keywordTooLong", { preview: tooLong.slice(0, 20) });
     return null;
-  }, [keywordList]);
+  }, [keywordList, t]);
 
   const isValid = trimmed.length >= QUERY_LIMITS.MIN && trimmed.length <= QUERY_LIMITS.MAX && !keywordError;
 
@@ -209,24 +211,24 @@ export function QueryInput({
     // Imperative DOM focus + announcement in response to an external pulse;
     // not a render-driven state set, so the effect is the right place.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAnnouncement("Ready to retry — you can submit again.");
+    setAnnouncement(t("queryInput.readyToRetry"));
     submitButtonRef.current?.focus();
-    const t = setTimeout(() => setAnnouncement(null), 2000);
-    return () => clearTimeout(t);
-  }, [retryReadyPulse]);
+    const timer = setTimeout(() => setAnnouncement(null), 2000);
+    return () => clearTimeout(timer);
+  }, [retryReadyPulse, t]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div className="flex items-center gap-2 mb-4">
         <img src="/logo.svg" alt="" width={28} height={28} className="w-7 h-7" />
-        <h2 className="text-xl font-bold text-slate-800">Start a Research Session</h2>
+        <h2 className="text-xl font-bold text-slate-800">{t("queryInput.title")}</h2>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" data-research-form>
         <div className="relative" data-query-autocomplete>
           <div className="flex items-center justify-between mb-1.5">
             <label htmlFor="query-input" className="block text-sm font-medium text-slate-700">
-              Product idea
+              {t("queryInput.queryLabel")}
               <span className="text-rose-500 ml-0.5">*</span>
             </label>
             <span className={`text-[10px] font-mono ${
@@ -250,7 +252,7 @@ export function QueryInput({
             }}
             onFocus={() => setAutocompleteOpen(true)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe the product idea you want to research… e.g., an AI-powered go-to-market tool for solo founders"
+            placeholder={t("queryInput.queryPlaceholder")}
             className={`w-full px-4 py-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent resize-none transition-colors ${
               queryError
                 ? "border-rose-300 focus:ring-rose-500"
@@ -289,7 +291,7 @@ export function QueryInput({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label htmlFor="keyword-input" className="block text-sm font-medium text-slate-700">
-              Keywords <span className="text-slate-400 font-normal">(optional, comma-separated)</span>
+              {t("queryInput.keywordsLabel")} <span className="text-slate-400 font-normal">{t("queryInput.keywordsHint")}</span>
             </label>
             <span className="text-[10px] text-slate-400 font-mono">
               {keywordList.length}/{QUERY_LIMITS.MAX_KEYWORDS}
@@ -300,7 +302,7 @@ export function QueryInput({
             type="text"
             value={keywordInput}
             onChange={(e) => setKeywordInput(e.target.value)}
-            placeholder="e.g., SaaS, AI, productivity, remote work"
+            placeholder={t("queryInput.keywordsPlaceholder")}
             className={`w-full px-4 py-2.5 border rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent ${
               keywordError
                 ? "border-rose-300 focus:ring-rose-500"
@@ -318,7 +320,7 @@ export function QueryInput({
                 </span>
               ))}
               {keywordList.length > 8 && (
-                <span className="text-[10px] text-slate-500">+{keywordList.length - 8} more</span>
+                <span className="text-[10px] text-slate-500">{t("queryInput.moreKeywords", { count: keywordList.length - 8 })}</span>
               )}
             </div>
           )}
@@ -336,17 +338,17 @@ export function QueryInput({
             {isLoading ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Starting research…</span>
+                <span>{t("queryInput.startingResearch")}</span>
               </>
             ) : cooldownSecs > 0 ? (
               <>
                 <span aria-hidden>⏳</span>
-                <span>Please wait {cooldownSecs}s…</span>
+                <span>{t("queryInput.cooldownWait", { n: cooldownSecs })}</span>
               </>
             ) : (
               <>
                 <span aria-hidden>🔬</span>
-                <span>Start Research</span>
+                <span>{t("queryInput.startButton")}</span>
               </>
             )}
           </button>
@@ -355,9 +357,9 @@ export function QueryInput({
               type="button"
               onClick={onCancel}
               className="py-3 px-5 bg-white border border-slate-300 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-all"
-              aria-label="Cancel research"
+              aria-label={t("queryInput.cancelAriaLabel")}
             >
-              Cancel
+              {t("queryInput.cancelButton")}
             </button>
           )}
         </div>
@@ -373,7 +375,7 @@ export function QueryInput({
           className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1"
         >
           <span className={`transition-transform ${showExamples ? "rotate-90" : ""}`} aria-hidden>▶</span>
-          <span>Or try an example</span>
+          <span>{t("queryInput.tryExample")}</span>
         </button>
         {showExamples && (
           <div className="grid grid-cols-1 gap-1.5 mt-2">

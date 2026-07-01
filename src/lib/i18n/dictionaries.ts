@@ -374,6 +374,24 @@ export type DictionaryKey =
   | "history.title"
   | "history.tryAgain"
   | "history.untitled"
+  | "queryInput.title"
+  | "queryInput.queryLabel"
+  | "queryInput.queryPlaceholder"
+  | "queryInput.keywordsLabel"
+  | "queryInput.keywordsHint"
+  | "queryInput.keywordsPlaceholder"
+  | "queryInput.moreKeywords"
+  | "queryInput.minChars"
+  | "queryInput.maxChars"
+  | "queryInput.maxKeywords"
+  | "queryInput.keywordTooLong"
+  | "queryInput.startingResearch"
+  | "queryInput.cooldownWait"
+  | "queryInput.startButton"
+  | "queryInput.cancelButton"
+  | "queryInput.cancelAriaLabel"
+  | "queryInput.tryExample"
+  | "queryInput.readyToRetry"
   | "language.label"
   | "notFound.backHome"
   | "notFound.body"
@@ -890,6 +908,24 @@ const en: Dict = {
   "history.tryAgain": "Try again",
   "history.dateNotRecorded": "Date not recorded",
   "history.statusRunning": "Running",
+  "queryInput.title": "Start a Research Session",
+  "queryInput.queryLabel": "Product idea",
+  "queryInput.queryPlaceholder": "Describe the product idea you want to research… e.g., an AI-powered go-to-market tool for solo founders",
+  "queryInput.keywordsLabel": "Keywords",
+  "queryInput.keywordsHint": "(optional, comma-separated)",
+  "queryInput.keywordsPlaceholder": "e.g., SaaS, AI, productivity, remote work",
+  "queryInput.moreKeywords": "+{count} more",
+  "queryInput.minChars": "Minimum {n} characters",
+  "queryInput.maxChars": "Maximum {n} characters",
+  "queryInput.maxKeywords": "Max {n} keywords",
+  "queryInput.keywordTooLong": "\"{preview}...\" is too long",
+  "queryInput.startingResearch": "Starting research…",
+  "queryInput.cooldownWait": "Please wait {n}s…",
+  "queryInput.startButton": "Start Research",
+  "queryInput.cancelButton": "Cancel",
+  "queryInput.cancelAriaLabel": "Cancel research",
+  "queryInput.tryExample": "Or try an example",
+  "queryInput.readyToRetry": "Ready to retry — you can submit again.",
   "export.title": "Export Report",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1407,6 +1443,24 @@ const zhCN: Dict = {
   "history.tryAgain": "重试",
   "history.dateNotRecorded": "日期未记录",
   "history.statusRunning": "运行中",
+  "queryInput.title": "开始调研会话",
+  "queryInput.queryLabel": "产品创意",
+  "queryInput.queryPlaceholder": "描述你想调研的产品创意…例如：面向独立创业者的 AI 驱动 GTM 工具",
+  "queryInput.keywordsLabel": "关键词",
+  "queryInput.keywordsHint": "（可选，逗号分隔）",
+  "queryInput.keywordsPlaceholder": "例如：SaaS, AI, 生产力, 远程工作",
+  "queryInput.moreKeywords": "+{count} 更多",
+  "queryInput.minChars": "最少 {n} 个字符",
+  "queryInput.maxChars": "最多 {n} 个字符",
+  "queryInput.maxKeywords": "最多 {n} 个关键词",
+  "queryInput.keywordTooLong": "\"{preview}...\" 太长了",
+  "queryInput.startingResearch": "正在启动调研…",
+  "queryInput.cooldownWait": "请等待 {n} 秒…",
+  "queryInput.startButton": "开始调研",
+  "queryInput.cancelButton": "取消",
+  "queryInput.cancelAriaLabel": "取消调研",
+  "queryInput.tryExample": "或者试试示例",
+  "queryInput.readyToRetry": "可以重新提交了。",
   "export.title": "导出报告",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1924,6 +1978,24 @@ const ja: Dict = {
   "history.tryAgain": "再試行",
   "history.dateNotRecorded": "日時は記録されていません",
   "history.statusRunning": "実行中",
+  "queryInput.title": "リサーチセッションを開始",
+  "queryInput.queryLabel": "プロダクトアイデア",
+  "queryInput.queryPlaceholder": "リサーチしたいプロダクトアイデアを説明してください…例：ソロファウンダー向けAI駆動GTMツール",
+  "queryInput.keywordsLabel": "キーワード",
+  "queryInput.keywordsHint": "（任意、カンマ区切り）",
+  "queryInput.keywordsPlaceholder": "例：SaaS, AI, 生産性, リモートワーク",
+  "queryInput.moreKeywords": "+{count} 件その他",
+  "queryInput.minChars": "最小 {n} 文字",
+  "queryInput.maxChars": "最大 {n} 文字",
+  "queryInput.maxKeywords": "最大 {n} 個のキーワード",
+  "queryInput.keywordTooLong": "「{preview}...」が長すぎます",
+  "queryInput.startingResearch": "リサーチを開始中…",
+  "queryInput.cooldownWait": "{n}秒お待ちください…",
+  "queryInput.startButton": "リサーチを開始",
+  "queryInput.cancelButton": "キャンセル",
+  "queryInput.cancelAriaLabel": "リサーチをキャンセル",
+  "queryInput.tryExample": "例を試す",
+  "queryInput.readyToRetry": "再試行できます — もう一度送信できます。",
   "export.title": "レポートをエクスポート",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -2445,6 +2517,24 @@ const ko: Dict = {
   "history.tryAgain": "다시 시도",
   "history.dateNotRecorded": "날짜가 기록되지 않음",
   "history.statusRunning": "실행 중",
+  "queryInput.title": "리서치 세션 시작",
+  "queryInput.queryLabel": "제품 아이디어",
+  "queryInput.queryPlaceholder": "리서치하고 싶은 제품 아이디어를 설명하세요… 예: 1인 창업자를 위한 AI 기반 GTM 도구",
+  "queryInput.keywordsLabel": "키워드",
+  "queryInput.keywordsHint": "(선택 사항, 쉼표로 구분)",
+  "queryInput.keywordsPlaceholder": "예: SaaS, AI, 생산성, 원격근무",
+  "queryInput.moreKeywords": "+{count}개 더보기",
+  "queryInput.minChars": "최소 {n}자",
+  "queryInput.maxChars": "최대 {n}자",
+  "queryInput.maxKeywords": "최대 {n}개의 키워드",
+  "queryInput.keywordTooLong": "\"{preview}...\"가 너무 깁니다",
+  "queryInput.startingResearch": "리서치 시작 중…",
+  "queryInput.cooldownWait": "{n}초 기다려 주세요…",
+  "queryInput.startButton": "리서치 시작",
+  "queryInput.cancelButton": "취소",
+  "queryInput.cancelAriaLabel": "리서치 취소",
+  "queryInput.tryExample": "예시 사용해 보기",
+  "queryInput.readyToRetry": "다시 시도할 준비가 되었습니다 — 다시 제출할 수 있습니다.",
   "language.label": "언어",
   "notFound.backHome": "리서치 스튜디오로 돌아가기",
   "notFound.body": "찾으시는 페이지가 존재하지 않거나 이동되었습니다.",
