@@ -130,4 +130,33 @@ describe("notification pure helpers (round 160)", () => {
     expect(n.read).toBe(false);
     expect(isValidNotification(n)).toBe(true);
   });
+
+  it("addNotification trims whitespace titles and falls back to a placeholder", () => {
+    const a = addNotification({ type: "system", title: "   ", body: "b", createdAt: NOW });
+    const b = addNotification({ type: "system", title: "  ok  ", body: "b", createdAt: NOW + 1 });
+    expect(a.title).toBe("Notification");
+    expect(b.title).toBe("ok");
+  });
+
+  it("markRead on an unknown id is a no-op (does not throw)", () => {
+    addNotification({ type: "system", title: "hi", body: "b", createdAt: NOW });
+    expect(() => markRead("does-not-exist")).not.toThrow();
+    expect(getUnreadCount()).toBe(1);
+  });
+
+  it("readAll silently drops corrupted entries from localStorage", () => {
+    storage.setItem("launchlens:notifications", JSON.stringify([
+      { id: "ok", type: "system", title: "ok", body: "b", read: false, createdAt: NOW },
+      { bad: true },
+      "string-not-object",
+    ]));
+    const list = getNotifications();
+    expect(list.length).toBe(1);
+    expect(list[0].id).toBe("ok");
+  });
+
+  it("getNotifications returns [] when storage holds non-array JSON", () => {
+    storage.setItem("launchlens:notifications", JSON.stringify({ not: "an array" }));
+    expect(getNotifications()).toEqual([]);
+  });
 });

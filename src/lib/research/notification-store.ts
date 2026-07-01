@@ -29,7 +29,16 @@ function readAll(): AppNotification[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensively drop any entries corrupted by a prior schema or a
+    // partial localStorage write. We don't try to repair them; we just
+    // make sure the rest of the store keeps working. Skip the sort
+    // step that sanitizeNotifications would otherwise do — callers
+    // that need a particular order (e.g. newest-first) re-sort
+    // explicitly, and the write-back path preserves the order it
+    // received so unsorted reads don't shuffle the user's history.
+    return parsed.filter(isValidNotification);
   } catch {
     return [];
   }
@@ -73,7 +82,10 @@ export function addNotification(
   const newNotif: AppNotification = {
     id: notification.id ?? "notif-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
     type: notification.type,
-    title: notification.title,
+    // Mirror buildNotification's title normalization: trim whitespace
+    // and fall back to a placeholder so the bell-badge never shows a
+    // blank row in the UI.
+    title: notification.title.trim() || "Notification",
     body: notification.body,
     read: notification.read ?? false,
     createdAt: notification.createdAt ?? Date.now(),
