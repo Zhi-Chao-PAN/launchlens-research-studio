@@ -9,6 +9,7 @@ import { bulkAddRunsToFolder, getFolders } from "@/lib/research/folders";
 import { useResearchHistory } from "@/lib/research/history";
 import { parseSynthesis } from "@/lib/research/synthesis-parser";
 import { getStarredRunIds } from "@/lib/research/starred";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import {
   bulkAddTags,
   getAllTags,
@@ -50,21 +51,8 @@ interface FullResearchRun {
 
 const PAGE_SIZE = 20;
 
-const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "completed", label: "Completed" },
-  { value: "failed", label: "Failed" },
-  { value: "cancelled", label: "Cancelled" },
-];
-
-const SORT_OPTIONS: Array<{ value: HistorySortBy; label: string }> = [
-  { value: "newest", label: "Newest first" },
-  { value: "oldest", label: "Oldest first" },
-  { value: "fastest", label: "Fastest first" },
-  { value: "slowest", label: "Slowest first" },
-];
-
 export default function HistoryPage() {
+  const { t } = useLocale();
   const [runs, setRuns] = useState<HistoryRun[]>([]);
   const [totalRuns, setTotalRuns] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -86,6 +74,20 @@ export default function HistoryPage() {
   const { history: localHistory, hydrated: localHistoryHydrated } = useResearchHistory();
   const { showToast } = useToast();
   const { askConfirm, dialog: confirmDialog } = useConfirm();
+
+  const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
+    { value: "all", label: t("history.filterAll") },
+    { value: "completed", label: t("history.filterCompleted") },
+    { value: "failed", label: t("history.filterFailed") },
+    { value: "cancelled", label: t("history.filterCancelled") },
+  ];
+
+  const SORT_OPTIONS: Array<{ value: HistorySortBy; label: string }> = [
+    { value: "newest", label: t("history.sortNewest") },
+    { value: "oldest", label: t("history.sortOldest") },
+    { value: "fastest", label: t("history.sortFastest") },
+    { value: "slowest", label: t("history.sortSlowest") },
+  ];
 
   const refreshClientMetadata = useCallback(() => {
     setStarredIds(new Set(getStarredRunIds()));
@@ -162,7 +164,7 @@ export default function HistoryPage() {
         return new Set([...prev].filter((id) => visibleIds.has(id)));
       });
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : "Unable to load research history.";
+      const message = loadError instanceof Error ? loadError.message : t("history.loadFailed");
       const localFallback = localHistoryHydrated
         ? sortHistoryRuns(
             mergeServerRunsWithLocalHistory([], localHistory, {
@@ -178,7 +180,7 @@ export default function HistoryPage() {
         setRuns(localFallback);
         setTotalRuns(localFallback.length);
         setTotalPages(1);
-        showToast(`Showing ${localFallback.length} locally remembered report link(s). Server history failed: ${message}`, "warning");
+        showToast(t("history.localFallback", { count: localFallback.length, message }), "warning");
       } else {
         setError(message);
         setRuns([]);
@@ -188,7 +190,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [localHistory, localHistoryHydrated, page, searchQuery, showToast, sortBy, starredIds, starredOnly, statusFilter]);
+  }, [localHistory, localHistoryHydrated, page, searchQuery, showToast, sortBy, starredIds, starredOnly, statusFilter, t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -261,11 +263,11 @@ export default function HistoryPage() {
         throw new Error(`Delete failed with HTTP ${response.status}`);
       }
 
-      showToast(`Deleted ${selectedIds.size} research run(s).`, "success");
+      showToast(t("history.deleteSuccess", { count: selectedIds.size }), "success");
       clearSelection();
       await loadRuns();
     } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "Delete failed.";
+      const message = deleteError instanceof Error ? deleteError.message : t("history.deleteFailed");
       showToast(message, "error");
     } finally {
       setBulkActionLoading(false);
@@ -276,10 +278,10 @@ export default function HistoryPage() {
     if (selectedIds.size === 0) return;
 
     askConfirm(
-      "Delete selected research?",
-      `This will permanently delete ${selectedIds.size} selected run(s) from history.`,
+      t("history.confirmDelete"),
+      t("history.confirmDeleteBody", { count: selectedIds.size }),
       () => performBulkDelete(),
-      { confirmLabel: "Delete", tone: "danger" },
+      { confirmLabel: t("history.confirmDeleteLabel"), tone: "danger" },
     );
   };
 
@@ -366,9 +368,9 @@ export default function HistoryPage() {
       downloadTextFile(`research-bulk-${Date.now()}.md`, sections.join("\n"), "text/markdown");
 
       if (failed > 0) {
-        showToast(`Exported ${succeeded} run(s); ${failed} failed.`, "warning");
+        showToast(t("history.exportSuccessPartial", { succeeded, failed }), "warning");
       } else {
-        showToast(`Exported ${succeeded} run(s).`, "success");
+        showToast(t("history.exportSuccess", { count: succeeded }), "success");
       }
     } finally {
       setBulkActionLoading(false);
@@ -378,7 +380,7 @@ export default function HistoryPage() {
   const handleBulkMoveToFolder = (folderId: string) => {
     if (selectedIds.size === 0) return;
     const added = bulkAddRunsToFolder(folderId, [...selectedIds]);
-    showToast(`Added ${added} run(s) to folder.`, "success");
+    showToast(t("history.addedToFolder", { count: added }), "success");
     clearSelection();
     refreshClientMetadata();
   };
@@ -388,11 +390,11 @@ export default function HistoryPage() {
 
     try {
       bulkAddTags([...selectedIds], [tagId]);
-      showToast(`Tagged ${selectedIds.size} run(s).`, "success");
+      showToast(t("history.taggedSuccess", { count: selectedIds.size }), "success");
       clearSelection();
       refreshClientMetadata();
     } catch {
-      showToast("Failed to add tag.", "error");
+      showToast(t("history.tagFailed"), "error");
     }
   };
 
@@ -404,19 +406,18 @@ export default function HistoryPage() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="rounded-full border border-stone-300 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-600">
-                  Research Studio
+                  {t("history.badgeStudio")}
                 </span>
                 <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-semibold text-teal-800">
-                  Evidence archive
+                  {t("history.badgeEvidence")}
                 </span>
               </div>
               <div>
                 <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.04em] text-slate-950 sm:text-5xl">
-                  Research runs, reports, and proof trails.
+                  {t("history.heading")}
                 </h1>
                 <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                  Recover completed reports, audit sources, and hand off research evidence without
-                  depending on the transient worker that generated the run.
+                  {t("history.subtitle")}
                 </p>
               </div>
             </div>
@@ -427,37 +428,37 @@ export default function HistoryPage() {
                 disabled={loading}
                 className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Refresh
+                {t("history.buttonRefresh")}
               </button>
               <Link
                 href="/"
                 className="inline-flex items-center justify-center rounded-full border border-stone-300 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-teal-300 hover:text-teal-800"
               >
-                Back to studio
+                {t("history.linkBack")}
               </Link>
               <Link
                 href="/"
                 className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_40px_-24px_rgba(15,23,42,0.9)] transition hover:bg-teal-800"
               >
-                New research
+                {t("history.linkNew")}
               </Link>
             </div>
           </div>
         </header>
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="History summary">
-          <SummaryCard label="Total saved" value={summary.total} hint={`${summary.visible} visible now`} />
-          <SummaryCard label="Completed" value={summary.completed} hint={`${summary.completionRate}% success rate`} />
-          <SummaryCard label="With sources" value={summary.withSources} hint="Citation-ready reports" />
-          <SummaryCard label="Failed" value={summary.failed} hint="Needs retry or review" tone="rose" />
-          <SummaryCard label="Cancelled" value={summary.cancelled + summary.running} hint="Stopped or still running" tone="amber" />
+          <SummaryCard label={t("history.summaryTotal")} value={summary.total} hint={t("history.summaryVisibleNow", { count: summary.visible })} />
+          <SummaryCard label={t("history.summaryCompleted")} value={summary.completed} hint={t("history.summarySuccessRate", { rate: summary.completionRate })} />
+          <SummaryCard label={t("history.summaryWithSources")} value={summary.withSources} hint={t("history.summaryCitationReady")} />
+          <SummaryCard label={t("history.summaryFailed")} value={summary.failed} hint={t("history.summaryNeedsRetry")} tone="rose" />
+          <SummaryCard label={t("history.summaryCancelled")} value={summary.cancelled + summary.running} hint={t("history.summaryStopped")} tone="amber" />
         </section>
 
         <section className="rounded-[1.5rem] border border-stone-200 bg-[#fbfaf6]/95 p-4 shadow-[0_18px_70px_-58px_rgba(15,23,42,0.38)]">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
             <label className="block">
               <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                Search
+                {t("history.labelSearch")}
               </span>
               <div className="mt-2 flex overflow-hidden rounded-2xl border border-stone-200 bg-white/80 focus-within:border-teal-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-teal-100">
                 <span className="flex items-center pl-4 text-sm font-semibold text-stone-400" aria-hidden="true">
@@ -470,7 +471,7 @@ export default function HistoryPage() {
                     setSearchQuery(event.target.value);
                     setPage(1);
                   }}
-                  placeholder="Search queries or keywords..."
+                  placeholder={t("history.searchPlaceholder")}
                   className="min-h-12 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-stone-400"
                 />
                 {searchQuery && (
@@ -482,7 +483,7 @@ export default function HistoryPage() {
                     }}
                     className="px-4 text-sm font-semibold text-stone-500 transition hover:text-slate-900"
                   >
-                    Clear
+                    {t("history.buttonClear")}
                   </button>
                 )}
               </div>
@@ -491,7 +492,7 @@ export default function HistoryPage() {
             <div className="flex flex-wrap items-end gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                  Status
+                  {t("history.labelStatus")}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {STATUS_FILTERS.map((filter) => (
@@ -517,7 +518,7 @@ export default function HistoryPage() {
 
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                  Focus
+                  {t("history.labelFocus")}
                 </div>
                 <button
                   type="button"
@@ -532,13 +533,13 @@ export default function HistoryPage() {
                       : "bg-white/80 text-slate-600 ring-stone-200 hover:text-amber-800 hover:ring-amber-200"
                   }`}
                 >
-                  Starred only
+                  {t("history.starredOnly")}
                 </button>
               </div>
 
               <label className="block">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                  Sort
+                  {t("history.labelSort")}
                 </span>
                 <select
                   value={sortBy}
@@ -561,11 +562,12 @@ export default function HistoryPage() {
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-4">
             <p className="text-sm text-slate-600">
               {loading
-                ? "Loading saved research..."
-                : `${runs.length} visible result${runs.length === 1 ? "" : "s"}${
-                    totalRuns ? ` from ${totalRuns} saved` : ""
-                  }`}
-              {isFiltered && !loading ? " after filters" : ""}
+                ? t("history.loadingSaved")
+                : t("history.resultsCount", {
+                    visible: runs.length,
+                    plural: runs.length === 1 ? "" : "s",
+                    fromTotal: totalRuns ? t("history.resultsFromTotal", { total: totalRuns }) : "",
+                  }) + (isFiltered ? t("history.resultsAfterFilters") : "")}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {isFiltered && (
@@ -574,7 +576,7 @@ export default function HistoryPage() {
                   onClick={clearFilters}
                   className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
-                  Clear filters
+                  {t("history.clearFilters")}
                 </button>
               )}
               {!selectMode && runs.length > 0 && (
@@ -583,7 +585,7 @@ export default function HistoryPage() {
                   onClick={() => setSelectMode(true)}
                   className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
-                  Select reports
+                  {t("history.selectReports")}
                 </button>
               )}
               {selectMode && (
@@ -592,7 +594,7 @@ export default function HistoryPage() {
                   onClick={clearSelection}
                   className="rounded-full border border-stone-300 bg-white/80 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-teal-300 hover:text-teal-800"
                 >
-                  Exit selection
+                  {t("history.clearSelection")}
                 </button>
               )}
             </div>
@@ -613,8 +615,8 @@ export default function HistoryPage() {
                   className="h-4 w-4 rounded border-teal-300 text-teal-700 focus:ring-teal-500"
                 />
                 {selectedCount > 0
-                  ? `${selectedCount} selected on this page`
-                  : "Select reports on this page"}
+                  ? t("history.selectedOnPage", { count: selectedCount })
+                  : t("history.selectAllOnPage")}
               </label>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -628,12 +630,12 @@ export default function HistoryPage() {
                     disabled={selectedCount === 0 || bulkActionLoading}
                     className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Move to folder
+                    {t("history.moveToFolder")}
                   </button>
                   {showFolderMenu && (
                     <DropdownPanel align="left">
                       {folders.length === 0 ? (
-                        <p className="px-3 py-2 text-sm text-slate-500">No custom folders yet.</p>
+                        <p className="px-3 py-2 text-sm text-slate-500">{t("history.noFolders")}</p>
                       ) : (
                         folders.map((folder) => (
                           <button
@@ -660,12 +662,12 @@ export default function HistoryPage() {
                     disabled={selectedCount === 0 || bulkActionLoading}
                     className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Add tag
+                    {t("history.addTag")}
                   </button>
                   {showTagMenu && (
                     <DropdownPanel align="right">
                       {allTags.length === 0 ? (
-                        <p className="px-3 py-2 text-sm text-slate-500">No tags yet.</p>
+                        <p className="px-3 py-2 text-sm text-slate-500">{t("history.noTags")}</p>
                       ) : (
                         allTags.map((tag) => (
                           <button
@@ -693,7 +695,7 @@ export default function HistoryPage() {
                   disabled={selectedCount === 0 || bulkActionLoading}
                   className="rounded-full border border-teal-200 bg-white px-3 py-2 text-sm font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Export Markdown
+                  {t("history.exportSelected")}
                 </button>
                 <button
                   type="button"
@@ -701,7 +703,7 @@ export default function HistoryPage() {
                   disabled={selectedCount === 0 || bulkActionLoading}
                   className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Delete
+                  {t("history.deleteSelected")}
                 </button>
               </div>
             </div>
@@ -734,7 +736,7 @@ export default function HistoryPage() {
               {totalPages > 1 && (
                 <nav className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-slate-500">
-                    Page {page} of {totalPages} - {totalRuns} saved result{totalRuns === 1 ? "" : "s"}
+                    {t("history.pagination", { page, totalPages, total: totalRuns, plural: totalRuns === 1 ? "" : "s" })}
                   </p>
                   <div className="flex items-center gap-2">
                     <button
@@ -743,7 +745,7 @@ export default function HistoryPage() {
                       disabled={page <= 1 || loading}
                       className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Previous
+                      {t("history.previous")}
                     </button>
                     <button
                       type="button"
@@ -751,7 +753,7 @@ export default function HistoryPage() {
                       disabled={page >= totalPages || loading}
                       className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Next
+                      {t("history.next")}
                     </button>
                   </div>
                 </nav>
@@ -811,6 +813,7 @@ function HistoryRunCard({
   tags: RunTag[];
   onToggleSelect: () => void;
 }) {
+  const { t } = useLocale();
   const status = HISTORY_STATUS_META[run.status];
   const cardClassName = `group rounded-[1.25rem] border p-4 transition ${
     selected
@@ -853,35 +856,43 @@ function HistoryRunCard({
               className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${status.badgeClassName}`}
             >
               <span className={`h-2 w-2 rounded-full ${status.dotClassName}`} aria-hidden="true" />
-              {status.label}
+              {t(
+                run.status === "completed"
+                  ? "history.filterCompleted"
+                  : run.status === "failed"
+                    ? "history.filterFailed"
+                    : run.status === "cancelled"
+                      ? "history.filterCancelled"
+                      : "history.statusRunning",
+              )}
             </span>
             {starred && (
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                Starred
+                {t("history.badgeStarred")}
               </span>
             )}
             {run.hasSources && (
               <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-800 ring-1 ring-teal-100">
-                Sources
+                {t("history.badgeSources")}
               </span>
             )}
             {run.recoverySource === "local" && (
               <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100">
-                Local recovery
+                {t("history.badgeLocalRecovery")}
               </span>
             )}
             <span className="font-mono text-[11px] font-medium text-stone-400">ID {shortId(run.id)}</span>
           </div>
 
           <h2 className="mt-3 line-clamp-2 text-lg font-semibold leading-snug tracking-[-0.02em] text-slate-950">
-            {run.query || "Untitled research"}
+            {run.query || t("history.untitled")}
           </h2>
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[12px] text-stone-500">
-            <span>{formatDateTime(run.createdAt)}</span>
+            <span>{formatDateTime(run.createdAt, t)}</span>
             <span>{formatDuration(run.durationMs)}</span>
             <span>
-              {run.provider || "provider unknown"} / {run.model || "model unknown"}
+              {run.provider || t("history.providerUnknown")} / {run.model || t("history.modelUnknown")}
             </span>
           </div>
 
@@ -906,7 +917,7 @@ function HistoryRunCard({
               ))}
               {tags.length > 4 && (
                 <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">
-                  +{tags.length - 4} tags
+                  {t("history.moreTags", { count: tags.length - 4 })}
                 </span>
               )}
             </div>
@@ -918,7 +929,7 @@ function HistoryRunCard({
             href={`/research/${run.id}`}
             className="inline-flex shrink-0 items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800"
           >
-            Open report
+            {t("history.openReport")}
           </Link>
         )}
       </div>
@@ -956,6 +967,7 @@ function EmptyState({
   isFiltered: boolean;
   onClearFilters: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <div className="flex min-h-[360px] items-center justify-center rounded-[1.5rem] border border-dashed border-stone-300 bg-white/58 p-8 text-center">
       <div className="max-w-md">
@@ -963,12 +975,12 @@ function EmptyState({
           RS
         </div>
         <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
-          {isFiltered ? "No matching reports" : "No saved research yet"}
+          {isFiltered ? t("history.noMatching") : t("history.noSavedYet")}
         </h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
           {isFiltered
-            ? "Try clearing filters or searching with a broader phrase."
-            : "Run a research task and the completed report will appear here for recovery, export, and follow-up review."}
+            ? t("history.noMatchingHint")
+            : t("history.noSavedHint")}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           {isFiltered && (
@@ -977,14 +989,14 @@ function EmptyState({
               onClick={onClearFilters}
               className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-teal-300 hover:text-teal-800"
             >
-              Clear filters
+              {t("history.clearFilters")}
             </button>
           )}
           <Link
             href="/"
             className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_40px_-24px_rgba(15,23,42,0.9)] transition hover:bg-teal-800"
           >
-            Start research
+            {t("history.startResearch")}
           </Link>
         </div>
       </div>
@@ -993,11 +1005,12 @@ function EmptyState({
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useLocale();
   return (
     <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-rose-950">History could not load</h2>
+          <h2 className="text-lg font-bold text-rose-950">{t("history.errorTitle")}</h2>
           <p className="mt-2 text-sm text-rose-700">{message}</p>
         </div>
         <button
@@ -1005,7 +1018,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
           onClick={onRetry}
           className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700"
         >
-          Try again
+          {t("history.tryAgain")}
         </button>
       </div>
     </div>
@@ -1030,8 +1043,8 @@ function DropdownPanel({
   );
 }
 
-function formatDateTime(timestamp: number): string {
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Date not recorded";
+function formatDateTime(timestamp: number, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return t("history.dateNotRecorded");
   return `${new Date(timestamp).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 

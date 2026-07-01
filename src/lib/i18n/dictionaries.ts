@@ -289,22 +289,91 @@ export type DictionaryKey =
   | "header.subtitle"
   | "hero.subtitle"
   | "hero.title"
+  | "history.addTag"
+  | "history.addedToFolder"
+  | "history.badgeEvidence"
+  | "history.badgeLocalRecovery"
+  | "history.badgeSources"
+  | "history.badgeStarred"
+  | "history.badgeStudio"
+  | "history.buttonClear"
+  | "history.buttonRefresh"
+  | "history.clearFilters"
   | "history.clearSelection"
   | "history.confirmDelete"
+  | "history.confirmDeleteBody"
+  | "history.confirmDeleteLabel"
+  | "history.dateNotRecorded"
+  | "history.deleteFailed"
   | "history.deleteSelected"
+  | "history.deleteSuccess"
   | "history.empty"
   | "history.emptyDesc"
+  | "history.errorTitle"
   | "history.exportSelected"
+  | "history.exportSuccess"
+  | "history.exportSuccessPartial"
   | "history.filterAll"
+  | "history.filterCancelled"
   | "history.filterCompleted"
   | "history.filterFailed"
+  | "history.heading"
+  | "history.labelFocus"
+  | "history.labelSearch"
+  | "history.labelSort"
+  | "history.labelStatus"
+  | "history.linkBack"
+  | "history.linkNew"
+  | "history.loadFailed"
+  | "history.loadingSaved"
+  | "history.localFallback"
+  | "history.modelUnknown"
+  | "history.moreTags"
+  | "history.moveToFolder"
+  | "history.next"
+  | "history.noFolders"
+  | "history.noMatching"
+  | "history.noMatchingHint"
+  | "history.noSavedHint"
+  | "history.noSavedYet"
+  | "history.noTags"
+  | "history.openReport"
+  | "history.pagination"
+  | "history.previous"
+  | "history.providerUnknown"
+  | "history.resultsAfterFilters"
+  | "history.resultsCount"
+  | "history.resultsFromTotal"
   | "history.searchPlaceholder"
   | "history.selectAll"
+  | "history.selectAllOnPage"
+  | "history.selectReports"
   | "history.selected"
+  | "history.selectedOnPage"
+  | "history.sortFastest"
   | "history.sortNewest"
   | "history.sortOldest"
   | "history.sortQuery"
+  | "history.sortSlowest"
+  | "history.starredOnly"
+  | "history.startResearch"
+  | "history.statusRunning"
+  | "history.subtitle"
+  | "history.summaryCancelled"
+  | "history.summaryCitationReady"
+  | "history.summaryCompleted"
+  | "history.summaryFailed"
+  | "history.summaryNeedsRetry"
+  | "history.summaryStopped"
+  | "history.summarySuccessRate"
+  | "history.summaryTotal"
+  | "history.summaryVisibleNow"
+  | "history.summaryWithSources"
+  | "history.tagFailed"
+  | "history.taggedSuccess"
   | "history.title"
+  | "history.tryAgain"
+  | "history.untitled"
   | "language.label"
   | "notFound.backHome"
   | "notFound.body"
@@ -739,19 +808,88 @@ const en: Dict = {
   "history.title": "Research History",
   "history.empty": "No research yet",
   "history.emptyDesc": "Start your first research to see it here",
-  "history.searchPlaceholder": "Search research...",
+  "history.searchPlaceholder": "Search queries or keywords...",
   "history.filterAll": "All",
   "history.filterCompleted": "Completed",
   "history.filterFailed": "Failed",
+  "history.filterCancelled": "Cancelled",
   "history.sortNewest": "Newest first",
   "history.sortOldest": "Oldest first",
+  "history.sortFastest": "Fastest first",
+  "history.sortSlowest": "Slowest first",
   "history.sortQuery": "Query A-Z",
   "history.selected": "selected",
   "history.selectAll": "Select all",
-  "history.clearSelection": "Clear selection",
-  "history.exportSelected": "Export selected",
-  "history.deleteSelected": "Delete selected",
-  "history.confirmDelete": "Are you sure you want to delete these runs?",
+  "history.clearSelection": "Exit selection",
+  "history.exportSelected": "Export Markdown",
+  "history.deleteSelected": "Delete",
+  "history.confirmDelete": "Delete selected research?",
+  "history.confirmDeleteBody": "This will permanently delete {count} selected run(s) from history.",
+  "history.confirmDeleteLabel": "Delete",
+  "history.loadFailed": "Unable to load research history.",
+  "history.localFallback": "Showing {count} locally remembered report link(s). Server history failed: {message}",
+  "history.deleteSuccess": "Deleted {count} research run(s).",
+  "history.deleteFailed": "Delete failed.",
+  "history.exportSuccessPartial": "Exported {succeeded} run(s); {failed} failed.",
+  "history.exportSuccess": "Exported {count} run(s).",
+  "history.addedToFolder": "Added {count} run(s) to folder.",
+  "history.taggedSuccess": "Tagged {count} run(s).",
+  "history.tagFailed": "Failed to add tag.",
+  "history.badgeStudio": "Research Studio",
+  "history.badgeEvidence": "Evidence archive",
+  "history.heading": "Research runs, reports, and proof trails.",
+  "history.subtitle": "Recover completed reports, audit sources, and hand off research evidence without depending on the transient worker that generated the run.",
+  "history.buttonRefresh": "Refresh",
+  "history.linkBack": "Back to studio",
+  "history.linkNew": "New research",
+  "history.summaryTotal": "Total saved",
+  "history.summaryCompleted": "Completed",
+  "history.summaryWithSources": "With sources",
+  "history.summaryFailed": "Failed",
+  "history.summaryCancelled": "Cancelled",
+  "history.summaryVisibleNow": "{count} visible now",
+  "history.summarySuccessRate": "{rate}% success rate",
+  "history.summaryCitationReady": "Citation-ready reports",
+  "history.summaryNeedsRetry": "Needs retry or review",
+  "history.summaryStopped": "Stopped or still running",
+  "history.labelSearch": "Search",
+  "history.buttonClear": "Clear",
+  "history.labelStatus": "Status",
+  "history.labelFocus": "Focus",
+  "history.starredOnly": "Starred only",
+  "history.labelSort": "Sort",
+  "history.loadingSaved": "Loading saved research...",
+  "history.resultsCount": "{visible} visible result{plural}{fromTotal}",
+  "history.resultsAfterFilters": " after filters",
+  "history.resultsFromTotal": " from {total} saved",
+  "history.clearFilters": "Clear filters",
+  "history.selectReports": "Select reports",
+  "history.selectedOnPage": "{count} selected on this page",
+  "history.selectAllOnPage": "Select reports on this page",
+  "history.moveToFolder": "Move to folder",
+  "history.noFolders": "No custom folders yet.",
+  "history.addTag": "Add tag",
+  "history.noTags": "No tags yet.",
+  "history.pagination": "Page {page} of {totalPages} - {total} saved result{plural}",
+  "history.previous": "Previous",
+  "history.next": "Next",
+  "history.badgeStarred": "Starred",
+  "history.badgeSources": "Sources",
+  "history.badgeLocalRecovery": "Local recovery",
+  "history.untitled": "Untitled research",
+  "history.providerUnknown": "provider unknown",
+  "history.modelUnknown": "model unknown",
+  "history.moreTags": "+{count} tags",
+  "history.openReport": "Open report",
+  "history.noMatching": "No matching reports",
+  "history.noSavedYet": "No saved research yet",
+  "history.noMatchingHint": "Try clearing filters or searching with a broader phrase.",
+  "history.noSavedHint": "Run a research task and the completed report will appear here for recovery, export, and follow-up review.",
+  "history.startResearch": "Start research",
+  "history.errorTitle": "History could not load",
+  "history.tryAgain": "Try again",
+  "history.dateNotRecorded": "Date not recorded",
+  "history.statusRunning": "Running",
   "export.title": "Export Report",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1187,19 +1325,88 @@ const zhCN: Dict = {
   "history.title": "调研历史",
   "history.empty": "暂无调研记录",
   "history.emptyDesc": "开始你的第一次调研吧",
-  "history.searchPlaceholder": "搜索调研...",
+  "history.searchPlaceholder": "搜索查询或关键词...",
   "history.filterAll": "全部",
   "history.filterCompleted": "已完成",
   "history.filterFailed": "失败",
+  "history.filterCancelled": "已取消",
   "history.sortNewest": "最新优先",
   "history.sortOldest": "最早优先",
+  "history.sortFastest": "最快优先",
+  "history.sortSlowest": "最慢优先",
   "history.sortQuery": "按查询排序",
   "history.selected": "项已选",
   "history.selectAll": "全选",
-  "history.clearSelection": "取消选择",
-  "history.exportSelected": "导出所选",
-  "history.deleteSelected": "删除所选",
-  "history.confirmDelete": "确定要删除这些调研记录吗？",
+  "history.clearSelection": "退出选择",
+  "history.exportSelected": "导出 Markdown",
+  "history.deleteSelected": "删除",
+  "history.confirmDelete": "删除选中的调研？",
+  "history.confirmDeleteBody": "这将从历史记录中永久删除 {count} 条选中的记录。",
+  "history.confirmDeleteLabel": "删除",
+  "history.loadFailed": "无法加载调研历史。",
+  "history.localFallback": "显示 {count} 条本地缓存的报告链接。服务器历史加载失败：{message}",
+  "history.deleteSuccess": "已删除 {count} 条调研记录。",
+  "history.deleteFailed": "删除失败。",
+  "history.exportSuccessPartial": "已导出 {succeeded} 条；{failed} 条失败。",
+  "history.exportSuccess": "已导出 {count} 条记录。",
+  "history.addedToFolder": "已将 {count} 条记录添加到文件夹。",
+  "history.taggedSuccess": "已为 {count} 条记录添加标签。",
+  "history.tagFailed": "添加标签失败。",
+  "history.badgeStudio": "调研工作室",
+  "history.badgeEvidence": "证据档案",
+  "history.heading": "调研运行、报告和证据链。",
+  "history.subtitle": "恢复已完成的报告、审计来源、移交调研证据，无需依赖生成运行的临时工作器。",
+  "history.buttonRefresh": "刷新",
+  "history.linkBack": "返回工作室",
+  "history.linkNew": "新建调研",
+  "history.summaryTotal": "总计保存",
+  "history.summaryCompleted": "已完成",
+  "history.summaryWithSources": "有来源",
+  "history.summaryFailed": "失败",
+  "history.summaryCancelled": "已取消",
+  "history.summaryVisibleNow": "当前显示 {count} 条",
+  "history.summarySuccessRate": "成功率 {rate}%",
+  "history.summaryCitationReady": "可引用报告",
+  "history.summaryNeedsRetry": "需要重试或审核",
+  "history.summaryStopped": "已停止或仍在运行",
+  "history.labelSearch": "搜索",
+  "history.buttonClear": "清除",
+  "history.labelStatus": "状态",
+  "history.labelFocus": "筛选",
+  "history.starredOnly": "仅收藏",
+  "history.labelSort": "排序",
+  "history.loadingSaved": "正在加载已保存的调研...",
+  "history.resultsCount": "{visible} 条可见结果{plural}{fromTotal}",
+  "history.resultsAfterFilters": "（筛选后）",
+  "history.resultsFromTotal": "（共 {total} 条已保存）",
+  "history.clearFilters": "清除筛选",
+  "history.selectReports": "选择报告",
+  "history.selectedOnPage": "本页已选 {count} 条",
+  "history.selectAllOnPage": "选择本页所有报告",
+  "history.moveToFolder": "移动到文件夹",
+  "history.noFolders": "暂无自定义文件夹。",
+  "history.addTag": "添加标签",
+  "history.noTags": "暂无标签。",
+  "history.pagination": "第 {page} 页 / 共 {totalPages} 页 - {total} 条已保存结果",
+  "history.previous": "上一页",
+  "history.next": "下一页",
+  "history.badgeStarred": "已收藏",
+  "history.badgeSources": "来源",
+  "history.badgeLocalRecovery": "本地恢复",
+  "history.untitled": "未命名调研",
+  "history.providerUnknown": "未知提供方",
+  "history.modelUnknown": "未知模型",
+  "history.moreTags": "+{count} 个标签",
+  "history.openReport": "打开报告",
+  "history.noMatching": "没有匹配的报告",
+  "history.noSavedYet": "暂无已保存的调研",
+  "history.noMatchingHint": "尝试清除筛选或使用更宽泛的关键词搜索。",
+  "history.noSavedHint": "运行调研任务后，完成的报告将显示在这里，可用于恢复、导出和后续审核。",
+  "history.startResearch": "开始调研",
+  "history.errorTitle": "历史记录加载失败",
+  "history.tryAgain": "重试",
+  "history.dateNotRecorded": "日期未记录",
+  "history.statusRunning": "运行中",
   "export.title": "导出报告",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1635,19 +1842,88 @@ const ja: Dict = {
   "history.title": "調査履歴",
   "history.empty": "調査がありません",
   "history.emptyDesc": "最初の調査を開始してください",
-  "history.searchPlaceholder": "調査を検索...",
+  "history.searchPlaceholder": "クエリまたはキーワードで検索...",
   "history.filterAll": "すべて",
   "history.filterCompleted": "完了",
   "history.filterFailed": "失敗",
+  "history.filterCancelled": "キャンセル済み",
   "history.sortNewest": "新しい順",
   "history.sortOldest": "古い順",
+  "history.sortFastest": "速い順",
+  "history.sortSlowest": "遅い順",
   "history.sortQuery": "クエリ順",
   "history.selected": "件選択中",
   "history.selectAll": "すべて選択",
-  "history.clearSelection": "選択解除",
-  "history.exportSelected": "選択したものをエクスポート",
-  "history.deleteSelected": "選択したものを削除",
-  "history.confirmDelete": "これらの調査を削除してもよろしいですか？",
+  "history.clearSelection": "選択を終了",
+  "history.exportSelected": "Markdown でエクスポート",
+  "history.deleteSelected": "削除",
+  "history.confirmDelete": "選択した調査を削除しますか？",
+  "history.confirmDeleteBody": "選択した {count} 件の実行履歴が完全に削除されます。",
+  "history.confirmDeleteLabel": "削除",
+  "history.loadFailed": "調査履歴を読み込めませんでした。",
+  "history.localFallback": "ローカルに記憶された {count} 件のレポートリンクを表示しています。サーバー履歴の取得に失敗しました：{message}",
+  "history.deleteSuccess": "{count} 件の調査実行を削除しました。",
+  "history.deleteFailed": "削除に失敗しました。",
+  "history.exportSuccessPartial": "{succeeded} 件エクスポートしました；{failed} 件失敗しました。",
+  "history.exportSuccess": "{count} 件エクスポートしました。",
+  "history.addedToFolder": "{count} 件をフォルダに追加しました。",
+  "history.taggedSuccess": "{count} 件にタグを付けました。",
+  "history.tagFailed": "タグの追加に失敗しました。",
+  "history.badgeStudio": "リサーチスタジオ",
+  "history.badgeEvidence": "エビデンスアーカイブ",
+  "history.heading": "調査実行、レポート、証跡。",
+  "history.subtitle": "完了したレポートの復元、ソースの監査、調査証跡の引き継ぎが、実行を生成した一時的なワーカーに依存せずに行えます。",
+  "history.buttonRefresh": "更新",
+  "history.linkBack": "スタジオに戻る",
+  "history.linkNew": "新しい調査",
+  "history.summaryTotal": "保存済み合計",
+  "history.summaryCompleted": "完了",
+  "history.summaryWithSources": "ソースあり",
+  "history.summaryFailed": "失敗",
+  "history.summaryCancelled": "キャンセル",
+  "history.summaryVisibleNow": "{count} 件表示中",
+  "history.summarySuccessRate": "成功率 {rate}%",
+  "history.summaryCitationReady": "引用可能なレポート",
+  "history.summaryNeedsRetry": "再試行またはレビューが必要",
+  "history.summaryStopped": "停止済みまたは実行中",
+  "history.labelSearch": "検索",
+  "history.buttonClear": "クリア",
+  "history.labelStatus": "ステータス",
+  "history.labelFocus": "フォーカス",
+  "history.starredOnly": "スター付きのみ",
+  "history.labelSort": "並び替え",
+  "history.loadingSaved": "保存済み調査を読み込み中...",
+  "history.resultsCount": "{visible} 件の表示結果{plural}{fromTotal}",
+  "history.resultsAfterFilters": "（フィルタ適用後）",
+  "history.resultsFromTotal": "（{total} 件の保存済みから）",
+  "history.clearFilters": "フィルタをクリア",
+  "history.selectReports": "レポートを選択",
+  "history.selectedOnPage": "このページで {count} 件選択中",
+  "history.selectAllOnPage": "このページのレポートをすべて選択",
+  "history.moveToFolder": "フォルダに移動",
+  "history.noFolders": "カスタムフォルダはまだありません。",
+  "history.addTag": "タグを追加",
+  "history.noTags": "タグはまだありません。",
+  "history.pagination": "{page} / {totalPages} ページ - {total} 件の保存済み結果",
+  "history.previous": "前へ",
+  "history.next": "次へ",
+  "history.badgeStarred": "スター付き",
+  "history.badgeSources": "ソース",
+  "history.badgeLocalRecovery": "ローカル回復",
+  "history.untitled": "無題の調査",
+  "history.providerUnknown": "不明なプロバイダ",
+  "history.modelUnknown": "不明なモデル",
+  "history.moreTags": "+{count} 個のタグ",
+  "history.openReport": "レポートを開く",
+  "history.noMatching": "一致するレポートがありません",
+  "history.noSavedYet": "保存済みの調査はまだありません",
+  "history.noMatchingHint": "フィルタをクリアするか、より広いキーワードで検索してみてください。",
+  "history.noSavedHint": "調査タスクを実行すると、完了したレポートがここに表示され、復元、エクスポート、フォローアップレビューができるようになります。",
+  "history.startResearch": "調査を開始",
+  "history.errorTitle": "履歴を読み込めませんでした",
+  "history.tryAgain": "再試行",
+  "history.dateNotRecorded": "日時は記録されていません",
+  "history.statusRunning": "実行中",
   "export.title": "レポートをエクスポート",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -2084,22 +2360,91 @@ const ko: Dict = {
   "header.subtitle": "제품 아이디어를 위한 멀티 에이전트 시장 인사이트",
   "hero.subtitle": "6개의 전문 AI 에이전트가 병렬로 작업하여 완전한 시장 인텔리전스 보고서를 제공합니다. API 키가 필요 없습니다.",
   "hero.title": "몇 분 만에 모든 시장을 리서치하세요",
-  "history.clearSelection": "선택 해제",
-  "history.confirmDelete": "선택한 실행을 정말 삭제하시겠습니까?",
-  "history.deleteSelected": "선택 항목 삭제",
+  "history.title": "리서치 기록",
   "history.empty": "리서치가 없습니다",
   "history.emptyDesc": "첫 리서치를 시작하면 여기에 표시됩니다",
-  "history.exportSelected": "선택 항목 내보내기",
+  "history.searchPlaceholder": "쿼리 또는 키워드 검색...",
   "history.filterAll": "전체",
   "history.filterCompleted": "완료됨",
   "history.filterFailed": "실패함",
-  "history.searchPlaceholder": "리서치 검색...",
-  "history.selectAll": "전체 선택",
-  "history.selected": "개 선택됨",
+  "history.filterCancelled": "취소됨",
   "history.sortNewest": "최신순",
   "history.sortOldest": "오래된순",
+  "history.sortFastest": "빠른순",
+  "history.sortSlowest": "느린순",
   "history.sortQuery": "쿼리 A-Z",
-  "history.title": "리서치 기록",
+  "history.selected": "개 선택됨",
+  "history.selectAll": "전체 선택",
+  "history.clearSelection": "선택 종료",
+  "history.exportSelected": "Markdown으로 내보내기",
+  "history.deleteSelected": "삭제",
+  "history.confirmDelete": "선택한 리서치를 삭제하시겠습니까?",
+  "history.confirmDeleteBody": "선택한 {count}개의 실행 기록이 영구적으로 삭제됩니다.",
+  "history.confirmDeleteLabel": "삭제",
+  "history.loadFailed": "리서치 기록을 불러올 수 없습니다.",
+  "history.localFallback": "로컬에 저장된 {count}개의 보고서 링크를 표시합니다. 서버 기록 로드 실패: {message}",
+  "history.deleteSuccess": "{count}개의 리서치 실행을 삭제했습니다.",
+  "history.deleteFailed": "삭제 실패.",
+  "history.exportSuccessPartial": "{succeeded}개 내보냄; {failed}개 실패.",
+  "history.exportSuccess": "{count}개를 내보냈습니다.",
+  "history.addedToFolder": "{count}개를 폴더에 추가했습니다.",
+  "history.taggedSuccess": "{count}개에 태그를 지정했습니다.",
+  "history.tagFailed": "태그 추가 실패.",
+  "history.badgeStudio": "리서치 스튜디오",
+  "history.badgeEvidence": "증거 아카이브",
+  "history.heading": "리서치 실행, 보고서, 증거 추적.",
+  "history.subtitle": "실행을 생성한 임시 워커에 의존하지 않고 완료된 보고서 복구, 소스 감사, 리서치 증거 인계가 가능합니다.",
+  "history.buttonRefresh": "새로고침",
+  "history.linkBack": "스튜디오로 돌아가기",
+  "history.linkNew": "새 리서치",
+  "history.summaryTotal": "총 저장됨",
+  "history.summaryCompleted": "완료",
+  "history.summaryWithSources": "소스 있음",
+  "history.summaryFailed": "실패",
+  "history.summaryCancelled": "취소",
+  "history.summaryVisibleNow": "{count}개 표시 중",
+  "history.summarySuccessRate": "성공률 {rate}%",
+  "history.summaryCitationReady": "인용 가능한 보고서",
+  "history.summaryNeedsRetry": "재시도 또는 검토 필요",
+  "history.summaryStopped": "중지됨 또는 실행 중",
+  "history.labelSearch": "검색",
+  "history.buttonClear": "지우기",
+  "history.labelStatus": "상태",
+  "history.labelFocus": "포커스",
+  "history.starredOnly": "즐겨찾기만",
+  "history.labelSort": "정렬",
+  "history.loadingSaved": "저장된 리서치 불러오는 중...",
+  "history.resultsCount": "{visible}개 표시 결과{plural}{fromTotal}",
+  "history.resultsAfterFilters": " (필터 적용 후)",
+  "history.resultsFromTotal": " (저장된 {total}개 중)",
+  "history.clearFilters": "필터 지우기",
+  "history.selectReports": "보고서 선택",
+  "history.selectedOnPage": "이 페이지에서 {count}개 선택됨",
+  "history.selectAllOnPage": "이 페이지의 보고서 모두 선택",
+  "history.moveToFolder": "폴더로 이동",
+  "history.noFolders": "사용자 지정 폴더가 아직 없습니다.",
+  "history.addTag": "태그 추가",
+  "history.noTags": "태그가 아직 없습니다.",
+  "history.pagination": "{page} / {totalPages} 페이지 - 저장된 결과 {total}개",
+  "history.previous": "이전",
+  "history.next": "다음",
+  "history.badgeStarred": "즐겨찾기",
+  "history.badgeSources": "소스",
+  "history.badgeLocalRecovery": "로컬 복구",
+  "history.untitled": "제목 없는 리서치",
+  "history.providerUnknown": "알 수 없는 제공자",
+  "history.modelUnknown": "알 수 없는 모델",
+  "history.moreTags": "+{count}개의 태그",
+  "history.openReport": "보고서 열기",
+  "history.noMatching": "일치하는 보고서 없음",
+  "history.noSavedYet": "저장된 리서치가 아직 없습니다",
+  "history.noMatchingHint": "필터를 지우거나 더 넓은 구문으로 검색해 보세요.",
+  "history.noSavedHint": "리서치 태스크를 실행하면 완료된 보고서가 여기에 표시되어 복구, 내보내기, 후속 검토를 할 수 있습니다.",
+  "history.startResearch": "리서치 시작",
+  "history.errorTitle": "기록을 불러올 수 없습니다",
+  "history.tryAgain": "다시 시도",
+  "history.dateNotRecorded": "날짜가 기록되지 않음",
+  "history.statusRunning": "실행 중",
   "language.label": "언어",
   "notFound.backHome": "리서치 스튜디오로 돌아가기",
   "notFound.body": "찾으시는 페이지가 존재하지 않거나 이동되었습니다.",
