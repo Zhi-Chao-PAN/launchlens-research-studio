@@ -35,9 +35,9 @@ const CITE_RE = /\[(\d+)\]/g;
 export function extractCitations(text: string | undefined | null): number[] {
   if (!text) return [];
   const out: number[] = [];
-  const re = new RegExp(CITE_RE.source, "g");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
+  // matchAll is allocation-free (no per-call RegExp construction) and
+  // sidesteps the lastIndex trap that a shared /g regex would expose.
+  for (const m of text.matchAll(CITE_RE)) {
     const n = parseInt(m[1], 10);
     if (!Number.isNaN(n) && n >= 1) out.push(n - 1);
   }

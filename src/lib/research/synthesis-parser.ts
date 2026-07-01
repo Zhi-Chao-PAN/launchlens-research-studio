@@ -56,12 +56,13 @@ export function computeSourceCitationMap(
     { name: "Next Step", text: synthesis.recommendedNextStep || "" },
   ];
 
+  // Reuse the citation regex across sections (lastIndex resets per
+  // matchAll iteration so this is safe).
+  const citeRe = /\[(\d+)\]/g;
   for (const section of sections) {
     const cited = new Set<number>();
-    const regex = /\[(\d+)\]/g;
-    let match;
-    while ((match = regex.exec(section.text)) !== null) {
-      cited.add(parseInt(match[1], 10) - 1);
+    for (const m of section.text.matchAll(citeRe)) {
+      cited.add(parseInt(m[1], 10) - 1);
     }
     for (const idx of cited) {
       if (!map.has(idx)) map.set(idx, []);
