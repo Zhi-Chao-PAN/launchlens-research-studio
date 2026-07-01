@@ -24,10 +24,23 @@ export function getAllTags(): RunTag[] {
     const raw = localStorage.getItem(TAGS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Drop any entry that doesn't match the RunTag shape so a partial
+    // localStorage write can't poison createTag's .find() / push().
+    return parsed.filter(isValidRunTag);
   } catch {
     return [];
   }
+}
+
+function isValidRunTag(v: unknown): v is RunTag {
+  if (!v || typeof v !== "object") return false;
+  const t = v as Record<string, unknown>;
+  if (typeof t.id !== "string" || !t.id) return false;
+  if (typeof t.name !== "string") return false;
+  if (typeof t.createdAt !== "number" || !Number.isFinite(t.createdAt)) return false;
+  if (t.color !== undefined && typeof t.color !== "string") return false;
+  return true;
 }
 
 function saveTags(tags: RunTag[]): void {
@@ -177,7 +190,15 @@ function getAllRunTags(): Record<string, string[]> {
   try {
     const raw = localStorage.getItem(RUN_TAGS_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) || {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, string[]> = {};
+    for (const [runId, ids] of Object.entries(parsed)) {
+      if (Array.isArray(ids) && ids.every((id) => typeof id === "string")) {
+        out[runId] = ids;
+      }
+    }
+    return out;
   } catch {
     return {};
   }

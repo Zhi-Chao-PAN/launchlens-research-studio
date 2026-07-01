@@ -465,4 +465,35 @@ describe("tags system (round 129)", () => {
       expect(stats.leastUsedTag).toBeNull();
     });
   });
+
+  describe("corrupted localStorage payloads (round validation)", () => {
+    it("getAllTags drops invalid entries but keeps the valid ones", () => {
+      const valid = createTag("valid-tag");
+      const payload = [
+        valid,
+        { id: "no-name", createdAt: 1 },
+        { id: "bad-createdAt", name: "x", createdAt: "not-a-number" },
+        { id: "bad-color", name: "x", createdAt: 1, color: 42 },
+        "not-an-object",
+      ];
+      localStorage.setItem("research_tags", JSON.stringify(payload));
+      // Re-read via a fresh getAllTags() call.
+      const tags = getAllTags();
+      expect(tags.map((t) => t.id)).toEqual([valid.id]);
+    });
+
+    it("getRunTags returns [] when the run-tags payload is corrupted", () => {
+      createTag("a");
+      localStorage.setItem("research_run_tags", JSON.stringify({
+        "run-1": ["valid-id"],
+        "run-2": "not-an-array",
+        "run-3": [1, 2, 3],
+        "run-4": null,
+      }));
+      expect(getRunTags("run-1")).toEqual(["valid-id"]);
+      expect(getRunTags("run-2")).toEqual([]);
+      expect(getRunTags("run-3")).toEqual([]);
+      expect(getRunTags("run-4")).toEqual([]);
+    });
+  });
 });
