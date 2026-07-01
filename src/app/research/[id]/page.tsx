@@ -192,8 +192,12 @@ function formatDuration(ms: number): string {
 
 
 function ConfidenceBadge({ level }: { level: string }) {
+  const { t } = useLocale();
   const cls = `confidence-badge confidence-${level}`;
-  return <span className={cls}>{level} confidence</span>;
+  const label = level === "high" ? t("report.confidence.high")
+    : level === "medium" ? t("report.confidence.medium")
+    : t("report.confidence.low");
+  return <span className={cls}>{label}</span>;
 }
 
 function AnalysisCompanion({
