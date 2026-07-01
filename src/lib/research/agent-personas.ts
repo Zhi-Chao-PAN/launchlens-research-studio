@@ -104,12 +104,34 @@ export const DEFAULT_AGENTS: AgentPersona[] = [
 // Custom agents storage (localStorage)
 const CUSTOM_AGENTS_KEY = "launchlens:custom-agents";
 
+function isValidAgentPersona(v: unknown): v is AgentPersona {
+  if (!v || typeof v !== "object") return false;
+  const a = v as Record<string, unknown>;
+  if (typeof a.id !== "string" || !a.id) return false;
+  if (typeof a.name !== "string") return false;
+  if (typeof a.description !== "string") return false;
+  if (typeof a.icon !== "string") return false;
+  if (typeof a.systemPrompt !== "string") return false;
+  if (typeof a.tone !== "string") return false;
+  if (typeof a.riskBias !== "string") return false;
+  if (typeof a.detailLevel !== "string") return false;
+  if (!Array.isArray(a.focusAreas) || !a.focusAreas.every((s) => typeof s === "string")) return false;
+  if (typeof a.defaultOpportunityAdjustment !== "number" || !Number.isFinite(a.defaultOpportunityAdjustment)) return false;
+  if (typeof a.defaultRiskAdjustment !== "number" || !Number.isFinite(a.defaultRiskAdjustment)) return false;
+  if (a.isCustom !== undefined && typeof a.isCustom !== "boolean") return false;
+  return true;
+}
+
 export function getCustomAgents(): AgentPersona[] {
   if (typeof localStorage === "undefined") return [];
   try {
     const raw = localStorage.getItem(CUSTOM_AGENTS_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensively drop entries with the wrong shape so a partial
+    // localStorage write cannot crash saveCustomAgent's .findIndex.
+    return parsed.filter(isValidAgentPersona);
   } catch {
     return [];
   }

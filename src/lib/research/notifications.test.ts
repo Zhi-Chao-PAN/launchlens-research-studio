@@ -316,5 +316,25 @@ describe('notifications extensions (round 152)', () => {
     expect(lines[0]).toBe("id,type,title,body,runId,seen,createdAt");
     expect(lines[1]).toContain("hello, world");
   });
+});
 
+describe("corrupted pending-notification storage (round validation)", () => {
+  it("getPendingNotifications drops malformed entries but keeps the valid ones", () => {
+    const payload = [
+      { runId: "ok", query: "q", createdAt: 1 },
+      { runId: "", query: "q", createdAt: 1 },
+      { runId: "bad-time", query: "q", createdAt: "now" },
+      { runId: "no-query", createdAt: 1 },
+      "not-an-object",
+    ];
+    localStorage.setItem("launchlens:pending-notifs", JSON.stringify(payload));
+    const all = getPendingNotifications();
+    expect(all).toHaveLength(1);
+    expect(all[0].runId).toBe("ok");
+  });
+
+  it("getPendingNotifications returns [] when payload is not an array", () => {
+    localStorage.setItem("launchlens:pending-notifs", JSON.stringify({ not: "an array" }));
+    expect(getPendingNotifications()).toEqual([]);
+  });
 });

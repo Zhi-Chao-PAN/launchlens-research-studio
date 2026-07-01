@@ -66,6 +66,15 @@ export function registerPendingNotification(runId: string, query: string): void 
   }
 }
 
+function isValidPendingNotification(v: unknown): v is PendingNotification {
+  if (!v || typeof v !== "object") return false;
+  const n = v as Record<string, unknown>;
+  if (typeof n.runId !== "string" || !n.runId) return false;
+  if (typeof n.query !== "string") return false;
+  if (typeof n.createdAt !== "number" || !Number.isFinite(n.createdAt)) return false;
+  return true;
+}
+
 /**
  * Get all pending notifications.
  */
@@ -74,7 +83,11 @@ export function getPendingNotifications(): PendingNotification[] {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensively drop entries with the wrong shape so a partial
+    // localStorage write cannot crash clearPendingNotification's filter.
+    return parsed.filter(isValidPendingNotification);
   } catch {
     return [];
   }

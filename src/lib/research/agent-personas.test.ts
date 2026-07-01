@@ -231,3 +231,37 @@ describe("consensusFromPersonas", () => {
     expect(consensusFromPersonas([])).toEqual({ avgOpportunity:0, avgRisk:0, agreement:0 });
   });
 });
+
+describe("corrupted custom-agent storage (round validation)", () => {
+  it("getCustomAgents drops malformed entries but keeps the valid ones", () => {
+    const good = {
+      id: "ok",
+      name: "n",
+      description: "d",
+      icon: "i",
+      systemPrompt: "p",
+      tone: "analytical",
+      riskBias: "neutral",
+      detailLevel: "balanced",
+      focusAreas: [],
+      defaultOpportunityAdjustment: 0,
+      defaultRiskAdjustment: 0,
+    };
+    const payload = [
+      good,
+      { id: "no-name", description: "d", icon: "i", systemPrompt: "p", tone: "analytical", riskBias: "neutral", detailLevel: "balanced", focusAreas: [], defaultOpportunityAdjustment: 0, defaultRiskAdjustment: 0 },
+      { id: "bad-focus", name: "n", description: "d", icon: "i", systemPrompt: "p", tone: "analytical", riskBias: "neutral", detailLevel: "balanced", focusAreas: "not-an-array", defaultOpportunityAdjustment: 0, defaultRiskAdjustment: 0 },
+      { id: "bad-num", name: "n", description: "d", icon: "i", systemPrompt: "p", tone: "analytical", riskBias: "neutral", detailLevel: "balanced", focusAreas: [], defaultOpportunityAdjustment: "lots", defaultRiskAdjustment: 0 },
+      "not-an-object",
+    ];
+    storage.set("launchlens:custom-agents", JSON.stringify(payload));
+    const all = getCustomAgents();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe("ok");
+  });
+
+  it("getCustomAgents returns [] when payload is not an array", () => {
+    storage.set("launchlens:custom-agents", JSON.stringify({ not: "an array" }));
+    expect(getCustomAgents()).toEqual([]);
+  });
+});
