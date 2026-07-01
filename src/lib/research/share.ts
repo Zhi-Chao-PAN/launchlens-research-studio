@@ -162,7 +162,13 @@ export interface ShareTokenPayload {
 export function encodeShareToken(payload: ShareTokenPayload): string {
   const json = JSON.stringify(payload);
   if (typeof window !== "undefined" && "btoa" in window) {
-    return btoa(unescape(encodeURIComponent(json)));
+    // TextEncoder + binary-string bridge avoids the deprecated
+    // unescape/encodeURIComponent pair, which loses characters on
+    // surrogates and is flagged by modern linters.
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
   }
   return Buffer.from(json, "utf8").toString("base64");
 }
@@ -171,7 +177,9 @@ export function decodeShareToken(token: string): ShareTokenPayload | null {
   try {
     let json: string;
     if (typeof window !== "undefined" && "atob" in window) {
-      json = decodeURIComponent(escape(atob(token)));
+      const binary = atob(token);
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      json = new TextDecoder().decode(bytes);
     } else {
       json = Buffer.from(token, "base64").toString("utf8");
     }
