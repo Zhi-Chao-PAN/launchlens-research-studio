@@ -14,6 +14,21 @@ export interface RetryOptions {
   onAttempt?: (attempt: number, error: unknown | null) => void;
 }
 
+/**
+ * True when `err` looks like an AbortError tied to the supplied signal.
+ * Used to short-circuit retry loops so we don't burn extra attempts after
+ * a caller cancels.
+ */
+function isAbortErrorLike(err: unknown, signal?: AbortSignal): boolean {
+  if (!err || typeof err !== "object") return false;
+  const name = (err as { name?: unknown }).name;
+  if (name === "AbortError") return true;
+  if (signal?.aborted && (err as { name?: unknown }).name === "AbortError") {
+    return true;
+  }
+  return false;
+}
+
 export async function retryWithBackoff<T>(
   fn: (attempt: number) => Promise<T>,
   opts: RetryOptions = {},
@@ -34,13 +49,27 @@ export async function retryWithBackoff<T>(
     } catch (err) {
       lastErr = err;
       opts.onAttempt?.(attempt, err);
+      // Abort: stop immediately, do not consult shouldRetry or back off.
+      if (isAbortErrorLike(err, opts.signal) || opts.signal?.aborted) {
+        throw err;
+      }
       if (attempt >= maxAttempts || !should(err, attempt)) {
         throw err;
       }
       const exp = Math.min(cap, base * 2 ** (attempt - 1));
       const jitter = Math.random() * exp * 0.25;
-      await sleep(exp + jitter, { signal: opts.signal });
+      try {
+        await sleep(exp + jitter, { signal: opts.signal });
+      } catch (sleepErr) {
+        // If sleep rejected because the signal aborted, surface that
+        // immediately rather than treating it as a regular failure.
+        if (isAbortErrorLike(sleepErr, opts.signal) || opts.signal?.aborted) {
+          throw sleepErr;
+        }
+        throw sleepErr;
+      }
     }
   }
   throw lastErr;
 }
+
