@@ -203,15 +203,16 @@ function AnalysisCompanion({
   entry: { title: string; summary: string; guidance: string };
   profileLabel: string;
 }) {
+  const { t } = useLocale();
   return (
     <section
       className="mt-4 rounded-2xl border border-stone-200 bg-[#fbfaf6] p-4 text-left shadow-[0_18px_55px_-48px_rgba(15,23,42,0.5)]"
       aria-live="polite"
-      aria-label="Analysis companion"
+      aria-label={t("report.analysisCompanion")}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">
-          Analysis companion
+          {t("report.analysisCompanion")}
         </p>
         <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-stone-600">
           {profileLabel}
@@ -1251,7 +1252,7 @@ async function loadRun() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-2xl">
                 <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                  Output profile
+                  {t("report.outputProfileLabel")}
                 </p>
                 <h2 className="mt-1 text-lg font-semibold tracking-[-0.02em] text-slate-950">
                   {activeOutputProfile.eyebrow}
@@ -1287,7 +1288,7 @@ async function loadRun() {
                   onFocus={() => activateExplanation("opportunity-score")}
                 >
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
-                    Opportunity
+                    {t("report.opportunityLabel")}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
                     {scoreBand(synthesis.opportunityScore, true)}
@@ -1300,7 +1301,7 @@ async function loadRun() {
                   onFocus={() => activateExplanation("risk-score")}
                 >
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
-                    Risk
+                    {t("report.riskLabel")}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
                     {scoreBand(synthesis.riskScore, false)}
@@ -1313,12 +1314,12 @@ async function loadRun() {
                   onFocus={() => activateExplanation("evidence-sources")}
                 >
                   <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-500">
-                    Evidence
+                    {t("report.evidenceLabel")}
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
                     {isAnalystProfile
-                      ? `${synthesis.citations.length} sources`
-                      : `${visibleCitations.length} shown · full trail in Analyst`}
+                      ? `${synthesis.citations.length} ${t("report.sourcesUnit")}`
+                      : t("report.sourcesShown", { n: visibleCitations.length })}
                   </p>
                 </div>
               </div>
