@@ -45,4 +45,30 @@ describe("storage backends", () => {
     b.write("q:1", 3);
     expect(b.list("p:").sort()).toEqual(["p:1", "p:2"]);
   });
+
+  it("loadOrDefault returns stored falsy values as-is, not the fallback", () => {
+    // 0 / false / "" are real values, not "missing", so they should be
+    // returned as-is rather than replaced by the fallback. The previous
+    // `v === null` check was correct, but the test only covered the
+    // null and "hit" cases. Pin down the other falsy shapes so a future
+    // refactor that flips `=== null` to `!v` would fail loudly.
+    const b = getBackend({} as NodeJS.ProcessEnv);
+    b.write("zero", 0);
+    b.write("false", false);
+    b.write("empty", "");
+    expect(loadOrDefault("zero", 99)).toBe(0);
+    expect(loadOrDefault("false", true)).toBe(false);
+    expect(loadOrDefault("empty", "fallback")).toBe("");
+  });
+
+  it("file backend write does not throw when the target dir is gone", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ll-storage-"));
+    setBackendForTests(null);
+    const b = getBackend({ LAUNCHLENS_STORAGE_DIR: dir } as unknown as NodeJS.ProcessEnv);
+    b.write("k", "first");
+    // Remove the dir so the next write can't create a tmp file there.
+    fs.rmSync(dir, { recursive: true, force: true });
+    expect(() => b.write("k", "second")).not.toThrow();
+    setBackendForTests(null);
+  });
 });

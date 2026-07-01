@@ -51,8 +51,17 @@ class FileBackend implements StorageBackend {
   }
   write<T = unknown>(key: string, value: T): void {
     const tmp = this.filePath(key) + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(value));
-    fs.renameSync(tmp, this.filePath(key));
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(value));
+      fs.renameSync(tmp, this.filePath(key));
+    } catch {
+      // Best effort — clean up the .tmp file (which may be left over if
+      // the rename failed mid-flight), then swallow. Callers like
+      // flip-history already wrap persist() in their own try/catch and
+      // log, so rethrowing would only cause the next circuit-breaker
+      // update to look like a crash instead of a degraded write.
+      try { fs.unlinkSync(tmp); } catch { /* tmp may not exist */ }
+    }
   }
   list(prefix?: string): string[] {
     let entries: string[] = [];
