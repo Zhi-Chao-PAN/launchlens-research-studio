@@ -133,6 +133,18 @@ export type DictionaryKey =
   | "common.settings"
   | "common.share"
   | "common.templates"
+  | "date.justNow"
+  | "date.inFuture"
+  | "date.secondsShort"
+  | "date.minutesShort"
+  | "date.hoursShort"
+  | "date.daysShort"
+  | "date.weeksShort"
+  | "date.monthsShort"
+  | "date.yearsShort"
+  | "date.minutesLong"
+  | "date.hoursLong"
+  | "date.daysLong"
   | "compare.title"
   | "compare.backToHistory"
   | "compare.optionA"
@@ -737,6 +749,18 @@ const en: Dict = {
   "common.home": "Home",
   "common.history": "History",
   "common.templates": "Templates",
+  "date.justNow": "just now",
+  "date.inFuture": "in the future",
+  "date.secondsShort": "{n}s ago",
+  "date.minutesShort": "{n} min ago",
+  "date.hoursShort": "{n} hr ago",
+  "date.daysShort": "{n} days ago",
+  "date.weeksShort": "{n} wk ago",
+  "date.monthsShort": "{n} mo ago",
+  "date.yearsShort": "{n} yr ago",
+  "date.minutesLong": "{n} minutes ago",
+  "date.hoursLong": "{n} hours ago",
+  "date.daysLong": "{n} days ago",
   "compare.title": "Research Compare",
   "compare.backToHistory": "← Back to History",
   "compare.optionA": "Option A",
@@ -1127,6 +1151,18 @@ const zhCN: Dict = {
   "common.home": "首页",
   "common.history": "历史",
   "common.templates": "模板",
+  "date.justNow": "刚刚",
+  "date.inFuture": "将来",
+  "date.secondsShort": "{n} 秒前",
+  "date.minutesShort": "{n} 分钟前",
+  "date.hoursShort": "{n} 小时前",
+  "date.daysShort": "{n} 天前",
+  "date.weeksShort": "{n} 周前",
+  "date.monthsShort": "{n} 个月前",
+  "date.yearsShort": "{n} 年前",
+  "date.minutesLong": "{n} 分钟前",
+  "date.hoursLong": "{n} 小时前",
+  "date.daysLong": "{n} 天前",
   "compare.title": "研究对比",
   "compare.backToHistory": "← 返回历史",
   "compare.optionA": "方案 A",
@@ -1517,6 +1553,18 @@ const ja: Dict = {
   "common.home": "ホーム",
   "common.history": "履歴",
   "common.templates": "テンプレート",
+  "date.justNow": "たった今",
+  "date.inFuture": "未来",
+  "date.secondsShort": "{n} 秒前",
+  "date.minutesShort": "{n} 分前",
+  "date.hoursShort": "{n} 時間前",
+  "date.daysShort": "{n} 日前",
+  "date.weeksShort": "{n} 週間前",
+  "date.monthsShort": "{n} ヶ月前",
+  "date.yearsShort": "{n} 年前",
+  "date.minutesLong": "{n} 分前",
+  "date.hoursLong": "{n} 時間前",
+  "date.daysLong": "{n} 日前",
   "compare.title": "リサーチ比較",
   "compare.backToHistory": "← 履歴に戻る",
   "compare.optionA": "案 A",
@@ -1696,6 +1744,18 @@ const ko: Dict = {
   "common.settings": "설정",
   "common.share": "공유",
   "common.templates": "템플릿",
+  "date.justNow": "방금 전",
+  "date.inFuture": "미래",
+  "date.secondsShort": "{n}초 전",
+  "date.minutesShort": "{n}분 전",
+  "date.hoursShort": "{n}시간 전",
+  "date.daysShort": "{n}일 전",
+  "date.weeksShort": "{n}주 전",
+  "date.monthsShort": "{n}개월 전",
+  "date.yearsShort": "{n}년 전",
+  "date.minutesLong": "{n}분 전",
+  "date.hoursLong": "{n}시간 전",
+  "date.daysLong": "{n}일 전",
   "compare.title": "리서치 비교",
   "compare.backToHistory": "← 기록으로 돌아가기",
   "compare.optionA": "옵션 A",
