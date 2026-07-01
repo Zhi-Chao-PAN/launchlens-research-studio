@@ -392,6 +392,44 @@ export type DictionaryKey =
   | "queryInput.cancelAriaLabel"
   | "queryInput.tryExample"
   | "queryInput.readyToRetry"
+  | "dataManager.exportTab"
+  | "dataManager.importTab"
+  | "dataManager.exportDesc"
+  | "dataManager.optionRuns"
+  | "dataManager.optionNotes"
+  | "dataManager.optionFolders"
+  | "dataManager.optionTemplates"
+  | "dataManager.preparing"
+  | "dataManager.downloadBackup"
+  | "dataManager.estimateSize"
+  | "dataManager.estimatedSize"
+  | "dataManager.importDesc"
+  | "dataManager.mergeStrategyLabel"
+  | "dataManager.strategyMerge"
+  | "dataManager.strategyOverwrite"
+  | "dataManager.strategySkip"
+  | "dataManager.adminTokenLabel"
+  | "dataManager.tokenSaved"
+  | "dataManager.clearToken"
+  | "dataManager.tokenPlaceholder"
+  | "dataManager.saveToken"
+  | "dataManager.tokenHint"
+  | "dataManager.processing"
+  | "dataManager.chooseFile"
+  | "dataManager.importComplete"
+  | "dataManager.colType"
+  | "dataManager.colImported"
+  | "dataManager.colSkipped"
+  | "dataManager.colTotal"
+  | "dataManager.typeRuns"
+  | "dataManager.typeNotes"
+  | "dataManager.typeFolders"
+  | "dataManager.typeTemplates"
+  | "dataManager.issuesCount"
+  | "dataManager.errorInvalidFile"
+  | "dataManager.errorTokenRequired"
+  | "dataManager.errorTokenRejected"
+  | "dataManager.errorRunImportFailed"
   | "language.label"
   | "notFound.backHome"
   | "notFound.body"
@@ -926,6 +964,44 @@ const en: Dict = {
   "queryInput.cancelAriaLabel": "Cancel research",
   "queryInput.tryExample": "Or try an example",
   "queryInput.readyToRetry": "Ready to retry — you can submit again.",
+  "dataManager.exportTab": "Export",
+  "dataManager.importTab": "Import",
+  "dataManager.exportDesc": "Download all your research data as a backup file.",
+  "dataManager.optionRuns": "Research runs",
+  "dataManager.optionNotes": "Notes & annotations",
+  "dataManager.optionFolders": "Folders",
+  "dataManager.optionTemplates": "Templates",
+  "dataManager.preparing": "Preparing...",
+  "dataManager.downloadBackup": "Download Backup",
+  "dataManager.estimateSize": "Estimate Size",
+  "dataManager.estimatedSize": "Estimated size: {size}",
+  "dataManager.importDesc": "Restore data from a backup file.",
+  "dataManager.mergeStrategyLabel": "Merge strategy:",
+  "dataManager.strategyMerge": "Merge (newer wins)",
+  "dataManager.strategyOverwrite": "Overwrite existing",
+  "dataManager.strategySkip": "Skip existing",
+  "dataManager.adminTokenLabel": "Admin token (required for server-side run restore)",
+  "dataManager.tokenSaved": "✓ Token saved in this browser",
+  "dataManager.clearToken": "Clear",
+  "dataManager.tokenPlaceholder": "Paste an admin-scope token",
+  "dataManager.saveToken": "Save",
+  "dataManager.tokenHint": "Notes, folders, and templates restore locally and don't need a token. Only server-stored research runs require admin scope.",
+  "dataManager.processing": "Processing...",
+  "dataManager.chooseFile": "Choose Backup File",
+  "dataManager.importComplete": "Import complete",
+  "dataManager.colType": "Type",
+  "dataManager.colImported": "Imported",
+  "dataManager.colSkipped": "Skipped",
+  "dataManager.colTotal": "Total",
+  "dataManager.typeRuns": "Runs",
+  "dataManager.typeNotes": "Notes",
+  "dataManager.typeFolders": "Folders",
+  "dataManager.typeTemplates": "Templates",
+  "dataManager.issuesCount": "{count} issue(s): {issues}",
+  "dataManager.errorInvalidFile": "Invalid backup file: {errors}",
+  "dataManager.errorTokenRequired": "Run import requires an admin token. Enter your admin token in the field above to enable server-side restore.",
+  "dataManager.errorTokenRejected": "Admin token rejected (401). Clear and re-enter it.",
+  "dataManager.errorRunImportFailed": "Run import failed: HTTP {status}",
   "export.title": "Export Report",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1461,6 +1537,44 @@ const zhCN: Dict = {
   "queryInput.cancelAriaLabel": "取消调研",
   "queryInput.tryExample": "或者试试示例",
   "queryInput.readyToRetry": "可以重新提交了。",
+  "dataManager.exportTab": "导出",
+  "dataManager.importTab": "导入",
+  "dataManager.exportDesc": "下载所有研究数据作为备份文件。",
+  "dataManager.optionRuns": "研究记录",
+  "dataManager.optionNotes": "笔记和注释",
+  "dataManager.optionFolders": "文件夹",
+  "dataManager.optionTemplates": "模板",
+  "dataManager.preparing": "准备中...",
+  "dataManager.downloadBackup": "下载备份",
+  "dataManager.estimateSize": "估算大小",
+  "dataManager.estimatedSize": "估算大小：{size}",
+  "dataManager.importDesc": "从备份文件恢复数据。",
+  "dataManager.mergeStrategyLabel": "合并策略：",
+  "dataManager.strategyMerge": "合并（新数据优先）",
+  "dataManager.strategyOverwrite": "覆盖现有数据",
+  "dataManager.strategySkip": "跳过现有数据",
+  "dataManager.adminTokenLabel": "管理员令牌（服务端运行恢复需要）",
+  "dataManager.tokenSaved": "✓ 令牌已保存在此浏览器",
+  "dataManager.clearToken": "清除",
+  "dataManager.tokenPlaceholder": "粘贴管理员令牌",
+  "dataManager.saveToken": "保存",
+  "dataManager.tokenHint": "笔记、文件夹和模板在本地恢复，不需要令牌。只有服务端存储的研究记录需要管理员权限。",
+  "dataManager.processing": "处理中...",
+  "dataManager.chooseFile": "选择备份文件",
+  "dataManager.importComplete": "导入完成",
+  "dataManager.colType": "类型",
+  "dataManager.colImported": "已导入",
+  "dataManager.colSkipped": "已跳过",
+  "dataManager.colTotal": "总计",
+  "dataManager.typeRuns": "研究记录",
+  "dataManager.typeNotes": "笔记",
+  "dataManager.typeFolders": "文件夹",
+  "dataManager.typeTemplates": "模板",
+  "dataManager.issuesCount": "{count} 个问题：{issues}",
+  "dataManager.errorInvalidFile": "无效的备份文件：{errors}",
+  "dataManager.errorTokenRequired": "导入研究记录需要管理员令牌。请在上方输入管理员令牌以启用服务端恢复。",
+  "dataManager.errorTokenRejected": "管理员令牌被拒绝（401）。请清除后重新输入。",
+  "dataManager.errorRunImportFailed": "研究记录导入失败：HTTP {status}",
   "export.title": "导出报告",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -1996,6 +2110,44 @@ const ja: Dict = {
   "queryInput.cancelAriaLabel": "リサーチをキャンセル",
   "queryInput.tryExample": "例を試す",
   "queryInput.readyToRetry": "再試行できます — もう一度送信できます。",
+  "dataManager.exportTab": "エクスポート",
+  "dataManager.importTab": "インポート",
+  "dataManager.exportDesc": "すべてのリサーチデータをバックアップファイルとしてダウンロードします。",
+  "dataManager.optionRuns": "リサーチ実行",
+  "dataManager.optionNotes": "メモと注釈",
+  "dataManager.optionFolders": "フォルダ",
+  "dataManager.optionTemplates": "テンプレート",
+  "dataManager.preparing": "準備中...",
+  "dataManager.downloadBackup": "バックアップをダウンロード",
+  "dataManager.estimateSize": "サイズを見積もる",
+  "dataManager.estimatedSize": "推定サイズ: {size}",
+  "dataManager.importDesc": "バックアップファイルからデータを復元します。",
+  "dataManager.mergeStrategyLabel": "マージ方法:",
+  "dataManager.strategyMerge": "マージ（新しい方を優先）",
+  "dataManager.strategyOverwrite": "既存を上書き",
+  "dataManager.strategySkip": "既存をスキップ",
+  "dataManager.adminTokenLabel": "管理者トークン（サーバー側実行の復元に必要）",
+  "dataManager.tokenSaved": "✓ このブラウザにトークンを保存しました",
+  "dataManager.clearToken": "クリア",
+  "dataManager.tokenPlaceholder": "管理者スコープのトークンを貼り付け",
+  "dataManager.saveToken": "保存",
+  "dataManager.tokenHint": "メモ、フォルダ、テンプレートはローカルで復元されるためトークンは不要です。サーバー保存のリサーチ実行のみ管理者スコープが必要です。",
+  "dataManager.processing": "処理中...",
+  "dataManager.chooseFile": "バックアップファイルを選択",
+  "dataManager.importComplete": "インポート完了",
+  "dataManager.colType": "種類",
+  "dataManager.colImported": "インポート済み",
+  "dataManager.colSkipped": "スキップ済み",
+  "dataManager.colTotal": "合計",
+  "dataManager.typeRuns": "実行",
+  "dataManager.typeNotes": "メモ",
+  "dataManager.typeFolders": "フォルダ",
+  "dataManager.typeTemplates": "テンプレート",
+  "dataManager.issuesCount": "{count}件の問題: {issues}",
+  "dataManager.errorInvalidFile": "無効なバックアップファイル: {errors}",
+  "dataManager.errorTokenRequired": "実行のインポートには管理者トークンが必要です。サーバー側の復元を有効にするには、上のフィールドに管理者トークンを入力してください。",
+  "dataManager.errorTokenRejected": "管理者トークンが拒否されました（401）。クリアして再入力してください。",
+  "dataManager.errorRunImportFailed": "実行のインポートに失敗: HTTP {status}",
   "export.title": "レポートをエクスポート",
   "export.markdown": "Markdown",
   "export.json": "JSON",
@@ -2535,6 +2687,44 @@ const ko: Dict = {
   "queryInput.cancelAriaLabel": "리서치 취소",
   "queryInput.tryExample": "예시 사용해 보기",
   "queryInput.readyToRetry": "다시 시도할 준비가 되었습니다 — 다시 제출할 수 있습니다.",
+  "dataManager.exportTab": "내보내기",
+  "dataManager.importTab": "가져오기",
+  "dataManager.exportDesc": "모든 리서치 데이터를 백업 파일로 다운로드합니다.",
+  "dataManager.optionRuns": "리서치 실행",
+  "dataManager.optionNotes": "메모 및 주석",
+  "dataManager.optionFolders": "폴더",
+  "dataManager.optionTemplates": "템플릿",
+  "dataManager.preparing": "준비 중...",
+  "dataManager.downloadBackup": "백업 다운로드",
+  "dataManager.estimateSize": "크기 예측",
+  "dataManager.estimatedSize": "예상 크기: {size}",
+  "dataManager.importDesc": "백업 파일에서 데이터를 복원합니다.",
+  "dataManager.mergeStrategyLabel": "병합 전략:",
+  "dataManager.strategyMerge": "병합 (최신 우선)",
+  "dataManager.strategyOverwrite": "기존 덮어쓰기",
+  "dataManager.strategySkip": "기존 건너뛰기",
+  "dataManager.adminTokenLabel": "관리자 토큰 (서버 측 실행 복원에 필요)",
+  "dataManager.tokenSaved": "✓ 이 브라우저에 토큰이 저장됨",
+  "dataManager.clearToken": "지우기",
+  "dataManager.tokenPlaceholder": "관리자 범위 토큰을 붙여넣기",
+  "dataManager.saveToken": "저장",
+  "dataManager.tokenHint": "메모, 폴더, 템플릿은 로컬에서 복원되므로 토큰이 필요하지 않습니다. 서버에 저장된 리서치 실행만 관리자 범위가 필요합니다.",
+  "dataManager.processing": "처리 중...",
+  "dataManager.chooseFile": "백업 파일 선택",
+  "dataManager.importComplete": "가져오기 완료",
+  "dataManager.colType": "유형",
+  "dataManager.colImported": "가져옴",
+  "dataManager.colSkipped": "건너뜀",
+  "dataManager.colTotal": "합계",
+  "dataManager.typeRuns": "실행",
+  "dataManager.typeNotes": "메모",
+  "dataManager.typeFolders": "폴더",
+  "dataManager.typeTemplates": "템플릿",
+  "dataManager.issuesCount": "{count}개 문제: {issues}",
+  "dataManager.errorInvalidFile": "잘못된 백업 파일: {errors}",
+  "dataManager.errorTokenRequired": "실행 가져오기에는 관리자 토큰이 필요합니다. 서버 측 복원을 활성화하려면 위 필드에 관리자 토큰을 입력하세요.",
+  "dataManager.errorTokenRejected": "관리자 토큰이 거부되었습니다 (401). 지우고 다시 입력하세요.",
+  "dataManager.errorRunImportFailed": "실행 가져오기 실패: HTTP {status}",
   "language.label": "언어",
   "notFound.backHome": "리서치 스튜디오로 돌아가기",
   "notFound.body": "찾으시는 페이지가 존재하지 않거나 이동되었습니다.",

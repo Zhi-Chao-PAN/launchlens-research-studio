@@ -2,6 +2,7 @@
 import { fetchWithCsrf, formatApiError } from "@/lib/api/csrf-client";
 
 import { useState, useRef } from "react";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import {
   createDataPackage,
   validateDataPackage,
@@ -24,6 +25,7 @@ interface ExportOptions {
 }
 
 export function DataManager() {
+  const { t } = useLocale();
   const [activeTab, setActiveTab] = useState<"export" | "import">("export");
   const [exportOptions, setExportOptions] = useState<ExportOptions>({
     includeRuns: true,
@@ -134,7 +136,7 @@ export function DataManager() {
 
       const errors = validateDataPackage(pkg);
       if (errors.length > 0) {
-        setImportError("Invalid backup file: " + errors.join(", "));
+        setImportError(t("dataManager.errorInvalidFile", { errors: errors.join(", ") }));
         return;
       }
 
@@ -151,9 +153,7 @@ export function DataManager() {
       // Import runs via API
       if (pkg.data.runs?.length) {
         if (!adminToken) {
-          result.errors.push(
-            "Run import requires an admin token. Enter your admin token in the field above to enable server-side restore.",
-          );
+          result.errors.push(t("dataManager.errorTokenRequired"));
         } else {
           try {
             const res = await fetchWithCsrf(`/api/data/import?strategy=${importStrategy}`, {
@@ -170,9 +170,9 @@ export function DataManager() {
               result.skipped.runs = data.skipped ?? 0;
               result.totalRuns = data.total ?? 0;
             } else if (res.status === 401) {
-              result.errors.push("Admin token rejected (401). Clear and re-enter it.");
+              result.errors.push(t("dataManager.errorTokenRejected"));
             } else {
-              result.errors.push(`Run import failed: HTTP ${res.status}`);
+              result.errors.push(t("dataManager.errorRunImportFailed", { status: res.status }));
             }
           } catch (err) {
             result.errors.push(formatApiError(err, { prefix: "Run import failed:" }));
@@ -272,20 +272,20 @@ export function DataManager() {
           className={`data-manager-tab ${activeTab === "export" ? "active" : ""}`}
           onClick={() => setActiveTab("export")}
         >
-          Export
+          {t("dataManager.exportTab")}
         </button>
         <button
           className={`data-manager-tab ${activeTab === "import" ? "active" : ""}`}
           onClick={() => setActiveTab("import")}
         >
-          Import
+          {t("dataManager.importTab")}
         </button>
       </div>
 
       {activeTab === "export" && (
         <div className="data-manager-panel">
           <p className="data-manager-desc">
-            Download all your research data as a backup file.
+            {t("dataManager.exportDesc")}
           </p>
 
           <div className="data-manager-options">
@@ -297,7 +297,7 @@ export function DataManager() {
                   setExportOptions({ ...exportOptions, includeRuns: e.target.checked })
                 }
               />
-              <span>Research runs</span>
+              <span>{t("dataManager.optionRuns")}</span>
             </label>
             <label className="data-manager-option">
               <input
@@ -307,7 +307,7 @@ export function DataManager() {
                   setExportOptions({ ...exportOptions, includeNotes: e.target.checked })
                 }
               />
-              <span>Notes &amp; annotations</span>
+              <span>{t("dataManager.optionNotes")}</span>
             </label>
             <label className="data-manager-option">
               <input
@@ -317,7 +317,7 @@ export function DataManager() {
                   setExportOptions({ ...exportOptions, includeFolders: e.target.checked })
                 }
               />
-              <span>Folders</span>
+              <span>{t("dataManager.optionFolders")}</span>
             </label>
             <label className="data-manager-option">
               <input
@@ -327,22 +327,22 @@ export function DataManager() {
                   setExportOptions({ ...exportOptions, includeTemplates: e.target.checked })
                 }
               />
-              <span>Templates</span>
+              <span>{t("dataManager.optionTemplates")}</span>
             </label>
           </div>
 
           <div className="data-manager-actions">
             <button className="btn btn-primary" onClick={handleExport} disabled={isProcessing}>
-              {isProcessing ? "Preparing..." : "Download Backup"}
+              {isProcessing ? t("dataManager.preparing") : t("dataManager.downloadBackup")}
             </button>
             <button className="btn btn-secondary" onClick={handleEstimate} disabled={isProcessing}>
-              Estimate Size
+              {t("dataManager.estimateSize")}
             </button>
           </div>
 
           {exportSize !== null && (
             <p className="data-manager-hint">
-              Estimated size: {formatBytes(exportSize)}
+              {t("dataManager.estimatedSize", { size: formatBytes(exportSize) })}
             </p>
           )}
         </div>
@@ -351,37 +351,37 @@ export function DataManager() {
       {activeTab === "import" && (
         <div className="data-manager-panel">
           <p className="data-manager-desc">
-            Restore data from a backup file.
+            {t("dataManager.importDesc")}
           </p>
 
           <div className="data-manager-options">
-            <label className="data-manager-label">Merge strategy:</label>
+            <label className="data-manager-label">{t("dataManager.mergeStrategyLabel")}</label>
             <select
               className="data-manager-select"
               value={importStrategy}
               onChange={(e) => setImportStrategy(e.target.value as ImportMergeStrategy)}
             >
-              <option value="merge">Merge (newer wins)</option>
-              <option value="overwrite">Overwrite existing</option>
-              <option value="skip">Skip existing</option>
+              <option value="merge">{t("dataManager.strategyMerge")}</option>
+              <option value="overwrite">{t("dataManager.strategyOverwrite")}</option>
+              <option value="skip">{t("dataManager.strategySkip")}</option>
             </select>
           </div>
 
           <div className="data-manager-options">
             <label className="data-manager-label">
-              Admin token (required for server-side run restore)
+              {t("dataManager.adminTokenLabel")}
             </label>
             {adminToken ? (
               <div className="data-manager-token-saved">
                 <span className="data-manager-token-status">
-                  ✓ Token saved in this browser
+                  {t("dataManager.tokenSaved")}
                 </span>
                 <button
                   type="button"
                   className="btn btn-secondary data-manager-token-clear"
                   onClick={clearAdminToken}
                 >
-                  Clear
+                  {t("dataManager.clearToken")}
                 </button>
               </div>
             ) : (
@@ -389,7 +389,7 @@ export function DataManager() {
                 <input
                   type="password"
                   className="data-manager-token-input"
-                  placeholder="Paste an admin-scope token"
+                  placeholder={t("dataManager.tokenPlaceholder")}
                   value={adminTokenInput}
                   onChange={(e) => setAdminTokenInput(e.target.value)}
                 />
@@ -399,13 +399,12 @@ export function DataManager() {
                   onClick={saveAdminToken}
                   disabled={!adminTokenInput.trim()}
                 >
-                  Save
+                  {t("dataManager.saveToken")}
                 </button>
               </div>
             )}
             <p className="data-manager-hint">
-              Notes, folders, and templates restore locally and don&apos;t need a
-              token. Only server-stored research runs require admin scope.
+              {t("dataManager.tokenHint")}
             </p>
           </div>
 
@@ -420,7 +419,7 @@ export function DataManager() {
               disabled={isProcessing}
             />
             <label htmlFor="import-file" className={`btn btn-primary ${isProcessing ? "disabled" : ""}`}>
-              {isProcessing ? "Processing..." : "Choose Backup File"}
+              {isProcessing ? t("dataManager.processing") : t("dataManager.chooseFile")}
             </label>
           </div>
 
@@ -432,37 +431,37 @@ export function DataManager() {
 
           {importResult && (
             <div className="data-manager-result">
-              <h4>Import complete</h4>
+              <h4>{t("dataManager.importComplete")}</h4>
               <table className="data-manager-result-table">
                 <thead>
                   <tr>
-                    <th>Type</th>
-                    <th>Imported</th>
-                    <th>Skipped</th>
-                    <th>Total</th>
+                    <th>{t("dataManager.colType")}</th>
+                    <th>{t("dataManager.colImported")}</th>
+                    <th>{t("dataManager.colSkipped")}</th>
+                    <th>{t("dataManager.colTotal")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Runs</td>
+                    <td>{t("dataManager.typeRuns")}</td>
                     <td>{importResult.imported.runs}</td>
                     <td>{importResult.skipped.runs}</td>
                     <td>{importResult.totalRuns}</td>
                   </tr>
                   <tr>
-                    <td>Notes</td>
+                    <td>{t("dataManager.typeNotes")}</td>
                     <td>{importResult.imported.notes}</td>
                     <td>{importResult.skipped.notes}</td>
                     <td>{importResult.totalNotes}</td>
                   </tr>
                   <tr>
-                    <td>Folders</td>
+                    <td>{t("dataManager.typeFolders")}</td>
                     <td>{importResult.imported.folders}</td>
                     <td>{importResult.skipped.folders}</td>
                     <td>{importResult.totalFolders}</td>
                   </tr>
                   <tr>
-                    <td>Templates</td>
+                    <td>{t("dataManager.typeTemplates")}</td>
                     <td>{importResult.imported.templates}</td>
                     <td>{importResult.skipped.templates}</td>
                     <td>{importResult.totalTemplates}</td>
@@ -471,7 +470,7 @@ export function DataManager() {
               </table>
               {importResult.errors.length > 0 && (
                 <div className="data-manager-warnings">
-                  {importResult.errors.length} issue(s): {importResult.errors.join("; ")}
+                  {t("dataManager.issuesCount", { count: importResult.errors.length, issues: importResult.errors.join("; ") })}
                 </div>
               )}
             </div>
