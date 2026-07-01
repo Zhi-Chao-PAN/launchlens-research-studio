@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { listCachedSessions, deleteCachedSession, type CachedSession } from "@/lib/research/session-cache";
 import { formatRelativeTime } from "@/lib/research/history";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface CachedSessionsProps {
   refreshKey: number;
@@ -20,6 +21,7 @@ function agentProgress(c: CachedSession): { done: number; total: number } {
 
 export function CachedSessionsList({ onSelect, onClear }: CachedSessionsProps) {
   const [expanded, setExpanded] = useState(true);
+  const { locale } = useLocale();
   const all = listCachedSessions();
 
   if (all.length === 0) return null;
@@ -62,7 +64,7 @@ export function CachedSessionsList({ onSelect, onClear }: CachedSessionsProps) {
                       {c.query}
                     </p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span className="text-[10px] text-slate-400">{formatRelativeTime(c.completedAt)}</span>
+                      <span className="text-[10px] text-slate-400">{formatRelativeTime(c.completedAt, locale)}</span>
                       <span className="text-[10px] text-slate-300">·</span>
                       <span className="text-[10px] text-emerald-600 font-medium">
                         {done}/{total} agents

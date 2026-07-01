@@ -64,6 +64,29 @@ describe("formatRelativeTime", () => {
   it("returns empty string for invalid input", () => {
     expect(formatRelativeTime("not a date")).toBe("");
   });
+
+  it("localizes compact units in zh-CN", () => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(fiveMinAgo, "zh-CN")).toBe("5 分钟前");
+    expect(formatRelativeTime(twoHoursAgo, "zh-CN")).toBe("2 小时前");
+    expect(formatRelativeTime(threeDaysAgo, "zh-CN")).toBe("3 天前");
+  });
+
+  it("localizes compact units in ja", () => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    expect(formatRelativeTime(fiveMinAgo, "ja")).toBe("5分前");
+    expect(formatRelativeTime(twoHoursAgo, "ja")).toBe("2時間前");
+    expect(formatRelativeTime(threeDaysAgo, "ja")).toBe("3日前");
+  });
+
+  it("treats future timestamps as 'just now'", () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(formatRelativeTime(future, "en")).toBe("just now");
+  });
 });
 
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useResearchHistory, formatRelativeTime } from "@/lib/research/history";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface RecentQueriesProps {
   onSelect: (query: string, keywords: string[]) => void;
@@ -10,6 +11,7 @@ interface RecentQueriesProps {
 
 export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
   const { history, removeEntry, clearAll, hydrated } = useResearchHistory();
+  const { locale } = useLocale();
 
   if (!hydrated || history.length === 0) return null;
 
@@ -43,7 +45,7 @@ export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
                   {entry.query}
                 </p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span className="text-[10px] text-slate-400">{formatRelativeTime(entry.createdAt)}</span>
+                  <span className="text-[10px] text-slate-400">{formatRelativeTime(entry.createdAt, locale)}</span>
                   {entry.keywords.length > 0 && (
                     <>
                       <span className="text-[10px] text-slate-300">·</span>

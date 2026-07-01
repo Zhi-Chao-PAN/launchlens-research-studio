@@ -5,6 +5,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { translate, type Locale, DEFAULT_LOCALE } from "@/lib/i18n/dictionaries";
 
+const LOCALE_TO_BCP47: Record<Locale, string> = {
+  en: "en-US",
+  "zh-CN": "zh-CN",
+  ja: "ja-JP",
+  ko: "ko-KR",
+};
+
 export interface HistoryEntry {
   id: string;
   query: string;
@@ -109,20 +116,21 @@ export function upsertHistoryEntry(
   return [entry, ...filtered].slice(0, limit);
 }
 
-export function formatRelativeTime(iso: string): string {
+export function formatRelativeTime(iso: string, locale: Locale = DEFAULT_LOCALE): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const now = Date.now();
   const diffMs = now - then;
+  if (diffMs < 0) return translate(locale, "date.justNow", "just now");
   const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return "just now";
+  if (sec < 60) return translate(locale, "date.justNow", "just now");
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return translate(locale, "date.minutesCompact", "{n}m ago", { n: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return translate(locale, "date.hoursCompact", "{n}h ago", { n: hr });
   const days = Math.floor(hr / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  if (days < 7) return translate(locale, "date.daysCompact", "{n}d ago", { n: days });
+  return new Date(iso).toLocaleDateString(LOCALE_TO_BCP47[locale]);
 }
 
 /* ------------------------------------------------------------------ */

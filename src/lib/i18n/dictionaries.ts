@@ -179,6 +179,9 @@ export type DictionaryKey =
   | "date.daysLong"
   | "date.today"
   | "date.yesterday"
+  | "date.minutesCompact"
+  | "date.hoursCompact"
+  | "date.daysCompact"
   | "validation.bodyNotObject"
   | "validation.queryRequired"
   | "validation.queryTooShort"
@@ -838,6 +841,9 @@ const en: Dict = {
   "date.daysLong": "{n} days ago",
   "date.today": "Today",
   "date.yesterday": "Yesterday",
+  "date.minutesCompact": "{n}m ago",
+  "date.hoursCompact": "{n}h ago",
+  "date.daysCompact": "{n}d ago",
   "validation.bodyNotObject": "Request body must be a JSON object.",
   "validation.queryRequired": "Field 'query' is required and must be a string.",
   "validation.queryTooShort": "Query must be at least {min} characters long.",
@@ -1283,6 +1289,9 @@ const zhCN: Dict = {
   "date.daysLong": "{n} 天前",
   "date.today": "今天",
   "date.yesterday": "昨天",
+  "date.minutesCompact": "{n} 分钟前",
+  "date.hoursCompact": "{n} 小时前",
+  "date.daysCompact": "{n} 天前",
   "validation.bodyNotObject": "请求体必须是 JSON 对象。",
   "validation.queryRequired": "字段 'query' 必填且必须是字符串。",
   "validation.queryTooShort": "query 至少需要 {min} 个字符。",
@@ -1728,6 +1737,9 @@ const ja: Dict = {
   "date.daysLong": "{n} 日前",
   "date.today": "今日",
   "date.yesterday": "昨日",
+  "date.minutesCompact": "{n}分前",
+  "date.hoursCompact": "{n}時間前",
+  "date.daysCompact": "{n}日前",
   "validation.bodyNotObject": "リクエストボディは JSON オブジェクトである必要があります。",
   "validation.queryRequired": "フィールド 'query' は必須かつ文字列である必要があります。",
   "validation.queryTooShort": "query は {min} 文字以上である必要があります。",
@@ -1962,6 +1974,9 @@ const ko: Dict = {
   "date.daysLong": "{n}일 전",
   "date.today": "오늘",
   "date.yesterday": "어제",
+  "date.minutesCompact": "{n}분 전",
+  "date.hoursCompact": "{n}시간 전",
+  "date.daysCompact": "{n}일 전",
   "validation.bodyNotObject": "요청 본문은 JSON 객체여야 합니다.",
   "validation.queryRequired": "'query' 필드는 필수이며 문자열이어야 합니다.",
   "validation.queryTooShort": "query는 최소 {min}자 이상이어야 합니다.",
