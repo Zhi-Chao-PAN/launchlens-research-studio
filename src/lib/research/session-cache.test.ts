@@ -510,3 +510,51 @@ describe("session-cache pure helpers (round 157)", () => {
     expect(searchCachedSessions(sessions, "  ").map((s) => s.id)).toEqual(["s1", "s2"]);
   });
 });
+
+describe("corrupted session-cache storage (round validation)", () => {
+  beforeEach(() => clearAllCachedSessions());
+
+  it("listCachedSessions drops malformed entries but keeps the valid ones", () => {
+    const good = {
+      id: "ok",
+      query: "q",
+      keywords: ["k"],
+      status: "completed",
+      createdAt: "2025",
+      updatedAt: "2025",
+      savedAt: 1,
+      completedAt: "2025",
+      outputs: {},
+      agentStatuses: {},
+      citationCount: 0,
+    };
+    const payload = [
+      good,
+      { id: "no-query", keywords: [], status: "completed", createdAt: "", updatedAt: "", savedAt: 1, completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
+      { id: "bad-keywords", query: "q", keywords: "not-an-array", status: "completed", createdAt: "", updatedAt: "", savedAt: 1, completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
+      { id: "bad-savedAt", query: "q", keywords: [], status: "completed", createdAt: "", updatedAt: "", savedAt: "now", completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
+      "string-not-object",
+    ];
+    localStorage.setItem("launchlens:sessions", JSON.stringify(payload));
+    const all = listCachedSessions();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe("ok");
+  });
+
+  it("access-tracking storage also drops malformed entries", () => {
+    localStorage.setItem("launchlens:sessions-accessed", JSON.stringify([
+      { id: "ok", accessedAt: "2025", accessCount: 1 },
+      { id: "bad-count", accessedAt: "2025", accessCount: "lots" },
+      { id: "bad-time", accessedAt: 1, accessCount: 1 },
+      { id: "", accessedAt: "2025", accessCount: 1 },
+      "not-an-object",
+    ]));
+    // Touching the access store should silently drop the bad rows
+    // and the surviving entry should still be reachable.
+    recordSessionAccess("ok");
+    const stats = getSessionAccessStats("ok");
+    expect(stats.accessCount).toBe(2);
+    const badStats = getSessionAccessStats("bad-count");
+    expect(badStats.accessCount).toBe(0);
+  });
+});

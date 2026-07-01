@@ -21,6 +21,23 @@ export interface CachedSession {
   completedAt: string;
 }
 
+function isValidCachedSessionShape(v: unknown): v is CachedSession {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  if (typeof s.id !== "string" || !s.id) return false;
+  if (typeof s.query !== "string") return false;
+  if (!Array.isArray(s.keywords) || !s.keywords.every((k) => typeof k === "string")) return false;
+  if (typeof s.status !== "string") return false;
+  if (typeof s.createdAt !== "string") return false;
+  if (typeof s.updatedAt !== "string") return false;
+  if (typeof s.savedAt !== "number" || !Number.isFinite(s.savedAt)) return false;
+  if (typeof s.completedAt !== "string") return false;
+  if (typeof s.citationCount !== "number" || !Number.isFinite(s.citationCount)) return false;
+  if (!s.outputs || typeof s.outputs !== "object" || Array.isArray(s.outputs)) return false;
+  if (!s.agentStatuses || typeof s.agentStatuses !== "object" || Array.isArray(s.agentStatuses)) return false;
+  return true;
+}
+
 function safeRead(): CachedSession[] {
   if (typeof window === "undefined") return [];
   try {
@@ -28,7 +45,9 @@ function safeRead(): CachedSession[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed as CachedSession[];
+    // Defensively drop entries with the wrong shape so a partial write
+    // can't crash the agent / history views that consume the cache.
+    return parsed.filter(isValidCachedSessionShape);
   } catch {
     return [];
   }
@@ -128,13 +147,23 @@ interface AccessRecord {
   accessCount: number;
 }
 
+function isValidAccessRecord(v: unknown): v is AccessRecord {
+  if (!v || typeof v !== "object") return false;
+  const a = v as Record<string, unknown>;
+  if (typeof a.id !== "string" || !a.id) return false;
+  if (typeof a.accessedAt !== "string") return false;
+  if (typeof a.accessCount !== "number" || !Number.isFinite(a.accessCount)) return false;
+  return true;
+}
+
 function readAccessRecords(): AccessRecord[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(ACCESSED_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isValidAccessRecord);
   } catch {
     return [];
   }
