@@ -350,7 +350,7 @@ export default function AdminPage() {
           className={activeTab === "dashboard" ? "admin-tab active" : "admin-tab"}
           onClick={() => setActiveTab("dashboard")}
         >
-          📊 仪表盘
+          📊 Dashboard
         </button>
         <button
           className={activeTab === "tokens" ? "admin-tab active" : "admin-tab"}
@@ -388,59 +388,59 @@ export default function AdminPage() {
       <main className="admin-main">
         {activeTab === "dashboard" && (
         <div className="admin-section">
-          <h2 className="admin-section-title">系统概览</h2>
+          <h2 className="admin-section-title">System Overview</h2>
 
           {statsLoading ? (
-            <p className="admin-loading">加载中...</p>
+            <p className="admin-loading">Loading...</p>
           ) : stats ? (
             <>
               {/* Stats grid */}
               <div className="admin-stats-grid">
                 <div className="admin-stat-card">
-                  <div className="admin-stat-label">研究总数</div>
+                  <div className="admin-stat-label">Total Research</div>
                   <div className="admin-stat-value">{stats.research?.total ?? 0}</div>
                   <div className="admin-stat-sub">
-                    今日 {stats.research?.today ?? 0} · 本周 {stats.research?.thisWeek ?? 0}
+                    Today {stats.research?.today ?? 0} · This week {stats.research?.thisWeek ?? 0}
                   </div>
                 </div>
                 <div className="admin-stat-card admin-stat-success">
-                  <div className="admin-stat-label">已完成</div>
+                  <div className="admin-stat-label">Completed</div>
                   <div className="admin-stat-value">{stats.research?.completed ?? 0}</div>
-                  <div className="admin-stat-sub">成功率 {stats.research?.successRate ?? 0}%</div>
+                  <div className="admin-stat-sub">Success rate {stats.research?.successRate ?? 0}%</div>
                 </div>
                 <div className="admin-stat-card admin-stat-danger">
-                  <div className="admin-stat-label">失败</div>
+                  <div className="admin-stat-label">Failed</div>
                   <div className="admin-stat-value">{stats.research?.failed ?? 0}</div>
-                  <div className="admin-stat-sub">运行中 {stats.research?.running ?? 0}</div>
+                  <div className="admin-stat-sub">Running {stats.research?.running ?? 0}</div>
                 </div>
                 <div className="admin-stat-card admin-stat-info">
-                  <div className="admin-stat-label">分享链接</div>
+                  <div className="admin-stat-label">Share Links</div>
                   <div className="admin-stat-value">{stats.shares?.total ?? 0}</div>
                   <div className="admin-stat-sub">
-                    活跃 {stats.shares?.active ?? 0} · {stats.shares?.totalViews ?? 0} 次浏览
+                    Active {stats.shares?.active ?? 0} · {stats.shares?.totalViews ?? 0} views
                   </div>
                 </div>
                 <div className="admin-stat-card admin-stat-warning">
-                  <div className="admin-stat-label">活动告警</div>
+                  <div className="admin-stat-label">Active Alerts</div>
                   <div className="admin-stat-value">{stats.alerts?.active ?? 0}</div>
                   <div className="admin-stat-sub">
-                    严重 {stats.alerts?.critical ?? 0} · 警告 {stats.alerts?.warning ?? 0}
+                    Critical {stats.alerts?.critical ?? 0} · Warning {stats.alerts?.warning ?? 0}
                   </div>
                 </div>
                 <div className="admin-stat-card">
-                  <div className="admin-stat-label">平均耗时</div>
+                  <div className="admin-stat-label">Avg Duration</div>
                   <div className="admin-stat-value">
                     {stats.research?.avgDurationMs
                       ? (stats.research.avgDurationMs / 1000).toFixed(1) + "s"
                       : "—"}
                   </div>
-                  <div className="admin-stat-sub">基于已完成研究</div>
+                  <div className="admin-stat-sub">Across completed runs</div>
                 </div>
               </div>
 
               {/* Hourly activity chart (bar chart) */}
               <div className="admin-chart-section">
-                <h3 className="admin-chart-title">24 小时活动趋势</h3>
+                <h3 className="admin-chart-title">24-Hour Activity Trend</h3>
                 <div className="admin-bar-chart">
                   {stats.hourlyActivity?.values?.map((val: number, i: number) => (
                     <div key={i} className="admin-bar-item">
@@ -451,7 +451,7 @@ export default function AdminPage() {
                           style={{
                             height: `${Math.max(4, (val / Math.max(1, ...(stats.hourlyActivity?.values || []))) * 100)}%`,
                           }}
-                          title={`${val} 次研究`}
+                          title={`${val} runs`}
                         />
                       </div>
                     </div>
@@ -461,10 +461,10 @@ export default function AdminPage() {
 
               {/* Top keywords */}
               <div className="admin-keywords-section">
-                <h3 className="admin-chart-title">热门关键词 (Top 10)</h3>
+                <h3 className="admin-chart-title">Top Keywords (Top 10)</h3>
                 <div className="admin-keyword-cloud">
                   {stats.topKeywords?.map((kw: { keyword: string; count: number }) => (
-                    <span key={kw.keyword} className="admin-keyword-tag" title={`${kw.count} 次`}>
+                    <span key={kw.keyword} className="admin-keyword-tag" title={`${kw.count} occurrences`}>
                       {kw.keyword}
                       <span className="admin-keyword-count">{kw.count}</span>
                     </span>
@@ -473,7 +473,7 @@ export default function AdminPage() {
               </div>
             </>
           ) : (
-            <p className="admin-empty">暂无数据</p>
+            <p className="admin-empty">No data available</p>
           )}
         </div>
       )}
