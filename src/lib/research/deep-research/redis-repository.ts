@@ -209,7 +209,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
     try {
       const raw = await this.redis().eval<
         [string, string, string, string, string],
-        string
+        unknown
       >(
         CLAIM_SCRIPT,
         [RUN_KEY(input.sessionId), LEASE_KEY(input.sessionId), FENCE_KEY(input.sessionId)],
@@ -231,7 +231,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
     try {
       const raw = await this.redis().eval<
         [string, string, string, string, string, string, string, string],
-        string
+        unknown
       >(
         COMMIT_SCRIPT,
         [RUN_KEY(input.sessionId), LEASE_KEY(input.sessionId), SESSION_KEY(input.sessionId), DUE_KEY],
@@ -301,7 +301,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
 
   async deleteTerminal(sessionId: string): Promise<DeepRunDeleteResult> {
     try {
-      const raw = await this.redis().eval<[], string>(
+      const raw = await this.redis().eval<[], unknown>(
         DELETE_TERMINAL_SCRIPT,
         [
           RUN_KEY(sessionId),
@@ -312,7 +312,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
         ],
         [],
       );
-      return JSON.parse(raw) as DeepRunDeleteResult;
+      return parseEvalJsonResult<DeepRunDeleteResult>(raw);
     } catch (error) {
       if (error instanceof DeepRunRepositoryUnavailableError) throw error;
       throw new DeepRunRepositoryUnavailableError("Failed to delete terminal Deep Research state.");
@@ -326,12 +326,21 @@ function parseRecord(raw: unknown): DeepRunRecordV1 | null {
   return value as DeepRunRecordV1;
 }
 
-function parseClaimResult(raw: string): DeepRunClaimResult {
-  return JSON.parse(raw) as DeepRunClaimResult;
+function parseClaimResult(raw: unknown): DeepRunClaimResult {
+  return parseEvalJsonResult<DeepRunClaimResult>(raw);
 }
 
-function parseCommitResult(raw: string): DeepRunCommitResult {
-  return JSON.parse(raw) as DeepRunCommitResult;
+function parseCommitResult(raw: unknown): DeepRunCommitResult {
+  return parseEvalJsonResult<DeepRunCommitResult>(raw);
+}
+
+/**
+ * Upstash deserializes JSON-looking Lua return values by default. Keep the
+ * repository compatible with both that object form and raw Redis clients that
+ * return the cjson string unchanged.
+ */
+function parseEvalJsonResult<T>(raw: unknown): T {
+  return (typeof raw === "string" ? JSON.parse(raw) : raw) as T;
 }
 
 /** Compile-time assertion that the projection remains a ResearchSession. */
