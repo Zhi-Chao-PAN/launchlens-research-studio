@@ -347,7 +347,14 @@ function overwriteFindingAuthority(
   reviewer: ClaimReviewerIdentity,
 ): unknown[] {
   return values.flatMap((value) =>
-    isRecord(value) ? [{ ...value, pass, reviewer: { ...reviewer } }] : [],
+    isRecord(value)
+      ? [{
+          ...value,
+          confidence: normalizeReviewerConfidence(value.confidence),
+          pass,
+          reviewer: { ...reviewer },
+        }]
+      : [],
   );
 }
 
@@ -356,8 +363,25 @@ function overwriteAdjudicationAuthority(
   reviewer: ClaimReviewerIdentity,
 ): unknown[] {
   return values.flatMap((value) =>
-    isRecord(value) ? [{ ...value, reviewer: { ...reviewer } }] : [],
+    isRecord(value)
+      ? [{
+          ...value,
+          confidence: normalizeReviewerConfidence(value.confidence),
+          reviewer: { ...reviewer },
+        }]
+      : [],
   );
+}
+
+/** Map common numeric model confidence to the ledger's bounded enum. */
+function normalizeReviewerConfidence(value: unknown): unknown {
+  if (value === "low" || value === "medium" || value === "high") return value;
+  if (typeof value !== "number" || !Number.isFinite(value)) return value;
+  const normalized = value > 1 && value <= 100 ? value / 100 : value;
+  if (normalized < 0 || normalized > 1) return value;
+  if (normalized >= 0.8) return "high";
+  if (normalized >= 0.5) return "medium";
+  return "low";
 }
 
 function assertCompleteFindingCoverage(

@@ -56,7 +56,7 @@ function parsePayload(userPrompt: string): Record<string, unknown> {
   return JSON.parse(userPrompt.slice(start, end)) as Record<string, unknown>;
 }
 
-function successfulProvider(): StructuredCompletionProvider {
+function successfulProvider(numericConfidence = false): StructuredCompletionProvider {
   return liveScriptedProvider(({ schemaName, userPrompt }) => {
     const payload = parsePayload(userPrompt);
     const claims = payload.claims as Array<{
@@ -77,7 +77,7 @@ function successfulProvider(): StructuredCompletionProvider {
           claimValueHash: claim.valueHash,
           reviewer: { reviewerId: "forged", providerId: "forged", promptVersion: "forged" },
           verdict: claim.sourceIds.length > 0 ? "entailed" : "insufficient_evidence",
-          confidence: "medium",
+          confidence: numericConfidence ? 0.9 : "medium",
           supportingSourceIds: claim.sourceIds.slice(0, 1),
           contradictingSourceIds: ["invented-source"],
           rationale: "The supplied source excerpt supports the bounded statement.",
@@ -95,7 +95,7 @@ function successfulProvider(): StructuredCompletionProvider {
             claimId: claim.id,
             claimValueHash: claim.valueHash,
             verdict: independent ? "corroborated" : "insufficient_evidence",
-            confidence: "medium",
+            confidence: numericConfidence ? 90 : "medium",
             supportingSourceIds: independent ? [independent, "invented-source"] : [],
             contradictingSourceIds: [],
             rationale: "Fresh retrieval independently corroborates the bounded statement.",
@@ -116,7 +116,7 @@ function successfulProvider(): StructuredCompletionProvider {
           claimId: claim.id,
           claimValueHash: claim.valueHash,
           disposition: support.length > 0 ? "supported" : "insufficient_evidence",
-          confidence: "medium",
+          confidence: numericConfidence ? 0.9 : "medium",
           supportingSourceIds: [...support, "invented-source"],
           contradictingSourceIds: [],
           limitations: [],
@@ -195,6 +195,29 @@ describe("DeepSemanticReviewer", () => {
         providerId: "review-provider",
         model: "review-model",
       });
+  });
+
+  it("normalizes numeric reviewer confidence without weakening claim binding", async () => {
+    let session = await fixtureSession();
+    const reviewer = new DeepSemanticReviewer({
+      provider: successfulProvider(true),
+      retrieval: liveRetrieval(),
+    });
+
+    session = await reviewer.runPass(session, "claim_source_entailment");
+    session = await reviewer.runPass(session, "independent_corroboration_conflict");
+    session = await reviewer.runPass(session, "adjudication");
+
+    expect(session.validation?.version).toBe(2);
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    const ledger = session.validation;
+    expect(ledger.findings.every((finding) => finding.confidence === "high")).toBe(true);
+    expect(ledger.adjudications.every((item) => item.confidence === "high")).toBe(true);
+    expect(ledger.claims.every((claim) =>
+      ledger.findings.some((finding) =>
+        finding.claimId === claim.id && finding.claimValueHash === claim.valueHash
+      )
+    )).toBe(true);
   });
 
   it("rejects incomplete reviewer coverage so the durable stage can retry", async () => {
