@@ -13,6 +13,7 @@ import {
 } from "@/lib/schema/research-schema";
 
 const ALL_AGENTS: readonly AgentId[] = [...RESEARCH_AGENTS, "synthesis"];
+const FOCUSED_QUERY_MAX_CHARS = 280;
 
 const AGENT_RETRIEVAL_FOCUS: Record<Exclude<AgentId, "synthesis">, string> = {
   "market-sizer": "market size TAM SAM SOM CAGR forecasts industry reports",
@@ -81,8 +82,23 @@ export function buildFocusedRetrievalQuery(
   query: string,
   agentId: Exclude<AgentId, "synthesis">,
 ): string {
-  const base = query.trim();
-  return base ? `${base} — ${AGENT_RETRIEVAL_FOCUS[agentId]}` : AGENT_RETRIEVAL_FOCUS[agentId];
+  const focus = AGENT_RETRIEVAL_FOCUS[agentId];
+  const base = query.replace(/\s+/g, " ").trim();
+  if (!base) return focus;
+
+  // Search providers expect a concise query, not the user's full research
+  // brief. Put the specialist intent first so truncation cannot discard it.
+  return truncateAtWordBoundary(
+    `${focus}. Product context: ${base}`,
+    FOCUSED_QUERY_MAX_CHARS,
+  );
+}
+
+function truncateAtWordBoundary(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const clipped = value.slice(0, maxChars);
+  const boundary = clipped.lastIndexOf(" ");
+  return (boundary >= Math.floor(maxChars * 0.75) ? clipped.slice(0, boundary) : clipped).trim();
 }
 
 /**

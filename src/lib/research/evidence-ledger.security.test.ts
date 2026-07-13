@@ -4,6 +4,7 @@ import type { AgentOutput } from "@/lib/schema/research-schema";
 import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 import {
   allowlistAgentOutput,
+  buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
 } from "./evidence-ledger";
 
@@ -21,6 +22,14 @@ function source(url: string, id: string): RetrievedSource {
 }
 
 describe("evidence ledger security boundaries", () => {
+  it("keeps long research briefs concise while preserving specialist intent", () => {
+    const query = buildFocusedRetrievalQuery("product context ".repeat(100), "pricing-scout");
+
+    expect(query.length).toBeLessThanOrEqual(280);
+    expect(query).toMatch(/^pricing pages plans tiers willingness to pay benchmarks\./);
+    expect(query).toContain("Product context:");
+  });
+
   it("persists only canonical public retrieval URLs", () => {
     const result = canonicalizeRetrievedSources(
       [

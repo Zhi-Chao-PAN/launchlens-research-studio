@@ -42,6 +42,23 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(body.topic).toBe("general");
   });
 
+  it("keeps the final provider query below Tavily's 400-character limit", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ results: [] }), { status: 200 }),
+    );
+    const provider = makeProvider({ fetchImpl });
+
+    await provider.search({
+      query: `pricing pages plans tiers. Product context: ${"market opportunity ".repeat(30)}`,
+      keywords: Array.from({ length: 12 }, (_, index) => `keyword-${index}-${"x".repeat(25)}`),
+    });
+
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as { query: string };
+    expect(body.query.length).toBeLessThan(400);
+    expect(body.query).toMatch(/^pricing pages plans tiers\./);
+  });
+
   it("returns parsed sources with deterministic ids and retrievedAt", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(

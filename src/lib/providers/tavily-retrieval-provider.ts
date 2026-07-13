@@ -16,6 +16,10 @@ import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 const DEFAULT_BASE_URL = "https://api.tavily.com";
 const DEFAULT_MAX_RESULTS = 6;
 const HTTP_TIMEOUT_MS = 12_000;
+// Tavily recommends queries shorter than 400 characters. Enforce the bound at
+// the adapter edge because user briefs plus keywords can exceed it even when
+// upstream callers already compact their focused query.
+const MAX_QUERY_CHARS = 399;
 
 interface TavilyRawResult {
   title?: string;
@@ -129,7 +133,11 @@ function buildQueryString(query: string, keywords?: string[]): string {
   const parts: string[] = [];
   if (query) parts.push(query);
   if (keywords && keywords.length > 0) parts.push(keywords.join(" "));
-  return parts.join(" ").trim();
+  const normalized = parts.join(" ").replace(/\s+/g, " ").trim();
+  if (normalized.length <= MAX_QUERY_CHARS) return normalized;
+  const clipped = normalized.slice(0, MAX_QUERY_CHARS);
+  const boundary = clipped.lastIndexOf(" ");
+  return (boundary >= 300 ? clipped.slice(0, boundary) : clipped).trim();
 }
 
 function clampInt(n: number, lo: number, hi: number): number {
