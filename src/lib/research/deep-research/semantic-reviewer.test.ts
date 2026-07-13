@@ -290,6 +290,48 @@ describe("DeepSemanticReviewer", () => {
       });
   });
 
+  it("keeps shared URLs agent-scoped across focused independent retrievals", async () => {
+    let session = await fixtureSession(["market-sizer", "competitor-analyst"]);
+    const provider = successfulProvider();
+    session = await new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() })
+      .runPass(session, "claim_source_entailment");
+    const queries: string[] = [];
+    const overlappingRetrieval: RetrievalProvider = {
+      id: "overlapping-search",
+      displayName: "Overlapping search",
+      isMock: false,
+      async search({ agentId, query }) {
+        queries.push(query);
+        const now = new Date().toISOString();
+        return [{
+          id: "shared-result",
+          title: "Shared independent benchmark",
+          url: "https://evidence.example/shared-benchmark",
+          snippet: "The same benchmark contains independently retrieved evidence for both dimensions.",
+          accessedAt: now,
+          retrievedAt: now,
+          confidence: "medium",
+          agent: agentId ?? "market-sizer",
+        }];
+      },
+    };
+
+    session = await new DeepSemanticReviewer({ provider, retrieval: overlappingRetrieval })
+      .runPass(session, "independent_corroboration_conflict");
+
+    expect(queries).toHaveLength(2);
+    expect(new Set(queries).size).toBe(2);
+    expect(queries.every((query) => query.length <= 280)).toBe(true);
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    const independent = session.validation.reviewSources.filter(
+      (source) => source.origin === "independent_retrieval",
+    );
+    expect(new Set(independent.map((source) => source.agent))).toEqual(
+      new Set(["market-sizer", "competitor-analyst"]),
+    );
+    expect(new Set(independent.map((source) => source.id)).size).toBe(2);
+  });
+
   it("never treats an explicit mock reviewer as Deep capability", async () => {
     const session = await fixtureSession();
     const mock = createDeterministicStructuredCompletionProvider({ respond: () => ({}) });

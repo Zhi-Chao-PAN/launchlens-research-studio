@@ -158,7 +158,12 @@ export class DeepSemanticReviewer {
       });
       throwIfAborted(signal);
       for (const source of retrieved) {
-        sources.push({ ...source, agent: agentId, origin: "independent_retrieval" });
+        sources.push({
+          ...source,
+          id: scopeIndependentSourceId(source.id, agentId),
+          agent: agentId,
+          origin: "independent_retrieval",
+        });
       }
     }
 
@@ -421,11 +426,31 @@ function groupClaimsByAgent(claims: readonly ResearchClaim[]) {
 }
 
 function buildIndependentQuery(query: string, claims: readonly ResearchClaim[]): string {
+  const agentId = claims[0]?.agentId ?? "specialist";
   const claimText = claims
     .slice(0, 3)
     .map((claim) => claim.text)
     .join(" | ");
-  return `${query}\nVerify current independent evidence for: ${claimText}`.slice(0, 1_600);
+  return truncateSearchText(
+    `Independent evidence for ${agentId}: ${claimText}. Product context: ${query}`,
+    280,
+  );
+}
+
+function scopeIndependentSourceId(sourceId: string, agentId: ResearchClaim["agentId"]): string {
+  const bounded = String(sourceId)
+    .replace(/[\u0000-\u001F\u007F]/g, "-")
+    .trim()
+    .slice(0, 120) || "source";
+  return `ind-${agentId}-${bounded}`.slice(0, 160);
+}
+
+function truncateSearchText(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  const clipped = normalized.slice(0, maxChars);
+  const boundary = clipped.lastIndexOf(" ");
+  return (boundary >= Math.floor(maxChars * 0.75) ? clipped.slice(0, boundary) : clipped).trim();
 }
 
 function dedupeSources<T extends RetrievedSource>(sources: readonly T[]): T[] {
