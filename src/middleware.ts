@@ -53,6 +53,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // External schedulers may use the dedicated x-cron-secret transport. Let
+  // only this exact endpoint reach its route-level constant-time verifier;
+  // an arbitrary or short secret still receives 401/503 from the handler.
+  if (pathname === "/api/cron/scheduler" && request.headers.get("x-cron-secret")) {
+    return NextResponse.next();
+  }
+
   // Bypass-token callers skip CSRF (and rate limit, which the route applies
   // separately if it cares to). We sniff the Authorization header but do
   // not record audit here — the route that uses the token does that.

@@ -627,12 +627,41 @@ export function searchShares(shares: ShareToken[], term: string): ShareToken[] {
   );
 }
 
-/** Returns true if a share is safe to expose in a list view (hides password hash). */
-export function toPublicShareView(share: ShareToken): Omit<ShareToken, "passwordHash"> {
-  // passwordHash only exists on PasswordProtectedShareToken; spread the
-  // optional field out so it is never serialised even when present.
-  const { passwordHash: _ph, ...rest } = share as ShareToken & { passwordHash?: string };
-  void _ph;
-  return rest;
+/**
+ * Redacted representation for management/list endpoints.
+ *
+ * A share token is a bearer credential, so even an authenticated collection
+ * response must not echo it. `shareId` is a one-way identifier suitable for
+ * correlation in logs or future management APIs without granting access to
+ * the shared report.
+ */
+export interface ShareListView {
+  shareId: string;
+  runId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  views: number;
+  maxViews: number | null;
+  revoked: boolean;
+  type: "run" | "folder" | "password";
+  hasPassword: boolean;
+  name?: string;
+  description?: string;
+}
+
+export function toPublicShareView(share: ShareToken): ShareListView {
+  return {
+    shareId: crypto.createHash("sha256").update(share.token).digest("hex"),
+    runId: share.runId,
+    createdAt: share.createdAt,
+    expiresAt: share.expiresAt,
+    views: share.views,
+    maxViews: share.maxViews,
+    revoked: share.revoked,
+    type: getShareType(share),
+    hasPassword: isPasswordProtected(share),
+    ...(share.name ? { name: share.name } : {}),
+    ...(share.description ? { description: share.description } : {}),
+  };
 }
 

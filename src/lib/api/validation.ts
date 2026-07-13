@@ -5,6 +5,11 @@
 import { NextResponse } from "next/server";
 import { createServerI18n, type LocaleSource } from "@/lib/i18n/server";
 import type { DictionaryKey } from "@/lib/i18n/dictionaries";
+import {
+  isResearchModeId,
+  normalizeResearchMode,
+  type ResearchModeId,
+} from "@/lib/research/research-modes";
 
 export const QUERY_LIMITS = {
   MIN_QUERY_LENGTH: 3,
@@ -26,6 +31,12 @@ export type ValidationSuccess<T> = {
 
 export type ValidationResult<T> = ValidationError | ValidationSuccess<T>;
 
+export interface ResearchRequestInput {
+  query: string;
+  keywords: string[];
+  mode: ResearchModeId;
+}
+
 /**
  * Localized variant of validateResearchRequest. The error messages
  * route through the i18n dictionary (validation.* keys) so that
@@ -35,7 +46,7 @@ export type ValidationResult<T> = ValidationError | ValidationSuccess<T>;
 export function validateResearchRequestLocalized(
   body: unknown,
   source?: LocaleSource,
-): ValidationResult<{ query: string; keywords: string[] }> {
+): ValidationResult<ResearchRequestInput> {
   // When no LocaleSource is supplied, fall back to the English template
   // strings verbatim and still substitute {placeholder}s so callers that
   // do not pass a source (i.e. the existing validateResearchRequest
@@ -65,7 +76,21 @@ export function validateResearchRequestLocalized(
   }
 
   const obj = body as Record<string, unknown>;
-  const { query, keywords } = obj;
+  const { query, keywords, mode } = obj;
+
+  if (mode !== undefined && mode !== null && !isResearchModeId(mode)) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: t(
+          "validation.modeInvalid",
+          "Field 'mode' must be either 'standard' or 'deep'.",
+        ),
+        field: "mode",
+      },
+    };
+  }
 
   if (typeof query !== "string") {
     return {
@@ -172,7 +197,14 @@ export function validateResearchRequestLocalized(
     }
   }
 
-  return { ok: true, value: { query: trimmed, keywords: cleanKeywords } };
+  return {
+    ok: true,
+    value: {
+      query: trimmed,
+      keywords: cleanKeywords,
+      mode: normalizeResearchMode(mode),
+    },
+  };
 }
 
 /**
@@ -183,7 +215,7 @@ export function validateResearchRequestLocalized(
  */
 export function validateResearchRequest(
   body: unknown,
-): ValidationResult<{ query: string; keywords: string[] }> {
+): ValidationResult<ResearchRequestInput> {
   return validateResearchRequestLocalized(body);
 }
 

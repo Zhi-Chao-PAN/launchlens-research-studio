@@ -2,6 +2,8 @@
 
 This document describes the technical architecture of LaunchLens Research Studio in detail.
 
+> Current execution model: Standard keeps the request-bound 5+1 engine, while Deep Research uses a Redis-authoritative ten-unit work graph with observer-only SSE. See [ADR-001](./decisions/ADR-001-durable-deep-research.md) for the durability, fencing, validation, and recovery rationale.
+
 ---
 
 ## High-Level Architecture
@@ -64,7 +66,7 @@ The heart of the application. Manages session lifecycle, agent orchestration, an
 
 **Key Concepts:**
 
-- **In-memory store**: Sessions stored in a `Map<string, ResearchSession>`. In production, swap for Redis/DB.
+- **Dual projection**: A local `Map<string, ResearchSession>` is the fast Standard cache; Redis mirrors cross-instance session state. Deep Research treats `DeepRunRecordV1` in Redis as authoritative.
 - **Event emitters**: Each session can have one listener (for SSE).
 - **Parallel execution**: 5 research agents run concurrently via `Promise.all()`.
 - **Sequential synthesis**: Synthesis runs after all research agents complete, with full access to their outputs.
@@ -78,13 +80,13 @@ The heart of the application. Manages session lifecycle, agent orchestration, an
 ### 3. API Routes
 
 #### `POST /api/research`
-Creates a new research session and starts execution. Returns immediately with `sessionId` (fire-and-forget pattern). The client then connects to the SSE stream for updates.
+Creates a new session. Standard execution remains request-bound; Deep creates a durable record only after the runtime capability gate passes. Both return a `sessionId` for observation.
 
 #### `GET /api/research/[sessionId]`
 Returns the full current state of a session. Used for hydration after SSE disconnect, or for non-realtime clients.
 
 #### `GET /api/research/[sessionId]/stream`
-SSE event stream. Emits:
+SSE event stream. Standard can publish live engine events; Deep only observes Redis state and never owns execution. Emits:
 - `agent-progress` — Step change + progress %
 - `agent-output` — Agent completed, full output payload
 - `complete` — All agents finished
@@ -179,7 +181,7 @@ page.tsx (Home)
 - Client state is rebuilt from server on reconnect
 - SSE is a transport optimization, not the only source
 
-This architecture makes it trivial to add persistence later — just swap the in-memory store for a database.
+Persistence is now explicit: Standard sessions use local state plus Redis mirrors, completed dossiers use the persistent run store, and Deep lifecycle is fenced in its own Redis repository.
 
 ---
 
@@ -207,7 +209,7 @@ This architecture makes it trivial to add persistence later — just swap the in
 ## Performance Considerations
 
 - **SSE vs WebSocket**: SSE chosen for simplicity + native browser support + unidirectional flow (server → client is all we need)
-- **In-memory sessions**: Fast for demo, but not horizontally scalable. Add Redis for production.
+- **Session authority**: Standard retains a local fast path with Redis reconciliation. Deep requires Redis authority, one-unit worker invocations, and independent recovery scheduling.
 - **Parallel agents**: Max throughput via `Promise.all()`. Each agent is independent during the research phase.
 - **Bundle size**: Only Next.js + React + Tailwind. No heavy UI libraries.
 

@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResearchEvent, ResearchSession } from "@/lib/schema/research-schema";
+import { buildResearchValidation } from "./validation-ledger";
 
 // Capture original env so each test can mutate freely without leaking.
 const ORIGINAL_ENV = { ...process.env };
@@ -139,6 +140,75 @@ describe("session-store — with mocked Upstash client", () => {
           }
           return "OK";
         }
+        async eval<TArgs extends unknown[], TData = unknown>(
+          _script: string,
+          keys: string[],
+          args: TArgs,
+        ): Promise<TData> {
+          const key = keys[0];
+          const payload = String(args[0]);
+          const incomingStatus = String(args[1]);
+          const incomingUpdatedAt = String(args[2]);
+          const requestedTtlMs = Number(args[3]);
+          const statusRank = (status: string): number => {
+            if (status === "pending") return 0;
+            if (status === "running") return 1;
+            if (status === "completed" || status === "cancelled" || status === "error") {
+              return 2;
+            }
+            return -1;
+          };
+
+          const expiresAt = mockExpiry.get(key);
+          if (expiresAt !== undefined && expiresAt <= Date.now()) {
+            mockStore.delete(key);
+            mockExpiry.delete(key);
+          }
+
+          const incomingRank = statusRank(incomingStatus);
+          if (incomingRank < 0 || !Number.isFinite(requestedTtlMs) || requestedTtlMs < 1) {
+            return -1 as TData;
+          }
+
+          const existingRaw = mockStore.get(key);
+          if (existingRaw !== undefined) {
+            try {
+              const existing = JSON.parse(existingRaw) as Partial<ResearchSession>;
+              const existingStatus = String(existing.status ?? "");
+              const existingUpdatedAt = String(existing.updatedAt ?? "");
+              const existingRank = statusRank(existingStatus);
+              if (
+                existingRank > incomingRank ||
+                (existingRank === 2 &&
+                  incomingRank === 2 &&
+                  existingStatus !== incomingStatus) ||
+                (existingStatus === incomingStatus &&
+                  existingUpdatedAt !== "" &&
+                  incomingUpdatedAt !== "" &&
+                  incomingUpdatedAt < existingUpdatedAt)
+              ) {
+                return 0 as TData;
+              }
+            } catch {
+              // Match the Lua script: malformed legacy data can be replaced.
+            }
+          }
+
+          const existingExpiry = mockExpiry.get(key);
+          mockStore.set(key, payload);
+          if (existingRaw !== undefined && existingExpiry === undefined) {
+            mockExpiry.delete(key);
+          } else {
+            const requestedExpiry = Date.now() + requestedTtlMs;
+            mockExpiry.set(
+              key,
+              existingExpiry !== undefined && existingExpiry > requestedExpiry
+                ? existingExpiry
+                : requestedExpiry,
+            );
+          }
+          return 1 as TData;
+        }
         async get<T = unknown>(key: string): Promise<T | null> {
           const expiresAt = mockExpiry.get(key);
           if (expiresAt !== undefined && expiresAt <= Date.now()) {
@@ -205,10 +275,16 @@ describe("session-store — with mocked Upstash client", () => {
   it("fetchSession returns the stored session", async () => {
     const { storeSession, fetchSession } = await import("./session-store");
     const s = makeFakeSession();
+    s.validation = buildResearchValidation(s, "2026-07-13T12:00:00.000Z");
     await storeSession(s);
     const got = await fetchSession(s.id);
     expect(got?.id).toBe(s.id);
     expect(got?.query).toBe(s.query);
+    expect(got?.validation).toMatchObject({
+      generatedAt: "2026-07-13T12:00:00.000Z",
+      protocol: { executedPasses: 1, deepMultiPassExecuted: false },
+      semanticValidation: { status: "not_run" },
+    });
   });
 
   it("keeps completed sessions recoverable after the live-session window", async () => {
@@ -225,6 +301,125 @@ describe("session-store — with mocked Upstash client", () => {
       await expect(fetchSession(completed.id)).resolves.toMatchObject({
         id: completed.id,
         status: "completed",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["completed", "cancelled", "error"] as const)(
+    "keeps a cross-instance %s snapshot sticky when a late running write arrives",
+    async (terminalStatus) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-13T10:00:00.000Z"));
+      try {
+        const firstInstance = await import("./session-store");
+        const terminal = makeFakeSession();
+        terminal.id = `cross-instance-${terminalStatus}`;
+        terminal.status = terminalStatus;
+        terminal.updatedAt = "2026-07-13T10:00:00.000Z";
+        await firstInstance.storeSession(terminal);
+
+        const key = `rs:session:${terminal.id}`;
+        const terminalPayload = mockStore.get(key);
+        const terminalExpiry = mockExpiry.get(key);
+
+        // A fresh module graph represents another serverless instance. Its
+        // local write queue cannot see the first instance's terminal write.
+        vi.resetModules();
+        vi.setSystemTime(new Date("2026-07-13T10:01:00.000Z"));
+        const secondInstance = await import("./session-store");
+        const lateRunning = {
+          ...JSON.parse(JSON.stringify(terminal)),
+          status: "running",
+          updatedAt: "2026-07-13T10:01:00.000Z",
+          query: "stale running payload",
+        } as ResearchSession;
+        await secondInstance.storeSession(lateRunning);
+
+        expect(mockStore.get(key)).toBe(terminalPayload);
+        expect(mockExpiry.get(key)).toBe(terminalExpiry);
+        await expect(secondInstance.fetchSession(terminal.id)).resolves.toMatchObject({
+          status: terminalStatus,
+          query: "test query",
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("keeps the first terminal outcome when another instance reports a different terminal status", async () => {
+    const firstInstance = await import("./session-store");
+    const completed = makeFakeSession();
+    completed.id = "terminal-conflict";
+    completed.status = "completed";
+    completed.updatedAt = "2026-07-13T10:00:00.000Z";
+    await firstInstance.storeSession(completed);
+
+    vi.resetModules();
+    const secondInstance = await import("./session-store");
+    await secondInstance.storeSession({
+      ...completed,
+      status: "cancelled",
+      updatedAt: "2026-07-13T10:01:00.000Z",
+    });
+
+    await expect(secondInstance.fetchSession(completed.id)).resolves.toMatchObject({
+      status: "completed",
+      updatedAt: "2026-07-13T10:00:00.000Z",
+    });
+  });
+
+  it("does not regress a running session to a late pending creation snapshot", async () => {
+    const firstInstance = await import("./session-store");
+    const running = makeFakeSession();
+    running.id = "active-monotonic";
+    running.status = "running";
+    running.updatedAt = "2026-07-13T10:00:00.000Z";
+    await firstInstance.storeSession(running);
+
+    vi.resetModules();
+    const secondInstance = await import("./session-store");
+    await secondInstance.storeSession({
+      ...running,
+      status: "pending",
+      updatedAt: "2026-07-13T10:01:00.000Z",
+    });
+
+    await expect(secondInstance.fetchSession(running.id)).resolves.toMatchObject({
+      status: "running",
+      updatedAt: "2026-07-13T10:00:00.000Z",
+    });
+  });
+
+  it("accepts a newer same-terminal revision without shortening its existing TTL", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-13T10:00:00.000Z"));
+    try {
+      const firstInstance = await import("./session-store");
+      const completed = makeFakeSession();
+      completed.id = "terminal-ttl";
+      completed.status = "completed";
+      completed.updatedAt = "2026-07-13T10:00:00.000Z";
+      await firstInstance.storeSession(completed);
+
+      const key = `rs:session:${completed.id}`;
+      const originalExpiry = mockExpiry.get(key);
+      process.env.LAUNCHLENS_TERMINAL_SESSION_TTL_SECONDS = "3600";
+      vi.setSystemTime(new Date("2026-07-13T10:01:00.000Z"));
+      vi.resetModules();
+      const secondInstance = await import("./session-store");
+      await secondInstance.storeSession({
+        ...completed,
+        updatedAt: "2026-07-13T10:01:00.000Z",
+        query: "newer terminal payload",
+      });
+
+      expect(mockExpiry.get(key)).toBe(originalExpiry);
+      await expect(secondInstance.fetchSession(completed.id)).resolves.toMatchObject({
+        status: "completed",
+        query: "newer terminal payload",
       });
     } finally {
       vi.useRealTimers();
@@ -318,6 +513,7 @@ function makeFakeSession(): ResearchSession {
     id: `sess_${Math.random().toString(36).slice(2)}`,
     query: "test query",
     keywords: ["kw1"],
+    mode: "standard",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     status: "pending",

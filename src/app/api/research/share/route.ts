@@ -1,9 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
-import { createShareToken, getSharesForRun, revokeShareToken } from "@/lib/research/share-tokens";
+import {
+  createShareToken,
+  getSharesForRun,
+  revokeShareToken,
+  toPublicShareView,
+} from "@/lib/research/share-tokens";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
-import { getResearchRun } from "@/lib/research/storage";
+import { requireAdmin } from "@/lib/api/require-admin";
+import { resolveResearchRun } from "@/lib/research/resolve-run";
 
 // Create a share token for a run
 export async function POST(request: Request) {
@@ -24,9 +30,19 @@ export async function POST(request: Request) {
     }
 
     // Verify run exists
-    const run = getResearchRun(runId);
+    const run = await resolveResearchRun(runId);
     if (!run) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
+    }
+    if (run.status !== "completed") {
+      return NextResponse.json(
+        {
+          error: "Only completed research reports can be shared.",
+          runId,
+          status: run.status,
+        },
+        { status: 409 },
+      );
     }
 
     let expiresMs: number | undefined;
@@ -61,8 +77,13 @@ export async function POST(request: Request) {
   }
 }
 
-// List shares for a run
-export async function GET(request: Request) {
+// List shares for a run. The collection is admin-only and its records are
+// redacted so neither bearer tokens nor password hashes can escape through a
+// management/list endpoint.
+export async function GET(request: NextRequest) {
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
+
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
   const rl = checkRateLimitForIp(ip, { capacity: 60, refillIntervalMs: 60_000 });
   if (!rl.allowed) {
@@ -75,8 +96,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "runId is required" }, { status: 400 });
   }
 
-  const shares = getSharesForRun(runId);
-  return NextResponse.json({ shares });
+  const shares = getSharesForRun(runId).map(toPublicShareView);
+  return NextResponse.json(
+    { shares },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }
 
 // Revoke a share token

@@ -9,6 +9,8 @@ export function LanguageSwitcher() {
     <label className="inline-flex items-center gap-1.5 text-xs text-slate-500">
       <span className="sr-only">{t("language.label")}</span>
       <select
+        id="language-switcher"
+        name="language"
         aria-label={t("language.label")}
         value={locale}
         onChange={(e) => setLocale(e.target.value as Locale)}

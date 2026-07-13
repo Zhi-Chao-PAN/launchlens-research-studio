@@ -2,13 +2,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-vi.mock("@/lib/research/storage", () => ({
-  getResearchRun: vi.fn(() => null),
-}));
-
 const mocks = vi.hoisted(() => ({
+  getResearchRun: vi.fn(() => null),
   getPersistentResearchRun: vi.fn(),
   fetchSession: vi.fn(),
+}));
+
+vi.mock("@/lib/research/storage", () => ({
+  getResearchRun: mocks.getResearchRun,
 }));
 
 vi.mock("@/lib/research/run-store", async (importOriginal) => ({
@@ -29,8 +30,24 @@ function makeRequest(path: string) {
 
 describe("GET /api/research/runs/[id]", () => {
   beforeEach(() => {
+    mocks.getResearchRun.mockClear();
     mocks.getPersistentResearchRun.mockReset();
     mocks.fetchSession.mockReset();
+  });
+
+  it.each([
+    "../../package",
+    "..%2F..%2Fpackage",
+    "..%5C..%5Cpackage",
+  ])("rejects traversal-capable run id %s before storage access", async (id) => {
+    const res = await GET(makeRequest(`/api/research/runs/${id}`), {
+      params: Promise.resolve({ id: decodeURIComponent(id) }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mocks.getResearchRun).not.toHaveBeenCalled();
+    expect(mocks.getPersistentResearchRun).not.toHaveBeenCalled();
+    expect(mocks.fetchSession).not.toHaveBeenCalled();
   });
 
   it("falls back to Redis-persisted completed runs when local storage misses", async () => {
@@ -71,6 +88,24 @@ describe("GET /api/research/runs/[id]", () => {
       updatedAt: "2026-06-29T00:01:00.000Z",
       status: "completed",
       citations: [{ title: "Source", url: "https://example.com", snippet: "Evidence", id: "s1", accessedAt: "2026-06-29T00:00:00.000Z", confidence: "high", agent: "synthesis" }],
+      evidence: {
+        version: 1,
+        agents: {
+          "market-sizer": {
+            agentId: "market-sizer",
+            retrieval: {
+              status: "retrieved",
+              sourceOrigin: "agent_retrieval",
+              providerId: "tavily",
+              sourceCount: 1,
+              sources: [{ title: "Source", url: "https://example.com", snippet: "Evidence", id: "s1", accessedAt: "2026-06-29T00:00:00.000Z", retrievedAt: "2026-06-29T00:00:00.000Z", confidence: "high", agent: "market-sizer" }],
+            },
+            allowlist: { policy: "strict", total: 1, matched: 1, rejected: 0, missingUrl: 0, retained: 1 },
+            grounding: "grounded",
+            updatedAt: "2026-06-29T00:01:00.000Z",
+          },
+        },
+      },
       agents: {
         "market-sizer": { status: "done", progress: 100 },
         "competitor-analyst": { status: "done", progress: 100 },
@@ -91,6 +126,17 @@ describe("GET /api/research/runs/[id]", () => {
       query: "Session only report",
       provider: "openai",
       status: "completed",
+      dossier: {
+        version: 1,
+        evidence: {
+          agents: {
+            "market-sizer": {
+              retrieval: { status: "retrieved" },
+              allowlist: { policy: "strict", matched: 1 },
+            },
+          },
+        },
+      },
     });
   });
 });

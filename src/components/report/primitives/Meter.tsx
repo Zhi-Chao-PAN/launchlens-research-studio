@@ -12,12 +12,12 @@ interface MeterProps {
 }
 
 const COLOR_BG: Record<NonNullable<MeterProps["color"]>, string> = {
-  emerald: "bg-emerald-500",
-  amber: "bg-amber-500",
-  rose: "bg-rose-500",
-  indigo: "bg-indigo-500",
-  violet: "bg-violet-500",
-  sky: "bg-sky-500",
+  emerald: "bg-emerald-700",
+  amber: "bg-amber-700",
+  rose: "bg-rose-700",
+  indigo: "bg-slate-900",
+  violet: "bg-slate-700",
+  sky: "bg-sky-700",
 };
 
 export function Meter({ value, max = 5, label, color = "emerald", size = "sm", showValue = true }: MeterProps) {
@@ -32,9 +32,9 @@ export function Meter({ value, max = 5, label, color = "emerald", size = "sm", s
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
       {label && <span className="text-xs text-slate-500 flex-shrink-0 w-16 truncate">{label}</span>}
-      <div className={`flex-1 bg-slate-200 rounded-full overflow-hidden ${heights[size]}`}>
+      <div className={`flex-1 overflow-hidden rounded-sm bg-slate-100 ${heights[size]}`}>
         <div
-          className={`${COLOR_BG[color]} ${heights[size]} rounded-full transition-all duration-700`}
+          className={`${COLOR_BG[color]} ${heights[size]} rounded-sm`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -53,14 +53,14 @@ interface StarsProps {
   color?: string;
 }
 
-export function Stars({ value, max = 5, color = "text-amber-400" }: StarsProps) {
+export function Stars({ value, max = 5 }: StarsProps) {
+  const safe = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const clamped = Math.max(0, Math.min(max, safe));
+
   return (
-    <span className="inline-flex">
-      {Array.from({ length: max }, (_, i) => (
-        <span key={i} className={i < Math.round(value) ? color : "text-slate-200"}>
-          ★
-        </span>
-      ))}
+    <span className="inline-flex items-baseline gap-0.5 font-mono text-[10px] tabular-nums text-slate-700" aria-label={`${clamped.toFixed(1)} out of ${max}`}>
+      <span className="font-semibold">{clamped.toFixed(1)}</span>
+      <span className="text-slate-400">/{max}</span>
     </span>
   );
 }
@@ -106,14 +106,14 @@ export function Donut({ value, label, color, size = 96 }: DonutProps) {
             strokeLinecap="round"
             strokeDasharray={circ}
             strokeDashoffset={offset}
-            className="transition-all duration-1000"
+            className="transition-[stroke-dashoffset] duration-500 ease-out"
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xl font-bold text-slate-800">{Math.round(clamped)}</span>
+          <span className="text-xl font-semibold tabular-nums text-slate-950">{Math.round(clamped)}</span>
         </div>
       </div>
-      <p className="text-xs text-slate-500 mt-1 font-medium">{label}</p>
+      <p className="mt-1 text-xs font-medium text-slate-600">{label}</p>
     </div>
   );
 }

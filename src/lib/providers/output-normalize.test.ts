@@ -257,7 +257,7 @@ describe("normalizeAgentOutput (R210 defensive backstop)", () => {
         agent: "market-sizer",
         citations: [{ id: "c1", title: "T", snippet: "S", url: "https://example.com" }],
       })) as { citations: { url?: string }[] };
-      expect(out.citations[0].url).toBe("https://example.com");
+      expect(out.citations[0].url).toBe("https://example.com/");
     });
 
     it("omits url when empty/missing (not an empty string key)", () => {
@@ -330,6 +330,26 @@ describe("normalizeAgentOutput (R214 string-array + enum + period)", () => {
       confidence: "low",
       agent: "pricing-scout",
     }));
+  });
+
+  it("removes unsafe clickable URLs from citations and nested report entities", () => {
+    const citationOutput = asAny(normalizeAgentOutput("market-sizer", {
+      agent: "market-sizer",
+      citations: [{ id: "c1", title: "Unsafe", snippet: "text", url: "javascript:alert(1)" }],
+    })) as { citations: Array<{ url?: string }> };
+    expect(citationOutput.citations[0].url).toBeUndefined();
+
+    const competitorOutput = asAny(normalizeAgentOutput("competitor-analyst", {
+      agent: "competitor-analyst",
+      competitors: [{ name: "Local", url: "http://127.0.0.1/admin" }],
+    })) as { competitors: Array<{ url?: string }> };
+    expect(competitorOutput.competitors[0].url).toBeUndefined();
+
+    const channelOutput = asAny(normalizeAgentOutput("channel-scout", {
+      agent: "channel-scout",
+      communityHubs: [{ name: "Metadata", url: "http://169.254.169.254/latest/meta-data" }],
+    })) as { communityHubs: Array<{ url?: string }> };
+    expect(channelOutput.communityHubs[0].url).toBeUndefined();
   });
 
   it("uses citation title or URL as a last-resort non-empty snippet", () => {

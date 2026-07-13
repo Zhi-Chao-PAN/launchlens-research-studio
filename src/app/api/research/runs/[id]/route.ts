@@ -1,26 +1,20 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getResearchRun } from "@/lib/research/storage";
-import {
-  getPersistentResearchRun,
-  researchRunFromSession,
-  storePersistentResearchRun,
-} from "@/lib/research/run-store";
-import { fetchSession } from "@/lib/research/session-store";
+import { resolveResearchRun } from "@/lib/research/resolve-run";
 import { jsonErrorLocalized } from "@/lib/api/validation";
+import { isValidResearchRunId } from "@/lib/research/run-id";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  let run = getResearchRun(id) ?? (await getPersistentResearchRun(id));
-  if (!run) {
-    const session = await fetchSession(id);
-    if (session && ["completed", "cancelled", "error"].includes(session.status)) {
-      run = researchRunFromSession(session);
-      void storePersistentResearchRun(run);
-    }
+  if (!isValidResearchRunId(id)) {
+    return jsonErrorLocalized(request, "errors.badRequest", 400, undefined, {
+      field: "id",
+    });
   }
+
+  const run = await resolveResearchRun(id);
 
   if (!run) {
     return jsonErrorLocalized(request, "errors.notFound", 404, undefined, { id });

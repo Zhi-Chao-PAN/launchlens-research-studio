@@ -19,10 +19,17 @@ import {
   hydrateSessionFromRedis,
 } from "@/lib/research/research-engine";
 import { acquireRunLock, releaseRunLock, isRunLocked } from "@/lib/research/session-store";
-import { getResearchRun } from "@/lib/research/storage";
+import { resolveResearchRun } from "@/lib/research/resolve-run";
 import { jsonError } from "@/lib/api/validation";
 import { sleep } from "@/lib/utils/sleep";
-import type { AgentId } from "@/lib/schema/research-schema";
+import type { AgentId, ResearchSession } from "@/lib/schema/research-schema";
+import { normalizeResearchMode } from "@/lib/research/research-modes";
+import { isRedisConfigured } from "@/lib/research/redis-client";
+import { readDeepResearchRecord } from "@/lib/research/deep-research/runtime";
+import {
+  deepRunProgressFromRecord,
+  type DeepRunRecordV1,
+} from "@/lib/research/deep-research/model";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,9 +39,45 @@ export const runtime = "nodejs";
 // gap. See research-engine.ts header comment for the full rationale.
 export const maxDuration = 300;
 
-const SESSION_ID_PATTERN = /^[a-z0-9]+$/i;
+const SESSION_ID_PATTERN = /^[a-z0-9]{1,128}$/i;
 const HEARTBEAT_INTERVAL_MS = 15000;
+const DEEP_POLL_INTERVAL_MS = 2000;
 const CLOSE_FLUSH_DELAY_MS = 200;
+
+function sessionSnapshot(
+  session: ResearchSession,
+  includeOutputs: boolean,
+  deepRecord?: DeepRunRecordV1 | null,
+): Record<string, unknown> {
+  return {
+    status: session.status,
+    mode: session.mode,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    agents: Object.fromEntries(
+      Object.entries(session.agents).map(([id, state]) => [
+        id,
+        {
+          status: state.status,
+          progress: state.progress,
+          currentStep: state.currentStep,
+          hasOutput: !!state.output,
+          ...(includeOutputs && state.output ? { output: state.output } : {}),
+          ...(state.degraded
+            ? { degraded: true, degradedReason: state.degradedReason }
+            : {}),
+        },
+      ]),
+    ),
+    evidence: session.evidence,
+    validation: session.validation,
+    ...(deepRecord
+      ? {
+          deepRun: deepRunProgressFromRecord(deepRecord),
+        }
+      : {}),
+  };
+}
 
 export async function GET(
   request: Request,
@@ -49,9 +92,28 @@ export async function GET(
   // Try the in-process map first (fast path for same-instance reconnects).
   // If absent, attempt Redis hydration so a session created on a different
   // lambda is still recoverable. This is a no-op without Redis env.
-  let session = getResearchSession(sessionId);
-  if (!session) {
-    session = (await hydrateSessionFromRedis(sessionId)) ?? undefined;
+  let deepRecord: DeepRunRecordV1 | null = null;
+  let deepReadFailed = false;
+  if (isRedisConfigured()) {
+    try {
+      deepRecord = await readDeepResearchRecord(sessionId);
+    } catch {
+      deepReadFailed = true;
+    }
+  }
+  const localSession = getResearchSession(sessionId);
+  if (deepReadFailed && (!localSession || localSession.mode === "deep")) {
+    return jsonError("Deep Research state is temporarily unavailable. Retry the stream.", 503, {
+      code: "DEEP_STATE_UNAVAILABLE",
+      retryable: true,
+    });
+  }
+  let session = deepRecord?.session ?? localSession;
+  if (!session || session.status === "pending" || session.status === "running") {
+    // A local pending snapshot can belong to the POST instance while another
+    // instance owns (or already completed) execution. Consult the durable
+    // mirror before deciding whether this connection may become the owner.
+    session = deepRecord?.session ?? (await hydrateSessionFromRedis(sessionId)) ?? session;
   }
   if (!session) {
     // R217: distinguish "the id is wrong / never existed" from "the live
@@ -59,7 +121,7 @@ export async function GET(
     // not-found terminal; the latter gets an "expired" terminal so the
     // client can route the user to /research/[id] which loads from
     // storage and renders the completed report.
-    const persisted = getResearchRun(sessionId);
+    const persisted = await resolveResearchRun(sessionId);
     const reason = persisted ? "expired" : "not-found";
     const message = persisted
       ? "Live engine session expired. The completed report is still available in History."
@@ -83,10 +145,11 @@ export async function GET(
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
   const encoder = new TextEncoder();
-  const ac = new AbortController();
 
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let deepPoll: ReturnType<typeof setInterval> | null = null;
+  let deepPollInFlight = false;
   // unsubscribe is assigned after subscribeToSession below; safeClose is only
   // invoked asynchronously (via events/heartbeat/timeouts/abort signal), so the
   // binding is always initialised by the time it fires.
@@ -95,8 +158,8 @@ export async function GET(
   const safeClose = () => {
     if (closed) return;
     closed = true;
-    ac.abort();
     if (heartbeat) clearInterval(heartbeat);
+    if (deepPoll) clearInterval(deepPoll);
     unsubscribe();
     // Give the client a tiny window to receive the final event bytes.
     sleep(CLOSE_FLUSH_DELAY_MS).finally(() => writer.close().catch(() => {}));
@@ -125,28 +188,22 @@ export async function GET(
   // Send the initial snapshot
   writeEvent(
     "state",
-    JSON.stringify({
-      status: session.status,
-      agents: Object.fromEntries(
-        Object.entries(session.agents).map(([id, state]) => [
-          id,
-          {
-            status: state.status,
-            progress: state.progress,
-            currentStep: state.currentStep,
-            hasOutput: !!state.output,
-          },
-        ]),
-      ),
-    }),
+    JSON.stringify(sessionSnapshot(session, false, deepRecord)),
   );
 
   if (session.status === "completed") {
-    writeEvent("complete", JSON.stringify({ message: "Research complete" }));
+    writeEvent("complete", JSON.stringify({
+      message: "Research complete",
+      ...sessionSnapshot(session, true, deepRecord),
+    }));
     safeClose();
     return new Response(stream.readable, sseHeaders());
   } else if (session.status === "cancelled" || session.status === "error") {
-    writeEvent("terminal", JSON.stringify({ reason: session.status, message: "Session " + session.status }));
+    writeEvent("terminal", JSON.stringify({
+      reason: session.status,
+      message: "Session " + session.status,
+      ...sessionSnapshot(session, true, deepRecord),
+    }));
     safeClose();
     return new Response(stream.readable, sseHeaders());
   }
@@ -159,8 +216,9 @@ export async function GET(
   // behavior. With Redis, the lock prevents two instances from running the
   // same session concurrently.
   let runPromise: Promise<unknown> | null = null;
-  const alreadyLocked = await isRunLocked(sessionId);
-  if (!alreadyLocked) {
+  const isDeep = normalizeResearchMode(session.mode) === "deep";
+  const alreadyLocked = isDeep ? true : await isRunLocked(sessionId);
+  if (!isDeep && !alreadyLocked) {
     const acquired = await acquireRunLock(sessionId);
     if (acquired) {
       // Fire the run in the background of this request. We don't await it —
@@ -186,7 +244,14 @@ export async function GET(
   unsubscribe = subscribeToSession(sessionId, (event) => {
     if (closed) return;
     if (event.type === "complete") {
-      writeEvent("complete", JSON.stringify({ message: event.message }));
+      const finalSnapshot =
+        event.data && typeof event.data === "object"
+          ? event.data as Record<string, unknown>
+          : sessionSnapshot(session!, true, deepRecord);
+      writeEvent("complete", JSON.stringify({
+        message: event.message,
+        ...finalSnapshot,
+      }));
       safeClose();
     } else if (event.type === "output") {
       // R203: forward the per-agent degraded marker so the client can show a
@@ -194,6 +259,9 @@ export async function GET(
       // lives on the agent state, not on the output payload itself.
       const ag = session?.agents[event.agentId as AgentId];
       const payload: Record<string, unknown> = { agentId: event.agentId, output: event.data };
+      const evidence = session?.evidence?.agents[event.agentId as AgentId];
+      if (evidence) payload.evidence = evidence;
+      if (session?.validation) payload.validation = session.validation;
       if (ag?.degraded) {
         payload.degraded = true;
         payload.degradedReason = ag.degradedReason;
@@ -206,7 +274,15 @@ export async function GET(
     } else if (event.type === "error") {
       writeEvent("agent-error", JSON.stringify({ agentId: event.agentId, message: event.message }));
     } else if (event.type === "cancelled") {
-      writeEvent("terminal", JSON.stringify({ reason: "cancelled", message: event.message ?? "Research cancelled" }));
+      const finalSnapshot =
+        event.data && typeof event.data === "object"
+          ? event.data as Record<string, unknown>
+          : sessionSnapshot(session!, true, deepRecord);
+      writeEvent("terminal", JSON.stringify({
+        reason: "cancelled",
+        message: event.message ?? "Research cancelled",
+        ...finalSnapshot,
+      }));
       safeClose();
     } else if (event.type === "closed") {
       // Server-side eviction (e.g. DELETE /api/research/:id): tell the client
@@ -216,14 +292,51 @@ export async function GET(
     }
   });
 
-  // Tie the run lifetime to the response: when the client disconnects we
-  // abort the AbortController so any in-flight sleep / provider call exits.
+  if (isDeep) {
+    const pollDeepState = () => {
+      if (closed || deepPollInFlight) return;
+      deepPollInFlight = true;
+      void readDeepResearchRecord(sessionId)
+        .then((record) => {
+          if (!record || closed) return;
+          const changed = !deepRecord || record.revision !== deepRecord.revision;
+          deepRecord = record;
+          session = record.session;
+          if (changed) writeEvent("state", JSON.stringify(sessionSnapshot(session, false, record)));
+          if (record.lifecycle === "completed") {
+            writeEvent("complete", JSON.stringify({
+              message: "Deep Research complete",
+              ...sessionSnapshot(session, true, record),
+            }));
+            safeClose();
+          } else if (record.lifecycle === "cancelled" || record.lifecycle === "error") {
+            writeEvent("terminal", JSON.stringify({
+              reason: record.lifecycle,
+              message: `Deep Research ${record.lifecycle}`,
+              ...sessionSnapshot(session, true, record),
+            }));
+            safeClose();
+          }
+        })
+        .catch(() => {
+          // Redis is authoritative for Deep. Keep the observer alive so a
+          // transient outage can recover without misreporting a terminal.
+        })
+        .finally(() => {
+          deepPollInFlight = false;
+        });
+    };
+    deepPoll = setInterval(pollDeepState, DEEP_POLL_INTERVAL_MS);
+    pollDeepState();
+  }
+
+  // A stream is an observer, even when this request acquired the execution
+  // lock. Disconnecting releases only this listener/writer; explicit cancel
+  // remains the sole user-facing cancellation authority.
   // We intentionally do NOT cancel the session — the lock + Pub/Sub mean
   // another SSE client (a reconnect) can pick up where we left off.
   request.signal.addEventListener("abort", () => {
-    if (!closed) {
-      ac.abort();
-    }
+    safeClose();
   }, { once: true });
 
   // Wrap the response so the SSE writer is closed when the run finishes.

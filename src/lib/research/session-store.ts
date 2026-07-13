@@ -20,6 +20,7 @@
 
 import type { ResearchEvent, ResearchSession } from "@/lib/schema/research-schema";
 import { getRedis } from "./redis-client";
+import { normalizeResearchMode } from "./research-modes";
 
 // Key/tag layout. Namespaced with `rs:` (research-studio) to avoid collisions
 // if the same Redis instance is shared with other services.
@@ -35,6 +36,79 @@ const EVENT_CHANNEL = (id: string) => `rs:events:${id}`;
 const ACTIVE_SESSION_TTL_SECONDS = 30 * 60;
 const DEFAULT_TERMINAL_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MIN_TERMINAL_SESSION_TTL_SECONDS = 60 * 60;
+
+// Redis is the only ordering boundary shared by every serverless instance.
+// Per-process promise queues prevent reordering inside one instance, but they
+// cannot stop a slow write from another instance landing after completion or
+// cancellation. Keep the state transition and TTL decision in one Lua script
+// so the stored snapshot is monotonic across the whole deployment.
+//
+// Status order: pending < running < terminal. The first terminal outcome is
+// sticky; a later snapshot may only refresh that same terminal outcome, and
+// only when it is not older. Accepted writes never shorten the current TTL.
+const STORE_SESSION_MONOTONIC_SCRIPT = `
+local function status_rank(status)
+  if status == "pending" then return 0 end
+  if status == "running" then return 1 end
+  if status == "completed" or status == "cancelled" or status == "error" then
+    return 2
+  end
+  return -1
+end
+
+local key = KEYS[1]
+local payload = ARGV[1]
+local incoming_status = ARGV[2]
+local incoming_updated_at = ARGV[3]
+local requested_ttl_ms = tonumber(ARGV[4])
+local incoming_rank = status_rank(incoming_status)
+
+if incoming_rank < 0 or not requested_ttl_ms or requested_ttl_ms < 1 then
+  return -1
+end
+
+local existing_raw = redis.call("GET", key)
+local existing_ttl_ms = redis.call("PTTL", key)
+
+if existing_raw then
+  local decoded, existing = pcall(cjson.decode, existing_raw)
+  if decoded and type(existing) == "table" then
+    local existing_status = tostring(existing["status"] or "")
+    local existing_updated_at = tostring(existing["updatedAt"] or "")
+    local existing_rank = status_rank(existing_status)
+
+    if existing_rank > incoming_rank then
+      return 0
+    end
+
+    if existing_rank == 2 and incoming_rank == 2 and existing_status ~= incoming_status then
+      return 0
+    end
+
+    if existing_status == incoming_status
+      and existing_updated_at ~= ""
+      and incoming_updated_at ~= ""
+      and incoming_updated_at < existing_updated_at then
+      return 0
+    end
+  end
+end
+
+-- A persistent legacy key is stronger than any finite retention budget.
+-- Otherwise refresh the requested TTL without shortening a longer existing
+-- terminal retention window.
+if existing_raw and existing_ttl_ms == -1 then
+  redis.call("SET", key, payload)
+else
+  local applied_ttl_ms = requested_ttl_ms
+  if existing_ttl_ms > applied_ttl_ms then
+    applied_ttl_ms = existing_ttl_ms
+  end
+  redis.call("SET", key, payload, "PX", applied_ttl_ms)
+end
+
+return 1
+`;
 
 function terminalSessionTtlSeconds(): number {
   const raw = process.env.LAUNCHLENS_TERMINAL_SESSION_TTL_SECONDS;
@@ -71,9 +145,16 @@ export async function storeSession(session: ResearchSession): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(SESSION_KEY(session.id), JSON.stringify(session), {
-      ex: sessionTtlSeconds(session),
-    });
+    await redis.eval<[string, string, string, string], number>(
+      STORE_SESSION_MONOTONIC_SCRIPT,
+      [SESSION_KEY(session.id)],
+      [
+        JSON.stringify(session),
+        session.status,
+        session.updatedAt,
+        String(sessionTtlSeconds(session) * 1000),
+      ],
+    );
   } catch (err) {
     console.error(`[session-store] storeSession(${session.id}) failed:`, err);
   }
@@ -93,8 +174,8 @@ export async function fetchSession(id: string): Promise<ResearchSession | null> 
   try {
     const raw = await redis.get<unknown>(SESSION_KEY(id));
     if (raw == null) return null;
-    if (typeof raw === "string") return JSON.parse(raw) as ResearchSession;
-    return raw as ResearchSession;
+    const session = (typeof raw === "string" ? JSON.parse(raw) : raw) as ResearchSession;
+    return { ...session, mode: normalizeResearchMode(session.mode) };
   } catch (err) {
     console.error(`[session-store] fetchSession(${id}) failed:`, err);
     return null;

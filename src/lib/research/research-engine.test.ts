@@ -16,6 +16,7 @@ import {
   cancelSession,
   deleteSession,
   subscribeToSession,
+  awaitTerminalCheckpoint,
 } from "@/lib/research/research-engine";
 import { getResearchRun } from "@/lib/research/storage";
 import type { ResearchSession, AgentState } from "@/lib/schema/research-schema";
@@ -34,14 +35,29 @@ function setAgent(session: ResearchSession, id: string, status: AgentState["stat
 }
 
 describe("research-engine helpers (round 155)", () => {
-  it("createResearchSession seeds six agents and a stable id", () => {
+  it("createResearchSession seeds six agents and a cryptographic capability id", () => {
     const s = emptySession();
+    const another = emptySession();
     expect(Object.keys(s.agents).sort()).toEqual([
       "channel-scout", "competitor-analyst", "market-sizer",
       "pain-detective", "pricing-scout", "synthesis",
     ]);
     expect(s.status).toBe("pending");
     expect(s.keywords).toEqual(["kw1", "kw2"]);
+    expect(s.mode).toBe("standard");
+    expect(s.id).toMatch(/^[0-9a-f]{32}$/);
+    expect(another.id).not.toBe(s.id);
+  });
+
+  it("preserves an explicitly selected mode but will not execute preview-only Deep Research", async () => {
+    const deep = createResearchSession("deep market audit", ["evidence"], undefined, {
+      mode: "deep",
+    });
+    expect(deep.mode).toBe("deep");
+
+    const { runResearchSession } = await import("@/lib/research/research-engine");
+    await expect(runResearchSession(deep.id)).rejects.toThrow(/async/i);
+    expect(deep.status).toBe("pending");
   });
 
   it("getResearchSession and listSessions reflect created sessions", () => {
@@ -184,7 +200,7 @@ describe("cancelSession (round 190/191 + R48)", () => {
     expect(fresh?.agents["pricing-scout"].progress).toBe(100);
   });
 
-  it("does not emit agent-error on cancel (so UI shows no red badges)", () => {
+  it("does not emit agent-error on cancel (so UI shows no red badges)", async () => {
     const session = createResearchSession("widget", ["saas"]);
     session.status = "running";
     const events: Array<{ type: string; agentId?: string }> = [];
@@ -192,6 +208,7 @@ describe("cancelSession (round 190/191 + R48)", () => {
       events.push({ type: ev.type, agentId: ev.agentId });
     });
     cancelSession(session.id);
+    await awaitTerminalCheckpoint(session.id);
     unsub();
     const errorEvents = events.filter((e) => e.type === "error");
     expect(errorEvents).toEqual([]);
@@ -200,17 +217,30 @@ describe("cancelSession (round 190/191 + R48)", () => {
     expect(cancelled.length).toBe(1);
   });
 
-  it("persists a 'cancelled' run so History can surface it (R212)", () => {
+  it("persists a 'cancelled' run so History can surface it (R212)", async () => {
     const session = createResearchSession("persist-cancel", ["kw"]);
     session.status = "running";
     session.agents["market-sizer"].status = "running";
     session.agents["market-sizer"].progress = 60;
     const ok = cancelSession(session.id);
     expect(ok).toBe(true);
+    await awaitTerminalCheckpoint(session.id);
     const stored = getResearchRun(session.id);
     expect(stored).toBeDefined();
     expect(stored?.status).toBe("cancelled");
     expect(stored?.query).toBe("persist-cancel");
+  });
+
+  it("does not let an observer unsubscribe cancel a pending remote-owned run", async () => {
+    const session = createResearchSession("remote owner", ["observer"]);
+    session.status = "running";
+    const unsubscribe = subscribeToSession(session.id, () => {});
+
+    unsubscribe();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(getResearchSession(session.id)?.status).toBe("running");
+    await expect(awaitTerminalCheckpoint(session.id)).resolves.toBeUndefined();
   });
 });
 

@@ -53,6 +53,25 @@ describe("validateResearchRequest", () => {
     if (r.ok) {
       expect(r.value.query).toBe("abc");
       expect(r.value.keywords).toEqual([]);
+      expect(r.value.mode).toBe("standard");
+    }
+  });
+
+  it("accepts both research modes and defaults omitted mode to Standard", () => {
+    const standard = validateResearchRequest({ query: "valid idea" });
+    const deep = validateResearchRequest({ query: "valid idea", mode: "deep" });
+
+    expect(standard.ok && standard.value.mode).toBe("standard");
+    expect(deep.ok && deep.value.mode).toBe("deep");
+  });
+
+  it("rejects an unknown research mode at the API boundary", () => {
+    const r = validateResearchRequest({ query: "valid idea", mode: "turbo" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.field).toBe("mode");
+      expect(r.body.error).toContain("standard");
+      expect(r.body.error).toContain("deep");
     }
   });
 

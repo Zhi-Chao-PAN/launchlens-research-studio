@@ -55,6 +55,16 @@ describe("middleware CSRF exemptions", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
+  it("lets the exact cron endpoint reach its route-level shared-secret verifier", () => {
+    const response = middleware(makeRequest("/api/cron/scheduler", {
+      method: "POST",
+      headers: { "x-cron-secret": "candidate-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("still rejects non-exempt mutating API requests without CSRF in strict mode", async () => {
     const previousStrict = process.env.LAUNCHLENS_CSRF_STRICT;
     process.env.LAUNCHLENS_CSRF_STRICT = "1";

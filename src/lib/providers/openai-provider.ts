@@ -26,6 +26,7 @@ import {
   providerRequestErrorDetail,
   ProviderRequestError,
 } from "@/lib/providers/provider-request-error";
+import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 export interface OpenAIProviderConfig {
   apiKey: string;
@@ -35,7 +36,10 @@ export interface OpenAIProviderConfig {
 }
 
 export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProvider {
-  const baseUrl = config.baseUrl || "https://api.openai.com/v1";
+  const baseUrl = normalizeProviderBaseUrl(
+    config.baseUrl,
+    "https://api.openai.com/v1",
+  );
   const model = config.model || "gpt-4o-mini";
   const fetchImpl = config.fetchImpl || globalThis.fetch;
 
@@ -81,7 +85,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
                 response_format: { type: "json_object" },
                 messages: [
                   { role: "system", content: buildSystemPrompt(agentId, outputLanguage) },
-                  { role: "user", content: buildUserPrompt(agentId, { query: ctx.query, keywords: ctx.keywords, upstream: ctx.upstream, outputLanguage, retrievedSources: undefined }) },
+                  { role: "user", content: buildUserPrompt(agentId, { query: ctx.query, keywords: ctx.keywords, upstream: ctx.upstream, outputLanguage, retrievedSources: ctx.retrievedSources, validationSummary: ctx.validationSummary }) },
                 ],
               }),
             });

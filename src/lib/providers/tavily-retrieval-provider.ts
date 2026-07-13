@@ -11,6 +11,7 @@
 // every run behaves identically to R214.
 
 import type { RetrievalProvider, RetrievalQuery, RetrievedSource } from "./retrieval.types";
+import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_BASE_URL = "https://api.tavily.com";
 const DEFAULT_MAX_RESULTS = 6;
@@ -47,7 +48,7 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     now?: () => Date;
   }) {
     this.apiKey = opts.apiKey;
-    this.baseUrl = (opts.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
+    this.baseUrl = normalizeProviderBaseUrl(opts.baseUrl, DEFAULT_BASE_URL);
     this.fetchImpl = opts.fetchImpl || globalThis.fetch.bind(globalThis);
     this.now = opts.now || (() => new Date());
   }
@@ -104,7 +105,10 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
           url: r.url,
           snippet: String(r.content || "").slice(0, 500),
           accessedAt: retrievedAt,
-          confidence: scoreToConfidence(r.score),
+          // Tavily's score measures query relevance, not source reliability.
+          // Keep relevance in `score` and use a conservative neutral
+          // confidence until a later claim-to-source review evaluates quality.
+          confidence: "medium",
           agent: (opts.agentId || "market-sizer") as RetrievedSource["agent"],
           score: typeof r.score === "number" ? r.score : undefined,
           retrievedAt,
@@ -131,13 +135,6 @@ function buildQueryString(query: string, keywords?: string[]): string {
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, Math.trunc(n)));
-}
-
-function scoreToConfidence(score: number | undefined): "low" | "medium" | "high" {
-  if (typeof score !== "number" || !Number.isFinite(score)) return "medium";
-  if (score >= 0.7) return "high";
-  if (score >= 0.4) return "medium";
-  return "low";
 }
 
 function hashUrl(url: string): string {

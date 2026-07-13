@@ -127,7 +127,8 @@ export default async function RootLayout({
         />
         <ErrorBoundary>
           <ThemeProvider
-            attribute="class"
+            attribute="data-theme"
+            storageKey="launchlens:theme"
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange
@@ -149,7 +150,7 @@ export default async function RootLayout({
             </LocaleProvider>
           </ThemeProvider>
         </ErrorBoundary>
-        <Analytics />
+        {process.env.VERCEL === "1" ? <Analytics /> : null}
       </body>
     </html>
   );

@@ -82,11 +82,12 @@ describe("probeRetrievalProvider (R215)", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns ok=true with latency for a working provider", async () => {
+  it("reports retrieval as not configured when the mock provider is selected", async () => {
     setEnv(undefined, undefined);
     const result = await probeRetrievalProvider();
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
     expect(result.providerId).toBe("mock-retrieval");
+    expect(result.reason).toBe("not_configured");
     expect(typeof result.latencyMs).toBe("number");
   });
 });

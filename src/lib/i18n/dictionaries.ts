@@ -27,6 +27,7 @@ export type DictionaryKey =
   | "agent.status.error"
   | "agent.status.idle"
   | "agent.status.running"
+  | "agent.status.stopped"
   | "agent.degraded"
   | "batch.status.completed"
   | "batch.status.failed"
@@ -257,9 +258,11 @@ export type DictionaryKey =
   | "errors.serviceUnavailable"
   | "errors.notFound"
   | "errors.badRequest"
+  | "errors.activeDeepDeleteConflict"
   | "errors.unauthorized"
   | "errors.cronNotConfigured"
   | "errors.sessionExpired"
+  | "errors.reportNotCompleted"
   | "errors.retryTitle"
   | "errors.retryHint"
   | "errors.notFoundTitle"
@@ -390,6 +393,8 @@ export type DictionaryKey =
   | "queryInput.startButton"
   | "queryInput.cancelButton"
   | "queryInput.cancelAriaLabel"
+  | "queryInput.cancellingButton"
+  | "queryInput.cancellingAriaLabel"
   | "queryInput.tryExample"
   | "queryInput.readyToRetry"
   | "dataManager.exportTab"
@@ -435,6 +440,7 @@ export type DictionaryKey =
   | "report.subtitle"
   | "report.statusCompleted"
   | "report.statusFailed"
+  | "report.statusCancelled"
   | "report.star"
   | "report.unstar"
   | "report.starred"
@@ -655,6 +661,8 @@ export type DictionaryKey =
   | "shortcuts.title"
   | "shortcuts.total"
   | "status.completed"
+  | "status.cancelled"
+  | "status.cancelling"
   | "status.error"
   | "status.loading"
   | "status.running"
@@ -668,6 +676,136 @@ export type DictionaryKey =
   | "studio.researchAgents"
   | "studio.tipReset"
   | "studio.tipStart"
+  | "queryInput.briefEyebrow"
+  | "queryInput.modeUnavailable"
+  | "researchMode.legend"
+  | "researchMode.availability.ready"
+  | "researchMode.availability.preview"
+  | "researchMode.standard.label"
+  | "researchMode.standard.description"
+  | "researchMode.standard.depthLabel"
+  | "researchMode.standard.duration"
+  | "researchMode.standard.capabilityNotice"
+  | "researchMode.deep.label"
+  | "researchMode.deep.description"
+  | "researchMode.deep.depthLabel"
+  | "researchMode.deep.duration"
+  | "researchMode.deep.capabilityNotice"
+  | "researchMode.retrieval.optional"
+  | "researchMode.retrieval.required"
+  | "researchMode.validationPass.one"
+  | "researchMode.validationPass.other"
+  | "researchMode.requirementsReady"
+  | "researchProtocol.eyebrow"
+  | "researchProtocol.title"
+  | "researchProtocol.execution"
+  | "researchProtocol.evidence"
+  | "researchProtocol.validation"
+  | "researchProtocol.analysts"
+  | "researchProtocol.previewOnly"
+  | "researchProtocol.ready"
+  | "researchProtocol.asyncRunnerRequired"
+  | "researchProtocol.requestBoundGuard"
+  | "researchProtocol.reportedCitation.one"
+  | "researchProtocol.reportedCitation.other"
+  | "researchProtocol.sourcesCollected.one"
+  | "researchProtocol.sourcesCollected.other"
+  | "researchProtocol.matchedCitation.one"
+  | "researchProtocol.matchedCitation.other"
+  | "researchProtocol.rejectedCitation.one"
+  | "researchProtocol.rejectedCitation.other"
+  | "researchProtocol.urlAllowlistActive"
+  | "researchProtocol.urlMembershipOnly"
+  | "researchProtocol.urlGroundedAgents"
+  | "researchProtocol.claimVerificationPending"
+  | "researchProtocol.semanticValidationNotRun"
+  | "researchProtocol.citationReferencesResolved"
+  | "researchProtocol.sourceDomainCoverage"
+  | "researchProtocol.retrievalUnavailable"
+  | "researchProtocol.retrievalNotConfigured"
+  | "researchProtocol.retrieval"
+  | "researchProtocol.sourceAllowlistRequired"
+  | "researchProtocol.citationUrlVerificationPending"
+  | "researchProtocol.draftCitationConflictReview"
+  | "researchProtocol.schemaCrossAgentSynthesis"
+  | "researchProtocol.analystsComplete"
+  | "researchProtocol.parallelModel"
+  | "researchProtocol.demoFallback.one"
+  | "researchProtocol.demoFallback.other"
+  | "researchProtocol.specialistsThenSynthesis"
+  | "researchProtocol.standardNotice"
+  | "researchProtocol.deepReadyNotice"
+  | "researchProtocol.deepPreviewNotice"
+  | "researchProtocol.deepExecutedNotice"
+  | "researchProtocol.nextBlocker"
+  | "researchProtocol.deepWorkGraph"
+  | "researchProtocol.deepWorkProgress"
+  | "researchProtocol.deepWorkCurrent"
+  | "researchProtocol.deepWorkComplete"
+  | "researchProtocol.deepWork.specialist"
+  | "researchProtocol.deepWork.semantic_pass_1"
+  | "researchProtocol.deepWork.semantic_pass_2"
+  | "researchProtocol.deepWork.semantic_pass_3"
+  | "researchProtocol.deepWork.synthesis"
+  | "researchProtocol.deepWork.finalize"
+  | "researchRequirement.explicit_opt_in"
+  | "researchRequirement.durable_state"
+  | "researchRequirement.generation_provider"
+  | "researchRequirement.retrieval_provider"
+  | "researchRequirement.semantic_reviewer"
+  | "researchRequirement.worker_wake"
+  | "researchRequirement.independent_recovery"
+  | "workspace.aria.evidenceValidation"
+  | "workspace.hero.eyebrow"
+  | "workspace.hero.title"
+  | "workspace.hero.subtitle"
+  | "workspace.newRun.eyebrow"
+  | "workspace.newRun.title"
+  | "workspace.newRun.teamComposition"
+  | "workspace.startMode"
+  | "workspace.deepResearchPreparing"
+  | "workspace.suggestions.eyebrow"
+  | "workspace.suggestions.title"
+  | "workspace.suggestion.followUp"
+  | "workspace.suggestion.deepDive"
+  | "workspace.suggestion.related"
+  | "workspace.suggestion.trending"
+  | "workspace.controls"
+  | "workspace.analystsProgress"
+  | "workspace.rerunMode"
+  | "workspace.runStatus.complete"
+  | "workspace.runStatus.cancelled"
+  | "workspace.runStatus.cancelling"
+  | "workspace.runStatus.running"
+  | "workspace.runStatus.error"
+  | "workspace.runStatus.idle"
+  | "workspace.stats.eyebrow"
+  | "workspace.stats.title"
+  | "workspace.stats.allRuns"
+  | "workspace.stats.thisWeek"
+  | "workspace.stats.starred"
+  | "workspace.stats.templates"
+  | "workspace.team.eyebrow"
+  | "workspace.team.title"
+  | "workspace.team.process"
+  | "workspace.saved.title"
+  | "workspace.saved.count"
+  | "workspace.saved.openAria"
+  | "workspace.saved.delete"
+  | "workspace.saved.deleteAria"
+  | "workspace.recent.title"
+  | "workspace.recent.rerun"
+  | "workspace.recent.rerunAria"
+  | "workspace.recent.open"
+  | "workspace.recent.openAria"
+  | "workspace.recent.remove"
+  | "workspace.recent.removeAria"
+  | "workspace.keywordsMore"
+  | "workspace.citationCount.one"
+  | "workspace.citationCount.other"
+  | "report.sourceCount.one"
+  | "report.sourceCount.other"
+  | "report.accessedAt"
   | "toc.readingProgress"
   | "toc.title"
 ;
@@ -687,9 +825,11 @@ const en: Dict = {
   "errors.serviceUnavailable": "Service temporarily unavailable. Please try again later.",
   "errors.notFound": "Not found.",
   "errors.badRequest": "Invalid request.",
+  "errors.activeDeepDeleteConflict": "Cancel the active Deep Research run before deleting its live session.",
   "errors.unauthorized": "Unauthorized.",
-  "errors.cronNotConfigured": "Scheduled-task endpoint is not configured. Set LAUNCHLENS_CRON_SECRET.",
+  "errors.cronNotConfigured": "Scheduled-task endpoint is not configured. Set CRON_SECRET.",
   "errors.sessionExpired": "Live engine session expired. The completed report is still available in History.",
+  "errors.reportNotCompleted": "This report must complete before it can be exported.",
   "errors.retryTitle": "Research could not run",
   "errors.retryHint": "The research session failed to start or recover. Check your connection and try again.",
   "errors.notFoundTitle": "Research not found",
@@ -703,6 +843,8 @@ const en: Dict = {
   "status.loading": "Starting research session",
   "status.running": "Research agents are running",
   "status.completed": "Research complete",
+  "status.cancelled": "Research cancelled",
+  "status.cancelling": "Cancelling research",
   "status.error": "Research failed",
   "status.retryingIn": "Rate limited — please wait {seconds}s before trying again.",
   "status.readyToRetry": "Ready to retry — you can submit again.",
@@ -727,6 +869,7 @@ const en: Dict = {
   "agent.status.running": "Researching",
   "agent.status.done": "Complete",
   "agent.status.error": "Error",
+  "agent.status.stopped": "Stopped",
   "agent.degraded": "demo",
   "batch.status.queued": "Queued",
   "batch.status.running": "Running",
@@ -1049,6 +1192,8 @@ const en: Dict = {
   "queryInput.startButton": "Start Research",
   "queryInput.cancelButton": "Cancel",
   "queryInput.cancelAriaLabel": "Cancel research",
+  "queryInput.cancellingButton": "Cancelling…",
+  "queryInput.cancellingAriaLabel": "Research cancellation in progress",
   "queryInput.tryExample": "Or try an example",
   "queryInput.readyToRetry": "Ready to retry — you can submit again.",
   "dataManager.exportTab": "Export",
@@ -1094,6 +1239,7 @@ const en: Dict = {
   "report.subtitle": "Audience-aware reading, citation recovery, and decision-ready synthesis for the current report.",
   "report.statusCompleted": "completed",
   "report.statusFailed": "failed",
+  "report.statusCancelled": "cancelled",
   "report.star": "☆ Star",
   "report.unstar": "Unstar",
   "report.starred": "★ Starred",
@@ -1331,6 +1477,136 @@ const en: Dict = {
   "compare.sources.domainsOnlyA": "Domains only in A",
   "compare.sources.domainsOnlyB": "Domains only in B",
   "compare.insightsCount": "Key insights",
+  "queryInput.briefEyebrow": "Research brief",
+  "queryInput.modeUnavailable": "Mode not yet available",
+  "researchMode.legend": "Research mode",
+  "researchMode.availability.ready": "Ready",
+  "researchMode.availability.preview": "Preview",
+  "researchMode.standard.label": "Standard",
+  "researchMode.standard.description": "A focused 5+1 agent scan with one synthesis pass for exploratory decisions.",
+  "researchMode.standard.depthLabel": "Focused evidence scan",
+  "researchMode.standard.duration": "{min}–{max} min",
+  "researchMode.standard.capabilityNotice": "Runs inside the current request-bound {seconds}-second execution window.",
+  "researchMode.deep.label": "Deep Research",
+  "researchMode.deep.description": "A durable evidence-first protocol with mandatory retrieval and three ordered semantic reviews.",
+  "researchMode.deep.depthLabel": "Multi-pass evidence audit",
+  "researchMode.deep.duration": "{min}–{max} min target",
+  "researchMode.deep.capabilityNotice": "Async Preview until durable state, real providers, authenticated worker wake, and independent recovery are verified; no run beyond the {seconds}-second request window will start.",
+  "researchMode.retrieval.optional": "Optional",
+  "researchMode.retrieval.required": "Required",
+  "researchMode.validationPass.one": "{count} validation pass",
+  "researchMode.validationPass.other": "{count} validation passes",
+  "researchMode.requirementsReady": "{ready}/{total} controls ready",
+  "researchProtocol.eyebrow": "Run controls",
+  "researchProtocol.title": "Research protocol",
+  "researchProtocol.execution": "Execution",
+  "researchProtocol.evidence": "Evidence",
+  "researchProtocol.validation": "Validation",
+  "researchProtocol.analysts": "Analysts",
+  "researchProtocol.previewOnly": "Preview only",
+  "researchProtocol.ready": "Ready",
+  "researchProtocol.asyncRunnerRequired": "Async runner required",
+  "researchProtocol.requestBoundGuard": "Request-bound, {seconds} s guard",
+  "researchProtocol.reportedCitation.one": "{count} reported citation",
+  "researchProtocol.reportedCitation.other": "{count} reported citations",
+  "researchProtocol.sourcesCollected.one": "{count} source collected",
+  "researchProtocol.sourcesCollected.other": "{count} sources collected",
+  "researchProtocol.matchedCitation.one": "{count} citation URL matched",
+  "researchProtocol.matchedCitation.other": "{count} citation URLs matched",
+  "researchProtocol.rejectedCitation.one": "{count} citation rejected",
+  "researchProtocol.rejectedCitation.other": "{count} citations rejected",
+  "researchProtocol.urlAllowlistActive": "URL allowlist active",
+  "researchProtocol.urlMembershipOnly": "URL matching checks membership only",
+  "researchProtocol.urlGroundedAgents": "{count}/{total} outputs URL-grounded",
+  "researchProtocol.claimVerificationPending": "Claim-to-source verification remains pending",
+  "researchProtocol.semanticValidationNotRun": "Semantic claim verification was not run",
+  "researchProtocol.citationReferencesResolved": "{resolved}/{total} citation references resolved",
+  "researchProtocol.sourceDomainCoverage": "{sources} sources across {domains} domains",
+  "researchProtocol.retrievalUnavailable": "Retrieval unavailable",
+  "researchProtocol.retrievalNotConfigured": "Retrieval not configured",
+  "researchProtocol.retrieval": "{level} retrieval",
+  "researchProtocol.sourceAllowlistRequired": "Source allowlist required before launch",
+  "researchProtocol.citationUrlVerificationPending": "Citation URL verification not yet active",
+  "researchProtocol.draftCitationConflictReview": "Draft, citation and conflict review",
+  "researchProtocol.schemaCrossAgentSynthesis": "Schema and cross-agent synthesis",
+  "researchProtocol.analystsComplete": "{completed}/{total} complete",
+  "researchProtocol.parallelModel": "5 + 1 parallel model",
+  "researchProtocol.demoFallback.one": "{count} section using demo fallback",
+  "researchProtocol.demoFallback.other": "{count} sections using demo fallback",
+  "researchProtocol.specialistsThenSynthesis": "Specialists followed by synthesis",
+  "researchProtocol.standardNotice": "Standard mode is exploratory. Reported citations are visible, but should not be treated as independently verified evidence yet.",
+  "researchProtocol.deepReadyNotice": "Durable 10–20 minute execution is ready with mandatory retrieval and three ordered semantic review passes.",
+  "researchProtocol.deepPreviewNotice": "Deep Research remains Preview: {ready}/{total} production controls are ready.",
+  "researchProtocol.deepExecutedNotice": "This dossier completed the three-pass Deep Research protocol; current launch readiness is checked separately.",
+  "researchProtocol.nextBlocker": "Next blocker: {label}",
+  "researchProtocol.deepWorkGraph": "Durable work graph",
+  "researchProtocol.deepWorkProgress": "{completed}/{total} work units committed",
+  "researchProtocol.deepWorkCurrent": "Current: {work} · attempt {attempt}/{max}",
+  "researchProtocol.deepWorkComplete": "All {total} work units committed",
+  "researchProtocol.deepWork.specialist": "Specialist · {agent}",
+  "researchProtocol.deepWork.semantic_pass_1": "Review 1 · claim-source entailment",
+  "researchProtocol.deepWork.semantic_pass_2": "Review 2 · corroboration and conflict",
+  "researchProtocol.deepWork.semantic_pass_3": "Review 3 · adjudication",
+  "researchProtocol.deepWork.synthesis": "Evidence-constrained synthesis",
+  "researchProtocol.deepWork.finalize": "Final integrity gate",
+  "researchRequirement.explicit_opt_in": "operator opt-in",
+  "researchRequirement.durable_state": "durable state",
+  "researchRequirement.generation_provider": "research model",
+  "researchRequirement.retrieval_provider": "independent retrieval",
+  "researchRequirement.semantic_reviewer": "semantic reviewer",
+  "researchRequirement.worker_wake": "worker wake",
+  "researchRequirement.independent_recovery": "independent recovery",
+  "workspace.aria.evidenceValidation": "Evidence and validation status",
+  "workspace.hero.eyebrow": "Market intelligence workspace",
+  "workspace.hero.title": "Build a research dossier, not a generic summary.",
+  "workspace.hero.subtitle": "Frame the decision once, then let five specialist analysts investigate the market before a synthesis reviewer resolves the final brief.",
+  "workspace.newRun.eyebrow": "New research run",
+  "workspace.newRun.title": "Scope the decision",
+  "workspace.newRun.teamComposition": "5 specialists + 1 reviewer",
+  "workspace.startMode": "Start {mode}",
+  "workspace.deepResearchPreparing": "Deep Research in preparation",
+  "workspace.suggestions.eyebrow": "Based on recent work",
+  "workspace.suggestions.title": "Suggested follow-ups",
+  "workspace.suggestion.followUp": "Follow-up",
+  "workspace.suggestion.deepDive": "Deep dive",
+  "workspace.suggestion.related": "Related",
+  "workspace.suggestion.trending": "Trending",
+  "workspace.controls": "Research controls",
+  "workspace.analystsProgress": "{done}/{total} analysts",
+  "workspace.rerunMode": "Rerun {mode}",
+  "workspace.runStatus.complete": "Complete",
+  "workspace.runStatus.cancelled": "Cancelled",
+  "workspace.runStatus.cancelling": "Cancelling",
+  "workspace.runStatus.running": "Running",
+  "workspace.runStatus.error": "Error",
+  "workspace.runStatus.idle": "Idle",
+  "workspace.stats.eyebrow": "Workspace",
+  "workspace.stats.title": "Activity",
+  "workspace.stats.allRuns": "All runs",
+  "workspace.stats.thisWeek": "This week",
+  "workspace.stats.starred": "Starred",
+  "workspace.stats.templates": "Templates",
+  "workspace.team.eyebrow": "Analysis model",
+  "workspace.team.title": "Five specialists, one synthesis reviewer",
+  "workspace.team.process": "Parallel research → final review",
+  "workspace.saved.title": "Saved dossiers",
+  "workspace.saved.count": "({count})",
+  "workspace.saved.openAria": "Open saved dossier: {query}",
+  "workspace.saved.delete": "Delete saved dossier",
+  "workspace.saved.deleteAria": "Delete saved dossier: {query}",
+  "workspace.recent.title": "Recent research",
+  "workspace.recent.rerun": "Rerun",
+  "workspace.recent.rerunAria": "Rerun research: {query}",
+  "workspace.recent.open": "Open",
+  "workspace.recent.openAria": "Open report: {query}",
+  "workspace.recent.remove": "Remove from history",
+  "workspace.recent.removeAria": "Remove from history: {query}",
+  "workspace.keywordsMore": "+{count}",
+  "workspace.citationCount.one": "{count} citation",
+  "workspace.citationCount.other": "{count} citations",
+  "report.sourceCount.one": "{count} source",
+  "report.sourceCount.other": "{count} sources",
+  "report.accessedAt": "Accessed {date}",
   "common.confirm": "Confirm",
 };
 
@@ -1347,9 +1623,11 @@ const zhCN: Dict = {
   "errors.serviceUnavailable": "服务暂时不可用，请稍后重试。",
   "errors.notFound": "未找到。",
   "errors.badRequest": "请求无效。",
+  "errors.activeDeepDeleteConflict": "请先取消正在运行的深度研究，再删除其实时会话。",
   "errors.unauthorized": "未授权。",
-  "errors.cronNotConfigured": "定时任务端点未配置，请设置 LAUNCHLENS_CRON_SECRET。",
+  "errors.cronNotConfigured": "定时任务端点未配置，请设置 CRON_SECRET。",
   "errors.sessionExpired": "实时引擎会话已过期，完整报告仍可在历史记录中查看。",
+  "errors.reportNotCompleted": "调研完成后才能导出该报告。",
   "errors.retryTitle": "调研无法运行",
   "errors.retryHint": "调研会话启动或恢复失败，请检查网络连接后重试。",
   "errors.notFoundTitle": "未找到该调研",
@@ -1363,6 +1641,8 @@ const zhCN: Dict = {
   "status.loading": "正在启动调研会话",
   "status.running": "调研智能体运行中",
   "status.completed": "调研完成",
+  "status.cancelled": "调研已取消",
+  "status.cancelling": "正在取消调研",
   "status.error": "调研失败",
   "status.retryingIn": "触发限流，请等待 {seconds} 秒后再试。",
   "status.readyToRetry": "可以重新提交了。",
@@ -1387,6 +1667,7 @@ const zhCN: Dict = {
   "agent.status.running": "调研中",
   "agent.status.done": "已完成",
   "agent.status.error": "出错",
+  "agent.status.stopped": "已停止",
   "agent.degraded": "示例",
   "batch.status.queued": "等待中",
   "batch.status.running": "运行中",
@@ -1709,6 +1990,8 @@ const zhCN: Dict = {
   "queryInput.startButton": "开始调研",
   "queryInput.cancelButton": "取消",
   "queryInput.cancelAriaLabel": "取消调研",
+  "queryInput.cancellingButton": "正在取消…",
+  "queryInput.cancellingAriaLabel": "正在处理调研取消请求",
   "queryInput.tryExample": "或者试试示例",
   "queryInput.readyToRetry": "可以重新提交了。",
   "dataManager.exportTab": "导出",
@@ -1754,6 +2037,7 @@ const zhCN: Dict = {
   "report.subtitle": "受众感知阅读、引用恢复、当前报告的决策就绪综合。",
   "report.statusCompleted": "已完成",
   "report.statusFailed": "失败",
+  "report.statusCancelled": "已取消",
   "report.star": "☆ 收藏",
   "report.unstar": "取消收藏",
   "report.starred": "★ 已收藏",
@@ -1991,6 +2275,136 @@ const zhCN: Dict = {
   "compare.sources.domainsOnlyA": "仅 A 域名",
   "compare.sources.domainsOnlyB": "仅 B 域名",
   "compare.insightsCount": "关键洞察",
+  "queryInput.briefEyebrow": "研究简报",
+  "queryInput.modeUnavailable": "该模式暂不可用",
+  "researchMode.legend": "研究模式",
+  "researchMode.availability.ready": "可运行",
+  "researchMode.availability.preview": "预览",
+  "researchMode.standard.label": "标准模式",
+  "researchMode.standard.description": "聚焦型 5+1 智能体扫描，通过一轮综合验证辅助探索性决策。",
+  "researchMode.standard.depthLabel": "聚焦式证据扫描",
+  "researchMode.standard.duration": "{min}–{max} 分钟",
+  "researchMode.standard.capabilityNotice": "在当前请求绑定的 {seconds} 秒执行窗口内运行。",
+  "researchMode.deep.label": "深度研究",
+  "researchMode.deep.description": "持久化、证据优先的研究协议，强制检索并依次完成三轮语义审查。",
+  "researchMode.deep.depthLabel": "多轮证据审计",
+  "researchMode.deep.duration": "目标 {min}–{max} 分钟",
+  "researchMode.deep.capabilityNotice": "异步能力保持预览状态，直至持久化状态、真实提供方、鉴权工作器唤醒与独立恢复全部验证；不会启动超过 {seconds} 秒请求窗口的任务。",
+  "researchMode.retrieval.optional": "可选",
+  "researchMode.retrieval.required": "必需",
+  "researchMode.validationPass.one": "{count} 轮验证",
+  "researchMode.validationPass.other": "{count} 轮验证",
+  "researchMode.requirementsReady": "{ready}/{total} 项控制就绪",
+  "researchProtocol.eyebrow": "运行控制",
+  "researchProtocol.title": "研究协议",
+  "researchProtocol.execution": "执行",
+  "researchProtocol.evidence": "证据",
+  "researchProtocol.validation": "验证",
+  "researchProtocol.analysts": "分析员",
+  "researchProtocol.previewOnly": "仅供预览",
+  "researchProtocol.ready": "就绪",
+  "researchProtocol.asyncRunnerRequired": "需要异步任务运行器",
+  "researchProtocol.requestBoundGuard": "请求绑定 · {seconds} 秒上限",
+  "researchProtocol.reportedCitation.one": "已报告 {count} 条引用",
+  "researchProtocol.reportedCitation.other": "已报告 {count} 条引用",
+  "researchProtocol.sourcesCollected.one": "已收集 {count} 个来源",
+  "researchProtocol.sourcesCollected.other": "已收集 {count} 个来源",
+  "researchProtocol.matchedCitation.one": "{count} 条引用 URL 已匹配",
+  "researchProtocol.matchedCitation.other": "{count} 条引用 URL 已匹配",
+  "researchProtocol.rejectedCitation.one": "已拒绝 {count} 条引用",
+  "researchProtocol.rejectedCitation.other": "已拒绝 {count} 条引用",
+  "researchProtocol.urlAllowlistActive": "URL 白名单校验已启用",
+  "researchProtocol.urlMembershipOnly": "URL 匹配仅校验名单归属",
+  "researchProtocol.urlGroundedAgents": "{count}/{total} 个输出已完成 URL 归源",
+  "researchProtocol.claimVerificationPending": "主张与来源内容的一致性仍待验证",
+  "researchProtocol.semanticValidationNotRun": "尚未执行主张与来源的语义验证",
+  "researchProtocol.citationReferencesResolved": "已解析 {resolved}/{total} 个引用关系",
+  "researchProtocol.sourceDomainCoverage": "{sources} 个来源，覆盖 {domains} 个域名",
+  "researchProtocol.retrievalUnavailable": "检索暂不可用",
+  "researchProtocol.retrievalNotConfigured": "尚未配置检索服务",
+  "researchProtocol.retrieval": "{level}检索",
+  "researchProtocol.sourceAllowlistRequired": "上线前需配置来源白名单",
+  "researchProtocol.citationUrlVerificationPending": "尚未启用引用 URL 验证",
+  "researchProtocol.draftCitationConflictReview": "草稿、引用与冲突复核",
+  "researchProtocol.schemaCrossAgentSynthesis": "结构校验与跨智能体综合",
+  "researchProtocol.analystsComplete": "{completed}/{total} 位分析员已完成",
+  "researchProtocol.parallelModel": "5 + 1 并行分析模型",
+  "researchProtocol.demoFallback.one": "{count} 个章节使用演示数据回退",
+  "researchProtocol.demoFallback.other": "{count} 个章节使用演示数据回退",
+  "researchProtocol.specialistsThenSynthesis": "专项分析后进行综合复核",
+  "researchProtocol.standardNotice": "标准模式用于探索性研究。界面会展示模型报告的引用，但在完成独立验证前，不应将其视为已核实证据。",
+  "researchProtocol.deepReadyNotice": "可恢复的 10–20 分钟深度执行已就绪，将强制检索并依次完成三轮语义审查。",
+  "researchProtocol.deepPreviewNotice": "深度研究仍处于预览状态：{ready}/{total} 项生产控制已就绪。",
+  "researchProtocol.deepExecutedNotice": "该档案已完成三轮深度研究协议；当前环境能否启动新任务会另行检查。",
+  "researchProtocol.nextBlocker": "下一阻塞项：{label}",
+  "researchProtocol.deepWorkGraph": "持久化工作图",
+  "researchProtocol.deepWorkProgress": "已提交 {completed}/{total} 个工作单元",
+  "researchProtocol.deepWorkCurrent": "当前：{work} · 第 {attempt}/{max} 次尝试",
+  "researchProtocol.deepWorkComplete": "全部 {total} 个工作单元已提交",
+  "researchProtocol.deepWork.specialist": "专项分析 · {agent}",
+  "researchProtocol.deepWork.semantic_pass_1": "审查一 · 主张与来源蕴含关系",
+  "researchProtocol.deepWork.semantic_pass_2": "审查二 · 独立佐证与冲突",
+  "researchProtocol.deepWork.semantic_pass_3": "审查三 · 最终裁决",
+  "researchProtocol.deepWork.synthesis": "证据约束综合",
+  "researchProtocol.deepWork.finalize": "最终完整性门禁",
+  "researchRequirement.explicit_opt_in": "运维显式启用",
+  "researchRequirement.durable_state": "持久化状态",
+  "researchRequirement.generation_provider": "研究模型",
+  "researchRequirement.retrieval_provider": "独立检索",
+  "researchRequirement.semantic_reviewer": "语义审查器",
+  "researchRequirement.worker_wake": "工作器唤醒",
+  "researchRequirement.independent_recovery": "独立恢复调度",
+  "workspace.aria.evidenceValidation": "证据与验证状态",
+  "workspace.hero.eyebrow": "市场情报工作台",
+  "workspace.hero.title": "构建研究档案，而非泛泛总结。",
+  "workspace.hero.subtitle": "一次明确决策问题，随后由五位专业分析员调查市场，再由综合评审员校验并形成最终简报。",
+  "workspace.newRun.eyebrow": "新建研究任务",
+  "workspace.newRun.title": "界定决策范围",
+  "workspace.newRun.teamComposition": "5 位专业分析员 + 1 位综合评审员",
+  "workspace.startMode": "启动{mode}",
+  "workspace.deepResearchPreparing": "深度研究准备中",
+  "workspace.suggestions.eyebrow": "基于近期研究",
+  "workspace.suggestions.title": "建议的后续研究",
+  "workspace.suggestion.followUp": "后续研究",
+  "workspace.suggestion.deepDive": "深度挖掘",
+  "workspace.suggestion.related": "相关主题",
+  "workspace.suggestion.trending": "趋势主题",
+  "workspace.controls": "研究控制",
+  "workspace.analystsProgress": "{done}/{total} 位分析员",
+  "workspace.rerunMode": "以{mode}重新运行",
+  "workspace.runStatus.complete": "已完成",
+  "workspace.runStatus.cancelled": "已取消",
+  "workspace.runStatus.cancelling": "取消中",
+  "workspace.runStatus.running": "运行中",
+  "workspace.runStatus.error": "错误",
+  "workspace.runStatus.idle": "空闲",
+  "workspace.stats.eyebrow": "工作台",
+  "workspace.stats.title": "研究活动",
+  "workspace.stats.allRuns": "全部任务",
+  "workspace.stats.thisWeek": "本周",
+  "workspace.stats.starred": "已收藏",
+  "workspace.stats.templates": "模板",
+  "workspace.team.eyebrow": "分析流程",
+  "workspace.team.title": "五位专业分析员，一位综合评审员",
+  "workspace.team.process": "并行研究 → 最终复核",
+  "workspace.saved.title": "已保存的研究档案",
+  "workspace.saved.count": "（{count}）",
+  "workspace.saved.openAria": "打开已保存的研究档案：{query}",
+  "workspace.saved.delete": "删除已保存的研究档案",
+  "workspace.saved.deleteAria": "删除已保存的研究档案：{query}",
+  "workspace.recent.title": "最近研究",
+  "workspace.recent.rerun": "重新运行",
+  "workspace.recent.rerunAria": "重新运行研究：{query}",
+  "workspace.recent.open": "查看",
+  "workspace.recent.openAria": "打开报告：{query}",
+  "workspace.recent.remove": "从历史记录移除",
+  "workspace.recent.removeAria": "从历史记录移除：{query}",
+  "workspace.keywordsMore": "+{count}",
+  "workspace.citationCount.one": "{count} 条引用",
+  "workspace.citationCount.other": "{count} 条引用",
+  "report.sourceCount.one": "{count} 个来源",
+  "report.sourceCount.other": "{count} 个来源",
+  "report.accessedAt": "访问日期：{date}",
   "common.confirm": "确认",
 };
 
@@ -2007,9 +2421,11 @@ const ja: Dict = {
   "errors.serviceUnavailable": "サービスが一時的に利用できません。しばらくしてから再試行してください。",
   "errors.notFound": "見つかりません。",
   "errors.badRequest": "無効なリクエストです。",
+  "errors.activeDeepDeleteConflict": "実行中のディープリサーチをキャンセルしてから、ライブセッションを削除してください。",
   "errors.unauthorized": "認証されていません。",
-  "errors.cronNotConfigured": "スケジュールタスクのエンドポイントが設定されていません。LAUNCHLENS_CRON_SECRET を設定してください。",
+  "errors.cronNotConfigured": "スケジュールタスクのエンドポイントが設定されていません。CRON_SECRET を設定してください。",
   "errors.sessionExpired": "ライブエンジンセッションの有効期限が切れました。完成したレポートは履歴から引き続き閲覧できます。",
+  "errors.reportNotCompleted": "このレポートは完了後にエクスポートできます。",
   "errors.retryTitle": "リサーチを実行できませんでした",
   "errors.retryHint": "リサーチセッションを開始または復元できませんでした。接続を確認して再試行してください。",
   "errors.notFoundTitle": "リサーチが見つかりません",
@@ -2023,6 +2439,8 @@ const ja: Dict = {
   "status.loading": "リサーチセッションを開始しています",
   "status.running": "リサーチエージェントが実行中です",
   "status.completed": "リサーチ完了",
+  "status.cancelled": "リサーチはキャンセルされました",
+  "status.cancelling": "リサーチをキャンセルしています",
   "status.error": "リサーチに失敗しました",
   "status.retryingIn": "レート制限中です。{seconds}秒後に再試行できます。",
   "status.readyToRetry": "再試行できます。",
@@ -2047,6 +2465,7 @@ const ja: Dict = {
   "agent.status.running": "リサーチ中",
   "agent.status.done": "完了",
   "agent.status.error": "エラー",
+  "agent.status.stopped": "停止済み",
   "agent.degraded": "デモ",
   "batch.status.queued": "待機中",
   "batch.status.running": "実行中",
@@ -2369,6 +2788,8 @@ const ja: Dict = {
   "queryInput.startButton": "リサーチを開始",
   "queryInput.cancelButton": "キャンセル",
   "queryInput.cancelAriaLabel": "リサーチをキャンセル",
+  "queryInput.cancellingButton": "キャンセル中…",
+  "queryInput.cancellingAriaLabel": "リサーチのキャンセル処理中",
   "queryInput.tryExample": "例を試す",
   "queryInput.readyToRetry": "再試行できます — もう一度送信できます。",
   "dataManager.exportTab": "エクスポート",
@@ -2414,6 +2835,7 @@ const ja: Dict = {
   "report.subtitle": "閲覧者に合わせた可読性、引用復元、現在のレポートの意思決定対応合成。",
   "report.statusCompleted": "完了",
   "report.statusFailed": "失敗",
+  "report.statusCancelled": "キャンセル済み",
   "report.star": "☆ スター",
   "report.unstar": "スター解除",
   "report.starred": "★ スター付き",
@@ -2651,6 +3073,136 @@ const ja: Dict = {
   "compare.sources.domainsOnlyA": "A のみのドメイン",
   "compare.sources.domainsOnlyB": "B のみのドメイン",
   "compare.insightsCount": "主な洞察",
+  "queryInput.briefEyebrow": "リサーチブリーフ",
+  "queryInput.modeUnavailable": "このモードはまだ利用できません",
+  "researchMode.legend": "リサーチモード",
+  "researchMode.availability.ready": "実行可能",
+  "researchMode.availability.preview": "プレビュー",
+  "researchMode.standard.label": "標準",
+  "researchMode.standard.description": "探索的な意思決定向けに、5+1エージェントで対象を絞って調査し、1回の統合検証を行います。",
+  "researchMode.standard.depthLabel": "重点型エビデンススキャン",
+  "researchMode.standard.duration": "{min}～{max} 分",
+  "researchMode.standard.capabilityNotice": "現在のリクエスト連動型の実行枠（{seconds} 秒以内）で動作します。",
+  "researchMode.deep.label": "ディープリサーチ",
+  "researchMode.deep.description": "情報取得を必須とし、順序付き 3 段階の意味レビューを行う、永続的なエビデンス優先プロトコルです。",
+  "researchMode.deep.depthLabel": "複数段階のエビデンス監査",
+  "researchMode.deep.duration": "目標 {min}～{max} 分",
+  "researchMode.deep.capabilityNotice": "永続状態、実プロバイダー、認証済みワーカー起動、独立復旧がすべて検証されるまで非同期機能はプレビューのままです。{seconds} 秒のリクエスト枠を超える実行は開始しません。",
+  "researchMode.retrieval.optional": "任意",
+  "researchMode.retrieval.required": "必須",
+  "researchMode.validationPass.one": "検証 {count} 回",
+  "researchMode.validationPass.other": "検証 {count} 回",
+  "researchMode.requirementsReady": "制御 {ready}/{total} 件が準備完了",
+  "researchProtocol.eyebrow": "実行コントロール",
+  "researchProtocol.title": "リサーチプロトコル",
+  "researchProtocol.execution": "実行",
+  "researchProtocol.evidence": "エビデンス",
+  "researchProtocol.validation": "検証",
+  "researchProtocol.analysts": "アナリスト",
+  "researchProtocol.previewOnly": "プレビューのみ",
+  "researchProtocol.ready": "準備完了",
+  "researchProtocol.asyncRunnerRequired": "非同期ジョブランナーが必要",
+  "researchProtocol.requestBoundGuard": "リクエスト連動型 · 上限 {seconds} 秒",
+  "researchProtocol.reportedCitation.one": "報告済み引用 {count} 件",
+  "researchProtocol.reportedCitation.other": "報告済み引用 {count} 件",
+  "researchProtocol.sourcesCollected.one": "{count} 件のソースを収集",
+  "researchProtocol.sourcesCollected.other": "{count} 件のソースを収集",
+  "researchProtocol.matchedCitation.one": "{count} 件の引用 URL が一致",
+  "researchProtocol.matchedCitation.other": "{count} 件の引用 URL が一致",
+  "researchProtocol.rejectedCitation.one": "{count} 件の引用を除外",
+  "researchProtocol.rejectedCitation.other": "{count} 件の引用を除外",
+  "researchProtocol.urlAllowlistActive": "URL 許可リスト照合が有効",
+  "researchProtocol.urlMembershipOnly": "URL 照合はリスト所属のみを確認",
+  "researchProtocol.urlGroundedAgents": "{count}/{total} 件の出力を URL に紐付け済み",
+  "researchProtocol.claimVerificationPending": "主張と情報源内容の一致検証は未完了",
+  "researchProtocol.semanticValidationNotRun": "主張と情報源の意味的一致検証は未実施",
+  "researchProtocol.citationReferencesResolved": "引用参照 {resolved}/{total} 件を解決",
+  "researchProtocol.sourceDomainCoverage": "{domains} ドメインから {sources} 件の情報源",
+  "researchProtocol.retrievalUnavailable": "情報取得を利用できません",
+  "researchProtocol.retrievalNotConfigured": "情報取得サービスが未設定",
+  "researchProtocol.retrieval": "{level}の情報取得",
+  "researchProtocol.sourceAllowlistRequired": "公開前に情報源の許可リストが必要",
+  "researchProtocol.citationUrlVerificationPending": "引用 URL の検証は未有効化",
+  "researchProtocol.draftCitationConflictReview": "草稿・引用・矛盾のレビュー",
+  "researchProtocol.schemaCrossAgentSynthesis": "スキーマ検証とエージェント横断の統合",
+  "researchProtocol.analystsComplete": "{completed}/{total} 完了",
+  "researchProtocol.parallelModel": "5 + 1 並列分析モデル",
+  "researchProtocol.demoFallback.one": "{count} セクションでデモデータにフォールバック",
+  "researchProtocol.demoFallback.other": "{count} セクションでデモデータにフォールバック",
+  "researchProtocol.specialistsThenSynthesis": "専門分析の後に統合レビュー",
+  "researchProtocol.standardNotice": "標準モードは探索的な調査向けです。報告された引用は表示されますが、独立検証が完了するまでは検証済みのエビデンスとして扱わないでください。",
+  "researchProtocol.deepReadyNotice": "必須の情報取得と順序付き 3 段階の意味レビューを備えた、復旧可能な 10～20 分の実行準備が完了しています。",
+  "researchProtocol.deepPreviewNotice": "ディープリサーチはプレビューのままです：本番制御 {ready}/{total} 件が準備完了。",
+  "researchProtocol.deepExecutedNotice": "この資料は 3 段階のディープリサーチ手順を完了済みです。新規実行の可否は現在の環境で別途確認されます。",
+  "researchProtocol.nextBlocker": "次の阻害要因：{label}",
+  "researchProtocol.deepWorkGraph": "永続ワークグラフ",
+  "researchProtocol.deepWorkProgress": "作業単位 {completed}/{total} 件をコミット",
+  "researchProtocol.deepWorkCurrent": "現在：{work} · 試行 {attempt}/{max}",
+  "researchProtocol.deepWorkComplete": "全 {total} 作業単位をコミット済み",
+  "researchProtocol.deepWork.specialist": "専門分析 · {agent}",
+  "researchProtocol.deepWork.semantic_pass_1": "レビュー 1 · 主張と情報源の含意",
+  "researchProtocol.deepWork.semantic_pass_2": "レビュー 2 · 裏付けと矛盾",
+  "researchProtocol.deepWork.semantic_pass_3": "レビュー 3 · 裁定",
+  "researchProtocol.deepWork.synthesis": "エビデンス制約付き統合",
+  "researchProtocol.deepWork.finalize": "最終整合性ゲート",
+  "researchRequirement.explicit_opt_in": "運用者による明示的な有効化",
+  "researchRequirement.durable_state": "永続状態",
+  "researchRequirement.generation_provider": "リサーチモデル",
+  "researchRequirement.retrieval_provider": "独立した情報取得",
+  "researchRequirement.semantic_reviewer": "意味レビュアー",
+  "researchRequirement.worker_wake": "ワーカー起動",
+  "researchRequirement.independent_recovery": "独立した復旧スケジュール",
+  "workspace.aria.evidenceValidation": "エビデンスと検証の状態",
+  "workspace.hero.eyebrow": "市場インテリジェンス・ワークスペース",
+  "workspace.hero.title": "汎用的な要約ではなく、意思決定に使えるリサーチ・ドシエを構築する。",
+  "workspace.hero.subtitle": "意思決定課題を一度定義すると、5人の専門アナリストが市場を調査し、統合レビュアーが最終ブリーフを検証・整理します。",
+  "workspace.newRun.eyebrow": "新規リサーチ",
+  "workspace.newRun.title": "意思決定範囲を定義",
+  "workspace.newRun.teamComposition": "専門アナリスト 5人 + 統合レビュアー 1人",
+  "workspace.startMode": "{mode}を開始",
+  "workspace.deepResearchPreparing": "ディープリサーチを準備中",
+  "workspace.suggestions.eyebrow": "最近の作業に基づく提案",
+  "workspace.suggestions.title": "推奨されるフォローアップ",
+  "workspace.suggestion.followUp": "フォローアップ",
+  "workspace.suggestion.deepDive": "深掘り",
+  "workspace.suggestion.related": "関連テーマ",
+  "workspace.suggestion.trending": "トレンド",
+  "workspace.controls": "リサーチコントロール",
+  "workspace.analystsProgress": "アナリスト {done}/{total} 人",
+  "workspace.rerunMode": "{mode}で再実行",
+  "workspace.runStatus.complete": "完了",
+  "workspace.runStatus.cancelled": "キャンセル済み",
+  "workspace.runStatus.cancelling": "キャンセル中",
+  "workspace.runStatus.running": "実行中",
+  "workspace.runStatus.error": "エラー",
+  "workspace.runStatus.idle": "待機中",
+  "workspace.stats.eyebrow": "ワークスペース",
+  "workspace.stats.title": "アクティビティ",
+  "workspace.stats.allRuns": "全実行",
+  "workspace.stats.thisWeek": "今週",
+  "workspace.stats.starred": "お気に入り",
+  "workspace.stats.templates": "テンプレート",
+  "workspace.team.eyebrow": "分析モデル",
+  "workspace.team.title": "5人の専門アナリストと1人の統合レビュアー",
+  "workspace.team.process": "並列リサーチ → 最終レビュー",
+  "workspace.saved.title": "保存済みドシエ",
+  "workspace.saved.count": "（{count}）",
+  "workspace.saved.openAria": "保存済みドシエを開く：{query}",
+  "workspace.saved.delete": "保存済みドシエを削除",
+  "workspace.saved.deleteAria": "保存済みドシエを削除：{query}",
+  "workspace.recent.title": "最近のリサーチ",
+  "workspace.recent.rerun": "再実行",
+  "workspace.recent.rerunAria": "リサーチを再実行：{query}",
+  "workspace.recent.open": "開く",
+  "workspace.recent.openAria": "レポートを開く：{query}",
+  "workspace.recent.remove": "履歴から削除",
+  "workspace.recent.removeAria": "履歴から削除：{query}",
+  "workspace.keywordsMore": "+{count}",
+  "workspace.citationCount.one": "引用 {count} 件",
+  "workspace.citationCount.other": "引用 {count} 件",
+  "report.sourceCount.one": "{count} 件のソース",
+  "report.sourceCount.other": "{count} 件のソース",
+  "report.accessedAt": "アクセス日：{date}",
   "common.confirm": "確認",
 };
 
@@ -2668,6 +3220,7 @@ const ko: Dict = {
   "agent.pricing-scout.name": "가격 탐색정",
   "agent.status.done": "완료",
   "agent.status.error": "오류",
+  "agent.status.stopped": "중지됨",
   "agent.degraded": "데모",
   "batch.status.queued": "대기 중",
   "batch.status.running": "실행 중",
@@ -2900,9 +3453,11 @@ const ko: Dict = {
   "errors.serviceUnavailable": "서비스가 일시적으로 사용 불가능합니다. 나중에 다시 시도해 주세요.",
   "errors.notFound": "찾을 수 없습니다.",
   "errors.badRequest": "잘못된 요청입니다.",
+  "errors.activeDeepDeleteConflict": "실행 중인 심층 리서치를 취소한 후 라이브 세션을 삭제하세요.",
   "errors.unauthorized": "인증되지 않았습니다.",
-  "errors.cronNotConfigured": "예약 작업 엔드포인트가 구성되지 않았습니다. LAUNCHLENS_CRON_SECRET을 설정하세요.",
+  "errors.cronNotConfigured": "예약 작업 엔드포인트가 구성되지 않았습니다. CRON_SECRET을 설정하세요.",
   "errors.sessionExpired": "실시간 엔진 세션이 만료되었습니다. 완료된 리포트는 기록에서 계속 확인할 수 있습니다.",
+  "errors.reportNotCompleted": "리서치가 완료된 후에만 이 리포트를 내보낼 수 있습니다.",
   "errors.retryTitle": "리서치를 실행할 수 없습니다",
   "errors.retryHint": "리서치 세션을 시작하거나 복구하지 못했습니다. 연결을 확인한 후 다시 시도해 주세요.",
   "errors.notFoundTitle": "리서치를 찾을 수 없습니다",
@@ -3033,6 +3588,8 @@ const ko: Dict = {
   "queryInput.startButton": "리서치 시작",
   "queryInput.cancelButton": "취소",
   "queryInput.cancelAriaLabel": "리서치 취소",
+  "queryInput.cancellingButton": "취소 중…",
+  "queryInput.cancellingAriaLabel": "리서치 취소 처리 중",
   "queryInput.tryExample": "예시 사용해 보기",
   "queryInput.readyToRetry": "다시 시도할 준비가 되었습니다 — 다시 제출할 수 있습니다.",
   "dataManager.exportTab": "내보내기",
@@ -3078,6 +3635,7 @@ const ko: Dict = {
   "report.subtitle": "독자 맞춤 가독성, 인용 복구, 현재 보고서의 의사결정 지원 종합.",
   "report.statusCompleted": "완료됨",
   "report.statusFailed": "실패함",
+  "report.statusCancelled": "취소됨",
   "report.star": "☆ 별표",
   "report.unstar": "별표 해제",
   "report.starred": "★ 별표됨",
@@ -3298,6 +3856,8 @@ const ko: Dict = {
   "shortcuts.title": "키보드 단축키",
   "shortcuts.total": "개의 단축키",
   "status.completed": "리서치 완료",
+  "status.cancelled": "리서치 취소됨",
+  "status.cancelling": "리서치 취소 중",
   "status.error": "리서치 실패",
   "status.loading": "리서치 세션 시작 중",
   "status.running": "리서치 에이전트 실행 중",
@@ -3311,6 +3871,136 @@ const ko: Dict = {
   "studio.researchAgents": "리서치 에이전트",
   "studio.tipReset": "초기화",
   "studio.tipStart": "시작하려면",
+  "queryInput.briefEyebrow": "리서치 브리프",
+  "queryInput.modeUnavailable": "아직 사용할 수 없는 모드입니다",
+  "researchMode.legend": "리서치 모드",
+  "researchMode.availability.ready": "실행 가능",
+  "researchMode.availability.preview": "미리보기",
+  "researchMode.standard.label": "표준",
+  "researchMode.standard.description": "탐색적 의사결정을 위한 집중형 5+1 에이전트 조사와 한 차례의 종합 검증입니다.",
+  "researchMode.standard.depthLabel": "집중형 증거 조사",
+  "researchMode.standard.duration": "{min}~{max}분",
+  "researchMode.standard.capabilityNotice": "현재 요청 연동형 {seconds}초 실행 범위 안에서 동작합니다.",
+  "researchMode.deep.label": "심층 리서치",
+  "researchMode.deep.description": "검색을 필수로 수행하고 순차적인 3단계 의미 검토를 거치는 영구 증거 우선 프로토콜입니다.",
+  "researchMode.deep.depthLabel": "다단계 증거 감사",
+  "researchMode.deep.duration": "목표 {min}~{max}분",
+  "researchMode.deep.capabilityNotice": "영구 상태, 실제 제공자, 인증된 워커 호출, 독립 복구가 모두 검증될 때까지 비동기 기능은 미리보기로 유지되며 {seconds}초 요청 범위를 넘는 실행은 시작하지 않습니다.",
+  "researchMode.retrieval.optional": "선택",
+  "researchMode.retrieval.required": "필수",
+  "researchMode.validationPass.one": "{count}회 검증",
+  "researchMode.validationPass.other": "{count}회 검증",
+  "researchMode.requirementsReady": "제어 {ready}/{total}개 준비",
+  "researchProtocol.eyebrow": "실행 제어",
+  "researchProtocol.title": "리서치 프로토콜",
+  "researchProtocol.execution": "실행",
+  "researchProtocol.evidence": "증거",
+  "researchProtocol.validation": "검증",
+  "researchProtocol.analysts": "분석가",
+  "researchProtocol.previewOnly": "미리보기 전용",
+  "researchProtocol.ready": "준비됨",
+  "researchProtocol.asyncRunnerRequired": "비동기 작업 실행기 필요",
+  "researchProtocol.requestBoundGuard": "요청 연동형 · {seconds}초 제한",
+  "researchProtocol.reportedCitation.one": "보고된 인용 {count}건",
+  "researchProtocol.reportedCitation.other": "보고된 인용 {count}건",
+  "researchProtocol.sourcesCollected.one": "{count}개 출처 수집",
+  "researchProtocol.sourcesCollected.other": "{count}개 출처 수집",
+  "researchProtocol.matchedCitation.one": "{count}개 인용 URL 일치",
+  "researchProtocol.matchedCitation.other": "{count}개 인용 URL 일치",
+  "researchProtocol.rejectedCitation.one": "{count}개 인용 제외",
+  "researchProtocol.rejectedCitation.other": "{count}개 인용 제외",
+  "researchProtocol.urlAllowlistActive": "URL 허용 목록 대조 활성화",
+  "researchProtocol.urlMembershipOnly": "URL 일치는 목록 포함 여부만 확인합니다",
+  "researchProtocol.urlGroundedAgents": "{count}/{total}개 결과에 URL 근거 연결",
+  "researchProtocol.claimVerificationPending": "주장과 출처 내용의 일치 검증은 아직 필요합니다",
+  "researchProtocol.semanticValidationNotRun": "주장과 출처의 의미 일치 검증은 실행되지 않았습니다",
+  "researchProtocol.citationReferencesResolved": "인용 참조 {resolved}/{total}개 해결",
+  "researchProtocol.sourceDomainCoverage": "{domains}개 도메인에서 {sources}개 출처",
+  "researchProtocol.retrievalUnavailable": "검색을 사용할 수 없음",
+  "researchProtocol.retrievalNotConfigured": "검색 서비스가 설정되지 않음",
+  "researchProtocol.retrieval": "{level} 검색",
+  "researchProtocol.sourceAllowlistRequired": "출시 전 출처 허용 목록 필요",
+  "researchProtocol.citationUrlVerificationPending": "인용 URL 검증이 아직 활성화되지 않음",
+  "researchProtocol.draftCitationConflictReview": "초안·인용·상충 내용 검토",
+  "researchProtocol.schemaCrossAgentSynthesis": "스키마 검증 및 에이전트 간 종합",
+  "researchProtocol.analystsComplete": "{completed}/{total} 완료",
+  "researchProtocol.parallelModel": "5 + 1 병렬 분석 모델",
+  "researchProtocol.demoFallback.one": "{count}개 섹션에서 데모 데이터로 대체",
+  "researchProtocol.demoFallback.other": "{count}개 섹션에서 데모 데이터로 대체",
+  "researchProtocol.specialistsThenSynthesis": "전문 분석 후 종합 검토",
+  "researchProtocol.standardNotice": "표준 모드는 탐색적 조사에 적합합니다. 보고된 인용을 확인할 수 있지만, 독립 검증이 끝나기 전에는 검증된 증거로 간주하면 안 됩니다.",
+  "researchProtocol.deepReadyNotice": "필수 검색과 순차적인 3단계 의미 검토를 갖춘 복구 가능한 10~20분 실행이 준비되었습니다.",
+  "researchProtocol.deepPreviewNotice": "심층 리서치는 아직 미리보기 상태입니다. 프로덕션 제어 {ready}/{total}개가 준비되었습니다.",
+  "researchProtocol.deepExecutedNotice": "이 자료는 3단계 심층 리서치 프로토콜을 완료했습니다. 새 실행 가능 여부는 현재 환경에서 별도로 확인됩니다.",
+  "researchProtocol.nextBlocker": "다음 차단 항목: {label}",
+  "researchProtocol.deepWorkGraph": "영구 작업 그래프",
+  "researchProtocol.deepWorkProgress": "작업 단위 {completed}/{total}개 커밋",
+  "researchProtocol.deepWorkCurrent": "현재: {work} · 시도 {attempt}/{max}",
+  "researchProtocol.deepWorkComplete": "작업 단위 {total}개 모두 커밋됨",
+  "researchProtocol.deepWork.specialist": "전문 분석 · {agent}",
+  "researchProtocol.deepWork.semantic_pass_1": "검토 1 · 주장-출처 함의",
+  "researchProtocol.deepWork.semantic_pass_2": "검토 2 · 독립 확인 및 충돌",
+  "researchProtocol.deepWork.semantic_pass_3": "검토 3 · 판정",
+  "researchProtocol.deepWork.synthesis": "증거 제약 종합",
+  "researchProtocol.deepWork.finalize": "최종 무결성 게이트",
+  "researchRequirement.explicit_opt_in": "운영자 명시적 활성화",
+  "researchRequirement.durable_state": "영구 상태",
+  "researchRequirement.generation_provider": "리서치 모델",
+  "researchRequirement.retrieval_provider": "독립 검색",
+  "researchRequirement.semantic_reviewer": "의미 검토자",
+  "researchRequirement.worker_wake": "워커 호출",
+  "researchRequirement.independent_recovery": "독립 복구 일정",
+  "workspace.aria.evidenceValidation": "증거 및 검증 상태",
+  "workspace.hero.eyebrow": "시장 인텔리전스 워크스페이스",
+  "workspace.hero.title": "일반적인 요약이 아닌 의사결정용 리서치 자료를 구축하세요.",
+  "workspace.hero.subtitle": "의사결정 과제를 한 번 정의하면 다섯 명의 전문 분석가가 시장을 조사하고, 종합 검토자가 최종 브리프를 검증하고 정리합니다.",
+  "workspace.newRun.eyebrow": "새 리서치 실행",
+  "workspace.newRun.title": "의사결정 범위 설정",
+  "workspace.newRun.teamComposition": "전문 분석가 5명 + 종합 검토자 1명",
+  "workspace.startMode": "{mode} 시작",
+  "workspace.deepResearchPreparing": "심층 리서치 준비 중",
+  "workspace.suggestions.eyebrow": "최근 작업을 바탕으로 추천",
+  "workspace.suggestions.title": "추천 후속 조사",
+  "workspace.suggestion.followUp": "후속 조사",
+  "workspace.suggestion.deepDive": "심층 분석",
+  "workspace.suggestion.related": "관련 주제",
+  "workspace.suggestion.trending": "트렌드",
+  "workspace.controls": "리서치 제어",
+  "workspace.analystsProgress": "분석가 {done}/{total}명",
+  "workspace.rerunMode": "{mode}로 다시 실행",
+  "workspace.runStatus.complete": "완료",
+  "workspace.runStatus.cancelled": "취소됨",
+  "workspace.runStatus.cancelling": "취소 중",
+  "workspace.runStatus.running": "실행 중",
+  "workspace.runStatus.error": "오류",
+  "workspace.runStatus.idle": "대기 중",
+  "workspace.stats.eyebrow": "워크스페이스",
+  "workspace.stats.title": "활동",
+  "workspace.stats.allRuns": "전체 실행",
+  "workspace.stats.thisWeek": "이번 주",
+  "workspace.stats.starred": "즐겨찾기",
+  "workspace.stats.templates": "템플릿",
+  "workspace.team.eyebrow": "분석 모델",
+  "workspace.team.title": "전문 분석가 5명과 종합 검토자 1명",
+  "workspace.team.process": "병렬 조사 → 최종 검토",
+  "workspace.saved.title": "저장된 리서치 자료",
+  "workspace.saved.count": "({count})",
+  "workspace.saved.openAria": "저장된 리서치 자료 열기: {query}",
+  "workspace.saved.delete": "저장된 리서치 자료 삭제",
+  "workspace.saved.deleteAria": "저장된 리서치 자료 삭제: {query}",
+  "workspace.recent.title": "최근 리서치",
+  "workspace.recent.rerun": "다시 실행",
+  "workspace.recent.rerunAria": "리서치 다시 실행: {query}",
+  "workspace.recent.open": "열기",
+  "workspace.recent.openAria": "보고서 열기: {query}",
+  "workspace.recent.remove": "기록에서 삭제",
+  "workspace.recent.removeAria": "기록에서 삭제: {query}",
+  "workspace.keywordsMore": "+{count}",
+  "workspace.citationCount.one": "인용 {count}건",
+  "workspace.citationCount.other": "인용 {count}건",
+  "report.sourceCount.one": "{count}개 출처",
+  "report.sourceCount.other": "{count}개 출처",
+  "report.accessedAt": "접근일: {date}",
   "toc.readingProgress": "읽는 중",
   "toc.title": "목차",
 };

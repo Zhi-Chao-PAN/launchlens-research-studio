@@ -195,7 +195,7 @@ Production journey measurement is documented in
 [`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
 privacy-minimized, server-confirmed Redis funnel milestones.
 
-A `vercel.json` ships with this repo (R230): the `/api/research/[id]/stream` SSE route is configured for `maxDuration=60s` and the `setInterval`-based scheduler is replaced by a Vercel Cron entry that POSTs to `/api/cron/scheduler` every minute.
+A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. A Vercel Cron entry POSTs to `/api/cron/scheduler` every five minutes to recover due work independently of browser connections and fast self-dispatch.
 
 **One-time setup**
 
@@ -205,31 +205,32 @@ A `vercel.json` ships with this repo (R230): the `/api/research/[id]/stream` SSE
    | Variable | Why |
    |----------|-----|
    | `OPENAI_API_KEY` *(or* `ANTHROPIC_API_KEY`*)* | Real LLM provider (otherwise the mock provider runs). At least one of the two is required for non-mock research. |
-   | `LAUNCHLENS_CRON_SECRET` | Required for `POST /api/cron/scheduler`. The endpoint refuses every call when this is unset. Generate one with `openssl rand -hex 32`. |
-   | `TAVILY_API_KEY` *(optional)* | Enables Tavily-backed retrieval / RAG grounding (R215). Without it, retrieval silently falls back to mock. |
+   | `CRON_SECRET` | Required for `POST /api/cron/scheduler` and injected automatically by Vercel Cron. The endpoint refuses every call when this and the legacy `LAUNCHLENS_CRON_SECRET` alias are unset. Generate one with `openssl rand -hex 32`. |
+   | `TAVILY_API_KEY` *(optional for Standard; required for Deep)* | Enables Tavily-backed retrieval. Deep fails closed rather than falling back to mock retrieval. |
+   | `LAUNCHLENS_DEEP_*` | Deep opt-in, authenticated worker wake, and recovery declarations. See [`.env.example`](./.env.example) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md). |
 
    A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
-3. Deploy. Vercel will run `next build` (the project pins `engines.node = "20.x"` in `package.json`), bind the cron, and expose the preview URL.
+3. Deploy. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`), bind the cron, and expose the preview URL.
 
 **Post-deploy verification checklist**
 
 - `curl https://<your-url>/api/health` returns ok.
 - From the studio UI, start a **mock** research run; confirm SSE delivers every `agent-output` and a terminal `complete` event.
-- With a real `OPENAI_API_KEY`, start a live research run. If the platform severs the stream at ~60s (Pro plan) or ~10s (Hobby), the run was over-budget — see *Known serverless constraints* below.
+- With a real provider key, start a live research run and verify the report records real provider provenance rather than mock/degraded fallback. A disconnected observer can reconnect without owning or restarting durable Deep work.
 - Tail Vercel logs while a run is in flight; check whether multiple function instances are involved (each cold start = a new module-level session map).
 
-**Known serverless constraints** *(R198 / R212 / R216 / R217 / R230)*
+**Known serverless constraints**
 
-- **In-memory session map is per-instance.** `src/lib/research/research-engine.ts` keeps `Map<sessionId, ResearchSession>` at module scope. On Vercel, a subsequent request for the same `sessionId` may land on a different lambda, which will see an empty map. The first sign of trouble is a successful `POST /api/research` followed by `GET /api/research/[id]` returning `404` on the new instance.
-- **Disk writes are per-instance.** `LAUNCHLENS_STORAGE_DIR` only persists within one lambda invocation; `/tmp` is wiped between cold starts. So even if a session is fully run, a later `GET` from a different instance won't see it via the disk fallback.
-- **SSE lifetime cap.** `maxDuration=60` on the stream route (Pro plan) means a 6-agent live-LLM run that exceeds 60s gets its stream severed by the platform. The agent work may still complete in-process; the client just stops receiving events.
-- **In-process `setInterval` does not fire.** Already documented in `.env.example`. The `vercel.json` cron entry is the only reliable way to drive scheduled runs on serverless.
+- **The local session map is a fast path, not production authority.** Standard sessions are reconciled through Redis mirrors. Deep lifecycle, leases, revisions, fencing, and due work are authoritative in `DeepRunRecordV1`.
+- **Disk writes remain local-only.** `LAUNCHLENS_STORAGE_DIR` is useful for local development; production History is mirrored into the Redis-backed run store.
+- **Standard is still request-bound.** Its SSE route has a 300-second ceiling. Deep avoids this limit by executing one durable work unit per worker invocation; SSE and polling only observe Redis state.
+- **In-process timers are not recovery.** Authenticated self-dispatch is a fast wake only. Deep additionally requires an independently scheduled recovery trigger with a declared delay of at most 300 seconds.
 
-**Decide whether to wire a real session store**
+**Deep production gate**
 
-The `npm run probe:serverless` script simulates the cross-instance scenario locally: it forks two Node child processes, has one create a session, and asks the other to look it up. The expected output (`undefined`) confirms that any post-deploy surprise on Vercel is structural, not a misconfiguration. If post-deploy verification shows cross-instance lookup failing, the next round (R231) will wire `src/lib/research/research-engine.ts` through `src/lib/storage/storage.ts`'s pluggable `StorageBackend` interface — adding a Redis/Vercel KV backend without touching the rest of the engine.
+`GET /api/research/capabilities` checks seven Deep requirements: explicit opt-in, reachable Redis, real generation/retrieval/reviewer providers, authenticated worker wake, and independent recovery. The UI and `POST /api/research` keep Deep in Preview until all seven pass. The repository declares a five-minute recovery cron; do not enable Deep until that cadence, its distinct cron secret, and every other capability requirement are verified in the deployed environment.
 
-See [`docs/HANDOFF-NEXT-STAGE.md`](./docs/HANDOFF-NEXT-STAGE.md) §2 for the full deployment context, the three possible Vercel outcomes, and what each implies for the next round.
+See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md) for the protocol and deployment contract.
 
 ---
 

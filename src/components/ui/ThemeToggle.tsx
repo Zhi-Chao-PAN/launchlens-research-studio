@@ -1,79 +1,62 @@
-﻿/* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
-﻿"use client";
+"use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useSyncExternalStore } from "react";
+import { useTheme } from "next-themes";
 
 type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = "launchlens:theme";
+const THEME_SEQUENCE: Theme[] = ["system", "dark", "light"];
 
-function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+const THEME_LABELS: Record<Theme, string> = {
+  light: "Light mode",
+  dark: "Dark mode",
+  system: "System theme",
+};
+
+const THEME_ICONS: Record<Theme, string> = {
+  light: "☀️",
+  dark: "🌙",
+  system: "🖥️",
+};
+
+const subscribeToHydration = () => () => undefined;
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function normalizeTheme(theme: string | undefined): Theme {
+  return theme === "light" || theme === "dark" || theme === "system" ? theme : "system";
 }
 
-function applyTheme(theme: Theme): void {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  const resolved = theme === "system" ? getSystemTheme() : theme;
-  root.setAttribute("data-theme", resolved);
+function getNextTheme(theme: Theme): Theme {
+  const currentIndex = THEME_SEQUENCE.indexOf(theme);
+  return THEME_SEQUENCE[(currentIndex + 1) % THEME_SEQUENCE.length];
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("system");
-  const [mounted, setMounted] = useState(false);
-
-  // Hydrate from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-      const initial: Theme = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
-      setTheme(initial);
-      applyTheme(initial);
-    } catch {
-      // ignore
-    }
-    setMounted(true);
-  }, []);
-
-  // Listen for system theme changes when in system mode
-  useEffect(() => {
-    if (theme !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
-
-  const cycle = useCallback(() => {
-    setTheme((prev) => {
-      const next: Theme = prev === "system" ? "dark" : prev === "dark" ? "light" : "system";
-      try {
-        localStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        // ignore
-      }
-      applyTheme(next);
-      return next;
-    });
-  }, []);
+  const { theme, setTheme } = useTheme();
+  const mounted = useSyncExternalStore(
+    subscribeToHydration,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
 
   if (!mounted) {
-    // Render placeholder to avoid layout shift
-    return <div className="w-9 h-9" />;
+    return <div className="h-9 w-9" aria-hidden="true" />;
   }
 
-  const label = theme === "light" ? "Light mode" : theme === "dark" ? "Dark mode" : "System theme";
-  const icon = theme === "light" ? "☀️" : theme === "dark" ? "🌙" : "🖥️";
+  const currentTheme = normalizeTheme(theme);
+  const nextTheme = getNextTheme(currentTheme);
+  const accessibleLabel = `${THEME_LABELS[currentTheme]}; switch to ${THEME_LABELS[nextTheme].toLowerCase()}`;
 
   return (
     <button
-      onClick={cycle}
-      title={label + " (click to cycle)"}
-      aria-label={label}
-      className="w-9 h-9 rounded-lg flex items-center justify-center bg-slate-100 hover:bg-slate-200 transition-colors text-base"
+      type="button"
+      onClick={() => setTheme(nextTheme)}
+      title={accessibleLabel}
+      aria-label={accessibleLabel}
+      className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-base transition-colors hover:bg-slate-200"
     >
-      <span aria-hidden>{icon}</span>
+      <span aria-hidden="true">{THEME_ICONS[currentTheme]}</span>
     </button>
   );
 }

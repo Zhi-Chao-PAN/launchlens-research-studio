@@ -10,6 +10,8 @@ interface QueryInputProps {
   onSubmit: (query: string, keywords: string[]) => void;
   onCancel?: () => void;
   isLoading: boolean;
+  /** True while the cancellation request is awaiting a validated response. */
+  isCancelling?: boolean;
   defaultQuery?: string;
   defaultKeywords?: string[];
   /** If set, the submit button is disabled until this wall-clock time (ms).
@@ -19,6 +21,12 @@ interface QueryInputProps {
   /** Monotonically increasing counter bumped by the parent the moment a
    *  rate-limit cooldown expires — triggers focus + aria-live announcement. */
   retryReadyPulse?: number;
+  /** Additional product-level gate, for example a research mode that is
+   * visible as a preview but is not executable yet. */
+  submitDisabled?: boolean;
+  submitDisabledReason?: string;
+  submitLabel?: string;
+  variant?: "panel" | "embedded";
 }
 
 const EXAMPLE_QUERIES = [
@@ -41,10 +49,15 @@ export function QueryInput({
   onSubmit,
   onCancel,
   isLoading,
+  isCancelling = false,
   defaultQuery = "",
   defaultKeywords = [],
   disabledUntilMs = null,
   retryReadyPulse = 0,
+  submitDisabled = false,
+  submitDisabledReason,
+  submitLabel,
+  variant = "panel",
 }: QueryInputProps) {
   const { t } = useLocale();
   const [query, setQuery] = useState(defaultQuery);
@@ -56,7 +69,19 @@ export function QueryInput({
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const queryInputRef = useRef<HTMLTextAreaElement>(null);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const externalSeedRef = useRef(JSON.stringify([defaultQuery, defaultKeywords]));
   const { history: rawHistory, hydrated } = useResearchHistory();
+
+  // URL/template/cache prefill can arrive after hydration. Synchronise only
+  // when the external seed actually changes so normal typing is never reset
+  // by an unrelated parent render.
+  useEffect(() => {
+    const nextSeed = JSON.stringify([defaultQuery, defaultKeywords]);
+    if (externalSeedRef.current === nextSeed) return;
+    externalSeedRef.current = nextSeed;
+    setQuery(defaultQuery);
+    setKeywordInput(defaultKeywords.join(", "));
+  }, [defaultQuery, defaultKeywords]);
 
   // Convert history to the format autocomplete expects (numeric timestamps)
   const autocompleteHistory = useMemo(
@@ -99,11 +124,11 @@ export function QueryInput({
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {
       if (e) e.preventDefault();
-      if (!isValid || isLoading) return;
+      if (!isValid || isLoading || submitDisabled) return;
       setAutocompleteOpen(false);
       onSubmit(trimmed, keywordList);
     },
-    [isValid, isLoading, onSubmit, trimmed, keywordList]
+    [isValid, isLoading, onSubmit, submitDisabled, trimmed, keywordList]
   );
 
   const handleExampleClick = (example: { query: string; keywords: string[] }) => {
@@ -218,10 +243,15 @@ export function QueryInput({
   }, [retryReadyPulse, t]);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-      <div className="flex items-center gap-2 mb-4">
-        <img src="/logo.svg" alt="" width={28} height={28} className="w-7 h-7" />
-        <h2 className="text-xl font-bold text-slate-800">{t("queryInput.title")}</h2>
+    <div className={variant === "panel"
+      ? "bg-white rounded-xl border border-slate-200 p-5 sm:p-6"
+      : "bg-transparent"
+    }>
+      <div className="mb-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          {t("queryInput.briefEyebrow")}
+        </p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-900">{t("queryInput.title")}</h2>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" data-research-form>
@@ -236,7 +266,7 @@ export function QueryInput({
                 ? "text-rose-600"
                 : trimmed.length >= QUERY_LIMITS.MAX * 0.9
                 ? "text-amber-600"
-                : "text-slate-400"
+                : "text-slate-600"
             }`}>
               {trimmed.length}/{QUERY_LIMITS.MAX}
             </span>
@@ -253,21 +283,16 @@ export function QueryInput({
             onFocus={() => setAutocompleteOpen(true)}
             onKeyDown={handleKeyDown}
             placeholder={t("queryInput.queryPlaceholder")}
-            className={`w-full px-4 py-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent resize-none transition-colors ${
+            className={`w-full px-3.5 py-3 border rounded-lg bg-white text-sm leading-6 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-0 resize-none transition-colors ${
               queryError
                 ? "border-rose-300 focus:ring-rose-500"
-                : "border-slate-300 focus:ring-indigo-500"
+                : "border-slate-300 focus:ring-teal-600"
             }`}
             rows={3}
             disabled={isLoading}
             maxLength={QUERY_LIMITS.MAX + 50}
             aria-invalid={!!queryError}
             aria-describedby={queryError ? "query-error" : undefined}
-            aria-expanded={autocompleteOpen}
-            aria-controls="autocomplete-listbox"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-activedescendant={autocompleteOpen ? `autocomplete-item-${highlightedIndex}` : undefined}
           />
           {queryError && (
             <p id="query-error" className="text-xs text-rose-600 mt-1">
@@ -291,9 +316,9 @@ export function QueryInput({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label htmlFor="keyword-input" className="block text-sm font-medium text-slate-700">
-              {t("queryInput.keywordsLabel")} <span className="text-slate-400 font-normal">{t("queryInput.keywordsHint")}</span>
+              {t("queryInput.keywordsLabel")} <span className="font-normal text-slate-600">{t("queryInput.keywordsHint")}</span>
             </label>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="font-mono text-[10px] text-slate-600">
               {keywordList.length}/{QUERY_LIMITS.MAX_KEYWORDS}
             </span>
           </div>
@@ -303,10 +328,10 @@ export function QueryInput({
             value={keywordInput}
             onChange={(e) => setKeywordInput(e.target.value)}
             placeholder={t("queryInput.keywordsPlaceholder")}
-            className={`w-full px-4 py-2.5 border rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent ${
+            className={`w-full px-3.5 py-2.5 border rounded-lg bg-white text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-0 ${
               keywordError
                 ? "border-rose-300 focus:ring-rose-500"
-                : "border-slate-300 focus:ring-indigo-500"
+                : "border-slate-300 focus:ring-teal-600"
             }`}
             disabled={isLoading}
             aria-invalid={!!keywordError}
@@ -315,7 +340,7 @@ export function QueryInput({
           {keywordList.length > 0 && !keywordError && (
             <div className="flex items-center gap-1 flex-wrap mt-2">
               {keywordList.slice(0, 8).map((k, i) => (
-                <span key={i} className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full font-medium">
+                <span key={i} className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-medium">
                   {k}
                 </span>
               ))}
@@ -330,25 +355,27 @@ export function QueryInput({
           <button
             ref={submitButtonRef}
             type="submit"
-            disabled={isLoading || !isValid || cooldownSecs > 0}
+            disabled={isLoading || !isValid || cooldownSecs > 0 || submitDisabled}
             aria-busy={isLoading}
-            aria-disabled={isLoading || !isValid || cooldownSecs > 0}
-            className="flex-1 py-3 px-6 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-700 hover:to-violet-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+            aria-disabled={isLoading || !isValid || cooldownSecs > 0 || submitDisabled}
+            aria-describedby={submitDisabledReason ? "research-submit-disabled-reason" : undefined}
+            className="flex-1 min-h-11 py-2.5 px-5 bg-slate-950 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>{t("queryInput.startingResearch")}</span>
+                <span>{isCancelling ? t("queryInput.cancellingButton") : t("queryInput.startingResearch")}</span>
               </>
             ) : cooldownSecs > 0 ? (
               <>
-                <span aria-hidden>⏳</span>
                 <span>{t("queryInput.cooldownWait", { n: cooldownSecs })}</span>
               </>
+            ) : submitDisabled ? (
+              <span>{submitLabel ?? t("queryInput.modeUnavailable")}</span>
             ) : (
               <>
-                <span aria-hidden>🔬</span>
-                <span>{t("queryInput.startButton")}</span>
+                <span>{submitLabel ?? t("queryInput.startButton")}</span>
+                <span aria-hidden className="text-white/60">→</span>
               </>
             )}
           </button>
@@ -356,16 +383,23 @@ export function QueryInput({
             <button
               type="button"
               onClick={onCancel}
-              className="py-3 px-5 bg-white border border-slate-300 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-all"
-              aria-label={t("queryInput.cancelAriaLabel")}
+              disabled={isCancelling}
+              className="py-2.5 px-5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors disabled:cursor-wait disabled:opacity-60"
+              aria-label={isCancelling ? t("queryInput.cancellingAriaLabel") : t("queryInput.cancelAriaLabel")}
+              aria-busy={isCancelling}
             >
-              {t("queryInput.cancelButton")}
+              {isCancelling ? t("queryInput.cancellingButton") : t("queryInput.cancelButton")}
             </button>
           )}
         </div>
 
         {announcement && (
           <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
+        )}
+        {submitDisabledReason && (
+          <p id="research-submit-disabled-reason" role="status" className="text-xs leading-5 text-amber-700">
+            {submitDisabledReason}
+          </p>
         )}
       </form>
 
@@ -384,11 +418,11 @@ export function QueryInput({
                 key={i}
                 onClick={() => handleExampleClick(ex)}
                 disabled={isLoading}
-                className="text-left text-xs px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg transition-colors disabled:opacity-50"
+                className="text-left text-xs px-3 py-2.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-md transition-colors disabled:opacity-50"
               >
                 <span className="font-medium">{ex.query}</span>
                 {ex.keywords.length > 0 && (
-                  <span className="block text-[10px] text-slate-400 mt-0.5">
+                  <span className="mt-0.5 block text-[10px] text-slate-600">
                     {ex.keywords.join(" · ")}
                   </span>
                 )}

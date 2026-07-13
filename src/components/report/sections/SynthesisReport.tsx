@@ -3,19 +3,19 @@
 
 import { useState } from "react";
 import type { SynthesisOutput } from "@/lib/schema/research-schema";
-import { SectionHeader } from "../primitives/SectionHeader";
+import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { Donut } from "../primitives/Meter";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
-function opportunityMeta(score: number, t: (k: string) => string): { label: string; emoji: string; color: string } {
-  if (score >= 75) return { label: t("report.synthesis.opportunityLabel.strong"), emoji: "🚀", color: "text-emerald-700" };
-  if (score >= 55) return { label: t("report.synthesis.opportunityLabel.promising"), emoji: "📈", color: "text-emerald-600" };
-  if (score >= 40) return { label: t("report.synthesis.opportunityLabel.moderate"), emoji: "⚖️", color: "text-amber-600" };
-  if (score >= 25) return { label: t("report.synthesis.opportunityLabel.challenging"), emoji: "⚠️", color: "text-orange-600" };
-  return { label: t("report.synthesis.opportunityLabel.highRisk"), emoji: "🛑", color: "text-rose-600" };
+function opportunityMeta(score: number, t: (key: string) => string): { label: string; color: string } {
+  if (score >= 75) return { label: t("report.synthesis.opportunityLabel.strong"), color: "text-emerald-800" };
+  if (score >= 55) return { label: t("report.synthesis.opportunityLabel.promising"), color: "text-emerald-800" };
+  if (score >= 40) return { label: t("report.synthesis.opportunityLabel.moderate"), color: "text-amber-900" };
+  if (score >= 25) return { label: t("report.synthesis.opportunityLabel.challenging"), color: "text-orange-800" };
+  return { label: t("report.synthesis.opportunityLabel.highRisk"), color: "text-rose-800" };
 }
 
 export function SynthesisReport({ output }: { output: any }) {
@@ -24,176 +24,144 @@ export function SynthesisReport({ output }: { output: any }) {
   const { t } = useLocale();
   const [briefExpanded, setBriefExpanded] = useState(false);
 
-  const opp = data.opportunityScore;
-  const risk = data.riskScore;
-  const oppMeta = opportunityMeta(opp, t);
-
-  // Color the opportunity score based on value
-  const oppColor = opp >= 70 ? "#10b981" : opp >= 50 ? "#f59e0b" : "#ef4444";
-  const riskColor = risk >= 70 ? "#ef4444" : risk >= 50 ? "#f59e0b" : "#10b981";
+  const opportunityScore = data.opportunityScore;
+  const riskScore = data.riskScore;
+  const meta = opportunityMeta(opportunityScore, t);
+  const opportunityColor = opportunityScore >= 70 ? "#047857" : opportunityScore >= 50 ? "#b45309" : "#be123c";
+  const riskColor = riskScore >= 70 ? "#be123c" : riskScore >= 50 ? "#b45309" : "#047857";
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title={t("report.synthesis.title")}
         description={data.execSummary}
-        icon="🧠"
-        accent="violet"
         onCopy={() => copy(generateAgentMarkdown("synthesis", data), "synthesis")}
         copied={copied === "synthesis"}
         copyLabel={t("report.synthesis.copySection")}
       />
 
-      {/* Scores with rich context */}
-      <div className="bg-gradient-to-br from-violet-50 via-indigo-50 to-purple-50 rounded-2xl p-6 border border-violet-100">
-        <div className="flex items-center justify-around">
-          <Donut value={opp} label={t("report.synthesis.opportunity")} color={oppColor} size={110} />
-          <div className="text-center">
-            <p className="text-3xl font-bold text-slate-800">{opp - risk > 0 ? "+" : ""}{opp - risk}</p>
-            <p className="text-xs text-slate-500 mt-1">{t("report.synthesis.netScore")}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">{t("report.synthesis.netScoreFormula")}</p>
+      <section className="border-y border-slate-200 py-5" aria-label={t("report.synthesis.opportunity")}>
+        <div className="grid grid-cols-2 items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
+          <Donut value={opportunityScore} label={t("report.synthesis.opportunity")} color={opportunityColor} size={104} />
+          <div className="order-3 col-span-2 border-t border-slate-200 pt-4 text-center sm:order-none sm:col-span-1 sm:border-x sm:border-t-0 sm:px-6 sm:pt-0">
+            <p className="font-mono text-3xl font-semibold tabular-nums text-slate-950">
+              {opportunityScore - riskScore > 0 ? "+" : ""}{opportunityScore - riskScore}
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-600">{t("report.synthesis.netScore")}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">{t("report.synthesis.netScoreFormula")}</p>
           </div>
-          <Donut value={risk} label={t("report.synthesis.risk")} color={riskColor} size={110} />
+          <Donut value={riskScore} label={t("report.synthesis.risk")} color={riskColor} size={104} />
         </div>
-        <div className="mt-4 text-center">
-          <p className={`text-sm font-semibold ${oppMeta.color} flex items-center justify-center gap-1.5`}>
-            <span aria-hidden>{oppMeta.emoji}</span>
-            <span>{oppMeta.label}</span>
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
+        <div className="mt-4 border-t border-slate-200 pt-3 text-center">
+          <p className={`text-sm font-semibold ${meta.color}`}>{meta.label}</p>
+          <p className="mt-1 text-xs text-slate-500">
             {t("report.synthesis.basedOnInsights", { count: data.keyInsights.length })}
           </p>
         </div>
-      </div>
+      </section>
 
-      {/* Top opportunities */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-emerald-500">📈</span> {t("report.synthesis.topOpportunities")}
-        </h3>
-        <div className="space-y-2">
-          {data.topThreeOpportunities.map((opp, i) => (
-            <div key={i} className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-100">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-sm">
-                  {i + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-emerald-900">{opp.title}</h4>
-                  <p className="text-sm text-emerald-800 mt-1">{opp.description}</p>
-                  <div className="mt-2 p-2 bg-white/60 rounded-lg">
-                    <p className="text-xs text-emerald-700">
-                      <span className="font-semibold">{t("report.synthesis.whyWorks")}</span> {opp.rationale}
-                    </p>
-                  </div>
-                </div>
+      <section>
+        <ReportSubheading title={t("report.synthesis.topOpportunities")} count={data.topThreeOpportunities.length} />
+        <ol className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.topThreeOpportunities.map((opportunity, index) => (
+            <li key={index} className="grid gap-3 py-4 sm:grid-cols-[2rem_1fr]">
+              <span className="font-mono text-sm font-semibold tabular-nums text-emerald-800" aria-hidden>
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="min-w-0">
+                <h4 className="font-semibold text-slate-950">{opportunity.title}</h4>
+                <p className="mt-1 text-sm leading-6 text-slate-700">{opportunity.description}</p>
+                <p className="mt-2 border-l border-emerald-500 pl-3 text-xs leading-5 text-slate-600">
+                  <span className="font-semibold text-slate-800">{t("report.synthesis.whyWorks")}</span> {opportunity.rationale}
+                </p>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
-      </div>
+        </ol>
+      </section>
 
-      {/* Top risks */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-rose-500">⚠️</span> {t("report.synthesis.topRisks")}
-        </h3>
-        <div className="space-y-2">
-          {data.topThreeRisks.map((r, i) => (
-            <div key={i} className="p-4 bg-gradient-to-r from-rose-50 to-pink-50 rounded-xl border border-rose-100">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-pink-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-sm">
-                  {i + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-rose-900">{r.title}</h4>
-                  <p className="text-sm text-rose-800 mt-1">{r.description}</p>
-                  <div className="mt-2 p-2 bg-white/60 rounded-lg">
-                    <p className="text-xs text-emerald-700">
-                      <span className="font-semibold">{t("report.synthesis.mitigation")}</span> {r.mitigation}
-                    </p>
-                  </div>
-                </div>
+      <section>
+        <ReportSubheading title={t("report.synthesis.topRisks")} count={data.topThreeRisks.length} />
+        <ol className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.topThreeRisks.map((risk, index) => (
+            <li key={index} className="grid gap-3 py-4 sm:grid-cols-[2rem_1fr]">
+              <span className="font-mono text-sm font-semibold tabular-nums text-rose-800" aria-hidden>
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <div className="min-w-0">
+                <h4 className="font-semibold text-slate-950">{risk.title}</h4>
+                <p className="mt-1 text-sm leading-6 text-slate-700">{risk.description}</p>
+                <p className="mt-2 border-l border-slate-400 pl-3 text-xs leading-5 text-slate-600">
+                  <span className="font-semibold text-slate-800">{t("report.synthesis.mitigation")}</span> {risk.mitigation}
+                </p>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
-      </div>
+        </ol>
+      </section>
 
-      {/* Key insights with cross-agent validation */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <span className="text-indigo-500">🔬</span> {t("report.synthesis.crossValidated")}
-          <span className="text-xs text-slate-400 font-normal">({data.keyInsights.length})</span>
-        </h3>
-        <div className="space-y-2">
-          {data.keyInsights.map((ins, i) => (
-            <div key={i} className="p-3 bg-white border border-slate-200 rounded-lg">
-              <div className="flex items-start gap-2 mb-1.5">
-                <p className="text-sm text-slate-800 flex-1">{ins.insight}</p>
-                <ConfidenceBadge level={ins.confidence} size="xs" />
+      <section>
+        <ReportSubheading title={t("report.synthesis.crossValidated")} count={data.keyInsights.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.keyInsights.map((insight, index) => (
+            <article key={index} className="py-3">
+              <div className="mb-2 flex items-start gap-3">
+                <p className="flex-1 text-sm leading-6 text-slate-800">{insight.insight}</p>
+                <ConfidenceBadge level={insight.confidence} size="xs" />
               </div>
-              <div className="flex items-center gap-1 flex-wrap">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] text-slate-500">{t("report.synthesis.supportedBy")}</span>
-                {ins.supportingAgents.map((a) => (
-                  <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">
-                    {a}
+                {insight.supportingAgents.map((agent) => (
+                  <span key={agent} className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
+                    {agent}
                   </span>
                 ))}
               </div>
-            </div>
+            </article>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Recommended next step */}
-      <div className="bg-gradient-to-r from-indigo-500 to-violet-600 rounded-2xl p-6 text-white">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-2xl" aria-hidden>🎯</span>
-          <h3 className="text-lg font-bold">{t("report.synthesis.nextStep")}</h3>
-        </div>
-        <p className="text-sm text-indigo-100 leading-relaxed">{data.recommendedNextStep}</p>
-      </div>
+      <section className="border border-slate-900 bg-slate-950 px-5 py-5 text-white">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-300">
+          {t("report.synthesis.nextStep")}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-slate-100">{data.recommendedNextStep}</p>
+      </section>
 
-      {/* LaunchLens brief - expandable */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
         <button
-          onClick={() => setBriefExpanded((v) => !v)}
-          className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
+          type="button"
+          onClick={() => setBriefExpanded((value) => !value)}
+          className="flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-500"
+          aria-expanded={briefExpanded}
         >
-          <div>
-            <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-              <span aria-hidden>📋</span>
-              {t("report.synthesis.importBrief")}
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {t("report.synthesis.importBriefSubtitle")}
-            </p>
-          </div>
-          <span className={`text-slate-400 transition-transform ${briefExpanded ? "rotate-180" : ""}`} aria-hidden>
-            ▾
+          <span>
+            <span className="block font-semibold text-slate-900">{t("report.synthesis.importBrief")}</span>
+            <span className="mt-0.5 block text-xs text-slate-500">{t("report.synthesis.importBriefSubtitle")}</span>
           </span>
+          <span className="font-mono text-lg font-normal text-slate-500" aria-hidden>{briefExpanded ? "−" : "+"}</span>
         </button>
         {briefExpanded && (
           <div className="border-t border-slate-200">
-            <pre className="px-5 py-4 text-xs text-slate-700 whitespace-pre-wrap font-mono bg-slate-50 max-h-96 overflow-y-auto">
+            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap bg-slate-50 px-4 py-4 font-mono text-xs leading-5 text-slate-700">
               {data.launchlensBrief}
             </pre>
-            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-              <p className="text-xs text-slate-500">
+            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3">
+              <p className="font-mono text-xs tabular-nums text-slate-500">
                 {data.launchlensBrief.length.toLocaleString()} {t("report.synthesis.charactersSuffix")}
               </p>
               <button
+                type="button"
                 onClick={() => copy(data.launchlensBrief, "brief-content")}
-                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5"
+                className="min-h-9 border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
               >
-                <span aria-hidden>{copied === "brief-content" ? "✅" : "📋"}</span>
-                <span>{copied === "brief-content" ? t("report.synthesis.copiedBrief") : t("report.synthesis.copyBrief")}</span>
+                {copied === "brief-content" ? t("report.synthesis.copiedBrief") : t("report.synthesis.copyBrief")}
               </button>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
       <CitationList citations={data.citations} />
     </div>

@@ -9,10 +9,20 @@ import { checkCors, handleOptions } from "@/lib/api/cors";
 import { createServerI18n } from "@/lib/i18n/server";
 import {
   createResearchSession,
+  deleteSession,
 } from "@/lib/research/research-engine";
 import { storeSession } from "@/lib/research/session-store";
 import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 import { stage2ContextFromRequest } from "@/lib/analytics/stage2-context";
+import { getResearchModeConfig } from "@/lib/research/research-modes";
+import { probeDeepResearchCapability } from "@/lib/research/deep-research/capability";
+import { startDeepResearchSession } from "@/lib/research/deep-research/runtime";
+import {
+  releaseDeepResearchAdmission,
+  reserveDeepResearchAdmission,
+  type DeepAdmissionDecision,
+  type DeepAdmissionRejectionReason,
+} from "@/lib/research/deep-research/admission";
 import {
   validateResearchRequest,
   jsonValidationError,
@@ -113,14 +123,66 @@ export async function POST(request: NextRequest) {
     return jsonValidationError(validation);
   }
 
-  const { query, keywords } = validation.value;
+  const { query, keywords, mode } = validation.value;
+  const modeCapabilities =
+    mode === "deep"
+      ? await probeDeepResearchCapability()
+      : getResearchModeConfig(mode);
+
+  // Deep Research needs a durable async job runner because its target
+  // protocol exceeds the request-bound 300 second SSE window. Recognize the
+  // mode at the API boundary, but do not create a session that the current
+  // synchronous engine would silently execute as Standard research.
+  if (modeCapabilities.availability !== "available") {
+    logRequest(409, false);
+    return jsonError(
+      modeCapabilities.capabilityNotice,
+      409,
+      {
+        code: "RESEARCH_MODE_UNAVAILABLE",
+        field: "mode",
+        mode,
+        modeCapabilities,
+      },
+    );
+  }
+
   const stage2 = stage2ContextFromRequest(request);
   const session = createResearchSession(
     query,
     keywords,
     undefined,
-    stage2 ? { stage2 } : undefined,
+    { mode, ...(stage2 ? { stage2 } : {}) },
   );
+
+  let responseSession = session;
+  if (mode === "deep") {
+    const admission = await reserveDeepResearchAdmission(ip, session.id);
+    if (!admission.allowed) {
+      deleteSession(session.id);
+      const status = admission.reason === "storage_unavailable" ? 503 : 429;
+      logRequest(status, false);
+      return deepAdmissionError(admission);
+    }
+
+    try {
+      const started = await startDeepResearchSession(session);
+      responseSession = started.record.session;
+    } catch (error) {
+      await releaseDeepResearchAdmission(session.id);
+      deleteSession(session.id);
+      logRequest(503, false);
+      return jsonError(
+        "Deep Research could not establish its durable execution record.",
+        503,
+        {
+          code: "DEEP_RESEARCH_START_FAILED",
+          retryable: true,
+          detail: error instanceof Error ? error.name : "unknown_failure",
+        },
+      );
+    }
+  }
 
   // R231: execution-model change. Previously this route kicked off
   // runResearchSession in the background (fire-and-forget) so the client
@@ -143,7 +205,7 @@ export async function POST(request: NextRequest) {
   // not-found. Awaiting here guarantees the session is durably in Redis before
   // the client ever connects. storeSession is a no-op (returns immediately)
   // when Redis is not configured, so local dev / tests are unaffected.
-  await storeSession(session);
+  if (mode !== "deep") await storeSession(session);
   if (session.stage2Tracking) {
     await recordResearchFunnelEvent("research_started", session.id, {
       stage2: session.stage2Tracking,
@@ -155,12 +217,14 @@ export async function POST(request: NextRequest) {
   logRequest(201, true);
   const response = NextResponse.json(
     {
-      sessionId: session.id,
-      query: session.query,
-      keywords: session.keywords,
-      status: session.status,
+      sessionId: responseSession.id,
+      query: responseSession.query,
+      keywords: responseSession.keywords,
+      mode: responseSession.mode,
+      modeCapabilities,
+      status: responseSession.status,
       agents: Object.fromEntries(
-        Object.entries(session.agents).map(([id, state]) => [
+        Object.entries(responseSession.agents).map(([id, state]) => [
           id,
           {
             status: state.status,
@@ -186,4 +250,53 @@ export async function GET() {
       headers: { Allow: "POST" },
     },
   );
+}
+
+function deepAdmissionError(
+  decision: Extract<DeepAdmissionDecision, { allowed: false }>,
+): NextResponse {
+  const status = decision.reason === "storage_unavailable" ? 503 : 429;
+  const retrySeconds = Math.max(1, Math.ceil(decision.retryAfterMs / 1_000));
+  const response = jsonError(
+    deepAdmissionMessage(decision.reason),
+    status,
+    {
+      code: deepAdmissionCode(decision.reason),
+      mode: "deep",
+      retryable: true,
+      retryAfterMs: decision.retryAfterMs,
+    },
+  );
+  response.headers.set("Retry-After", String(retrySeconds));
+  return response;
+}
+
+function deepAdmissionCode(reason: DeepAdmissionRejectionReason): string {
+  switch (reason) {
+    case "client_daily_limit":
+      return "DEEP_CLIENT_DAILY_LIMIT";
+    case "global_daily_limit":
+      return "DEEP_GLOBAL_DAILY_LIMIT";
+    case "client_active_limit":
+      return "DEEP_CLIENT_ACTIVE_LIMIT";
+    case "global_active_limit":
+      return "DEEP_GLOBAL_ACTIVE_LIMIT";
+    case "storage_unavailable":
+      return "DEEP_ADMISSION_UNAVAILABLE";
+  }
+}
+
+function deepAdmissionMessage(reason: DeepAdmissionRejectionReason): string {
+  switch (reason) {
+    case "client_daily_limit":
+      return "This client has reached today's Deep Research start budget. Retry after the UTC budget reset.";
+    case "global_daily_limit":
+      return "The service has reached today's Deep Research start budget. Retry after the UTC budget reset.";
+    case "client_active_limit":
+      return "This client already has the maximum number of active Deep Research runs. Retry when the current reservation finishes or expires.";
+    case "global_active_limit":
+      return "The service is currently at its Deep Research concurrency limit. Retry when an active reservation finishes or expires.";
+    case "storage_unavailable":
+      return "Deep Research admission control is temporarily unavailable. No costly work was started; retry shortly.";
+  }
 }

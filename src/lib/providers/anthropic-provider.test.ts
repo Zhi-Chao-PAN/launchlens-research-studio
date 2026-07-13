@@ -1,6 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from "vitest";
 import { createAnthropicProvider } from "./anthropic-provider";
+import type { RetrievedSource } from "./retrieval.types";
+
+const retrievedSource: RetrievedSource = {
+  id: "source-anthropic-1",
+  title: "Anthropic provider evidence",
+  url: "https://evidence.example/anthropic",
+  snippet: "Grounded pricing evidence passed through ProviderContext.",
+  accessedAt: "2026-07-13T00:00:00.000Z",
+  retrievedAt: "2026-07-13T00:00:00.000Z",
+  confidence: "high",
+  agent: "pricing-scout",
+};
 
 // A channel-scout payload that actually passes validateAgentOutput: it
 // carries the required fields plus at least one citation with a non-empty
@@ -136,6 +148,28 @@ describe("createAnthropicProvider", () => {
     expect(userContent).toContain("devtools");
   });
 
+  it("passes ProviderContext retrieved sources into the untrusted user-prompt boundary", async () => {
+    let userContent = "";
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      const body = JSON.parse(init.body);
+      userContent = body.messages.find((message: any) => message.role === "user").content;
+      return { ok: false, status: 401 } as any;
+    });
+    const provider = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+
+    await provider.generate("pricing-scout", {
+      query: "AI code reviewer",
+      keywords: [],
+      retrievedSources: [retrievedSource],
+    });
+
+    expect(userContent).toMatch(/retrieved and allowlisted external sources/i);
+    expect(userContent).toMatch(/untrusted data/i);
+    expect(userContent).toContain('"id":"source-anthropic-1"');
+    expect(userContent).toContain('"url":"https://evidence.example/anthropic"');
+    expect(userContent).toContain('"snippet":"Grounded pricing evidence passed through ProviderContext."');
+  });
+
   it("injects synthesis agent coaching when generating synthesis", async () => {
     let systemContent = "";
     const fetchImpl = vi.fn(async (_u: string, i: any) => {
@@ -147,6 +181,24 @@ describe("createAnthropicProvider", () => {
     expect(systemContent).toContain("synthesis");
     expect(systemContent).toContain("opportunityScore");
     expect(systemContent).toContain("launchlensBrief");
+  });
+
+  it("passes the structural validation summary into the synthesis prompt", async () => {
+    let userContent = "";
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      userContent = JSON.parse(init.body).messages.find((message: any) => message.role === "user").content;
+      return { ok: false, status: 401 } as any;
+    });
+    const provider = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+
+    await provider.generate("synthesis", {
+      query: "q",
+      keywords: [],
+      validationSummary: "One structural pass; semantic validation NOT RUN.",
+    });
+
+    expect(userContent).toContain("One structural pass; semantic validation NOT RUN.");
+    expect(userContent).toMatch(/not factual verification/i);
   });
 
   it("reports onFallback(http_error) when the provider returns 4xx", async () => {

@@ -7,7 +7,7 @@ import type { RetrievalProvider, RetrievalQuery, RetrievedSource } from "./retri
 
 export const mockRetrievalProvider: RetrievalProvider = {
   id: "mock-retrieval",
-  displayName: "Mock Retrieval",
+  displayName: "Retrieval not configured",
   isMock: true,
   async search(_opts: RetrievalQuery): Promise<RetrievedSource[]> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

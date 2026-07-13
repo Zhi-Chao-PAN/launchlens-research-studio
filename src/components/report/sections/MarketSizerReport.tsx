@@ -2,7 +2,7 @@
 "use client";
 
 import type { MarketSizerOutput } from "@/lib/schema/research-schema";
-import { SectionHeader } from "../primitives/SectionHeader";
+import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
@@ -20,11 +20,16 @@ function formatCurrency(value: number, currency: string = "USD"): string {
   return `${sym}${value.toFixed(0)}`;
 }
 
-const TREND_ICON = { positive: "📈", negative: "📉", neutral: "➡️" } as const;
-const TREND_COLOR = {
-  positive: "bg-emerald-50 border-emerald-100",
-  negative: "bg-rose-50 border-rose-100",
-  neutral: "bg-slate-50 border-slate-100",
+const TREND_STYLE = {
+  positive: "text-emerald-800 border-emerald-600",
+  negative: "text-rose-800 border-rose-600",
+  neutral: "text-slate-700 border-slate-400",
+} as const;
+
+const SIZE_BAR_COLOR = {
+  primary: "bg-slate-900",
+  secondary: "bg-slate-600",
+  positive: "bg-emerald-700",
 } as const;
 
 export function MarketSizerReport({ output }: { output: any }) {
@@ -59,9 +64,7 @@ export function MarketSizerReport({ output }: { output: any }) {
       <SectionHeader
         title={t("report.marketSizer.title")}
         description={data.summary}
-        icon="📊"
         count={data.targetSegments.length}
-        accent="indigo"
         onCopy={() => copy(generateAgentMarkdown("market-sizer", data), "market-sizer")}
         copied={copied === "market-sizer"}
         copyLabel={t("report.marketSizer.copySection")}
@@ -69,26 +72,24 @@ export function MarketSizerReport({ output }: { output: any }) {
 
       {/* Market size cards with proportional bars */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.marketSizer.marketSizeEstimate")}</h3>
-        <div className="space-y-3">
-          <SizeBar label="TAM" sublabel={tamLabel} displayValue={formatCurrency(tam, data.marketSize.currency)} percentage={100} color="from-indigo-600 to-violet-600" t={t} />
-          <SizeBar label="SAM" sublabel={samLabel} displayValue={formatCurrency(sam, data.marketSize.currency)} percentage={samPct} color="from-indigo-400 to-violet-500" t={t} />
-          <SizeBar label="SOM" sublabel={somLabel} displayValue={formatCurrency(som, data.marketSize.currency)} percentage={somPct} color="from-emerald-400 to-teal-500" t={t} />
+        <ReportSubheading title={t("report.marketSizer.marketSizeEstimate")} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          <SizeBar label="TAM" sublabel={tamLabel} displayValue={formatCurrency(tam, data.marketSize.currency)} percentage={100} color="primary" t={t} />
+          <SizeBar label="SAM" sublabel={samLabel} displayValue={formatCurrency(sam, data.marketSize.currency)} percentage={samPct} color="secondary" t={t} />
+          <SizeBar label="SOM" sublabel={somLabel} displayValue={formatCurrency(som, data.marketSize.currency)} percentage={somPct} color="positive" t={t} />
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="text-xs px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 flex items-center gap-1">
-            <span>📊</span>
-            <span className="font-semibold">{t("report.marketSizer.growthRateValue", { value: data.marketSize.growthRate })}</span>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <span className="inline-flex items-center border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-800">
+            {t("report.marketSizer.growthRateValue", { value: data.marketSize.growthRate })}
           </span>
-          <span className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${
+          <span className={`inline-flex items-center border px-2.5 py-1 font-medium ${
             data.marketSize.growthTrend === "accelerating"
-              ? "bg-emerald-100 text-emerald-700"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
               : data.marketSize.growthTrend === "declining"
-              ? "bg-rose-100 text-rose-700"
-              : "bg-slate-100 text-slate-700"
+              ? "border-rose-300 bg-rose-50 text-rose-800"
+              : "border-slate-200 bg-slate-50 text-slate-700"
           }`}>
-            <span aria-hidden>{data.marketSize.growthTrend === "accelerating" ? "🚀" : data.marketSize.growthTrend === "declining" ? "🔻" : "➡️"}</span>
             <span>{trendLabel}</span>
           </span>
           <ConfidenceBadge level={data.marketSize.confidence} withLabel />
@@ -97,20 +98,16 @@ export function MarketSizerReport({ output }: { output: any }) {
 
       {/* Trends */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          {t("report.marketSizer.keyTrends")} <span className="text-xs text-slate-400 font-normal">({data.keyTrends.length})</span>
-        </h3>
-        <div className="space-y-2">
+        <ReportSubheading title={t("report.marketSizer.keyTrends")} count={data.keyTrends.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
           {data.keyTrends.map((trend: { trend: string; impact: "positive" | "negative" | "neutral"; evidence: string }, i: number) => (
-            <div key={i} className={`p-3 rounded-lg border ${TREND_COLOR[trend.impact as keyof typeof TREND_COLOR] || TREND_COLOR.neutral}`}>
-              <div className="flex items-start gap-3">
-                <span className="text-lg flex-shrink-0" aria-hidden>
-                  {TREND_ICON[trend.impact as keyof typeof TREND_ICON] || "➡️"}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800">{trend.trend}</p>
-                  <p className="text-xs text-slate-600 mt-1">{trend.evidence}</p>
-                </div>
+            <div key={i} className="grid gap-2 py-3 sm:grid-cols-[6rem_1fr] sm:gap-4">
+              <span className={`w-fit border-l-2 pl-2 text-[10px] font-semibold uppercase tracking-widest ${TREND_STYLE[trend.impact] || TREND_STYLE.neutral}`}>
+                {trend.impact}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">{trend.trend}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{trend.evidence}</p>
               </div>
             </div>
           ))}
@@ -119,21 +116,21 @@ export function MarketSizerReport({ output }: { output: any }) {
 
       {/* Target Segments */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.marketSizer.targetSegments")}</h3>
-        <div className="grid grid-cols-1 gap-2">
+        <ReportSubheading title={t("report.marketSizer.targetSegments")} count={data.targetSegments.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
           {data.targetSegments.map((seg: { name: string; size: number; description: string }, i: number) => {
             const segPct = data.marketSize.sam > 0 ? Math.min(100, (seg.size / data.marketSize.sam) * 100) : 0;
             return (
-              <div key={i} className="p-3 bg-slate-50 rounded-lg">
+              <div key={i} className="py-3">
                 <div className="flex items-start justify-between gap-3 mb-1.5">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-800">{seg.name}</p>
                     <p className="text-xs text-slate-500 mt-0.5">{seg.description}</p>
                   </div>
-                  <span className="text-sm font-bold text-indigo-600 flex-shrink-0">{formatCurrency(seg.size, data.marketSize.currency)}</span>
+                  <span className="flex-shrink-0 font-mono text-sm font-semibold tabular-nums text-slate-900">{formatCurrency(seg.size, data.marketSize.currency)}</span>
                 </div>
-                <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${segPct}%` }} />
+                <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
+                  <div className="h-full rounded-sm bg-slate-700" style={{ width: `${segPct}%` }} />
                 </div>
               </div>
             );
@@ -146,23 +143,23 @@ export function MarketSizerReport({ output }: { output: any }) {
   );
 }
 
-function SizeBar({ label, sublabel, displayValue, percentage, color, t }: { label: string; sublabel: string; displayValue: string; percentage: number; color: string; t: (k: string, params?: Record<string, string | number>) => string }) {
+function SizeBar({ label, sublabel, displayValue, percentage, color, t }: { label: string; sublabel: string; displayValue: string; percentage: number; color: keyof typeof SIZE_BAR_COLOR; t: (k: string, params?: Record<string, string | number>) => string }) {
   return (
-    <div className="bg-white rounded-xl p-4 border border-slate-200">
-      <div className="flex items-center justify-between mb-2">
+    <div className="py-3">
+      <div className="mb-2 flex items-center justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
           <p className="text-[10px] text-slate-400">{sublabel}</p>
         </div>
         <div className="text-right">
-          <p className="text-xl font-bold text-slate-800">{displayValue}</p>
+          <p className="font-mono text-xl font-semibold tabular-nums text-slate-950">{displayValue}</p>
           {label !== "TAM" && (
             <p className="text-[10px] text-slate-500 font-mono">{percentage}{t("report.marketSizer.percentOf")} {label === "SAM" ? "TAM" : "SAM"}</p>
           )}
         </div>
       </div>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`h-full bg-gradient-to-r ${color} rounded-full transition-all duration-1000`} style={{ width: `${label === "TAM" ? 100 : percentage}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-sm bg-slate-100">
+        <div className={`h-full rounded-sm ${SIZE_BAR_COLOR[color]}`} style={{ width: `${label === "TAM" ? 100 : percentage}%` }} />
       </div>
     </div>
   );

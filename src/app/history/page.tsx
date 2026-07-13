@@ -71,7 +71,11 @@ export default function HistoryPage() {
   const [showTagMenu, setShowTagMenu] = useState(false);
   const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [allTags, setAllTags] = useState<RunTag[]>([]);
-  const { history: localHistory, hydrated: localHistoryHydrated } = useResearchHistory();
+  const {
+    history: localHistory,
+    hydrated: localHistoryHydrated,
+    removeEntry: removeLocalHistoryEntry,
+  } = useResearchHistory();
   const { showToast } = useToast();
   const { askConfirm, dialog: confirmDialog } = useConfirm();
 
@@ -258,6 +262,19 @@ export default function HistoryPage() {
       const response = await fetchWithCsrf(`/api/research/runs?ids=${encodeURIComponent(ids)}`, {
         method: "DELETE",
       });
+
+      // The public history view intentionally cannot enumerate or mutate the
+      // server-wide run store. When it is showing the local recovery history,
+      // a 401 means this action should remain local instead of presenting a
+      // broken destructive control.
+      if (response.status === 401) {
+        for (const id of selectedIds) removeLocalHistoryEntry(id);
+        setRuns((current) => current.filter((run) => !selectedIds.has(run.id)));
+        setTotalRuns((current) => Math.max(0, current - selectedIds.size));
+        showToast(t("history.deleteSuccess", { count: selectedIds.size }), "success");
+        clearSelection();
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`Delete failed with HTTP ${response.status}`);

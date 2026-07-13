@@ -1,43 +1,27 @@
 "use client";
 
-/**
- * R220: extracted from src/app/research/[id]/page.tsx. Sizes each
- * keyword by its position in the user-supplied list (earlier = larger
- * = more important) and colours them deterministically. Pure
- * presentation — no fetches, no state.
- */
+const emphasisForRank = (index: number): string => {
+  if (index < 3) return "text-sm font-semibold text-slate-900";
+  if (index < 8) return "text-xs font-medium text-slate-700";
+  return "text-xs font-normal text-slate-600";
+};
+
 export function KeywordCloud({ keywords }: { keywords: string[] }) {
   if (!keywords?.length) return null;
 
-  // Size each keyword by its position (earlier = larger = more important)
-  const maxSize = 22;
-  const minSize = 12;
-
-  const getSize = (index: number): number => {
-    const ratio = 1 - index / Math.min(keywords.length, 15);
-    return Math.round(minSize + (maxSize - minSize) * Math.max(0.2, ratio));
-  };
-
-  const colors = [
-    "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b",
-    "#10b981", "#06b6d4", "#3b82f6", "#f43f5e"
-  ];
-
   return (
-    <div className="keyword-cloud">
-      {keywords.slice(0, 20).map((kw, i) => (
-        <span
-          key={kw}
-          className="keyword-cloud-item"
-          style={{
-            fontSize: getSize(i) + "px",
-            color: colors[i % colors.length],
-            opacity: 0.85 - i * 0.02,
-          }}
+    <ol className="flex flex-wrap gap-x-4 gap-y-2" aria-label="Research keywords by priority">
+      {keywords.slice(0, 20).map((keyword, index) => (
+        <li
+          key={`${keyword}-${index}`}
+          className={`inline-flex items-baseline gap-1.5 border-b border-slate-200 pb-0.5 ${emphasisForRank(index)}`}
         >
-          {kw}
-        </span>
+          <span className="font-mono text-[9px] font-normal tabular-nums text-slate-400" aria-hidden>
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <span>{keyword}</span>
+        </li>
       ))}
-    </div>
+    </ol>
   );
 }

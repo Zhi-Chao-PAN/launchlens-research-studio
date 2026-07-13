@@ -3,33 +3,31 @@ import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { checkRateLimitForIp } from "@/lib/api/rate-limit";
 import { getResearchStorageInfo, searchResearchRuns, exportRuns, bulkDeleteRuns } from "@/lib/research/storage";
-import { deletePersistentResearchRuns, searchPersistentResearchRuns } from "@/lib/research/run-store";
+import {
+  deletePersistentResearchRuns,
+  searchPersistentResearchRuns,
+  type ResearchRunSummary,
+} from "@/lib/research/run-store";
 import { requireAdmin } from "@/lib/api/require-admin";
 
-// List/search/export runs.
-//
-// Authorization model (R211):
-//   - List/search (no `format` query): same-origin read, CSRF cookie prevents
-//     cross-site enumeration, summary rows are non-sensitive. No admin token
-//     required — matches the pre-R202 behavior so History / Dashboard /
-//     RelatedRuns / DataManager can render.
-//   - Export (format=json|csv|jsonl): dumps the full store, including query
-//     text and any per-run sensitive data. Requires an admin-scope bearer
-//     token.
+// List/search/export runs. Every collection read is admin-only: same-origin
+// and CSRF controls do not authenticate the caller and therefore cannot
+// prevent an anonymous client from enumerating queries and run identifiers.
 export async function GET(request: NextRequest) {
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
+
   const url = new URL(request.url);
   const format = url.searchParams.get("format");
 
-  // Bulk export requires admin.
   if (format === "json" || format === "csv" || format === "jsonl") {
-    const auth = requireAdmin(request);
-    if (!auth.ok) return auth.response;
     const exported = exportRuns(format);
     const contentType = format === "csv" ? "text/csv" : "application/json";
     return new Response(exported, {
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": `attachment; filename="research-runs.${format}"`,
+        "Cache-Control": "private, no-store",
       },
     });
   }
@@ -61,42 +59,66 @@ export async function GET(request: NextRequest) {
     limit: 100,
     offset: 0,
   });
-  const byId = new Map<string, (typeof localResult.runs)[number]>();
-  for (const run of persistentResult.runs) byId.set(run.id, run);
-  for (const run of localResult.runs) byId.set(run.id, run);
+  const byId = new Map<string, ResearchRunSummary>();
+  for (const run of persistentResult.runs) {
+    const legacyRun = run as ResearchRunSummary & { sources?: unknown[] };
+    byId.set(run.id, {
+      id: run.id,
+      query: run.query,
+      keywords: run.keywords,
+      status: run.status,
+      provider: run.provider,
+      model: run.model,
+      createdAt: run.createdAt,
+      durationMs: run.durationMs,
+      hasSources: typeof run.hasSources === "boolean"
+        ? run.hasSources
+        : Boolean(legacyRun.sources?.length),
+    });
+  }
+  for (const run of localResult.runs) {
+    byId.set(run.id, {
+      id: run.id,
+      query: run.query,
+      keywords: run.keywords,
+      status: run.status,
+      provider: run.provider,
+      model: run.model,
+      createdAt: run.createdAt,
+      durationMs: run.durationMs,
+      hasSources: Boolean(run.sources?.length),
+    });
+  }
   const mergedRuns = [...byId.values()].sort((a, b) => b.createdAt - a.createdAt);
   const pagedRuns = mergedRuns.slice(offset, offset + limit);
 
   // Return summaries
-  const summaries = pagedRuns.map((r) => ({
-    id: r.id,
-    query: r.query,
-    keywords: r.keywords,
-    status: r.status,
-    provider: r.provider,
-    model: r.model,
-    createdAt: r.createdAt,
-    durationMs: r.durationMs,
-    hasSources: !!(r.sources && r.sources.length > 0),
-  }));
+  const summaries = pagedRuns;
 
   const info = getResearchStorageInfo();
 
-  return NextResponse.json({
-    runs: summaries,
-    total: mergedRuns.length,
-    offset,
-    limit,
-    storage: {
-      enabled: info.enabled,
-      inMemoryCount: info.inMemoryCount,
-      maxMemoryRuns: info.maxMemoryRuns,
+  return NextResponse.json(
+    {
+      runs: summaries,
+      total: mergedRuns.length,
+      offset,
+      limit,
+      storage: {
+        enabled: info.enabled,
+        inMemoryCount: info.inMemoryCount,
+        maxMemoryRuns: info.maxMemoryRuns,
+      },
     },
-  });
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
 }
 
-// Bulk delete
-export async function DELETE(request: Request) {
+// Bulk delete. Both admin authorization and CSRF are required because this is
+// a destructive browser-accessible operation.
+export async function DELETE(request: NextRequest) {
+  const auth = requireAdmin(request);
+  if (!auth.ok) return auth.response;
+
   const csrfRejection = verifyCsrf(request);
   if (csrfRejection) return csrfRejection;
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";

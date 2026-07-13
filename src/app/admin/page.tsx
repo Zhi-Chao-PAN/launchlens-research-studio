@@ -168,7 +168,7 @@ export default function AdminPage() {
   async function deleteRun(id: string) {
     askConfirm("Delete research run?", "This cannot be undone.", async () => {
       try {
-        const res = await fetchWithCsrf(`/api/research/runs?ids=${id}`, { method: "DELETE" });
+        const res = await apiCall(`/api/research/runs?ids=${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error("Delete failed");
         setResearchRuns((prev) => prev.filter((r) => r.id !== id));
         setResearchTotal((prev) => Math.max(0, prev - 1));
@@ -189,6 +189,26 @@ export default function AdminPage() {
         ...options.headers,
       },
     });
+  }
+
+  async function exportResearchRuns(format: "json" | "csv") {
+    try {
+      const response = await apiCall(`/api/research/runs?format=${format}`);
+      if (!response.ok) throw new Error(`Export failed with HTTP ${response.status}`);
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `launchlens-research-runs.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      showToast(`Research runs exported as ${format.toUpperCase()}`, "success");
+    } catch (error) {
+      showToast(formatApiError(error, { prefix: "Export failed:" }), "error");
+    }
   }
 
   async function loadAll() {
@@ -824,12 +844,20 @@ export default function AdminPage() {
               >
                 Refresh
               </button>
-              <a href="/api/research/runs?format=json" className="admin-export-link" download>
+              <button
+                type="button"
+                onClick={() => exportResearchRuns("json")}
+                className="admin-export-link"
+              >
                 Export JSON
-              </a>
-              <a href="/api/research/runs?format=csv" className="admin-export-link" download>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportResearchRuns("csv")}
+                className="admin-export-link"
+              >
                 Export CSV
-              </a>
+              </button>
             </div>
 
             {researchLoading && <p className="admin-loading">Loading...</p>}

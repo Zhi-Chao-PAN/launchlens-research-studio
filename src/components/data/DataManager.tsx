@@ -43,9 +43,9 @@ export function DataManager() {
   // R211: the server-side `/api/data/import` endpoint is admin-gated and
   // destructive (it can overwrite the entire research-run store). The
   // client-side export (`handleExport`) builds the package locally from
-  // /api/research/runs summaries + localStorage, so it doesn't need a token.
-  // For import we surface an inline admin-token input, remembered in
-  // localStorage so the user only enters it once per browser.
+  // Server-wide run export/import requires the inline admin token, remembered
+  // in localStorage so the user only enters it once per browser. Client-owned
+  // notes, folders, and templates remain available without that credential.
   const [adminToken, setAdminToken] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("data_admin_token") || "";
@@ -71,7 +71,9 @@ export function DataManager() {
 
   const fetchRuns = async (): Promise<ResearchRun[]> => {
     try {
-      const res = await fetch("/api/research/runs?limit=1000");
+      const res = await fetch("/api/research/runs?limit=1000", {
+        headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : undefined,
+      });
       if (!res.ok) return [];
       const data = await res.json();
       return data.runs || [];

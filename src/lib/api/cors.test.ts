@@ -6,29 +6,30 @@
 import { checkCors, corsConfig } from "@/lib/api/cors";
 import { NextRequest } from "next/server";
 
-// Mock request helper
 function mockReq(method: string, origin?: string): NextRequest {
   const headers = new Headers();
   if (origin) headers.set("origin", origin);
-  return { method, headers } as unknown as NextRequest;
+  return new NextRequest("https://launchlens.test/api/research", { method, headers });
 }
 
 describe("CORS module behavior", () => {
-  // These tests run with default env (permissive mode)
-  // We can't easily test strict mode without reimporting,
-  // but we verify the public API shape.
-
-  describe("permissive mode", () => {
-    it("returns wildcard origin for any request", () => {
-      const result = checkCors(mockReq("GET", "https://anything.com"));
+  describe("secure same-origin default", () => {
+    it("allows and echoes the request origin when it is same-origin", () => {
+      const result = checkCors(mockReq("GET", "https://launchlens.test"));
       expect(result.allowed).toBe(true);
-      expect(result.headers["Access-Control-Allow-Origin"]).toBe("*");
+      expect(result.headers["Access-Control-Allow-Origin"]).toBe("https://launchlens.test");
     });
 
-    it("returns wildcard origin for no-origin request", () => {
+    it("allows non-browser requests without emitting a wildcard origin", () => {
       const result = checkCors(mockReq("GET"));
       expect(result.allowed).toBe(true);
-      expect(result.headers["Access-Control-Allow-Origin"]).toBe("*");
+      expect(result.headers["Access-Control-Allow-Origin"]).toBeUndefined();
+    });
+
+    it("rejects cross-origin requests unless explicitly allowlisted", () => {
+      const result = checkCors(mockReq("GET", "https://anything.com"));
+      expect(result.allowed).toBe(false);
+      expect(result.response?.status).toBe(403);
     });
 
     it("includes standard headers", () => {
@@ -38,8 +39,9 @@ describe("CORS module behavior", () => {
       expect(result.headers["Access-Control-Max-Age"]).toBe("86400");
     });
 
-    it("corsConfig reports non-strict", () => {
-      expect(corsConfig.strict).toBe(false);
+    it("corsConfig reports strict same-origin mode", () => {
+      expect(corsConfig.strict).toBe(true);
+      expect(corsConfig.mode).toBe("same-origin");
       expect(Array.isArray(corsConfig.allowedOrigins)).toBe(true);
     });
   });

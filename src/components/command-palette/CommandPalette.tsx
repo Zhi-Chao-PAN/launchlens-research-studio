@@ -127,7 +127,7 @@ export function CommandPalette({ placeholder }: CommandPaletteProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             className="cmdpal-input"
             autoComplete="off"
             spellCheck={false}

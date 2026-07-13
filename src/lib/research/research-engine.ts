@@ -6,6 +6,7 @@
   AgentOutput,
 } from "@/lib/schema/research-schema";
 import type { Stage2TrackingContext } from "@/lib/analytics/stage2-context";
+import { randomBytes } from "node:crypto";
 import type { ProviderFallbackDetail, ProviderFallbackReason } from "@/lib/providers/provider.types";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { applyPersona } from "@/lib/providers/mock-persona";
@@ -13,11 +14,29 @@ import { selectProvider } from "@/lib/providers/provider-registry";
 import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
+import { selectRetrievalProvider } from "@/lib/providers/retrieval-registry";
+import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 import { saveResearchRun } from "@/lib/research/storage";
 import { researchRunFromSession, storePersistentResearchRun } from "@/lib/research/run-store";
+import {
+  allowlistAgentOutput,
+  buildFocusedRetrievalQuery,
+  canonicalizeRetrievedSources,
+  createAgentEvidenceEntry,
+  createEvidenceLedger,
+  ensureEvidenceLedger,
+  specialistAllowlistedSourceUnion,
+} from "@/lib/research/evidence-ledger";
+import { buildResearchValidation } from "@/lib/research/validation-ledger";
 import { sleep } from "@/lib/utils/sleep";
 import { createConcurrencyLimiter } from "@/lib/utils/concurrency-limiter";
 import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
+import {
+  DEFAULT_RESEARCH_MODE,
+  getResearchModeConfig,
+  normalizeResearchMode,
+  type ResearchModeId,
+} from "@/lib/research/research-modes";
 import {
   storeSession,
   fetchSession,
@@ -34,10 +53,75 @@ const sessions = new Map<string, ResearchSession>();
 const cancelledSessions = new Set<string>();
 const sessionAborts = new Map<string, AbortController>();
 const eventListeners = new Map<string, Set<(event: ResearchEvent) => void>>();
-const sseIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const SSE_IDLE_GRACE_MS = 12000;
 const DEFAULT_AGENT_TIMEOUT_MS = 180_000;
 const MIN_AGENT_TIMEOUT_MS = 1000;
+const DEFAULT_STANDARD_SESSION_BUDGET_MS = 270_000;
+const MIN_STANDARD_SESSION_BUDGET_MS = 100;
+const MAX_STANDARD_SESSION_BUDGET_MS = 285_000;
+const MAX_DEEP_AGENT_STAGE_BUDGET_MS = 240_000;
+const MIN_DEEP_RETRIEVED_SOURCES = 2;
+const MAX_DEEP_RETRIEVED_SOURCES = 6;
+const DEEP_CANCEL_POLL_INTERVAL_MS = 500;
+
+const SPECIALIST_AGENT_IDS = new Set<AgentId>([
+  "market-sizer",
+  "competitor-analyst",
+  "pain-detective",
+  "pricing-scout",
+  "channel-scout",
+]);
+
+export type ResearchAgentStageErrorCode =
+  | "session_not_found"
+  | "session_not_runnable"
+  | "invalid_agent"
+  | "session_cancelled"
+  | "aborted"
+  | "deadline_exceeded"
+  | "model_provider_unavailable"
+  | "provider_degraded"
+  | "retrieval_unavailable"
+  | "retrieval_insufficient"
+  | "evidence_insufficient";
+
+/** Stable failure surface consumed by the durable Deep Research runner. */
+export class ResearchAgentStageError extends Error {
+  readonly code: ResearchAgentStageErrorCode;
+
+  constructor(code: ResearchAgentStageErrorCode, message: string) {
+    super(message);
+    this.name = "ResearchAgentStageError";
+    this.code = code;
+  }
+}
+
+export interface RunResearchAgentStageOptions {
+  /** Deep execution is fail-closed by default. False preserves Standard fallback semantics. */
+  strict?: boolean;
+  /** Caller lifecycle signal (for example, a lost worker lease). */
+  signal?: AbortSignal;
+  /** Absolute epoch deadline. The engine also enforces its own 240s ceiling. */
+  deadlineAt?: number;
+  /** Mainly useful for deterministic tests; production keeps the normal progress cadence. */
+  stepDelayMs?: number;
+  /** Strict mode never accepts fewer than two usable retrieved sources. */
+  minimumRetrievedSources?: number;
+  /** Fenced record snapshot. When present, execution never touches the shared session Map. */
+  sessionSnapshot?: ResearchSession;
+}
+
+export interface ResearchAgentStageResult {
+  output: AgentOutput;
+  /** Immutable-by-convention snapshot for the fenced repository commit. */
+  session: ResearchSession;
+}
+
+// All Redis session writes from this process are serialized per session. This
+// prevents a slower pre-synthesis write from landing after the terminal
+// snapshot and regressing durable state back to "running"/"pre_synthesis".
+const sessionWriteQueues = new Map<string, Promise<void>>();
+const terminalCheckpoints = new Map<string, Promise<void>>();
+const terminalEventsEmitted = new Set<string>();
 
 // R241: cap how many real-provider (LLM) calls may be in flight at once.
 // The 5 research agents run concurrently via Promise.allSettled, and each
@@ -111,8 +195,22 @@ function readAgentTimeoutMs(): number {
     : DEFAULT_AGENT_TIMEOUT_MS;
 }
 
+/** Leave part of the 300s SSE window for the final durable checkpoint. */
+function readStandardSessionBudgetMs(): number {
+  const raw = process.env.LAUNCHLENS_STANDARD_SESSION_BUDGET_MS;
+  if (!raw) return DEFAULT_STANDARD_SESSION_BUDGET_MS;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) &&
+    parsed >= MIN_STANDARD_SESSION_BUDGET_MS &&
+    parsed <= MAX_STANDARD_SESSION_BUDGET_MS
+    ? parsed
+    : DEFAULT_STANDARD_SESSION_BUDGET_MS;
+}
+
 function generateId(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  // Session ids are capability handles in the no-login flow: they grant
+  // access to live state, evidence and cancellation. Keep them unguessable.
+  return randomBytes(16).toString("hex");
 }
 
 // R231: throttle how often a session is re-mirrored to Redis during a run.
@@ -125,12 +223,39 @@ const REDIS_MIRROR_INTERVAL_MS = 2000;
 const redisMirrorPending = new Set<string>();
 const redisMirrorLastFlush = new Map<string, number>();
 
+function cloneSessionSnapshot(session: ResearchSession): ResearchSession {
+  return JSON.parse(JSON.stringify(session)) as ResearchSession;
+}
+
+/**
+ * Queue an immutable snapshot behind every earlier write for this session.
+ * Capturing before the async boundary prevents later mutations from changing
+ * what a particular revision represents; chaining prevents completion order
+ * at the remote store from reversing revision order.
+ */
+function enqueueSessionSnapshot(session: ResearchSession): Promise<void> {
+  const snapshot = cloneSessionSnapshot(session);
+  const previous = sessionWriteQueues.get(session.id) ?? Promise.resolve();
+  const write = previous
+    .catch(() => {})
+    .then(() => storeSession(snapshot));
+  sessionWriteQueues.set(session.id, write);
+  const clearIfCurrent = () => {
+    if (sessionWriteQueues.get(session.id) === write) {
+      sessionWriteQueues.delete(session.id);
+    }
+  };
+  void write.then(clearIfCurrent, clearIfCurrent);
+  return write;
+}
+
 /**
  * Best-effort, throttled mirror of the live session into Redis so a
  * reconnecting SSE client on a different instance hydrates a *current* session
  * (status + agent progress) instead of the stale "pending" snapshot written at
  * creation time. No-op when Redis is not configured (storeSession returns
- * immediately). `force` bypasses the throttle for terminal transitions.
+ * immediately). Terminal transitions use `checkpointTerminalSession`
+ * directly and never depend on this progress mirror.
  */
 function mirrorSessionToRedis(session: ResearchSession, force = false): void {
   if (!session) return;
@@ -149,7 +274,7 @@ function mirrorSessionToRedis(session: ResearchSession, force = false): void {
   setTimeout(() => {
     redisMirrorPending.delete(id);
     const live = sessions.get(id);
-    if (live) void storeSession(live);
+    if (live) void enqueueSessionSnapshot(live);
   }, force ? 0 : REDIS_MIRROR_INTERVAL_MS);
 }
 
@@ -166,6 +291,10 @@ function isTimeoutAbort(e: unknown): boolean {
 
 export function getAgentTimeoutMs(): number {
   return readAgentTimeoutMs();
+}
+
+export function getStandardSessionBudgetMs(): number {
+  return readStandardSessionBudgetMs();
 }
 
 /**
@@ -209,6 +338,7 @@ function createInitialAgentState(id: AgentId): AgentState {
 
 export type CreateResearchSessionOptions = {
   stage2?: Stage2TrackingContext | null;
+  mode?: ResearchModeId;
 };
 
 export function createResearchSession(
@@ -251,6 +381,7 @@ export function createResearchSession(
     id,
     query,
     keywords,
+    mode: normalizeResearchMode(options.mode ?? DEFAULT_RESEARCH_MODE),
     // R203: the 3rd parameter is now properly named (was `agentId` which
     // shadowed the loop variable and was always undefined). The persona
     // flows from the API/batch path all the way to provider context.
@@ -265,6 +396,7 @@ export function createResearchSession(
     status: "pending",
     agents: agents as ResearchSession["agents"],
     citations: [],
+    evidence: createEvidenceLedger(now),
   };
 
   sessions.set(id, session);
@@ -272,7 +404,7 @@ export function createResearchSession(
   // Mirror to Redis so other instances can recover this session on
   // reconnect / GET / SSE. Fire-and-forget: storeSession swallows its own
   // errors and returns when Redis is not configured.
-  void storeSession(session);
+  void enqueueSessionSnapshot(session);
   return session;
 }
 
@@ -323,7 +455,12 @@ export async function hydrateSessionFromRedis(id: string): Promise<ResearchSessi
   const localTs = local ? Date.parse(local.updatedAt) : 0;
   const remoteTs = Date.parse(remote.updatedAt) || 0;
   const fresher = remoteTs >= localTs ? remote : local;
-  if (!local && fresher === remote) {
+  // A pending local copy is only the POST creation snapshot; replacing it
+  // with a newer remote revision is safe and lets a cancel request landing on
+  // the POST instance act on the actual cross-instance run state. Never
+  // replace a locally running object because the agent loop mutates it by
+  // reference.
+  if ((!local || local.status === "pending") && fresher === remote) {
     sessions.set(id, remote);
     if (!sessionAborts.has(id)) {
       sessionAborts.set(id, new AbortController());
@@ -335,7 +472,11 @@ export async function hydrateSessionFromRedis(id: string): Promise<ResearchSessi
 export function cancelSession(id: string): boolean {
   const session = sessions.get(id);
   if (!session) return false;
-  if (session.status === "completed" || session.status === "error") return false;
+  if (
+    session.status === "completed" ||
+    session.status === "cancelled" ||
+    session.status === "error"
+  ) return false;
   cancelledSessions.add(id);
   sessionAborts.get(id)?.abort();
   session.status = "cancelled";
@@ -357,18 +498,10 @@ export function cancelSession(id: string): boolean {
     }
   }
 
-  // Single terminal event — do NOT emit an agent-error, otherwise cancelled
-  // runs show up as red error badges on the synthesis card.
-  emitEvent(id, { type: "cancelled", agentId: "synthesis", timestamp: new Date().toISOString(), message: "Research cancelled" });
-
-  // R212: persist cancelled runs so they show up in History instead of
-  // vanishing on restart. Best-effort — storage failures must not break cancel.
-  persistRunSnapshot(session, "cancelled");
-  // Cross-instance: flag cancellation in Redis so any agent loop running on
-  // a different instance can observe it, and mirror the cancelled state into
-  // the session JSON so other instances see "cancelled" on GET.
-  void setCancelFlag(id);
-  void storeSession(session);
+  // The public cancel API stays synchronous, but its terminal event is gated
+  // by an awaited checkpoint. Observers therefore cannot see "cancelled"
+  // before the final session and partial dossier are durable.
+  void checkpointTerminalSession(session, "cancelled", "Research cancelled");
   return true;
 }
 
@@ -383,14 +516,83 @@ export function cancelSession(id: string): boolean {
  *   - "cancelled" — JSON dump of the per-agent outputs that finished
  *     before the user cancelled, so they can revisit partial results.
  */
-function persistRunSnapshot(session: ResearchSession, status: "completed" | "cancelled"): void {
+async function persistRunSnapshot(
+  session: ResearchSession,
+  status: "completed" | "cancelled",
+): Promise<void> {
   try {
     const run = researchRunFromSession(session, status);
     saveResearchRun(run);
-    void storePersistentResearchRun(run);
+    await storePersistentResearchRun(run);
   } catch {
     // Storage is best-effort — never break the caller.
   }
+}
+
+function terminalEventData(session: ResearchSession): Record<string, unknown> {
+  return {
+    status: session.status,
+    mode: normalizeResearchMode(session.mode),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    agents: Object.fromEntries(
+      Object.entries(session.agents).map(([id, state]) => [
+        id,
+        {
+          status: state.status,
+          progress: state.progress,
+          currentStep: state.currentStep,
+          hasOutput: !!state.output,
+          ...(state.output ? { output: state.output } : {}),
+          ...(state.degraded
+            ? { degraded: true, degradedReason: state.degradedReason }
+            : {}),
+        },
+      ]),
+    ),
+    evidence: session.evidence,
+    validation: session.validation,
+  };
+}
+
+/**
+ * The sole completed/cancelled publication seam. Every earlier queued session
+ * revision drains first; then the terminal session and full dossier are
+ * awaited; only then is the terminal event visible locally or via Pub/Sub.
+ */
+function checkpointTerminalSession(
+  session: ResearchSession,
+  status: "completed" | "cancelled",
+  message: string,
+): Promise<void> {
+  const existing = terminalCheckpoints.get(session.id);
+  if (existing) return existing;
+
+  const snapshot = cloneSessionSnapshot(session);
+  const checkpoint = (async () => {
+    await Promise.all([
+      enqueueSessionSnapshot(snapshot),
+      persistRunSnapshot(snapshot, status),
+      ...(status === "cancelled" ? [setCancelFlag(snapshot.id)] : []),
+    ]);
+
+    if (terminalEventsEmitted.has(snapshot.id)) return;
+    terminalEventsEmitted.add(snapshot.id);
+    emitEvent(snapshot.id, {
+      type: status === "completed" ? "complete" : "cancelled",
+      agentId: "synthesis",
+      timestamp: new Date().toISOString(),
+      message,
+      data: terminalEventData(snapshot),
+    });
+  })();
+  terminalCheckpoints.set(session.id, checkpoint);
+  return checkpoint;
+}
+
+/** Await a previously scheduled cancel/completion checkpoint (tests/routes). */
+export function awaitTerminalCheckpoint(id: string): Promise<void> {
+  return terminalCheckpoints.get(id) ?? Promise.resolve();
 }
 
 function evictSessionFromMemory(id: string): boolean {
@@ -400,15 +602,14 @@ function evictSessionFromMemory(id: string): boolean {
   if (listeners) listeners.clear();
   eventListeners.delete(id);
 
-  const pending = sseIdleTimers.get(id);
-  if (pending) clearTimeout(pending);
-  sseIdleTimers.delete(id);
-
   sessionAborts.delete(id);
   cancelledSessions.delete(id);
   sessions.delete(id);
   redisMirrorPending.delete(id);
   redisMirrorLastFlush.delete(id);
+  sessionWriteQueues.delete(id);
+  terminalCheckpoints.delete(id);
+  terminalEventsEmitted.delete(id);
   return true;
 }
 
@@ -477,12 +678,13 @@ function emitEvent(sessionId: string, event: ResearchEvent): void {
   publishEvent(sessionId, event);
   // R231: keep the Redis session snapshot fresh so a reconnecting instance
   // hydrates current progress/status rather than the stale creation snapshot.
-  // Terminal events (complete/cancelled) flush immediately; progress/status
-  // events are coalesced by the throttle.
+  // Progress/status events are coalesced by the throttle. Terminal events are
+  // emitted only by checkpointTerminalSession, which has already awaited the
+  // definitive session snapshot and must not schedule a second write here.
   const session = sessions.get(sessionId);
   if (session) {
     const isTerminal = event.type === "complete" || event.type === "cancelled";
-    mirrorSessionToRedis(session, isTerminal);
+    if (!isTerminal) mirrorSessionToRedis(session);
   }
 }
 
@@ -495,13 +697,165 @@ function updateAgentState(
   session.updatedAt = new Date().toISOString();
 }
 
+interface AgentEvidenceInput {
+  retrievedSources: RetrievedSource[];
+  useStrictAllowlist: boolean;
+}
+
+async function prepareAgentEvidence(
+  session: ResearchSession,
+  agentId: AgentId,
+  canUseRetrievedEvidence: boolean,
+  signal?: AbortSignal,
+): Promise<AgentEvidenceInput> {
+  const ledger = ensureEvidenceLedger(session);
+  const entry = ledger.agents[agentId]!;
+  const now = new Date().toISOString();
+
+  if (!canUseRetrievedEvidence) {
+    entry.retrieval = {
+      status: "not_requested",
+      sourceOrigin: "none",
+      sourceCount: 0,
+      sources: [],
+    };
+    entry.grounding = "ungrounded";
+    entry.updatedAt = now;
+    return { retrievedSources: [], useStrictAllowlist: false };
+  }
+
+  if (agentId === "synthesis") {
+    const retrievedSources = specialistAllowlistedSourceUnion(session);
+    entry.retrieval = {
+      status: "not_requested",
+      sourceOrigin: retrievedSources.length > 0 ? "specialist_union" : "none",
+      sourceCount: retrievedSources.length,
+      sources: retrievedSources,
+    };
+    entry.grounding = "ungrounded";
+    entry.updatedAt = now;
+    return {
+      retrievedSources,
+      useStrictAllowlist: retrievedSources.length > 0,
+    };
+  }
+
+  const retrievalProvider = selectRetrievalProvider();
+  if (retrievalProvider.isMock) {
+    entry.retrieval = {
+      status: "not_configured",
+      sourceOrigin: "none",
+      providerId: retrievalProvider.id,
+      sourceCount: 0,
+      sources: [],
+    };
+    entry.grounding = "ungrounded";
+    entry.updatedAt = now;
+    return { retrievedSources: [], useStrictAllowlist: false };
+  }
+
+  const focusedQuery = buildFocusedRetrievalQuery(session.query, agentId);
+  try {
+    const rawSources = await retrievalProvider.search({
+      query: focusedQuery,
+      keywords: session.keywords,
+      agentId,
+      maxResults: 6,
+      signal,
+    });
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const retrievedSources = canonicalizeRetrievedSources(rawSources, agentId, now);
+    entry.retrieval = {
+      status: retrievedSources.length > 0 ? "retrieved" : "unavailable",
+      sourceOrigin: retrievedSources.length > 0 ? "agent_retrieval" : "none",
+      providerId: retrievalProvider.id,
+      focusedQuery,
+      sourceCount: retrievedSources.length,
+      sources: retrievedSources,
+      ...(retrievedSources.length === 0 ? { unavailableReason: "no_usable_sources" } : {}),
+    };
+    entry.grounding = "ungrounded";
+    entry.updatedAt = new Date().toISOString();
+    return {
+      retrievedSources,
+      useStrictAllowlist: retrievedSources.length > 0,
+    };
+  } catch (error) {
+    const aborted =
+      signal?.aborted ||
+      (error instanceof DOMException && error.name === "AbortError") ||
+      (error instanceof Error && error.name === "AbortError");
+    if (aborted) throw error;
+
+    entry.retrieval = {
+      status: "unavailable",
+      sourceOrigin: "none",
+      providerId: retrievalProvider.id,
+      focusedQuery,
+      sourceCount: 0,
+      sources: [],
+      // Keep provider exception text out of persisted sessions: upstream
+      // errors can contain request metadata or credentials.
+      unavailableReason: "retrieval_request_failed",
+    };
+    entry.grounding = "ungrounded";
+    entry.updatedAt = new Date().toISOString();
+    return { retrievedSources: [], useStrictAllowlist: false };
+  }
+}
+
+function mergeSessionCitations(session: ResearchSession, citations: AgentOutput["citations"]): void {
+  const seen = new Set(
+    session.citations.map((citation) =>
+      citation.url ? `url:${citation.url.trim().toLowerCase()}` : `id:${citation.id}`,
+    ),
+  );
+  for (const citation of citations) {
+    const key = citation.url ? `url:${citation.url.trim().toLowerCase()}` : `id:${citation.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    session.citations.push(citation);
+  }
+}
+
+interface RunAgentExecutionOptions {
+  signal?: AbortSignal;
+  strict?: boolean;
+  minimumRetrievedSources?: number;
+  deadlineMessage?: string;
+  publishEvents?: boolean;
+}
+
 // Simulate agent work progress with step-by-step updates.
 // In a real implementation, this would call actual LLM + search tools.
 async function runAgent(
   session: ResearchSession,
   agentId: AgentId,
   stepDelayMs: number = 400,
+  deadlineAt: number = Date.now() + readStandardSessionBudgetMs(),
+  execution: RunAgentExecutionOptions = {},
 ): Promise<AgentOutput> {
+  const strict = execution.strict === true;
+  const executionSignal = execution.signal ?? sessionAborts.get(session.id)?.signal;
+  const deadlineMessage = execution.deadlineMessage ?? "Standard session deadline reached";
+  const emitAgentEvent = (event: ResearchEvent) => {
+    if (execution.publishEvents !== false) emitEvent(session.id, event);
+  };
+  const requestedMinimumSources = execution.minimumRetrievedSources;
+  const minimumRetrievedSources = Number.isFinite(requestedMinimumSources)
+    ? Math.max(
+        MIN_DEEP_RETRIEVED_SOURCES,
+        Math.min(
+          MAX_DEEP_RETRIEVED_SOURCES,
+          Math.floor(requestedMinimumSources!),
+        ),
+      )
+    : MIN_DEEP_RETRIEVED_SOURCES;
+  if (Date.now() >= deadlineAt) {
+    throw new DOMException(deadlineMessage, "AbortError");
+  }
   const steps = getAgentSteps(agentId);
 
   updateAgentState(session, agentId, {
@@ -509,9 +863,15 @@ async function runAgent(
     startedAt: new Date().toISOString(),
     currentStep: steps[0],
     progress: 0,
+    completedAt: undefined,
+    output: undefined,
+    error: undefined,
+    degraded: undefined,
+    degradedReason: undefined,
+    resolvedProviderId: undefined,
   });
 
-  emitEvent(session.id, {
+  emitAgentEvent({
     type: "status",
     agentId,
     timestamp: new Date().toISOString(),
@@ -519,11 +879,29 @@ async function runAgent(
   });
 
   try {
-    const ac = sessionAborts.get(session.id);
-    for (let i = 0; i < steps.length; i++) {
-      await sleep(stepDelayMs, { signal: ac?.signal });
+    const selected = selectProvider();
+    const breakerOpen = !selected.isMock && breakerIsOpen("provider:" + selected.id);
+    if (strict && selected.isMock) {
+      throw new ResearchAgentStageError(
+        "model_provider_unavailable",
+        "Deep Research requires a configured real model provider.",
+      );
+    }
+    if (strict && breakerOpen) {
+      throw new ResearchAgentStageError(
+        "provider_degraded",
+        "The configured model provider is temporarily unavailable.",
+      );
+    }
+    const provider = breakerOpen ? mockResearchProvider : selected;
 
-      if (isCancelled(session.id)) {
+    for (let i = 0; i < steps.length; i++) {
+      if (Date.now() >= deadlineAt) {
+        throw new DOMException(deadlineMessage, "AbortError");
+      }
+      await sleep(stepDelayMs, { signal: executionSignal });
+
+      if (isCancelled(session.id) || executionSignal?.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
 
@@ -533,7 +911,7 @@ async function runAgent(
         progress,
       });
 
-      emitEvent(session.id, {
+      emitAgentEvent({
         type: "progress",
         agentId,
         timestamp: new Date().toISOString(),
@@ -543,12 +921,34 @@ async function runAgent(
 
     // Generate final output
     const allOutputs = getCompletedAgentOutputs(session);
-    const selected = selectProvider();
-        // If the breaker is open for the selected provider, short-circuit to mock
-        // for this attempt. We still record telemetry under the original id so
-        // operators can see the breaker engaging.
-        const breakerOpen = !selected.isMock && breakerIsOpen("provider:" + selected.id);
-        const provider = breakerOpen ? mockResearchProvider : selected;
+    // If the breaker is open for the selected provider, short-circuit to mock
+    // for this attempt. Retrieval is also skipped because mock output must not
+    // inherit grounded status from sources it did not reason over.
+    const evidenceInput = await prepareAgentEvidence(
+      session,
+      agentId,
+      !provider.isMock,
+      executionSignal,
+    );
+    if (strict) {
+      const retrieval = ensureEvidenceLedger(session).agents[agentId]!.retrieval;
+      if (
+        retrieval.status === "not_configured" ||
+        (retrieval.status === "unavailable" &&
+          retrieval.unavailableReason !== "no_usable_sources")
+      ) {
+        throw new ResearchAgentStageError(
+          "retrieval_unavailable",
+          "Deep Research requires an available real retrieval provider.",
+        );
+      }
+      if (evidenceInput.retrievedSources.length < minimumRetrievedSources) {
+        throw new ResearchAgentStageError(
+          "retrieval_insufficient",
+          `Deep Research requires at least ${minimumRetrievedSources} usable retrieved sources for this specialist.`,
+        );
+      }
+    }
         // R203: track per-agent whether we resolved to the real provider or
         // fell back to mock (so the UI can show a "demo data" badge).
         // isDegradedHere is `let` because the catch block below can flip it
@@ -558,7 +958,7 @@ async function runAgent(
         const resolvedProviderId = provider.id;
         let isDegradedHere = provider.id !== selected.id;
         let degradedReasonCaptured: NonNullable<AgentState["degradedReason"]> | undefined;
-        let output;
+        let output: AgentOutput;
         const t0 = Date.now();
         let telemetryOk = true;
         let telemetryErr: string | undefined;
@@ -567,13 +967,11 @@ async function runAgent(
         // JS scoping rule: a finally clause cannot see const/let declared
         // inside its own try.)
         const timeoutController = new AbortController();
-        const agentTimeoutMs = readAgentTimeoutMs();
         let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
         // Snapshot whether the per-session cancel was already fired so
         // we can distinguish a user cancel (don't degrade) from a
         // timeout-induced abort (do degrade) later on.
-        const acEarly = sessionAborts.get(session.id);
-        const userCancelledBeforeCall = !!(acEarly && acEarly.signal.aborted);
+        const userCancelledBeforeCall = executionSignal?.aborted === true;
         const useLimiter = !selected.isMock;
         // R241: the actual generate() call, factored out so it can be run
         // either directly (mock) or through the concurrency limiter (real
@@ -582,7 +980,14 @@ async function runAgent(
         // budget merely waiting for a slot — the budget covers the LLM call
         // itself, not the queue wait.
         const runGenerate = async () => {
-          const ac = sessionAborts.get(session.id);
+          const remainingSessionBudgetMs = deadlineAt - Date.now();
+          if (remainingSessionBudgetMs <= 0 || executionSignal?.aborted) {
+            throw new DOMException(deadlineMessage, "AbortError");
+          }
+          const agentTimeoutMs = Math.max(
+            1,
+            Math.min(readAgentTimeoutMs(), remainingSessionBudgetMs),
+          );
           // Combine the per-session cancel signal with a per-agent
           // wall-clock budget. Either side aborts the LLM call. The
           // timeout controller is cleaned up in finally so a slow call
@@ -594,18 +999,26 @@ async function runAgent(
           // be AbortSignal instances, so guard against undefined or null
           // (no per-session cancel signal in some test paths).
           const combinedSignal =
-            ac && ac.signal
-              ? AbortSignal.any([ac.signal, timeoutController.signal])
+            executionSignal
+              ? AbortSignal.any([executionSignal, timeoutController.signal])
               : timeoutController.signal;
           // A user cancel that landed while we were queued for a slot should
           // abort here rather than fire a pointless (and billable) call.
-          if (ac?.signal.aborted) {
+          if (executionSignal?.aborted) {
             throw new DOMException("Aborted", "AbortError");
           }
           return provider.generate(agentId, {
             query: session.query,
             keywords: session.keywords,
             upstream: allOutputs,
+            retrievedSources:
+              evidenceInput.retrievedSources.length > 0
+                ? evidenceInput.retrievedSources
+                : undefined,
+            validationSummary:
+              agentId === "synthesis"
+                ? session.validation?.synthesisSummary
+                : undefined,
             signal: combinedSignal,
             onProgress: (event) => {
               const overall = 80 + Math.round(event.fraction * 19);
@@ -613,7 +1026,7 @@ async function runAgent(
                 progress: Math.min(99, overall),
                 currentStep: event.step || session.agents[agentId].currentStep,
               });
-              emitEvent(session.id, {
+              emitAgentEvent({
                 type: "progress",
                 agentId,
                 timestamp: new Date().toISOString(),
@@ -651,8 +1064,22 @@ async function runAgent(
             ? await providerLimiter.run(runGenerate)
             : await runGenerate();
         } catch (e) {
+          // A session-level abort is either an explicit cancel or the Standard
+          // deadline. Never turn either into fresh mock output after the user
+          // or budget has stopped execution.
+          if (executionSignal?.aborted) throw e;
           telemetryOk = false;
           telemetryErr = e instanceof Error ? e.message : String(e);
+          if (strict) {
+            isDegradedHere = true;
+            degradedReasonCaptured = isTimeoutAbort(e)
+              ? "network_error"
+              : "http_error";
+            throw new ResearchAgentStageError(
+              "provider_degraded",
+              "The configured model provider did not complete this Deep Research stage.",
+            );
+          }
           output = applyPersona(generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs), session.personaId);
           // R203/R216: provider.generate() fell into its outer catch and
           // returned mock. The agent ran on demo data, not on the real
@@ -701,12 +1128,52 @@ async function runAgent(
           });
         }
 
-    // Merge citations
-    for (const citation of (output?.citations ?? [])) {
-      if (!session.citations.find((c) => c.id === citation.id)) {
-        session.citations.push(citation);
-      }
+    if (strict && isDegradedHere) {
+      throw new ResearchAgentStageError(
+        "provider_degraded",
+        "The configured model provider degraded while executing this Deep Research stage.",
+      );
     }
+
+    // Providers are expected to honor AbortSignal, but a non-compliant
+    // adapter must not publish a late output after explicit cancellation or
+    // the Standard session deadline.
+    if (executionSignal?.aborted) {
+      throw new DOMException(
+        isCancelled(session.id) ? "Aborted" : deadlineMessage,
+        "AbortError",
+      );
+    }
+
+    // Retrieval may have succeeded before a real LLM silently fell back to
+    // demo output. In that case retain compatibility semantics and keep the
+    // ledger ungrounded; strict allowlisting would lend mock claims authority
+    // they did not earn from the retrieved source set.
+    const useStrictAllowlist =
+      evidenceInput.useStrictAllowlist && !provider.isMock && !isDegradedHere;
+    const allowlisted = allowlistAgentOutput(
+      output,
+      evidenceInput.retrievedSources,
+      useStrictAllowlist ? "strict" : "compatible",
+    );
+    output = allowlisted.output;
+
+    const evidenceEntry = ensureEvidenceLedger(session).agents[agentId]!;
+    evidenceEntry.allowlist = allowlisted.stats;
+    evidenceEntry.grounding =
+      useStrictAllowlist && allowlisted.stats.matched > 0
+        ? "grounded"
+        : "ungrounded";
+    evidenceEntry.updatedAt = new Date().toISOString();
+
+    if (strict && (!useStrictAllowlist || allowlisted.stats.matched === 0)) {
+      throw new ResearchAgentStageError(
+        "evidence_insufficient",
+        "The model output did not retain any citation from the retrieved evidence set.",
+      );
+    }
+
+    mergeSessionCitations(session, output.citations);
 
     updateAgentState(session, agentId, {
       status: "done",
@@ -720,7 +1187,7 @@ async function runAgent(
         : {}),
     });
 
-    emitEvent(session.id, {
+    emitAgentEvent({
       type: "output",
       agentId,
       timestamp: new Date().toISOString(),
@@ -744,13 +1211,220 @@ async function runAgent(
       currentStep: `Error: ${message}`,
       error: message,
     });
-    emitEvent(session.id, {
+    emitAgentEvent({
       type: "error",
       agentId,
       timestamp: new Date().toISOString(),
       message,
     });
     throw err;
+  }
+}
+
+function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(
+      signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Aborted", "AbortError"),
+    );
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Aborted", "AbortError"),
+      );
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Execute exactly one specialist unit for the durable Deep Research worker.
+ *
+ * This seam deliberately does not synthesize, finalize, or transition the
+ * overall session to a terminal state. The durable work graph owns those
+ * lifecycle decisions. Strict mode is the default and never publishes mock
+ * or ungrounded output as a completed specialist result.
+ */
+export async function runResearchAgentStage(
+  sessionId: string,
+  agentId: AgentId,
+  options: RunResearchAgentStageOptions = {},
+): Promise<ResearchAgentStageResult> {
+  if (!SPECIALIST_AGENT_IDS.has(agentId)) {
+    throw new ResearchAgentStageError(
+      "invalid_agent",
+      "The single-agent stage accepts specialist agents only.",
+    );
+  }
+
+  const startedAt = Date.now();
+  const requestedDeadline = options.deadlineAt ?? startedAt + MAX_DEEP_AGENT_STAGE_BUDGET_MS;
+  const deadlineAt = Math.min(
+    requestedDeadline,
+    startedAt + MAX_DEEP_AGENT_STAGE_BUDGET_MS,
+  );
+  if (!Number.isFinite(deadlineAt) || deadlineAt <= startedAt) {
+    throw new ResearchAgentStageError(
+      "deadline_exceeded",
+      "The Deep Research specialist stage deadline has already elapsed.",
+    );
+  }
+
+  const deadlineController = new AbortController();
+  const deadlineTimer = setTimeout(() => {
+    deadlineController.abort(
+      new DOMException("Deep Research specialist stage deadline reached", "AbortError"),
+    );
+  }, deadlineAt - startedAt);
+  const preflightSignal = options.signal
+    ? AbortSignal.any([options.signal, deadlineController.signal])
+    : deadlineController.signal;
+
+  let session: ResearchSession | undefined;
+  let remoteCancelTimer: ReturnType<typeof setInterval> | undefined;
+  let remoteCancelPollInFlight = false;
+  let remoteCancelled = false;
+  const isolatedSnapshot = options.sessionSnapshot !== undefined;
+
+  try {
+    session = isolatedSnapshot
+      ? structuredClone(options.sessionSnapshot)
+      : sessions.get(sessionId);
+    if (!session && !isolatedSnapshot) {
+      session = await awaitWithSignal(hydrateSessionFromRedis(sessionId), preflightSignal);
+    }
+    if (!session) {
+      throw new ResearchAgentStageError(
+        "session_not_found",
+        `Research session ${sessionId} was not found.`,
+      );
+    }
+    if (session.id !== sessionId) {
+      throw new ResearchAgentStageError(
+        "session_not_runnable",
+        "The provided research session snapshot does not match the requested session.",
+      );
+    }
+    if (session.status === "cancelled" || isCancelled(sessionId)) {
+      throw new ResearchAgentStageError(
+        "session_cancelled",
+        "The research session was cancelled before this stage started.",
+      );
+    }
+    if (session.status === "completed" || session.status === "error") {
+      throw new ResearchAgentStageError(
+        "session_not_runnable",
+        "A terminal research session cannot execute another specialist stage.",
+      );
+    }
+    if (preflightSignal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
+    // A leased work unit may be retried after a worker dies between model
+    // completion and the fenced repository commit. Clear the target's stale
+    // projection and rebuild the shared citation list from other committed
+    // specialists before attempting the unit again.
+    ensureEvidenceLedger(session).agents[agentId] = createAgentEvidenceEntry(agentId);
+    session.citations = [];
+    for (const [completedAgentId, state] of Object.entries(session.agents)) {
+      if (completedAgentId === agentId || state.status !== "done" || !state.output) continue;
+      mergeSessionCitations(session, state.output.citations);
+    }
+
+    const sessionController = isolatedSnapshot
+      ? new AbortController()
+      : sessionAborts.get(sessionId) ?? new AbortController();
+    if (!isolatedSnapshot) sessionAborts.set(sessionId, sessionController);
+    const executionSignal = AbortSignal.any([
+      preflightSignal,
+      sessionController.signal,
+    ]);
+
+    const pollRemoteCancellation = () => {
+      if (remoteCancelPollInFlight || executionSignal.aborted) return;
+      remoteCancelPollInFlight = true;
+      const check = isolatedSnapshot
+        ? isCancelledRemotely(sessionId)
+        : awaitCancelFromRedis(sessionId);
+      void check
+        .then((cancelled) => {
+          if (!cancelled) return;
+          remoteCancelled = true;
+          sessionController.abort(new DOMException("Aborted", "AbortError"));
+        })
+        .finally(() => {
+          remoteCancelPollInFlight = false;
+        });
+    };
+    pollRemoteCancellation();
+    remoteCancelTimer = setInterval(
+      pollRemoteCancellation,
+      DEEP_CANCEL_POLL_INTERVAL_MS,
+    );
+
+    const stepDelayMs = Number.isFinite(options.stepDelayMs)
+      ? Math.max(0, options.stepDelayMs ?? 0)
+      : 400;
+    const output = await runAgent(session, agentId, stepDelayMs, deadlineAt, {
+      signal: executionSignal,
+      strict: options.strict !== false,
+      minimumRetrievedSources: options.minimumRetrievedSources,
+      deadlineMessage: "Deep Research specialist stage deadline reached",
+      // The durable runner owns all externally visible projection after a
+      // successful lease/fence commit. Legacy events mirror directly to the
+      // unfenced session store and therefore must not escape this stage.
+      publishEvents: false,
+    });
+    return { output, session: structuredClone(session) };
+  } catch (error) {
+    if (deadlineController.signal.aborted || Date.now() >= deadlineAt) {
+      throw new ResearchAgentStageError(
+        "deadline_exceeded",
+        "The Deep Research specialist stage exceeded its deadline.",
+      );
+    }
+    if (remoteCancelled || session?.status === "cancelled" || isCancelled(sessionId)) {
+      throw new ResearchAgentStageError(
+        "session_cancelled",
+        "The research session was cancelled while this stage was running.",
+      );
+    }
+    if (options.signal?.aborted) {
+      throw new ResearchAgentStageError(
+        "aborted",
+        "The Deep Research specialist stage was aborted by its caller.",
+      );
+    }
+    if (error instanceof ResearchAgentStageError) throw error;
+    const isAbortError =
+      (error instanceof DOMException && error.name === "AbortError") ||
+      (error instanceof Error && error.name === "AbortError");
+    if (isAbortError) {
+      throw new ResearchAgentStageError(
+        "aborted",
+        "The Deep Research specialist stage was aborted.",
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(deadlineTimer);
+    if (remoteCancelTimer) clearInterval(remoteCancelTimer);
   }
 }
 
@@ -824,6 +1498,29 @@ function getCompletedAgentOutputs(session: ResearchSession): AgentOutput[] {
   return outputs;
 }
 
+const STANDARD_BUDGET_EXHAUSTED_MESSAGE =
+  "Standard session deadline reached; partial dossier retained.";
+
+function markStandardBudgetExhausted(session: ResearchSession): void {
+  for (const agentId of Object.keys(session.agents) as AgentId[]) {
+    const state = session.agents[agentId];
+    if (state.status === "done" || state.status === "error") continue;
+    updateAgentState(session, agentId, {
+      status: "error",
+      currentStep: STANDARD_BUDGET_EXHAUSTED_MESSAGE,
+      error: STANDARD_BUDGET_EXHAUSTED_MESSAGE,
+    });
+  }
+}
+
+function isTerminalResearchSession(session: ResearchSession): boolean {
+  return (
+    session.status === "completed" ||
+    session.status === "cancelled" ||
+    session.status === "error"
+  );
+}
+
 export async function runResearchSession(
   sessionId: string,
   options?: { speedMultiplier?: number },
@@ -833,112 +1530,150 @@ export async function runResearchSession(
     throw new Error(`Session ${sessionId} not found`);
   }
 
+  // Sessions persisted before the mode contract have no `mode`; normalize
+  // them at the execution seam so legacy Standard runs remain recoverable.
+  session.mode = normalizeResearchMode(session.mode);
+  const modeCapabilities = getResearchModeConfig(session.mode);
+  if (modeCapabilities.availability !== "available") {
+    throw new Error(modeCapabilities.capabilityNotice);
+  }
+  ensureEvidenceLedger(session);
+
   if (session.status === "running") {
     return session; // already running
   }
 
   session.status = "running";
   session.updatedAt = new Date().toISOString();
-  // R231: immediately mirror the "running" transition to Redis (force-flush,
-  // bypassing the throttle) so a reconnecting instance sees the run has
-  // started rather than the stale "pending" creation snapshot.
-  void storeSession(session);
+  // Enqueue the running transition so it cannot complete after a later final
+  // revision from this process.
+  void enqueueSessionSnapshot(session);
 
   const stepDelay = 300 / (options?.speedMultiplier || 1);
-
-  // Run research agents in parallel. A single agent failure should not stop
-  // the rest; we collect all results and report the failure via the session
-  // status.
-  //
-  // R244: dispatch order is "lightest first" so the heaviest agent
-  // (market-sizer) runs last. The first wave under PROVIDER_CONCURRENCY=3 is
-  // (pricing-scout + channel-scout + pain-detective). As the two light agents
-  // finish, competitor and market immediately use their slots while the
-  // slower pain analysis continues. This reduces the critical path without
-  // opening more upstream streams than the gateway has already handled.
-  const researchAgentIds: AgentId[] = [
-    "pricing-scout",
-    "channel-scout",
-    "pain-detective",
-    "competitor-analyst",
-    "market-sizer",
-  ];
-
-  const settled = await Promise.allSettled(
-    researchAgentIds.map((agentId) => runAgent(session, agentId, stepDelay)),
-  );
-
-  if (isCancelled(sessionId)) {
-    session.status = "cancelled";
-    session.updatedAt = new Date().toISOString();
-    cancelledSessions.delete(sessionId);
-    persistRunSnapshot(session, "cancelled"); // R212
-    return session;
-  }
-
-  const failedAgents = settled
-    .map((r, i) => ({ agentId: researchAgentIds[i], r }))
-    .filter((x) => x.r.status === "rejected");
-
-  if (failedAgents.length > 0) {
-    console.error(
-      `[research] session ${sessionId}: ${failedAgents.length} agent(s) failed`,
-      failedAgents.map((f) => f.agentId),
+  const sessionBudgetMs = readStandardSessionBudgetMs();
+  const deadlineAt = Date.now() + sessionBudgetMs;
+  const sessionAbort = sessionAborts.get(sessionId) ?? new AbortController();
+  sessionAborts.set(sessionId, sessionAbort);
+  let budgetExpired = false;
+  const budgetTimer = setTimeout(() => {
+    budgetExpired = true;
+    sessionAbort.abort(
+      new DOMException("Standard session deadline reached", "AbortError"),
     );
-  }
+  }, sessionBudgetMs);
+  let remoteCancelPollInFlight = false;
+  const remoteCancelTimer = setInterval(() => {
+    if (remoteCancelPollInFlight || isCancelled(sessionId)) return;
+    remoteCancelPollInFlight = true;
+    void awaitCancelFromRedis(sessionId).finally(() => {
+      remoteCancelPollInFlight = false;
+    });
+  }, 500);
 
-  // Only run synthesis if at least 3 of 5 research agents completed. If
-  // synthesis itself fails, we still mark the session as completed (partial
-  // results are still useful) but the agent will be in 'error' state.
-  const completed = settled.filter((s) => s.status === "fulfilled").length;
-  if (completed >= 3) {
-    try {
-      await runAgent(session, "synthesis", stepDelay);
-    } catch (err) {
-      console.error(`[research] synthesis failed for ${sessionId}:`, err);
+  try {
+    // R244: dispatch lightest specialists first while preserving the 5-agent
+    // parallel model. The shared deadline signal covers progress sleeps,
+    // retrieval, limiter queue wait, and provider generation.
+    const researchAgentIds: AgentId[] = [
+      "pricing-scout",
+      "channel-scout",
+      "pain-detective",
+      "competitor-analyst",
+      "market-sizer",
+    ];
+
+    const settled = await Promise.allSettled(
+      researchAgentIds.map((agentId) =>
+        runAgent(session, agentId, stepDelay, deadlineAt),
+      ),
+    );
+
+    if (budgetExpired || Date.now() >= deadlineAt) {
+      budgetExpired = true;
+      markStandardBudgetExhausted(session);
     }
-  } else {
-    updateAgentState(session, "synthesis", {
-      status: "error",
-      currentStep: "Skipped: too many upstream agent failures",
-    });
-  }
 
-  if (isCancelled(sessionId)) {
-    session.status = "cancelled";
-    cancelledSessions.delete(sessionId);
+    // One structural evidence-integrity pass, first captured after all five
+    // specialists settle. The final rebuild remains the same pass revision.
+    const validationSnapshotAt = new Date().toISOString();
+    session.validation = buildResearchValidation(session, validationSnapshotAt);
+    session.updatedAt = validationSnapshotAt;
+    void enqueueSessionSnapshot(session);
+
+    if (isCancelled(sessionId)) {
+      session.status = "cancelled";
+      session.updatedAt = new Date().toISOString();
+      await checkpointTerminalSession(session, "cancelled", "Research cancelled");
+      cancelledSessions.delete(sessionId);
+      return session;
+    }
+
+    const failedAgents = settled
+      .map((result, index) => ({ agentId: researchAgentIds[index], result }))
+      .filter((entry) => entry.result.status === "rejected");
+
+    if (failedAgents.length > 0 && !budgetExpired) {
+      console.error(
+        `[research] session ${sessionId}: ${failedAgents.length} agent(s) failed`,
+        failedAgents.map((failure) => failure.agentId),
+      );
+    }
+
+    const completed = settled.filter((result) => result.status === "fulfilled").length;
+    if (!budgetExpired && completed >= 3) {
+      try {
+        await runAgent(session, "synthesis", stepDelay, deadlineAt);
+      } catch (err) {
+        if (Date.now() >= deadlineAt || sessionAbort.signal.aborted) {
+          budgetExpired = !isCancelled(sessionId);
+          if (budgetExpired) markStandardBudgetExhausted(session);
+        } else {
+          console.error(`[research] synthesis failed for ${sessionId}:`, err);
+        }
+      }
+    } else if (!budgetExpired) {
+      updateAgentState(session, "synthesis", {
+        status: "error",
+        currentStep: "Skipped: too many upstream agent failures",
+        error: "Too many specialist agents failed to produce a synthesis.",
+      });
+    }
+
+    const finalValidationAt = new Date().toISOString();
+    session.validation = buildResearchValidation(session, finalValidationAt);
+    session.updatedAt = finalValidationAt;
+
+    if (isCancelled(sessionId)) {
+      session.status = "cancelled";
+      session.updatedAt = new Date().toISOString();
+      await checkpointTerminalSession(session, "cancelled", "Research cancelled");
+      cancelledSessions.delete(sessionId);
+      return session;
+    }
+
+    session.status = "completed";
     session.updatedAt = new Date().toISOString();
-    persistRunSnapshot(session, "cancelled"); // R212
+    const completionMessage = budgetExpired
+      ? "Research completed with partial results after reaching the Standard session deadline"
+      : "Research complete";
+    await checkpointTerminalSession(session, "completed", completionMessage);
+
+    if (session.stage2Tracking) {
+      await recordResearchFunnelEvent("research_completed", session.id, {
+        stage2: session.stage2Tracking,
+      });
+    } else {
+      await recordResearchFunnelEvent("research_completed", session.id);
+    }
+
     return session;
+  } finally {
+    clearTimeout(budgetTimer);
+    clearInterval(remoteCancelTimer);
+    if (isTerminalResearchSession(session)) {
+      sessionAborts.delete(sessionId);
+    }
   }
-  session.status = "completed";
-
-
-  session.updatedAt = new Date().toISOString();
-
-
-
-  sessionAborts.delete(sessionId);
-
-  // Persist completed snapshot (R212: routed through helper for parity with
-  // the cancelled/failed paths).
-  persistRunSnapshot(session, "completed");
-  if (session.stage2Tracking) {
-    await recordResearchFunnelEvent("research_completed", session.id, {
-      stage2: session.stage2Tracking,
-    });
-  } else {
-    await recordResearchFunnelEvent("research_completed", session.id);
-  }
-
-  emitEvent(session.id, {
-    type: "complete",
-    agentId: "synthesis",
-    timestamp: new Date().toISOString(),
-    message: "Research complete",
-  });
-
-  return session;
 }
 
 
@@ -950,8 +1685,6 @@ export function subscribeToSession(
   let set = eventListeners.get(sessionId);
   if (!set) { set = new Set(); eventListeners.set(sessionId, set); }
   set.add(listener);
-  const pending = sseIdleTimers.get(sessionId);
-  if (pending) { clearTimeout(pending); sseIdleTimers.delete(sessionId); }
   // Cross-instance fan-out: also subscribe to the Redis Pub/Sub channel so
   // events emitted from a different lambda instance reach this listener.
   // subscribeEvents is synchronous (Upstash returns a Subscriber instance
@@ -966,19 +1699,6 @@ export function subscribeToSession(
     set.delete(listener);
     if (set.size === 0) {
       eventListeners.delete(sessionId);
-      const cur = sessions.get(sessionId);
-      if (cur && (cur.status === "running" || cur.status === "pending")) {
-        const existing = sseIdleTimers.get(sessionId);
-        if (existing) clearTimeout(existing);
-        const t = setTimeout(() => {
-          sseIdleTimers.delete(sessionId);
-          const live = sessions.get(sessionId);
-          if (live && (live.status === "running" || live.status === "pending")) {
-            cancelSession(sessionId);
-          }
-        }, SSE_IDLE_GRACE_MS);
-        sseIdleTimers.set(sessionId, t);
-      }
     }
   };
 }
@@ -1122,7 +1842,7 @@ export function sessionsEqual(a: ResearchSession, b: ResearchSession): boolean {
   if (a.query !== b.query) return false;
   if (a.status !== b.status) return false;
   if (a.keywords.length !== b.keywords.length) return false;
-  if (a.keywords.join(" ") !== b.keywords.join(" ")) return false;
+            if (a.keywords.join("\u001f") !== b.keywords.join("\u001f")) return false;
   if (a.citations.length !== b.citations.length) return false;
   const aIds = Object.keys(a.agents).sort().join(",");
   const bIds = Object.keys(b.agents).sort().join(",");

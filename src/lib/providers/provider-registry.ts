@@ -9,8 +9,18 @@ import type { ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { createOpenAIProvider } from "@/lib/providers/openai-provider";
 import { createAnthropicProvider } from "@/lib/providers/anthropic-provider";
+import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
+
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 
 function makeOpenAI(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider {
+  if (!isSafeProviderBaseUrl(env.OPENAI_BASE_URL, DEFAULT_OPENAI_BASE_URL, {
+    nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
+  })) {
+    console.warn("[provider] OPENAI_BASE_URL is unsafe; using mock generation.");
+    return mockResearchProvider;
+  }
   return createOpenAIProvider({
     apiKey,
     baseUrl: env.OPENAI_BASE_URL,
@@ -19,6 +29,12 @@ function makeOpenAI(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider {
 }
 
 function makeAnthropic(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider {
+  if (!isSafeProviderBaseUrl(env.ANTHROPIC_BASE_URL, DEFAULT_ANTHROPIC_BASE_URL, {
+    nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
+  })) {
+    console.warn("[provider] ANTHROPIC_BASE_URL is unsafe; using mock generation.");
+    return mockResearchProvider;
+  }
   return createAnthropicProvider({
     apiKey,
     baseUrl: env.ANTHROPIC_BASE_URL,

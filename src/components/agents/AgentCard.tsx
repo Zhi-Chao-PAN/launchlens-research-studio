@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-﻿"use client";
+"use client";
 
 import { memo } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -45,6 +45,7 @@ const statusColors: Record<string, string> = {
   running: "bg-amber-100 text-amber-700",
   done: "bg-emerald-100 text-emerald-700",
   error: "bg-rose-100 text-rose-700",
+  stopped: "bg-slate-200 text-slate-700",
 };
 
 const statusLabel: Record<string, string> = {
@@ -52,6 +53,7 @@ const statusLabel: Record<string, string> = {
   running: "Researching",
   done: "Complete",
   error: "Error",
+  stopped: "Stopped",
 };
 
 function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: AgentCardProps) {
@@ -66,20 +68,24 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
   // Suppress per-agent error chrome on cancelled sessions — cancels are an
   // explicit user action, not a failure.
   const showError = !!error && !cancelled && state.status !== "idle";
-  const badgeStatus = showError ? "error" : state.status;
+  const badgeStatus = showError
+    ? "error"
+    : cancelled && state.status !== "done"
+      ? "stopped"
+      : state.status;
 
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+      className={`w-full text-left p-3 rounded-lg border transition-colors ${
         isActive
-          ? "border-indigo-500 bg-indigo-50 shadow-md"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+          ? "border-slate-900 bg-slate-50"
+          : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
       }`}
       aria-pressed={isActive}
     >
       <div className="flex items-start gap-3">
-        <div className="text-2xl flex-shrink-0" aria-hidden>
+        <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-base flex-shrink-0" aria-hidden>
           {meta.icon}
         </div>
         <div className="flex-1 min-w-0">
@@ -94,14 +100,14 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
                   the provider's onFallback callback. */}
               {state.degraded && (
                 <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-200"
+                  className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 border border-amber-200"
                   title={degradedTooltip(state.degradedReason)}
                 >
                   {t("agent.degraded" as any, "demo")}
                 </span>
               )}
               <span
-                className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[badgeStatus] || statusColors.idle}`}
+                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide flex-shrink-0 ${statusColors[badgeStatus] || statusColors.idle}`}
                 style={badgeStatus === "running" ? { animation: 'status-pulse-ring 2s ease-in-out infinite' } : undefined}
               >
                 {showError ? t("agent.status.error") : t(("agent.status." + badgeStatus) as any, statusLabel[badgeStatus] || badgeStatus)}
@@ -110,16 +116,13 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>
 
-          {state.status === "running" && (
+          {badgeStatus === "running" && (
             <div className="mt-2" style={{ animation: 'step-fade-in 0.25s ease-out' }}>
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  className="h-full bg-indigo-600 rounded-full transition-all duration-500 ease-out"
                   style={{
                     width: `${bucketProgress(state.progress)}%`,
-                    background: 'linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa, #8b5cf6, #6366f1)',
-                    backgroundSize: '200% 100%',
-                    animation: 'progress-shimmer 1.8s ease-in-out infinite',
                   }}
                 />
               </div>
@@ -133,9 +136,9 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error, cancelled }: 
             </div>
           )}
 
-          {state.status === "done" && !error && (
-            <div className="mt-2" style={{ animation: 'agent-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
-              <div className="h-1.5 bg-emerald-200 rounded-full overflow-hidden">
+          {badgeStatus === "done" && !error && (
+            <div className="mt-2" style={{ animation: 'agent-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+              <div className="h-1 bg-emerald-100 rounded-full overflow-hidden">
                 <div className="h-full bg-emerald-500 w-full rounded-full" />
               </div>
             </div>

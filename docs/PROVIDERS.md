@@ -46,6 +46,11 @@ With a key set and no explicit override, the app uses the real provider automati
 | `ANTHROPIC_BASE_URL` | Custom base URL for Anthropic-compatible gateways. | `https://api.anthropic.com` |
 | `ANTHROPIC_MODEL` | Model name. | `claude-3-5-sonnet-latest` |
 
+Provider and retrieval base URLs must use HTTPS in production. Plain HTTP is
+accepted only for loopback development endpoints (`localhost`, `127.0.0.0/8`,
+or `::1`), and URLs containing embedded credentials, query strings, or
+fragments are rejected before an API secret can be attached to a request.
+
 ---
 
 ## Selection rules

@@ -1,5 +1,5 @@
 ﻿// CORS utilities for API routes.
-// Default: permissive (Access-Control-Allow-Origin: *) for local development.
+// Default: same-origin only. Cross-origin access requires an explicit allowlist.
 // Configure via LAUNCHLENS_CORS_ORIGINS (comma-separated list of allowed origins).
 // When set, only listed origins are allowed and credentials are enabled.
 //
@@ -17,7 +17,7 @@ const ALLOWED_ORIGINS = ENV_ORIGINS
   .map((o) => o.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-const IS_STRICT = ALLOWED_ORIGINS.length > 0;
+const HAS_CONFIGURED_ALLOWLIST = ALLOWED_ORIGINS.length > 0;
 
 export interface CorsResult {
   allowed: boolean;
@@ -28,12 +28,10 @@ export interface CorsResult {
 function buildHeaders(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  if (IS_STRICT && origin) {
+  if (origin) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers["Vary"] = "Origin";
     headers["Access-Control-Allow-Credentials"] = "true";
-  } else if (!IS_STRICT) {
-    headers["Access-Control-Allow-Origin"] = "*";
   }
 
   headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
@@ -58,14 +56,7 @@ export function checkCors(request: NextRequest): CorsResult {
     return { allowed: true, headers: buildHeaders(null) };
   }
 
-  // Permissive mode — allow everything
-  if (!IS_STRICT) {
-    return { allowed: true, headers: buildHeaders(origin) };
-  }
-
-  // Strict mode — check against whitelist
-  const normalizedOrigin = origin.replace(/\/$/, "");
-  const matches = ALLOWED_ORIGINS.includes(normalizedOrigin);
+  const matches = isAllowedOrigin(request, origin);
 
   if (!matches) {
     return {
@@ -89,17 +80,14 @@ export function handleOptions(request: NextRequest): NextResponse | null {
   if (request.method !== "OPTIONS") return null;
 
   const origin = request.headers.get("origin");
-  const headers = buildHeaders(IS_STRICT ? origin : null);
+  const allowed = origin ? isAllowedOrigin(request, origin) : true;
+  const headers = buildHeaders(allowed ? origin : null);
 
-  // In strict mode, also validate the preflight
-  if (IS_STRICT && origin) {
-    const normalized = origin.replace(/\/$/, "");
-    if (!ALLOWED_ORIGINS.includes(normalized)) {
-      return NextResponse.json(
-        { error: "CORS origin not allowed" },
-        { status: 403, headers: buildHeaders(null) },
-      );
-    }
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "CORS origin not allowed" },
+      { status: 403, headers: buildHeaders(null) },
+    );
   }
 
   return new NextResponse(null, { status: 204, headers });
@@ -113,7 +101,7 @@ export function withCorsHeaders(
   request: NextRequest,
 ): NextResponse {
   const origin = request.headers.get("origin");
-  const headers = buildHeaders(IS_STRICT ? origin : null);
+  const headers = buildHeaders(origin && isAllowedOrigin(request, origin) ? origin : null);
   for (const [k, v] of Object.entries(headers)) {
     response.headers.set(k, v);
   }
@@ -121,6 +109,17 @@ export function withCorsHeaders(
 }
 
 export const corsConfig = {
-  strict: IS_STRICT,
+  strict: true,
+  mode: HAS_CONFIGURED_ALLOWLIST ? "allowlist" : "same-origin",
   allowedOrigins: ALLOWED_ORIGINS,
 };
+
+function isAllowedOrigin(request: NextRequest, origin: string): boolean {
+  const normalizedOrigin = origin.replace(/\/$/, "");
+  if (HAS_CONFIGURED_ALLOWLIST) return ALLOWED_ORIGINS.includes(normalizedOrigin);
+  try {
+    return normalizedOrigin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}

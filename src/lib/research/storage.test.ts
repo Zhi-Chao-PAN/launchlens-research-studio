@@ -38,6 +38,26 @@ describe("Research storage", () => {
   });
 
   describe("saveResearchRun + listResearchRuns", () => {
+    it.each(["../../package", "..%2F..%2Fpackage", "run\\child"])(
+      "rejects traversal-capable ids before memory or disk persistence: %s",
+      (id) => {
+        saveResearchRun({
+          id,
+          query: "unsafe id",
+          keywords: [],
+          result: "",
+          provider: "mock",
+          model: "mock",
+          createdAt: Date.now(),
+          durationMs: 0,
+          status: "completed",
+        });
+
+        expect(listResearchRuns()).toEqual([]);
+        expect(getResearchRun(id)).toBeNull();
+      },
+    );
+
     it("saves and lists runs", () => {
       const run = {
         id: generateRunId(),
@@ -56,6 +76,27 @@ describe("Research storage", () => {
       expect(listed.length).toBe(1);
       expect(listed[0].id).toBe(run.id);
       expect(listed[0].query).toBe("test query");
+    });
+
+    it("upserts an idempotently reconciled terminal run instead of duplicating history", () => {
+      const id = generateRunId();
+      const base = {
+        id,
+        query: "deep research",
+        keywords: [],
+        result: "draft",
+        provider: "openai",
+        model: "gpt",
+        createdAt: Date.now(),
+        durationMs: 1_000,
+        status: "completed" as const,
+      };
+
+      saveResearchRun(base);
+      saveResearchRun({ ...base, result: "authoritative", durationMs: 2_000 });
+
+      expect(listResearchRuns().filter((run) => run.id === id)).toHaveLength(1);
+      expect(getResearchRun(id)).toMatchObject({ result: "authoritative", durationMs: 2_000 });
     });
 
     it("lists runs in most-recent-first order", () => {

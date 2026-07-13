@@ -2,31 +2,19 @@
 "use client";
 
 import type { PricingScoutOutput } from "@/lib/schema/research-schema";
-import { SectionHeader } from "../primitives/SectionHeader";
+import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 function formatPrice(value: number, currency: string = "USD"): string {
-  // R210 defense: see MarketSizerReport.formatCurrency.
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  const sym = currency === "USD" ? "$" : currency + " ";
-  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
-  return `${sym}${value.toFixed(0)}`;
+  const symbol = currency === "USD" ? "$" : `${currency} `;
+  if (value >= 1_000_000) return `${symbol}${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${symbol}${(value / 1_000).toFixed(1)}K`;
+  return `${symbol}${value.toFixed(0)}`;
 }
-
-// BAND_STYLE is keyed by the LLM-emitted band name (Budget / Mid-market /
-// Premium / Enterprise). Since R243 keeps the LLM's enum values in English,
-// we can keep this lookup static and just translate the *display* label
-// inside the component.
-const BAND_STYLE: Record<string, { bg: string; text: string; border: string; emoji: string }> = {
-  Budget: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", emoji: "💚" },
-  "Mid-market": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", emoji: "💙" },
-  Premium: { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", emoji: "💜" },
-  Enterprise: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", emoji: "👑" },
-};
 
 const BAND_LABEL_KEY: Record<string, string> = {
   Budget: "report.pricing.band.budget",
@@ -35,137 +23,127 @@ const BAND_LABEL_KEY: Record<string, string> = {
   Enterprise: "report.pricing.band.enterprise",
 };
 
-const TIER_COLOR = ["from-emerald-500 to-teal-500", "from-indigo-500 to-violet-500", "from-amber-500 to-orange-500"];
+const PERIOD_LABEL_KEY: Record<string, string> = {
+  monthly: "report.pricing.perUserMonth",
+  yearly: "report.pricing.perUserYear",
+  "one-time": "report.pricing.oneTime",
+  usage: "report.pricing.perUsage",
+};
 
 export function PricingScoutReport({ output }: { output: any }) {
   const data = output as PricingScoutOutput;
   const { copied, copy } = useCopyText();
   const { t } = useLocale();
-
-  // Visualize price bands as overlapping range bars
   const allBands = data.priceBands;
-  const maxPrice = Math.max(...allBands.map((b: any) => b.max), 1);
+  const maxPrice = Math.max(...allBands.map((band: any) => band.max), 1);
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title={t("report.pricing.title")}
         description={data.summary}
-        icon="💰"
         count={data.priceBands.length + data.recommendations.length}
-        accent="emerald"
         onCopy={() => copy(generateAgentMarkdown("pricing-scout", data), "pricing-scout")}
         copied={copied === "pricing-scout"}
         copyLabel={t("report.pricing.copySection")}
       />
 
-      {/* Price bands visualization */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          {t("report.pricing.priceBands")}
-        </h3>
-        <div className="space-y-2">
-          {allBands.map((band: any, i: number) => {
-            const style = BAND_STYLE[band.name] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", emoji: "💼" };
+      <section>
+        <ReportSubheading title={t("report.pricing.priceBands")} count={allBands.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {allBands.map((band: any, index: number) => {
             const bandLabel = BAND_LABEL_KEY[band.name] ? t(BAND_LABEL_KEY[band.name]) : band.name;
             const leftPct = (band.min / maxPrice) * 100;
             const widthPct = Math.max(8, ((band.max - band.min) / maxPrice) * 100);
+
             return (
-              <div key={i} className={`p-3 rounded-lg border ${style.bg} ${style.border}`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className={`text-sm font-semibold ${style.text} flex items-center gap-1.5`}>
-                    <span aria-hidden>{style.emoji}</span>
-                    <span>{bandLabel}</span>
-                  </p>
-                  <p className={`text-sm font-bold ${style.text}`}>
+              <div key={index} className="py-3">
+                <div className="mb-1.5 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">{bandLabel}</p>
+                  <p className="font-mono text-sm font-semibold tabular-nums text-slate-900">
                     {formatPrice(band.min, band.currency)} – {formatPrice(band.max, band.currency)}
                   </p>
                 </div>
-                <div className="relative h-3 bg-white/60 rounded-full overflow-hidden">
+                <div className="relative h-2 overflow-hidden rounded-sm bg-slate-100">
                   <div
-                    className="absolute h-full bg-slate-300 rounded-full"
+                    className="absolute h-full rounded-sm bg-slate-500"
                     style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                   />
                   <div
-                    className="absolute h-full w-0.5 bg-slate-700"
+                    className="absolute h-full w-0.5 bg-slate-950"
                     style={{ left: `${(band.typical / maxPrice) * 100}%` }}
                     title={t("report.pricing.typicalMarker")}
                   />
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  {t("report.pricing.typicalPrefix")} <span className="font-semibold">{formatPrice(band.typical, band.currency)}</span>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  {t("report.pricing.typicalPrefix")} <span className="font-semibold text-slate-700">{formatPrice(band.typical, band.currency)}</span>
                 </p>
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Recommendations */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.pricing.recommendedTiers")}</h3>
+      <section>
+        <ReportSubheading title={t("report.pricing.recommendedTiers")} count={data.recommendations.length} />
         <div className={`grid gap-3 ${data.recommendations.length === 1 ? "grid-cols-1" : data.recommendations.length === 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
-          {data.recommendations.map((rec: any, i: number) => {
-            const grad = TIER_COLOR[i % TIER_COLOR.length];
-            // R214: route rec.price through formatPrice so a NaN price renders
-            // as "—" instead of "$NaN"; surface the period enum the normalizer
-            // produces, with a clear localized label per period.
-            const periodLabelKey: Record<string, string> = {
-              monthly: "report.pricing.perUserMonth",
-              yearly: "report.pricing.perUserYear",
-              "one-time": "report.pricing.oneTime",
-              usage: "report.pricing.perUsage",
-            };
-            const periodLabel = t(periodLabelKey[rec.period] || "report.pricing.perUserMonth");
-            const currency = rec.currency || "USD";
+          {data.recommendations.map((recommendation: any, index: number) => {
+            const periodLabel = t(PERIOD_LABEL_KEY[recommendation.period] || "report.pricing.perUserMonth");
+            const currency = recommendation.currency || "USD";
             return (
-              <div key={i} className={`p-4 bg-gradient-to-br ${grad} rounded-xl text-white shadow-md`}>
-                <p className="text-xs uppercase tracking-wide font-semibold opacity-90">{rec.tier}</p>
-                <p className="text-3xl font-bold mt-1">{formatPrice(rec.price, currency)}</p>
-                <p className="text-xs opacity-90 mt-1">{periodLabel}</p>
-                <p className="text-xs opacity-80 mt-2 italic">{rec.rationale}</p>
-              </div>
+              <article key={index} className="rounded-md border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-600">{recommendation.tier}</p>
+                <p className="mt-2 font-mono text-3xl font-semibold tabular-nums tracking-tight text-slate-950">
+                  {formatPrice(recommendation.price, currency)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">{periodLabel}</p>
+                <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-600">
+                  {recommendation.rationale}
+                </p>
+              </article>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Monetization models */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.pricing.monetizationModels")}</h3>
-        <div className="space-y-2">
-          {data.monetizationModels.map((m: any, i: number) => (
-            <div key={i} className="p-3 bg-slate-50 rounded-lg">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <p className="text-sm font-semibold text-slate-800">{m.model}</p>
-                <span className="text-xs font-mono text-indigo-600 flex-shrink-0">{m.prevalence}% {t("report.pricing.prevalenceSuffix")}</span>
+      <section>
+        <ReportSubheading title={t("report.pricing.monetizationModels")} count={data.monetizationModels.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.monetizationModels.map((model: any, index: number) => (
+            <div key={index} className="py-3">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">{model.model}</p>
+                <span className="flex-shrink-0 font-mono text-xs tabular-nums text-slate-700">
+                  {model.prevalence}% {t("report.pricing.prevalenceSuffix")}
+                </span>
               </div>
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-1.5">
-                <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${m.prevalence}%` }} />
+              <div className="mb-1.5 h-1.5 overflow-hidden rounded-sm bg-slate-100">
+                <div className="h-full rounded-sm bg-slate-700" style={{ width: `${model.prevalence}%` }} />
               </div>
-              <p className="text-xs text-slate-500">{t("report.pricing.examplesPrefix")} {m.examples.join(", ")}</p>
+              <p className="text-xs leading-5 text-slate-500">
+                {t("report.pricing.examplesPrefix")} {model.examples.join(", ")}
+              </p>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Willingness to pay */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.pricing.willingnessToPay")}</h3>
-        <div className="space-y-2">
-          {data.willingnessToPay.map((w: any, i: number) => (
-            <div key={i} className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-slate-800">{w.segment}</p>
-              </div>
-              <div className="text-right flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-bold text-slate-800">{formatPrice(w.estimate)}{t("report.pricing.perMonth")}</span>
-                <ConfidenceBadge level={w.confidence} size="xs" />
+      <section>
+        <ReportSubheading title={t("report.pricing.willingnessToPay")} count={data.willingnessToPay.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.willingnessToPay.map((estimate: any, index: number) => (
+            <div key={index} className="flex items-center gap-3 py-3">
+              <p className="min-w-0 flex-1 text-sm text-slate-800">{estimate.segment}</p>
+              <div className="flex flex-shrink-0 items-center gap-2 text-right">
+                <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+                  {formatPrice(estimate.estimate)}{t("report.pricing.perMonth")}
+                </span>
+                <ConfidenceBadge level={estimate.confidence} size="xs" />
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
       <CitationList citations={data.citations} />
     </div>

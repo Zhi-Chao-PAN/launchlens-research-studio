@@ -3,15 +3,37 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchWithCsrfStrict, RateLimitError } from "@/lib/api/csrf-client";
 import { stage2HeadersFromCurrentUrl } from "@/lib/analytics/stage2-context";
-import type { AgentId, AgentOutput, AgentState } from "@/lib/schema/research-schema";
+import type {
+  AgentId,
+  AgentOutput,
+  AgentState,
+  EvidenceLedger,
+  ValidationLedger,
+} from "@/lib/schema/research-schema";
+import type { CachedSession } from "@/lib/research/session-cache";
+import type { DeepRunProgress } from "@/lib/research/deep-research/model";
+import {
+  DEFAULT_RESEARCH_MODE,
+  normalizeResearchMode,
+  type ResearchModeId,
+} from "@/lib/research/research-modes";
 
 export interface ResearchStudioState {
   sessionId: string | null;
   query: string;
   keywords: string[];
-  status: "idle" | "loading" | "running" | "completed" | "error" | "cancelling";
+  mode: ResearchModeId;
+  createdAt: string | null;
+  updatedAt: string | null;
+  status: "idle" | "loading" | "running" | "completed" | "cancelled" | "error" | "cancelling";
   agents: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean; degraded?: boolean; degradedReason?: AgentState["degradedReason"] }>;
   agentOutputs: Record<AgentId, AgentOutput | null>;
+  /** Retrieval provenance and URL-membership allowlist results for this run. */
+  evidence: EvidenceLedger | null;
+  /** Structural evidence-integrity checks; never semantic factual verification. */
+  validation: ValidationLedger | null;
+  /** Durable fixed-graph progress for Deep Research observer sessions. */
+  deepRun: DeepRunProgress | null;
   activeAgentTab: AgentId;
   error: string | null;
   /** Per-agent error message if the engine reported a failure. */
@@ -43,6 +65,9 @@ const initialState: ResearchStudioState = {
   sessionId: null,
   query: "",
   keywords: [],
+  mode: DEFAULT_RESEARCH_MODE,
+  createdAt: null,
+  updatedAt: null,
   status: "idle",
   agents: {
     "market-sizer": { ...initialAgentState },
@@ -60,6 +85,9 @@ const initialState: ResearchStudioState = {
     "channel-scout": null,
     synthesis: null,
   },
+  evidence: null,
+  validation: null,
+  deepRun: null,
   activeAgentTab: "market-sizer",
   error: null,
   agentErrors: {},
@@ -101,6 +129,8 @@ export function useResearchStudio() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const finalizedSessionIdRef = useRef<string | null>(null);
+  const cancelInFlightSessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const clearReconnectTimer = useCallback(() => {
@@ -132,64 +162,38 @@ export function useResearchStudio() {
     );
   }, [clearReconnectTimer, clearPolling]);
 
-  const fetchSessionData = useCallback(async (sessionId: string) => {
+  const fetchSessionData = useCallback(async (sessionId: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/research/${sessionId}`);
       if (!res.ok) {
-        if (res.status === 404) {
+        if (res.status === 404 || res.status === 410) {
+          finalizedSessionIdRef.current = sessionId;
           clearPolling();
           setState((prev) =>
             prev.sessionId === sessionId
               ? { ...prev, status: "error", error: "Session expired. Please start a new research.", reconnectUntilMs: null, pollingIntervalMs: null }
               : prev,
           );
+          return true;
         }
-        return;
+        return false;
       }
-      const data = await res.json();
-      let terminal = false;
-      setState((prev) => {
-        if (prev.sessionId !== sessionId) return prev;
-        const newAgentOutputs = { ...prev.agentOutputs };
-        const newAgents = { ...prev.agents };
-        for (const agentId of Object.keys(data.agents) as AgentId[]) {
-          const agentState = data.agents[agentId];
-          newAgents[agentId] = {
-            status: agentState.status,
-            progress: agentState.progress,
-            currentStep: agentState.currentStep,
-            hasOutput: !!agentState.output,
-            // R203: preserve the degraded marker on the polling fallback path.
-            ...(agentState.degraded
-              ? { degraded: true, degradedReason: agentState.degradedReason }
-              : {}),
-          };
-          if (agentState.output) {
-            newAgentOutputs[agentId] = agentState.output;
-          }
-        }
-        const nextStatus =
-          data.status === "completed" || data.status === "cancelled"
-            ? "completed"
-            : data.status === "error"
-              ? "error"
-              : prev.status;
-        terminal = data.status === "completed" || data.status === "cancelled" || data.status === "error";
-        return {
-          ...prev,
-          status: nextStatus,
-          agents: newAgents,
-          agentOutputs: newAgentOutputs,
-          reconnectUntilMs: terminal ? null : prev.reconnectUntilMs,
-          pollingIntervalMs: terminal ? null : prev.pollingIntervalMs,
-        };
-      });
+      const data = await res.json() as StudioSessionSnapshot;
+      const terminal = isTerminalStudioStatus(data.status);
+      if (terminal) finalizedSessionIdRef.current = sessionId;
+      setState((prev) =>
+        finalizedSessionIdRef.current === sessionId && !terminal
+          ? prev
+          : mergeStudioSessionSnapshot(prev, sessionId, data),
+      );
       if (terminal) {
         clearPolling();
         clearReconnectTimer();
       }
+      return terminal;
     } catch (err) {
       console.error("Failed to fetch session data:", err);
+      return false;
     }
   }, [clearPolling, clearReconnectTimer]);
 
@@ -205,13 +209,8 @@ export function useResearchStudio() {
     setupSseRef.current = (sessionId: string) => {
       const es = new EventSource(`/api/research/${sessionId}/stream${reconnectAttemptsRef.current > 0 ? '?reconnect=1' : ''}`);
       eventSourceRef.current = es;
-      reconnectAttemptsRef.current = 0;
-      // (Re)connected — clear reconnect/polling banners.
-      setState((prev) =>
-        prev.sessionId === sessionId && (prev.reconnectUntilMs || prev.pollingIntervalMs)
-          ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: null }
-          : prev,
-      );
+      // Constructing EventSource only starts a connection attempt. Retry state
+      // is reset after the server proves the stream is healthy with `state`.
 
       // Polling fallback: exponential backoff 2s → 4s → 8s → 16s (cap 16s).
       // Each fetch that reaches a non-terminal state schedules the next poll.
@@ -227,6 +226,7 @@ export function useResearchStudio() {
       let pollAttempts = 0;
       let probeFailures = 0;
       let probeEs: EventSource | null = null;
+      let pollingActive = false;
 
       const closeProbe = () => {
         if (probeEs) {
@@ -237,6 +237,7 @@ export function useResearchStudio() {
 
       const attemptSseProbe = () => {
         if (sessionIdRef.current !== sessionId) return;
+        if (finalizedSessionIdRef.current === sessionId) return;
         if (probeEs) return; // probe already in flight
         const probe = new EventSource(`/api/research/${sessionId}/stream`);
         probeEs = probe;
@@ -245,9 +246,17 @@ export function useResearchStudio() {
           probe.close();
         };
         const onState = () => {
-          // SSE is alive — rebuild a proper EventSource connection with full
-          // handlers (which will also clear polling state).
+          // SSE is alive. Stop the fallback before rebuilding the full stream;
+          // otherwise its already-scheduled timer keeps GET polling forever.
           if (sessionIdRef.current !== sessionId) return cleanup();
+          pollingActive = false;
+          clearPolling();
+          reconnectAttemptsRef.current = 0;
+          setState((prev) =>
+            prev.sessionId === sessionId
+              ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: null }
+              : prev,
+          );
           cleanup();
           // Reset probe-failure counter so the next time we fall back to
           // polling we start probing again quickly.
@@ -277,7 +286,9 @@ export function useResearchStudio() {
       };
 
       const scheduleNextPoll = () => {
+        if (!pollingActive) return;
         if (sessionIdRef.current !== sessionId) return;
+        if (finalizedSessionIdRef.current === sessionId) return;
         clearPolling();
         // Exponential backoff with small jitter to avoid herd thundering.
         const jitter = pollInterval * 0.1 * Math.random();
@@ -289,9 +300,10 @@ export function useResearchStudio() {
         );
         pollingTimerRef.current = setTimeout(() => {
           pollingTimerRef.current = null;
-          if (sessionIdRef.current !== sessionId) return;
-          void fetchSessionData(sessionId).then(() => {
-            if (sessionIdRef.current !== sessionId) return;
+          if (!pollingActive || sessionIdRef.current !== sessionId) return;
+          void fetchSessionData(sessionId).then((terminal) => {
+            const stillActive = pollingActive && sessionIdRef.current === sessionId;
+            if (!shouldScheduleStudioPoll(terminal, stillActive)) return;
             // Periodically probe whether SSE has come back so we can return to
             // realtime updates instead of staying on polling indefinitely.
             // Cadence backs off with each failed probe to reduce load.
@@ -306,6 +318,7 @@ export function useResearchStudio() {
 
       const beginPolling = () => {
         if (sessionIdRef.current !== sessionId) return;
+        pollingActive = true;
         clearReconnectTimer();
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
@@ -320,7 +333,10 @@ export function useResearchStudio() {
             : prev,
         );
         // Immediate first fetch, then back off.
-        void fetchSessionData(sessionId).then(() => scheduleNextPoll());
+        void fetchSessionData(sessionId).then((terminal) => {
+          const stillActive = sessionIdRef.current === sessionId;
+          if (shouldScheduleStudioPoll(terminal, stillActive)) scheduleNextPoll();
+        });
       };
 
       const scheduleReconnect = () => {
@@ -346,25 +362,21 @@ export function useResearchStudio() {
 
       es.addEventListener("state", (e: MessageEvent) => {
         try {
-          const stateData = JSON.parse(e.data);
-          const terminal =
-            stateData.status === "completed" ||
-            stateData.status === "cancelled" ||
-            stateData.status === "error";
-          setState((prev) =>
-            prev.sessionId === sessionId
-              ? {
-                  ...prev,
-                  status: stateData.status === "completed" ? "completed" : "running",
-                  agents: { ...prev.agents, ...stateData.agents },
-                  reconnectUntilMs: terminal ? null : prev.reconnectUntilMs,
-                  pollingIntervalMs: null, // SSE is healthy if we receive state events
-                }
-              : prev,
-          );
-          if (stateData.status === "completed") {
+          const stateData = JSON.parse(e.data) as StudioSessionSnapshot;
+          const terminal = isTerminalStudioStatus(stateData.status);
+          reconnectAttemptsRef.current = 0;
+          pollingActive = false;
+          clearPolling();
+          if (terminal) finalizedSessionIdRef.current = sessionId;
+          setState((prev) => {
+            const merged = mergeStudioSessionSnapshot(prev, sessionId, stateData);
+            return merged === prev
+              ? prev
+              : { ...merged, reconnectUntilMs: null, pollingIntervalMs: null };
+          });
+          if (terminal) {
             clearPolling();
-            fetchSessionData(sessionId);
+            clearReconnectTimer();
           }
         } catch (err) {
           console.error("Bad state event:", err);
@@ -375,7 +387,7 @@ export function useResearchStudio() {
         try {
           const d = JSON.parse(e.data);
           setState((prev) =>
-            prev.sessionId === sessionId
+            prev.sessionId === sessionId && !isTerminalStudioStatus(prev.status)
               ? {
                   ...prev,
                   agents: {
@@ -397,7 +409,7 @@ export function useResearchStudio() {
         try {
           const d = JSON.parse(e.data);
           setState((prev) =>
-            prev.sessionId === sessionId
+            prev.sessionId === sessionId && !isTerminalStudioStatus(prev.status)
               ? {
                   ...prev,
                   agents: {
@@ -416,6 +428,16 @@ export function useResearchStudio() {
                     ...prev.agentOutputs,
                     [d.agentId as AgentId]: d.output,
                   },
+                  evidence: d.evidence
+                    ? {
+                        version: 1,
+                        agents: {
+                          ...(prev.evidence?.agents ?? {}),
+                          [d.agentId as AgentId]: d.evidence,
+                        },
+                      }
+                    : prev.evidence,
+                  validation: d.validation ?? prev.validation,
                 }
               : prev,
           );
@@ -426,7 +448,7 @@ export function useResearchStudio() {
         try {
           const d = JSON.parse(e.data);
           setState((prev) =>
-            prev.sessionId === sessionId
+            prev.sessionId === sessionId && !isTerminalStudioStatus(prev.status)
               ? {
                   ...prev,
                   agentErrors: { ...prev.agentErrors, [d.agentId as AgentId]: d.message || "Agent failed" },
@@ -436,62 +458,76 @@ export function useResearchStudio() {
         } catch {}
       });
 
-      const finalize = () => {
+      const finalize = (
+        event: Event,
+        fallbackStatus: "completed" | "cancelled",
+      ) => {
         if (sessionIdRef.current === sessionId) {
+          finalizedSessionIdRef.current = sessionId;
+          let snapshot: StudioSessionSnapshot = { status: fallbackStatus };
+          if ("data" in event && typeof event.data === "string") {
+            try {
+              snapshot = JSON.parse(event.data) as StudioSessionSnapshot;
+            } catch {
+              // Keep the terminal status even if a legacy server sent no JSON.
+            }
+          }
+          if (!isTerminalStudioStatus(snapshot.status)) {
+            snapshot = { ...snapshot, status: fallbackStatus };
+          }
           setState((prev) =>
-            prev.sessionId === sessionId
-              ? { ...prev, status: "completed", reconnectUntilMs: null, pollingIntervalMs: null }
-              : prev,
+            mergeStudioSessionSnapshot(prev, sessionId, snapshot),
           );
-          fetchSessionData(sessionId);
         }
         closeEventSource();
       };
 
-      es.addEventListener("complete", finalize);
-      es.addEventListener("cancelled", () => {
-        if (sessionIdRef.current === sessionId) {
-          setState((prev) =>
-            prev.sessionId === sessionId
-              ? { ...prev,
-                  status: "idle",
-                  error: null,
-                  agentErrors: {},
-                  reconnectUntilMs: null,
-                  pollingIntervalMs: null }
-              : prev,
-          );
-        }
-        closeEventSource();
-      });
+      es.addEventListener("complete", (event) => finalize(event, "completed"));
+      // Legacy stream versions emitted a dedicated `cancelled` event. Keep it
+      // on the same terminal-snapshot path as the current `terminal` event so
+      // partial outputs/evidence are retained instead of resetting to idle.
+      es.addEventListener("cancelled", (event) => finalize(event, "cancelled"));
       es.addEventListener("terminal", (e: MessageEvent) => {
         try {
-          const d = JSON.parse(e.data);
-          if (d.reason === "not-found") {
+          const d = JSON.parse(e.data) as StudioSessionSnapshot & {
+            reason?: string;
+            message?: string;
+          };
+          if (d.reason === "not-found" || d.reason === "expired") {
+            finalizedSessionIdRef.current = sessionId;
             setState((prev) =>
               prev.sessionId === sessionId
-                ? { ...prev, status: "error", error: "Session expired or not found. Please start a new research.", reconnectUntilMs: null, pollingIntervalMs: null }
+                ? {
+                    ...prev,
+                    status: "error",
+                    error: d.reason === "expired"
+                      ? "Session expired. Please start a new research."
+                      : "Session expired or not found. Please start a new research.",
+                    reconnectUntilMs: null,
+                    pollingIntervalMs: null,
+                  }
                 : prev,
             );
-          } else if (d.reason === "cancelled" || d.reason === "deleted") {
-            if (sessionIdRef.current === sessionId) {
-              setState((prev) =>
-                prev.sessionId === sessionId
-                  ? { ...prev,
-                      status: "idle",
-                      sessionId: d.reason === "deleted" ? null : prev.sessionId,
-                      error: null,
-                      agentErrors: {},
-                      reconnectUntilMs: null,
-                      pollingIntervalMs: null }
-                  : prev,
-              );
-              if (d.reason === "deleted") sessionIdRef.current = null;
-            }
-          } else if (d.message) {
+          } else if (d.reason === "cancelled" || d.reason === "error") {
+            finalizedSessionIdRef.current = sessionId;
+            setState((prev) =>
+              prev.sessionId !== sessionId
+                ? prev
+                : {
+                    ...mergeStudioSessionSnapshot(prev, sessionId, {
+                      ...d,
+                      status: d.reason,
+                    }),
+                    error: d.reason === "error" ? d.message || "Research failed." : null,
+                    agentErrors: d.reason === "cancelled" ? {} : prev.agentErrors,
+                  },
+            );
+          } else if (d.reason === "deleted") {
+            finalizedSessionIdRef.current = sessionId;
+            sessionIdRef.current = null;
             setState((prev) =>
               prev.sessionId === sessionId
-                ? { ...prev, status: "error", error: d.message, reconnectUntilMs: null, pollingIntervalMs: null }
+                ? { ...initialState, mode: prev.mode }
                 : prev,
             );
           }
@@ -499,22 +535,20 @@ export function useResearchStudio() {
         closeEventSource();
       });
       es.onerror = () => {
+        const wasActive = eventSourceRef.current === es;
+        es.close();
+        if (wasActive) eventSourceRef.current = null;
         if (sessionIdRef.current !== sessionId) {
-          closeEventSource();
           return;
         }
-        // Defer to the next tick to let state event flush first.
+        // Defer to the next tick to let a terminal event flush first.
         setTimeout(() => {
-          setState((prev) => {
-            if (prev.status === "completed") {
-              closeEventSource();
-              fetchSessionData(sessionId);
-            } else if (eventSourceRef.current === es) {
-              // Only schedule if nobody replaced the ES (e.g. a fresh connectSSE).
-              scheduleReconnect();
-            }
-            return prev;
-          });
+          if (finalizedSessionIdRef.current === sessionId) {
+            closeEventSource();
+          } else if (wasActive && eventSourceRef.current === null) {
+            // Only schedule if nobody replaced the ES (e.g. a fresh connectSSE).
+            scheduleReconnect();
+          }
         }, 100);
       };
     };
@@ -536,14 +570,101 @@ export function useResearchStudio() {
     [closeEventSource],
   );
 
+  /**
+   * Re-attach the workspace to a durable run after a refresh or a copied
+   * `?session=<id>` link. The GET snapshot is authoritative for hydration;
+   * SSE is opened only when the recovered run is still active.
+   */
+  const resumeResearch = useCallback(
+    async (candidateSessionId: string) => {
+      const sessionId = normalizeResumeSessionId(candidateSessionId);
+      if (!sessionId) {
+        setState({
+          ...initialState,
+          status: "error",
+          error: "Invalid research session id.",
+        });
+        return;
+      }
+
+      if (abortRef.current) abortRef.current.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      closeEventSource();
+      sessionIdRef.current = sessionId;
+      finalizedSessionIdRef.current = null;
+      cancelInFlightSessionIdRef.current = null;
+      setState({
+        ...initialState,
+        sessionId,
+        status: "loading",
+      });
+
+      try {
+        const response = await fetch(`/api/research/${sessionId}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const message = response.status === 404 || response.status === 410
+            ? "Research session expired or was not found."
+            : parseApiError(body, response.status, response);
+          throw new Error(message);
+        }
+
+        const snapshot = await response.json() as StudioSessionSnapshot;
+        if (snapshot.id && snapshot.id !== sessionId) {
+          throw new Error("Research session response did not match the requested session.");
+        }
+        if (sessionIdRef.current !== sessionId || controller.signal.aborted) return;
+
+        const hydrated = studioStateFromRemoteSession(sessionId, snapshot);
+        setState(hydrated);
+        if (isTerminalStudioStatus(hydrated.status)) {
+          finalizedSessionIdRef.current = sessionId;
+          return;
+        }
+        connectSSE(sessionId);
+      } catch (error) {
+        if (controller.signal.aborted || sessionIdRef.current !== sessionId) return;
+        sessionIdRef.current = null;
+        finalizedSessionIdRef.current = null;
+        setState({
+          ...initialState,
+          status: "error",
+          error: error instanceof Error ? error.message : "Failed to resume research.",
+        });
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+      }
+    },
+    [closeEventSource, connectSSE],
+  );
+
   const startResearch = useCallback(
-    async (query: string, keywords: string[]) => {
+    async (
+      query: string,
+      keywords: string[],
+      mode: ResearchModeId = DEFAULT_RESEARCH_MODE,
+    ) => {
+      const normalizedMode = normalizeResearchMode(mode);
+      const startedAt = new Date().toISOString();
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = null;
       closeEventSource();
       sessionIdRef.current = null;
+      finalizedSessionIdRef.current = null;
+      cancelInFlightSessionIdRef.current = null;
       setState((prev) => ({
         ...initialState,
         query,
         keywords,
+        mode: normalizedMode,
+        createdAt: startedAt,
+        updatedAt: startedAt,
         status: "loading",
         // Preserve any active rate-limit cooldown so a spammed submit can't
         // race past the server-side bucket.
@@ -557,7 +678,7 @@ export function useResearchStudio() {
             "Content-Type": "application/json",
             ...stage2HeadersFromCurrentUrl(),
           },
-          body: JSON.stringify({ query, keywords }),
+          body: JSON.stringify({ query, keywords, mode: normalizedMode }),
         });
 
         if (!res.ok) {
@@ -571,6 +692,9 @@ export function useResearchStudio() {
         setState((prev) => ({
           ...prev,
           sessionId,
+          mode: normalizeResearchMode(data.mode ?? normalizedMode),
+          createdAt: typeof data.createdAt === "string" ? data.createdAt : prev.createdAt,
+          updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : prev.updatedAt,
           status: "running",
           rateLimitUntilMs: null,
           retryCount: 0,
@@ -608,43 +732,135 @@ export function useResearchStudio() {
     [closeEventSource, connectSSE],
   );
 
+  /**
+   * Hydrate a completed local snapshot without starting or fetching a run.
+   * This keeps "restore" semantically distinct from "run again".
+   */
+  const restoreCachedSession = useCallback(
+    (cached: CachedSession) => {
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = null;
+      closeEventSource();
+      sessionIdRef.current = cached.id;
+      finalizedSessionIdRef.current = cached.id;
+      cancelInFlightSessionIdRef.current = null;
+      setState(studioStateFromCachedSession(cached));
+    },
+    [closeEventSource],
+  );
+
   const setActiveAgentTab = useCallback((agentId: AgentId) => {
     setState((prev) => ({ ...prev, activeAgentTab: agentId }));
   }, []);
 
   const cancel = useCallback(async () => {
     const sid = sessionIdRef.current;
+    if (
+      !sid ||
+      finalizedSessionIdRef.current === sid ||
+      cancelInFlightSessionIdRef.current === sid
+    ) return;
+    cancelInFlightSessionIdRef.current = sid;
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
     closeEventSource();
-    if (sid) {
-      // Best-effort: tell the server to abort agents immediately instead of
-      // waiting for the SSE idle grace to expire. keepalive lets it complete
-      // even if the user navigates away mid-request.
-      try { fetchWithCsrfStrict(`/api/research/${sid}/cancel`, { method: "POST", keepalive: true }).catch(() => {}); } catch {}
-    }
-    sessionIdRef.current = null;
     setState((prev) => ({
       ...prev,
-      status: "idle",
+      status: isTerminalStudioStatus(prev.status) ? prev.status : "cancelling",
       error: null,
-      agentErrors: {},
       rateLimitUntilMs: null,
       reconnectUntilMs: null,
       pollingIntervalMs: null,
     }));
-  }, [closeEventSource]);
+
+    try {
+      // Explicit cancellation is the only observer-authorized stop signal.
+      // Await and validate the response: cancellation is a user-visible state
+      // transition, not a best-effort telemetry request.
+      const response = await fetchWithCsrfStrict(`/api/research/${sid}/cancel`, {
+        method: "POST",
+        keepalive: true,
+      });
+      const body = await response.json().catch(() => null) as {
+        ok?: unknown;
+        sessionId?: unknown;
+        status?: unknown;
+      } | null;
+
+      if (!response.ok) {
+        const actualStatus = body?.status;
+        const message = parseApiError(body, response.status, response);
+        if (isTerminalStudioStatus(actualStatus)) {
+          finalizedSessionIdRef.current = sid;
+          setState((prev) => {
+            const merged = mergeStudioSessionSnapshot(prev, sid, {
+              status: actualStatus as "completed" | "cancelled" | "error",
+            });
+            return merged === prev ? prev : { ...merged, error: message };
+          });
+          await fetchSessionData(sid);
+          setState((prev) => prev.sessionId === sid ? { ...prev, error: message } : prev);
+          return;
+        }
+        if (response.status === 404 || response.status === 410) {
+          finalizedSessionIdRef.current = sid;
+          setState((prev) =>
+            prev.sessionId === sid
+              ? { ...prev, status: "error", error: message }
+              : prev,
+          );
+          return;
+        }
+        throw new Error(message);
+      }
+
+      if (body?.ok !== true || body.sessionId !== sid || body.status !== "cancelled") {
+        throw new Error("Cancellation response was invalid. Research status was not changed.");
+      }
+
+      finalizedSessionIdRef.current = sid;
+      setState((prev) =>
+        mergeStudioSessionSnapshot(prev, sid, { status: "cancelled" }),
+      );
+      // The API does not return the full terminal dossier. Its response is
+      // checkpoint-gated, so this GET can safely enrich the cancelled state
+      // with every partial output/evidence item that became durable.
+      await fetchSessionData(sid);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to cancel research.";
+      finalizedSessionIdRef.current = null;
+      setState((prev) =>
+        prev.sessionId === sid && !isTerminalStudioStatus(prev.status)
+          ? {
+              ...prev,
+              status: "running",
+              error: message,
+              reconnectUntilMs: null,
+              pollingIntervalMs: null,
+            }
+          : prev,
+      );
+      if (sessionIdRef.current === sid) connectSSE(sid);
+    } finally {
+      if (cancelInFlightSessionIdRef.current === sid) {
+        cancelInFlightSessionIdRef.current = null;
+      }
+    }
+  }, [closeEventSource, connectSSE, fetchSessionData]);
 
   const reset = useCallback(() => {
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
     closeEventSource();
     sessionIdRef.current = null;
+    finalizedSessionIdRef.current = null;
+    cancelInFlightSessionIdRef.current = null;
     setState(initialState);
   }, [closeEventSource]);
 
   useEffect(() => {
     return () => {
+      if (abortRef.current) abortRef.current.abort();
       closeEventSource();
     };
   }, [closeEventSource]);
@@ -700,6 +916,8 @@ export function useResearchStudio() {
       pollingIntervalMs: state.pollingIntervalMs,
     },
     startResearch,
+    resumeResearch,
+    restoreCachedSession,
     cancel,
     setActiveAgentTab,
     reset,
@@ -710,6 +928,244 @@ export function useResearchStudio() {
 /* ------------------------------------------------------------------ */
 /*  Pure studio helpers (round 162) -- no React, no network            */
 /* ------------------------------------------------------------------ */
+
+export interface StudioSessionSnapshot {
+  id?: string;
+  query?: string;
+  keywords?: string[];
+  status?: string;
+  mode?: ResearchModeId | string;
+  createdAt?: string;
+  updatedAt?: string;
+  agents?: Partial<Record<AgentId, {
+    status?: string;
+    progress?: number;
+    currentStep?: string;
+    hasOutput?: boolean;
+    output?: AgentOutput | null;
+    degraded?: boolean;
+    degradedReason?: AgentState["degradedReason"];
+  }>>;
+  evidence?: EvidenceLedger | null;
+  validation?: ValidationLedger | null;
+  deepRun?: DeepRunProgress | null;
+}
+
+export function isTerminalStudioStatus(status: unknown): boolean {
+  return status === "completed" || status === "cancelled" || status === "error";
+}
+
+const RESUME_SESSION_ID_PATTERN = /^[a-z0-9]{1,128}$/i;
+
+/** Accept only the same opaque session-id shape used by the public API. */
+export function normalizeResumeSessionId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized && RESUME_SESSION_ID_PATTERN.test(normalized) ? normalized : null;
+}
+
+/** Build a fresh workspace state from one server-authoritative session snapshot. */
+export function studioStateFromRemoteSession(
+  sessionId: string,
+  snapshot: StudioSessionSnapshot,
+): ResearchStudioState {
+  const base: ResearchStudioState = {
+    ...initialState,
+    sessionId,
+    query: typeof snapshot.query === "string" ? snapshot.query : "",
+    keywords: Array.isArray(snapshot.keywords)
+      ? snapshot.keywords.filter((keyword): keyword is string => typeof keyword === "string")
+      : [],
+    mode: normalizeResearchMode(snapshot.mode),
+    createdAt: typeof snapshot.createdAt === "string" ? snapshot.createdAt : null,
+    updatedAt: typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : null,
+    status: "loading",
+  };
+  const merged = mergeStudioSessionSnapshot(base, sessionId, snapshot);
+  return (snapshot.status === "pending" || snapshot.status === "running") && merged.status === "loading"
+    ? { ...merged, status: "running" }
+    : merged;
+}
+
+export function shouldScheduleStudioPoll(
+  terminal: boolean,
+  sessionStillActive: boolean,
+): boolean {
+  return !terminal && sessionStillActive;
+}
+
+function preferValidationLedger(
+  current: ValidationLedger | null,
+  incoming: ValidationLedger | null | undefined,
+): ValidationLedger | null {
+  if (!incoming) return current;
+  if (current?.stage === "final" && incoming.stage !== "final") return current;
+  return incoming;
+}
+
+/**
+ * Merge GET/SSE snapshots monotonically. Once a session is final, a delayed
+ * running/pre-synthesis response is ignored wholesale; a final validation
+ * ledger also cannot be replaced by a pre-synthesis revision.
+ */
+export function mergeStudioSessionSnapshot(
+  current: ResearchStudioState,
+  sessionId: string,
+  snapshot: StudioSessionSnapshot,
+): ResearchStudioState {
+  if (current.sessionId !== sessionId) return current;
+  const incomingTerminal = isTerminalStudioStatus(snapshot.status);
+  const currentTerminal = isTerminalStudioStatus(current.status);
+
+  // Every terminal status is sticky. A delayed GET/state/progress response may
+  // enrich a terminal state only when it reports the same terminal status; it
+  // can never revive the run or convert a user cancellation into completion.
+  if (currentTerminal && snapshot.status !== current.status) return current;
+  if (currentTerminal && incomingTerminal) {
+    const currentUpdatedAt = current.updatedAt ? Date.parse(current.updatedAt) : Number.NaN;
+    const incomingUpdatedAt = snapshot.updatedAt ? Date.parse(snapshot.updatedAt) : Number.NaN;
+    if (
+      Number.isFinite(currentUpdatedAt) &&
+      Number.isFinite(incomingUpdatedAt) &&
+      incomingUpdatedAt < currentUpdatedAt
+    ) return current;
+  }
+
+  const agents = { ...current.agents };
+  const agentOutputs = { ...current.agentOutputs };
+  for (const agentId of ALL_AGENT_IDS) {
+    const incoming = snapshot.agents?.[agentId];
+    if (!incoming) continue;
+    agents[agentId] = {
+      ...agents[agentId],
+      ...(typeof incoming.status === "string" ? { status: incoming.status } : {}),
+      ...(typeof incoming.progress === "number"
+        ? { progress: Math.max(0, Math.min(100, incoming.progress)) }
+        : {}),
+      ...(typeof incoming.currentStep === "string"
+        ? { currentStep: incoming.currentStep }
+        : {}),
+      hasOutput:
+        typeof incoming.hasOutput === "boolean"
+          ? incoming.hasOutput
+          : incoming.output != null || agents[agentId].hasOutput,
+      ...(incoming.degraded
+        ? { degraded: true, degradedReason: incoming.degradedReason }
+        : {}),
+    };
+    if (Object.prototype.hasOwnProperty.call(incoming, "output")) {
+      agentOutputs[agentId] = incoming.output ?? null;
+    }
+  }
+
+  const status: ResearchStudioState["status"] =
+    snapshot.status === "completed"
+      ? "completed"
+      : snapshot.status === "cancelled"
+        ? "cancelled"
+        : snapshot.status === "error"
+          ? "error"
+          : current.status === "loading" && snapshot.status === "running"
+            ? "running"
+            : current.status;
+  const terminal = isTerminalStudioStatus(status);
+
+  return {
+    ...current,
+    query: typeof snapshot.query === "string" ? snapshot.query : current.query,
+    keywords: Array.isArray(snapshot.keywords) && snapshot.keywords.every((keyword) => typeof keyword === "string")
+      ? [...snapshot.keywords]
+      : current.keywords,
+    mode: normalizeResearchMode(snapshot.mode ?? current.mode),
+    createdAt:
+      typeof snapshot.createdAt === "string" ? snapshot.createdAt : current.createdAt,
+    updatedAt:
+      typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : current.updatedAt,
+    status,
+    agents,
+    agentOutputs,
+    evidence: snapshot.evidence ?? current.evidence,
+    validation: preferValidationLedger(current.validation, snapshot.validation),
+    deepRun: snapshot.deepRun ?? current.deepRun,
+    error: status === "completed" || status === "cancelled" ? null : current.error,
+    agentErrors: status === "cancelled" ? {} : current.agentErrors,
+    reconnectUntilMs: terminal ? null : current.reconnectUntilMs,
+    pollingIntervalMs: terminal ? null : current.pollingIntervalMs,
+  };
+}
+
+/** Convert a localStorage snapshot into a complete, offline studio state. */
+export function studioStateFromCachedSession(cached: CachedSession): ResearchStudioState {
+  const agents = {} as ResearchStudioState["agents"];
+  const agentOutputs = {} as ResearchStudioState["agentOutputs"];
+  const agentErrors: ResearchStudioState["agentErrors"] = {};
+
+  for (const agentId of ALL_AGENT_IDS) {
+    const cachedAgent = cached.agentStatuses?.[agentId];
+    const output = cached.outputs?.[agentId] ?? null;
+    const status = typeof cachedAgent?.status === "string"
+      ? cachedAgent.status
+      : output
+        ? "done"
+        : "idle";
+
+    agents[agentId] = {
+      status,
+      progress: Math.max(0, Math.min(100, Number(cachedAgent?.progress) || (output ? 100 : 0))),
+      currentStep:
+        typeof cachedAgent?.currentStep === "string" && cachedAgent.currentStep
+          ? cachedAgent.currentStep
+          : output
+            ? "Restored from local snapshot"
+            : "No cached output",
+      hasOutput: !!output,
+      ...(cachedAgent?.degraded
+        ? {
+            degraded: true,
+            degradedReason: cachedAgent.degradedReason,
+          }
+        : {}),
+    };
+    agentOutputs[agentId] = output;
+    if (status === "error") agentErrors[agentId] = "Agent failed in cached run";
+  }
+
+  const firstOutputAgent = ALL_AGENT_IDS.find((agentId) => agentOutputs[agentId])
+    ?? "market-sizer";
+  const hasAnyOutput = ALL_AGENT_IDS.some((agentId) => agentOutputs[agentId]);
+  const restoredStatus: ResearchStudioState["status"] =
+    cached.status === "completed"
+      ? "completed"
+      : cached.status === "cancelled"
+        ? "cancelled"
+        : "error";
+  const restoredError = restoredStatus === "error"
+    ? cached.status === "error"
+      ? hasAnyOutput
+        ? "Cached research failed. Partial results are shown."
+        : "Cached research failed."
+      : "Cached research is incomplete and cannot be resumed."
+    : null;
+
+  return {
+    ...initialState,
+    sessionId: cached.id,
+    query: cached.query,
+    keywords: [...cached.keywords],
+    mode: normalizeResearchMode(cached.mode),
+    createdAt: cached.createdAt,
+    updatedAt: cached.updatedAt,
+    status: restoredStatus,
+    agents,
+    agentOutputs,
+    evidence: cached.evidence ?? null,
+    validation: cached.validation ?? null,
+    deepRun: null,
+    activeAgentTab: firstOutputAgent,
+    error: restoredError,
+    agentErrors,
+  };
+}
 
 /** Normalize user query before submission: trim, collapse whitespace, clamp length. */
 export function normalizeQuery(raw: string, maxLength = 500): string {
@@ -771,11 +1227,17 @@ export function computeStudioProgress(
   };
 }
 
-export type StudioPhase = "idle" | "loading" | "running" | "completed" | "error" | "mixed" | "cancelling";
+export type StudioPhase = "idle" | "loading" | "running" | "completed" | "cancelled" | "error" | "mixed" | "cancelling";
 
 /** Derive human-friendly phase from state/agents. */
 export function deriveStudioPhase(state: Pick<ResearchStudioState, "status" | "agents">): StudioPhase {
-  if (state.status === "idle" || state.status === "loading" || state.status === "error") return state.status;
+  if (
+    state.status === "idle" ||
+    state.status === "loading" ||
+    state.status === "cancelled" ||
+    state.status === "error" ||
+    state.status === "cancelling"
+  ) return state.status;
   if (state.status === "completed") return "completed";
   const statuses = new Set(Object.values(state.agents).map((a) => a.status));
   if (statuses.has("running")) return "running";
@@ -786,8 +1248,10 @@ export function deriveStudioPhase(state: Pick<ResearchStudioState, "status" | "a
 /** Deep equality of the studio state snapshot (good for memoization checks). */
 export function studioStateEqual(a: ResearchStudioState, b: ResearchStudioState): boolean {
   if (a.sessionId !== b.sessionId) return false;
-  if (a.query !== b.query || a.status !== b.status || a.error !== b.error) return false;
+  if (a.query !== b.query || a.mode !== b.mode || a.status !== b.status || a.error !== b.error) return false;
+  if (a.createdAt !== b.createdAt || a.updatedAt !== b.updatedAt) return false;
   if (a.activeAgentTab !== b.activeAgentTab) return false;
+  if (a.evidence !== b.evidence || a.validation !== b.validation || a.deepRun !== b.deepRun) return false;
   if (a.keywords.length !== b.keywords.length) return false;
   if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
   if (a.rateLimitUntilMs !== b.rateLimitUntilMs) return false;
@@ -812,7 +1276,7 @@ export function applyAgentProgress(
   sessionId: string,
   ev: { agentId: AgentId; progress: number; step?: string },
 ): ResearchStudioState {
-  if (state.sessionId !== sessionId) return state;
+  if (state.sessionId !== sessionId || isTerminalStudioStatus(state.status)) return state;
   return {
     ...state,
     status: "running",
@@ -834,7 +1298,7 @@ export function applyAgentOutput(
   sessionId: string,
   ev: { agentId: AgentId; output: AgentOutput | null },
 ): ResearchStudioState {
-  if (state.sessionId !== sessionId) return state;
+  if (state.sessionId !== sessionId || isTerminalStudioStatus(state.status)) return state;
   return {
     ...state,
     agents: {
@@ -851,7 +1315,7 @@ export function applyAgentError(
   sessionId: string,
   ev: { agentId: AgentId; message?: string },
 ): ResearchStudioState {
-  if (state.sessionId !== sessionId) return state;
+  if (state.sessionId !== sessionId || isTerminalStudioStatus(state.status)) return state;
   return {
     ...state,
     agentErrors: { ...state.agentErrors, [ev.agentId]: ev.message || "Agent failed" },

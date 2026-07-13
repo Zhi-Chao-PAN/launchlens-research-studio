@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { parseSynthesis, type SynthesisOutput, type Source } from "@/lib/research/synthesis-parser";
+import { SafeExternalLink } from "@/components/report/primitives/SafeExternalLink";
 
 interface ResearchRun {
   id: string;
@@ -347,9 +348,9 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                   <ul className="research-sources">
                     {synthesis.citations.map((s, i) => (
                       <li key={i} className="research-source-item">
-                        <a href={s.url} target="_blank" rel="noopener noreferrer" className="research-source-title">
+                        <SafeExternalLink href={s.url} className="research-source-title">
                           {s.title}
-                        </a>
+                        </SafeExternalLink>
                         {s.snippet && <p className="research-source-snippet">{s.snippet}</p>}
                       </li>
                     ))}

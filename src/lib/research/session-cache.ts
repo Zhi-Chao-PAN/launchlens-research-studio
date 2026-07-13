@@ -2,7 +2,16 @@
 // in localStorage so users can revisit them across browser sessions and
 // page refreshes (the server is in-memory and loses state on restart).
 
-import type { AgentId, AgentOutput, ResearchSession } from "@/lib/schema/research-schema";
+import type {
+  AgentId,
+  AgentOutput,
+  AgentState,
+  EvidenceLedger,
+  ResearchSession,
+  ValidationLedger,
+} from "@/lib/schema/research-schema";
+import { isResearchModeId, type ResearchModeId } from "./research-modes";
+import { isEvidenceLedger, isValidationLedger } from "./ledger-guards";
 
 const STORAGE_KEY = "launchlens:sessions";
 const MAX_SESSIONS = 8;
@@ -11,22 +20,36 @@ export interface CachedSession {
   id: string;
   query: string;
   keywords: string[];
+  /** Optional because existing localStorage snapshots predate mode support. */
+  mode?: ResearchModeId;
   status: ResearchSession["status"];
   createdAt: string;
   updatedAt: string;
   savedAt: number;
   outputs: Record<AgentId, AgentOutput | null>;
-  agentStatuses: Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>;
+  agentStatuses: Record<AgentId, {
+    status: string;
+    progress: number;
+    currentStep: string;
+    hasOutput: boolean;
+    degraded?: boolean;
+    degradedReason?: AgentState["degradedReason"];
+  }>;
+  /** Optional because older local snapshots predate evidence capture. */
+  evidence?: EvidenceLedger;
+  /** Optional because older local snapshots predate structural validation. */
+  validation?: ValidationLedger;
   citationCount: number;
   completedAt: string;
 }
 
-function isValidCachedSessionShape(v: unknown): v is CachedSession {
+function hasValidCachedSessionEnvelope(v: unknown): v is CachedSession {
   if (!v || typeof v !== "object") return false;
   const s = v as Record<string, unknown>;
   if (typeof s.id !== "string" || !s.id) return false;
   if (typeof s.query !== "string") return false;
   if (!Array.isArray(s.keywords) || !s.keywords.every((k) => typeof k === "string")) return false;
+  if (s.mode !== undefined && !isResearchModeId(s.mode)) return false;
   if (typeof s.status !== "string") return false;
   if (typeof s.createdAt !== "string") return false;
   if (typeof s.updatedAt !== "string") return false;
@@ -38,6 +61,18 @@ function isValidCachedSessionShape(v: unknown): v is CachedSession {
   return true;
 }
 
+function sanitizeCachedSessionShape(value: unknown): CachedSession | undefined {
+  if (!hasValidCachedSessionEnvelope(value)) return undefined;
+  const session = { ...value };
+  if (session.evidence !== undefined && !isEvidenceLedger(session.evidence)) {
+    delete session.evidence;
+  }
+  if (session.validation !== undefined && !isValidationLedger(session.validation)) {
+    delete session.validation;
+  }
+  return session;
+}
+
 function safeRead(): CachedSession[] {
   if (typeof window === "undefined") return [];
   try {
@@ -45,9 +80,11 @@ function safeRead(): CachedSession[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Defensively drop entries with the wrong shape so a partial write
-    // can't crash the agent / history views that consume the cache.
-    return parsed.filter(isValidCachedSessionShape);
+    // Keep a valid research snapshot even when one optional ledger was
+    // partially written; malformed optional ledgers are removed fail-closed.
+    return parsed
+      .map(sanitizeCachedSessionShape)
+      .filter((session): session is CachedSession => Boolean(session));
   } catch {
     return [];
   }
@@ -70,18 +107,25 @@ function safeWrite(sessions: CachedSession[]): void {
 }
 
 export function saveSessionSnapshot(session: ResearchSession): void {
+  const sessions = safeRead();
+  const previous = sessions.find((item) => item.id === session.id);
   const cached: CachedSession = {
     id: session.id,
     query: session.query,
     keywords: session.keywords,
+    mode: session.mode,
     status: session.status,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    savedAt: Date.now(),
-    completedAt: new Date().toISOString(),
+    savedAt: previous?.savedAt ?? Date.now(),
+    completedAt: previous?.updatedAt === session.updatedAt
+      ? previous.completedAt
+      : session.updatedAt,
     outputs: {} as Record<AgentId, AgentOutput | null>,
-    agentStatuses: {} as Record<AgentId, { status: string; progress: number; currentStep: string; hasOutput: boolean }>,
+    agentStatuses: {} as CachedSession["agentStatuses"],
     citationCount: session.citations.length,
+    ...(session.evidence ? { evidence: session.evidence } : {}),
+    ...(session.validation ? { validation: session.validation } : {}),
   };
   for (const [id, state] of Object.entries(session.agents) as [AgentId, ResearchSession["agents"][AgentId]][]) {
     cached.outputs[id] = state.output ?? null;
@@ -90,9 +134,14 @@ export function saveSessionSnapshot(session: ResearchSession): void {
       progress: state.progress,
       currentStep: state.currentStep,
       hasOutput: !!state.output,
+      ...(state.degraded
+        ? { degraded: true, degradedReason: state.degradedReason }
+        : {}),
     };
   }
-  const existing = safeRead().filter((s) => s.id !== cached.id);
+  if (previous && JSON.stringify(previous) === JSON.stringify(cached)) return;
+  cached.savedAt = Date.now();
+  const existing = sessions.filter((s) => s.id !== cached.id);
   safeWrite([cached, ...existing].slice(0, MAX_SESSIONS));
 }
 
@@ -484,23 +533,17 @@ export function computeHitRate(stats: { hits: number; misses: number; evictions:
 
 /** Shape check for localStorage data (defensive: corrupted JSON shouldn't crash UI). */
 export function isValidCachedSession(value: unknown): value is CachedSession {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  if (typeof v.id !== "string" || !v.id) return false;
-  if (typeof v.query !== "string") return false;
-  if (!Array.isArray(v.keywords)) return false;
-  if (typeof v.createdAt !== "string" || typeof v.updatedAt !== "string") return false;
-  if (!v.outputs || typeof v.outputs !== "object") return false;
-  if (!v.agentStatuses || typeof v.agentStatuses !== "object") return false;
-  if (typeof v.citationCount !== "number") return false;
-  if (typeof v.completedAt !== "string") return false;
+  if (!hasValidCachedSessionEnvelope(value)) return false;
+  if (value.evidence !== undefined && !isEvidenceLedger(value.evidence)) return false;
+  if (value.validation !== undefined && !isValidationLedger(value.validation)) return false;
   return true;
 }
 
 /** Filter and sort by createdAt desc. Tolerates invalid entries. */
 export function sanitizeCachedSessions(entries: unknown[]): CachedSession[] {
   return entries
-    .filter(isValidCachedSession)
+    .map(sanitizeCachedSessionShape)
+    .filter((session): session is CachedSession => Boolean(session))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -523,6 +566,8 @@ export function cachedSessionsEqual(a: CachedSession, b: CachedSession): boolean
   if (a.query !== b.query) return false;
   if (a.citationCount !== b.citationCount) return false;
   if (a.createdAt !== b.createdAt || a.completedAt !== b.completedAt) return false;
+  if (JSON.stringify(a.evidence ?? null) !== JSON.stringify(b.evidence ?? null)) return false;
+  if (JSON.stringify(a.validation ?? null) !== JSON.stringify(b.validation ?? null)) return false;
   if (a.keywords.length !== b.keywords.length) return false;
   if (a.keywords.some((k, i) => k !== b.keywords[i])) return false;
   const aAgents = Object.keys(a.agentStatuses).sort().join(",");
@@ -531,7 +576,13 @@ export function cachedSessionsEqual(a: CachedSession, b: CachedSession): boolean
   for (const id of Object.keys(a.agentStatuses)) {
     const aid = id as keyof typeof a.agentStatuses;
     const x = a.agentStatuses[aid], y = b.agentStatuses[aid];
-    if (x.status !== y.status || x.progress !== y.progress || x.hasOutput !== y.hasOutput) return false;
+    if (
+      x.status !== y.status ||
+      x.progress !== y.progress ||
+      x.hasOutput !== y.hasOutput ||
+      x.degraded !== y.degraded ||
+      x.degradedReason !== y.degradedReason
+    ) return false;
   }
   return true;
 }

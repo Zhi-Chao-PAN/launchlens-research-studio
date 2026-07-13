@@ -114,10 +114,19 @@ describe("share-tokens pure helpers (round 158)", () => {
     expect(searchShares(tokens, "  ").length).toBe(2);
   });
 
-  it("toPublicShareView strips passwordHash", () => {
-    const s = mk({ passwordHash: hashSharePassword("pw"), name: "secret" });
+  it("toPublicShareView strips all bearer and password credentials", () => {
+    const s = mk({
+      token: "full-bearer-token",
+      passwordHash: hashSharePassword("pw"),
+      name: "secret",
+    });
     const pub: any = toPublicShareView(s);
+    expect(pub.token).toBeUndefined();
     expect(pub.passwordHash).toBeUndefined();
+    expect(pub.shareId).toMatch(/^[a-f0-9]{64}$/);
+    expect(pub.shareId).not.toContain("full-bearer-token");
+    expect(pub.hasPassword).toBe(true);
+    expect(pub.type).toBe("password");
     expect(pub.name).toBe("secret");
   });
 

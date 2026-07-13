@@ -82,13 +82,13 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden report-view-container" data-report-view>
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 flex-shrink-0">
-        <span className="text-2xl" aria-hidden>
+    <div className="bg-white rounded-xl border border-slate-200 h-full flex flex-col overflow-hidden report-view-container" data-report-view>
+      <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-shrink-0">
+        <span className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-base" aria-hidden>
           {meta.icon}
         </span>
         <div className="flex-1 min-w-0">
-          <h2 className="font-bold text-slate-800 truncate">{meta.name}</h2>
+          <h2 className="font-semibold text-slate-900 truncate">{meta.name}</h2>
           <p className="text-xs text-slate-500 truncate">{meta.description}</p>
         </div>
       </div>
@@ -99,10 +99,9 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
         </span>
         <button
           onClick={() => window.print()}
-          className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-700 hover:border-slate-400 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
           title="Print / Save as PDF"
         >
-          <span aria-hidden>🖨️</span>
           <span>Print / PDF</span>
         </button>
       </div>
@@ -116,7 +115,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
               <button
                 key={id}
                 onClick={() => onSwitchTab?.(id)}
-                className={`px-3 py-2 text-xs font-medium whitespace-nowrap rounded-t-lg transition-colors flex items-center gap-1.5 ${
+                className={`px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                   isActive
                     ? "bg-slate-50 text-slate-800 border-b-2 border-indigo-500"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"

@@ -2,176 +2,182 @@
 "use client";
 
 import type { ChannelScoutOutput } from "@/lib/schema/research-schema";
-import { SectionHeader } from "../primitives/SectionHeader";
+import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-
-const CATEGORY_STYLE: Record<string, { bg: string; text: string; emoji: string }> = {
-  social: { bg: "bg-blue-100", text: "text-blue-700", emoji: "📱" },
-  community: { bg: "bg-violet-100", text: "text-violet-700", emoji: "💬" },
-  content: { bg: "bg-emerald-100", text: "text-emerald-700", emoji: "📝" },
-  paid: { bg: "bg-amber-100", text: "text-amber-700", emoji: "💵" },
-  partnership: { bg: "bg-rose-100", text: "text-rose-700", emoji: "🤝" },
-  direct: { bg: "bg-slate-100", text: "text-slate-700", emoji: "📧" },
-};
+import { canonicalizeSafeExternalUrl } from "@/lib/security/safe-external-url";
 
 const PRIORITY_STYLE = {
-  high: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", bar: "bg-emerald-500" },
-  medium: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", bar: "bg-amber-500" },
-  low: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", bar: "bg-slate-400" },
+  high: { badge: "border-emerald-200 bg-emerald-50 text-emerald-800", bar: "bg-emerald-700" },
+  medium: { badge: "border-amber-200 bg-amber-50 text-amber-900", bar: "bg-amber-700" },
+  low: { badge: "border-slate-200 bg-slate-50 text-slate-700", bar: "bg-slate-500" },
+} as const;
+
+const VOLUME_STYLE = {
+  high: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  medium: "border-amber-200 bg-amber-50 text-amber-900",
+  low: "border-slate-200 bg-slate-50 text-slate-700",
 } as const;
 
 const REACH_RANK: Record<string, number> = { niche: 1, moderate: 3, broad: 5 };
 const COST_RANK: Record<string, number> = { low: 5, medium: 3, high: 1 };
 
-const VOL_STYLE = {
-  high: { bg: "bg-emerald-100", text: "text-emerald-700", emoji: "🔥" },
-  medium: { bg: "bg-amber-100", text: "text-amber-700", emoji: "⚡" },
-  low: { bg: "bg-slate-100", text: "text-slate-600", emoji: "💧" },
-} as const;
+function effectivenessDot(effectiveness: string): string {
+  if (effectiveness === "high") return "bg-emerald-700";
+  if (effectiveness === "medium") return "bg-amber-700";
+  if (effectiveness === "low") return "bg-rose-700";
+  return "bg-slate-400";
+}
 
 export function ChannelScoutReport({ output }: { output: any }) {
   const data = output as ChannelScoutOutput;
   const { copied, copy } = useCopyText();
   const { t } = useLocale();
 
-  // Effectiveness dot color
-  function effDot(e: string): string {
-    return e === "high" ? "bg-emerald-500" : e === "medium" ? "bg-amber-500" : e === "low" ? "bg-rose-500" : "bg-slate-300";
-  }
-
   return (
     <div className="space-y-6">
       <SectionHeader
         title={t("report.channel.title")}
         description={data.summary}
-        icon="🚀"
         count={data.channels.length}
-        accent="sky"
         onCopy={() => copy(generateAgentMarkdown("channel-scout", data), "channel-scout")}
         copied={copied === "channel-scout"}
         copyLabel={t("report.channel.copySection")}
       />
 
-      {/* Recommended channels with priority bars */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          {t("report.channel.recommendedChannels")} <span className="text-xs text-slate-400 font-normal">({data.recommendedChannels.length})</span>
-        </h3>
-        <div className="space-y-2">
-          {data.recommendedChannels.map((rec: any, i: number) => {
-            const p = PRIORITY_STYLE[rec.priority as keyof typeof PRIORITY_STYLE] || PRIORITY_STYLE.medium;
-            const widthPct = rec.priority === "high" ? 95 : rec.priority === "medium" ? 60 : 30;
+      <section>
+        <ReportSubheading title={t("report.channel.recommendedChannels")} count={data.recommendedChannels.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.recommendedChannels.map((recommendation: any, index: number) => {
+            const priority = PRIORITY_STYLE[recommendation.priority as keyof typeof PRIORITY_STYLE] || PRIORITY_STYLE.medium;
+            const widthPct = recommendation.priority === "high" ? 95 : recommendation.priority === "medium" ? 60 : 30;
             return (
-              <div key={i} className={`p-3 rounded-lg border ${p.bg} ${p.border}`}>
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <p className={`text-sm font-semibold ${p.text}`}>{rec.channel}</p>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${p.text} bg-white/70`}>
-                    {rec.priority}
+              <article key={index} className="py-3">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">{recommendation.channel}</p>
+                  <span className={`border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest ${priority.badge}`}>
+                    {recommendation.priority}
                   </span>
                 </div>
-                <p className="text-xs text-slate-700 mb-1.5">{rec.why}</p>
-                <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <div className={`h-full ${p.bar} rounded-full`} style={{ width: `${widthPct}%` }} />
+                <p className="mb-2 text-xs leading-5 text-slate-600">{recommendation.why}</p>
+                <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
+                  <div className={`h-full rounded-sm ${priority.bar}`} style={{ width: `${widthPct}%` }} />
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* All channels with effectiveness dots */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.landscape")}</h3>
-        <div className="space-y-2">
-          {data.channels.map((c, i) => {
-            const cat = CATEGORY_STYLE[c.category] || CATEGORY_STYLE.community;
-            return (
-              <div key={i} className="p-3 bg-white border border-slate-200 rounded-lg">
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cat.bg} ${cat.text} flex items-center gap-1 flex-shrink-0`}>
-                      <span aria-hidden>{cat.emoji}</span>
-                      <span className="capitalize">{c.category}</span>
-                    </span>
-                    <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0" title={t("report.channel.effectivenessPrefix") + " " + c.effectiveness}>
-                    <span className={`w-2 h-2 rounded-full ${effDot(c.effectiveness)}`} />
-                    <span className="text-[10px] text-slate-500 capitalize">{c.effectiveness}</span>
-                  </div>
+      <section>
+        <ReportSubheading title={t("report.channel.landscape")} count={data.channels.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.channels.map((channel, index) => (
+            <article key={index} className="py-3">
+              <div className="mb-1.5 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="flex-shrink-0 border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-700">
+                    {channel.category}
+                  </span>
+                  <p className="truncate text-sm font-semibold text-slate-900">{channel.name}</p>
                 </div>
-
-                <p className="text-xs text-slate-600 mb-1.5">{c.audience}</p>
-                <p className="text-[10px] text-slate-500 mb-2">{c.notes}</p>
-
-                {/* Reach vs cost visualization */}
-                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-                  <div>
-                    <p className="text-slate-500 mb-0.5">{t("report.channel.reach")}</p>
-                    <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-400" style={{ width: `${((REACH_RANK[c.reach] || 3) / 5) * 100}%` }} />
-                    </div>
-                    <p className="text-slate-600 capitalize mt-0.5">{c.reach}</p>
-                  </div>
-                  <div>
-                    <p className="text-slate-500 mb-0.5">{t("report.channel.costEfficiency")}</p>
-                    <div className="h-1 bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-400" style={{ width: `${((COST_RANK[c.cost] || 3) / 5) * 100}%` }} />
-                    </div>
-                    <p className="text-slate-600 capitalize mt-0.5">{c.cost}</p>
-                  </div>
+                <div
+                  className="flex flex-shrink-0 items-center gap-1.5"
+                  title={`${t("report.channel.effectivenessPrefix")} ${channel.effectiveness}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${effectivenessDot(channel.effectiveness)}`} aria-hidden />
+                  <span className="text-[10px] capitalize text-slate-600">{channel.effectiveness}</span>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Community Hubs */}
+              <p className="mb-1 text-xs leading-5 text-slate-600">{channel.audience}</p>
+              <p className="mb-2 text-[10px] leading-4 text-slate-500">{channel.notes}</p>
+
+              <div className="mt-2 grid grid-cols-2 gap-4 text-[10px]">
+                <MetricBar
+                  label={t("report.channel.reach")}
+                  value={channel.reach}
+                  percentage={((REACH_RANK[channel.reach] || 3) / 5) * 100}
+                  color="bg-slate-700"
+                />
+                <MetricBar
+                  label={t("report.channel.costEfficiency")}
+                  value={channel.cost}
+                  percentage={((COST_RANK[channel.cost] || 3) / 5) * 100}
+                  color="bg-emerald-700"
+                />
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
       {data.communityHubs && data.communityHubs.length > 0 && (
-        <div>
-          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.communityHubs")}</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {data.communityHubs.map((h: any, i: number) => (
-              <a
-                key={i}
-                href={h.url || "#"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-3 bg-violet-50 border border-violet-100 rounded-lg hover:border-violet-300 transition-colors block"
-              >
-                <p className="text-sm font-semibold text-violet-900 truncate">{h.name}</p>
-                <p className="text-xs text-violet-600 mt-0.5">{h.platform} · {h.size}</p>
-                <p className="text-xs text-slate-600 mt-1">{h.focus}</p>
-              </a>
-            ))}
+        <section>
+          <ReportSubheading title={t("report.channel.communityHubs")} count={data.communityHubs.length} />
+          <div className="grid grid-cols-1 border-y border-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-slate-200">
+            {data.communityHubs.map((hub: any, index: number) => {
+              const safeUrl = canonicalizeSafeExternalUrl(hub.url);
+              return (
+                <article
+                  key={index}
+                  className="border-b border-slate-200 p-3 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0"
+                >
+                  {safeUrl ? (
+                    <a
+                      href={safeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate text-sm font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                    >
+                      {hub.name}
+                    </a>
+                  ) : (
+                    <p className="truncate text-sm font-semibold text-slate-900">{hub.name}</p>
+                  )}
+                  <p className="mt-0.5 text-xs text-slate-600">{hub.platform} · {hub.size}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{hub.focus}</p>
+                </article>
+              );
+            })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Content topics */}
-      <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.channel.contentTopics")}</h3>
-        <div className="space-y-1.5">
-          {data.contentTopics.map((topic: any, i: number) => {
-            const vol = VOL_STYLE[topic.searchVolume as keyof typeof VOL_STYLE] || VOL_STYLE.medium;
+      <section>
+        <ReportSubheading title={t("report.channel.contentTopics")} count={data.contentTopics.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
+          {data.contentTopics.map((topic: any, index: number) => {
+            const volumeClass = VOLUME_STYLE[topic.searchVolume as keyof typeof VOLUME_STYLE] || VOLUME_STYLE.medium;
             return (
-              <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-xs">
-                <span className="text-slate-800 flex-1 truncate">{topic.topic}</span>
-                <span className={`px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5 ${vol.bg} ${vol.text}`}>
-                  <span aria-hidden>{vol.emoji}</span>
-                  <span className="capitalize">{topic.searchVolume}</span>
+              <div key={index} className="flex items-center gap-2 py-2.5 text-xs">
+                <span className="min-w-0 flex-1 truncate text-slate-800">{topic.topic}</span>
+                <span className={`border px-1.5 py-0.5 text-[10px] font-medium capitalize ${volumeClass}`}>
+                  {topic.searchVolume}
                 </span>
-                <span className="text-slate-500 font-mono w-20 text-right">{topic.competition} {t("report.channel.competitionSuffix")}</span>
+                <span className="w-20 text-right font-mono tabular-nums text-slate-600">
+                  {topic.competition} {t("report.channel.competitionSuffix")}
+                </span>
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
       <CitationList citations={data.citations} />
+    </div>
+  );
+}
+
+function MetricBar({ label, value, percentage, color }: { label: string; value: string; percentage: number; color: string }) {
+  return (
+    <div>
+      <p className="mb-0.5 text-slate-500">{label}</p>
+      <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
+        <div className={`h-full rounded-sm ${color}`} style={{ width: `${percentage}%` }} />
+      </div>
+      <p className="mt-0.5 capitalize text-slate-700">{value}</p>
     </div>
   );
 }

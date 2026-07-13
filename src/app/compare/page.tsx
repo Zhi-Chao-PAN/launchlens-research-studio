@@ -76,6 +76,9 @@ export default function ComparePage() {
     const controller = new AbortController();
 
     async function load() {
+      if (cancelled) return;
+      setLoading(true);
+
       try {
         const [resA, resB] = await Promise.all([
           fetch(`/api/research/runs/${idA}`, { signal: controller.signal }),
@@ -99,7 +102,7 @@ export default function ComparePage() {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : t("compare.error.loadFailed"));
       } finally {
-        if (cancelled) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -134,7 +137,12 @@ export default function ComparePage() {
             <h1 className="compare-title">{t("compare.title")}</h1>
           </div>
         </header>
-        <main className="compare-main">
+        <main
+          id="main-content"
+          className="compare-main"
+          aria-busy="true"
+          aria-label={t("compare.loading")}
+        >
           <div className="compare-header-row">
             <div className="compare-header-cell compare-header-a">
               <div className="compare-label">{t("compare.optionA")}</div>
@@ -171,14 +179,14 @@ export default function ComparePage() {
 
   if (error) {
     return (
-      <div className="research-detail">
+      <main id="main-content" className="research-detail">
         <div className="research-detail-inner share-error">
           <div className="share-icon">⚖️</div>
           <h1>{t("compare.error.title")}</h1>
           <p>{error}</p>
           <Link href="/history" className="share-home-link">{t("compare.backToHistory")}</Link>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -232,7 +240,7 @@ export default function ComparePage() {
       </div>
 
       <SiteHeader />
-      <main className="compare-main">
+      <main id="main-content" className="compare-main">
         {showDiff && diff && (
           <section className="diff-section">
             <h2 className="compare-section-title">

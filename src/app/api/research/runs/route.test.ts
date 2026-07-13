@@ -4,6 +4,40 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // We need the NextRequest constructor shim from the global setup.
 import { NextRequest } from "next/server";
 
+const { verifyCsrf, rotateCsrf, checkRateLimitForIp } = vi.hoisted(() => ({
+  verifyCsrf: vi.fn(() => null as Response | null),
+  rotateCsrf: vi.fn((response: Response) => response),
+  checkRateLimitForIp: vi.fn(() => ({ allowed: true, remaining: 10, resetMs: 0 })),
+}));
+
+vi.mock("@/lib/api/csrf-guard", () => ({ verifyCsrf }));
+vi.mock("@/lib/api/csrf-rotate", () => ({ rotateCsrf }));
+vi.mock("@/lib/api/rate-limit", () => ({ checkRateLimitForIp }));
+
+// Exercise the real requireAdmin() helper against a deterministic token
+// registry: a bypass-only credential must not authorize collection access.
+vi.mock("@/lib/api/bypass-tokens", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/bypass-tokens")>();
+  return {
+    ...actual,
+    extractBearerToken: (header: string | null) => {
+      const match = header?.match(/^Bearer\s+(.+)$/i);
+      return match ? match[1].trim() : null;
+    },
+    getTokenInfo: (token: string) => {
+      if (token === "runs-admin") {
+        return { hash: "admin-hash", scope: "admin" as const, createdAt: 1, usageCount: 0 };
+      }
+      if (token === "runs-bypass") {
+        return { hash: "bypass-hash", scope: "bypass" as const, createdAt: 1, usageCount: 0 };
+      }
+      return null;
+    },
+    isAdminToken: (token: string) => token === "runs-admin",
+    checkAdminRateLimit: () => ({ allowed: true, remaining: 10, resetMs: 0 }),
+  };
+});
+
 // Mock the storage layer so we don't depend on disk/in-memory state.
 vi.mock("@/lib/research/storage", () => ({
   searchResearchRuns: vi.fn(() => ({
@@ -66,8 +100,23 @@ describe("/api/research/runs GET", () => {
     vi.clearAllMocks();
   });
 
-  it("returns summary list without admin token (R211 fix)", async () => {
+  it("rejects anonymous collection enumeration", async () => {
     const res = await GET(makeRequest("/api/research/runs?limit=20"));
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects bypass-only credentials", async () => {
+    const res = await GET(makeRequest("/api/research/runs?q=private", { auth: "runs-bypass" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an arbitrary bearer string", async () => {
+    const res = await GET(makeRequest("/api/research/runs", { auth: "not-a-registered-token" }));
+    expect(res.status).toBe(401);
+  });
+
+  it("returns summary list with an admin token", async () => {
+    const res = await GET(makeRequest("/api/research/runs?limit=20", { auth: "runs-admin" }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.runs).toHaveLength(2);
@@ -86,7 +135,7 @@ describe("/api/research/runs GET", () => {
   });
 
   it("does not leak full sources array in summary response", async () => {
-    const res = await GET(makeRequest("/api/research/runs?limit=20"));
+    const res = await GET(makeRequest("/api/research/runs?limit=20", { auth: "runs-admin" }));
     const body = await res.json();
     // hasSources boolean is included; raw sources array is not.
     expect(body.runs[0].hasSources).toBe(true);
@@ -105,12 +154,10 @@ describe("/api/research/runs GET", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 200 for format=json with admin token", async () => {
-    // We need a real admin token in the registry. The bypass-tokens module
-    // is mocked at module load elsewhere; here we just exercise the auth
-    // gate and expect either 200 (valid) or 401 (no real registry seed).
-    const res = await GET(makeRequest("/api/research/runs?format=json", { auth: "no-such-token" }));
-    expect([200, 401]).toContain(res.status);
+  it("returns 200 for format=json with an admin token", async () => {
+    const res = await GET(makeRequest("/api/research/runs?format=json", { auth: "runs-admin" }));
+    expect(res.status).toBe(200);
+    await expect(res.text()).resolves.toBe("exported-json");
   });
 });
 
@@ -119,9 +166,34 @@ describe("/api/research/runs DELETE", () => {
     vi.clearAllMocks();
   });
 
-  it("requires CSRF (returns 403 without CSRF header)", async () => {
+  it("rejects anonymous bulk deletion before touching the store", async () => {
     const res = await DELETE(makeRequest("/api/research/runs?ids=r1", { method: "DELETE" }));
-    // CSRF guard returns 403
-    expect([403, 401, 400]).toContain(res.status);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects bypass-only credentials for bulk deletion", async () => {
+    const res = await DELETE(makeRequest("/api/research/runs?ids=r1", {
+      method: "DELETE",
+      auth: "runs-bypass",
+    }));
+    expect(res.status).toBe(401);
+  });
+
+  it("still requires CSRF after admin authorization", async () => {
+    verifyCsrf.mockReturnValueOnce(new Response(JSON.stringify({ error: "csrf" }), { status: 403 }));
+    const res = await DELETE(makeRequest("/api/research/runs?ids=r1", {
+      method: "DELETE",
+      auth: "runs-admin",
+    }));
+    expect(res.status).toBe(403);
+  });
+
+  it("deletes requested runs when both admin auth and CSRF succeed", async () => {
+    const res = await DELETE(makeRequest("/api/research/runs?ids=r1", {
+      method: "DELETE",
+      auth: "runs-admin",
+    }));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ deleted: 1, total: 1 });
   });
 });

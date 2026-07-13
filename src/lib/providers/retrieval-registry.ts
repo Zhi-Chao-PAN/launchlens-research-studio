@@ -13,6 +13,9 @@
 import type { RetrievalProvider } from "./retrieval.types";
 import { mockRetrievalProvider } from "./mock-retrieval-provider";
 import { TavilyRetrievalProvider } from "./tavily-retrieval-provider";
+import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
+
+const DEFAULT_TAVILY_BASE_URL = "https://api.tavily.com";
 
 let cached: RetrievalProvider | null = null;
 
@@ -33,6 +36,11 @@ export function selectRetrievalProvider(): RetrievalProvider {
 
   if (override === "tavily" || (!override && apiKey)) {
     if (apiKey) {
+      if (!isSafeProviderBaseUrl(baseUrl || undefined, DEFAULT_TAVILY_BASE_URL)) {
+        console.warn("[retrieval] TAVILY_BASE_URL is unsafe; using mock retrieval.");
+        cached = mockRetrievalProvider;
+        return cached;
+      }
       cached = new TavilyRetrievalProvider({
         apiKey,
         baseUrl: baseUrl || undefined,
@@ -73,13 +81,32 @@ export async function probeRetrievalProvider(): Promise<{
 }> {
   const provider = selectRetrievalProvider();
   const start = Date.now();
+
+  if (provider.isMock) {
+    return {
+      ok: false,
+      providerId: provider.id,
+      latencyMs: Date.now() - start,
+      reason: "not_configured",
+    };
+  }
+
   try {
     const sources = await provider.search({ query: "ping", maxResults: 1 });
+
+    if (sources.length === 0) {
+      return {
+        ok: false,
+        providerId: provider.id,
+        latencyMs: Date.now() - start,
+        reason: "empty_response",
+      };
+    }
+
     return {
       ok: true,
       providerId: provider.id,
       latencyMs: Date.now() - start,
-      ...(sources.length === 0 ? { reason: "empty_response" as const } : {}),
     };
   } catch (e) {
     return {

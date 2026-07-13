@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { tickSchedules } from "@/lib/research/scheduler";
 import { pruneStaleSessions } from "@/lib/research/research-engine";
 import { jsonErrorLocalized } from "@/lib/api/validation";
+import { probeDeepResearchCapability } from "@/lib/research/deep-research/capability";
+import { createDeepResearchService } from "@/lib/research/deep-research/runtime";
 
 // R212: serverless-friendly scheduler trigger.
 //
@@ -17,7 +19,8 @@ import { jsonErrorLocalized } from "@/lib/api/validation";
 // time, sent as the `x-cron-secret` header (or `authorization: Bearer
 // <secret>` for systems that prefer bearer auth).
 //
-// Configure `LAUNCHLENS_CRON_SECRET` in your environment. If unset the
+// Configure Vercel's standard `CRON_SECRET`; external schedulers may use the
+// legacy `LAUNCHLENS_CRON_SECRET` alias. If neither is set, the
 // endpoint refuses all calls — there is no implicit "open in dev"
 // mode, because an open cron trigger in production is a privilege-
 // escalation vector.
@@ -46,15 +49,15 @@ function isAuthorized(request: NextRequest, cronSecret: string): boolean {
 export async function POST(request: NextRequest) {
   // Read the secret on every invocation so test setups that mutate
   // process.env between cases see the updated value.
-  const cronSecret = process.env.LAUNCHLENS_CRON_SECRET || "";
+  const cronSecret = resolveCronSecret(process.env);
 
-  if (!cronSecret) {
+  if (cronSecret.length < 24) {
     return jsonErrorLocalized(
       request,
       "errors.cronNotConfigured",
       503,
       undefined,
-      { hint: "Set LAUNCHLENS_CRON_SECRET" },
+      { hint: "Set CRON_SECRET" },
     );
   }
   if (!isAuthorized(request, cronSecret)) {
@@ -69,6 +72,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const triggered = await tickSchedules();
+    let deepRecovery: unknown = { kind: "disabled" };
+    if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
+      const capability = await probeDeepResearchCapability();
+      deepRecovery = capability.availability === "available"
+        ? await createDeepResearchService().signal({ kind: "recover", limit: 25 })
+        : { kind: "preview", blockers: capability.blockers };
+    }
     // R217: piggyback session-map eviction on the cron tick so the
     // in-memory engine state doesn't grow unbounded over the lifetime
     // of a long-running server. Sessions are also evicted by delete
@@ -79,6 +89,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       triggered,
       pruned,
+      deepRecovery,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
@@ -96,4 +107,10 @@ export async function POST(request: NextRequest) {
 // style schedulers). Same auth, same response.
 export async function GET(request: NextRequest) {
   return POST(request);
+}
+
+export function resolveCronSecret(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  return env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET || "";
 }

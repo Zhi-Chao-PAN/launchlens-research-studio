@@ -1,16 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
 /* eslint-disable @next/next/no-img-element */
-﻿"use client";
+"use client";
 
 import { useEffect, useCallback, useState, useRef } from "react";
-import { useResearchStudio } from "@/lib/research/use-research-studio";
+import {
+  normalizeResumeSessionId,
+  useResearchStudio,
+} from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
 import type { CachedSession } from "@/lib/research/session-cache";
 import { QueryInput } from "@/components/studio/QueryInput";
 import { RecentQueries } from "@/components/studio/RecentQueries";
 import { CachedSessionsList } from "@/components/studio/CachedSessionsList";
+import { ResearchModeSelector } from "@/components/studio/ResearchModeSelector";
+import { ResearchProtocolPanel } from "@/components/studio/ResearchProtocolPanel";
+import { ResearchTeamRoster, WorkspaceStatsStrip } from "@/components/studio/WorkspaceSummary";
 import { AgentCard } from "@/components/agents/AgentCard";
 import { ReportView } from "@/components/report/ReportView";
 import { ExportActions } from "@/components/report/ExportActions";
@@ -24,7 +30,14 @@ import { useFreezeMode } from "@/lib/perf/use-freeze-mode";
 import { getStarredRunIds } from "@/lib/research/starred";
 import { listTemplates } from "@/lib/research/templates";
 import { generateSuggestions } from "@/lib/research/suggestions";
-import { AGENT_METADATA } from "@/lib/schema/research-schema";
+import {
+  DEFAULT_RESEARCH_MODE,
+  getResearchModeConfig,
+  normalizeResearchMode,
+  type ResearchModeAvailability,
+  type ResearchModeId,
+} from "@/lib/research/research-modes";
+import { useDeepResearchCapability } from "@/lib/research/use-deep-research-capability";
 
 export default function Home() {
   useFreezeMode();
@@ -33,11 +46,25 @@ export default function Home() {
   // (rate-limit / reconnect / polling) so the rate-limit pill and
   // connection banner can subscribe to transient without dragging the
   // agent card tree through a re-render every second.
-  const { session: state, transient, startResearch, cancel, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
+  const {
+    session: state,
+    transient,
+    startResearch,
+    resumeResearch,
+    restoreCachedSession,
+    cancel,
+    setActiveAgentTab,
+    reset,
+    allAgentIds,
+  } = useResearchStudio();
+  const { capability: deepCapability } = useDeepResearchCapability();
   const { history, addEntry } = useResearchHistory();
-  const isRunning = state.status === "running" || state.status === "loading";
+  const isCancelling = state.status === "cancelling";
+  const isRunning = state.status === "running" || state.status === "loading" || isCancelling;
   const hasSession = state.sessionId !== null;
-  const hasError = state.status === "error" && !!state.error;
+  // A failed cancellation restores the live run and keeps its error message;
+  // don't hide that actionable failure merely because the run is still active.
+  const hasError = !!state.error;
   // R205: count agents whose real-provider call degraded to mock, so the
   // completed report can surface a session-level "demo data" banner. Without
   // this a user reading the final report would have no idea some sections
@@ -62,6 +89,49 @@ export default function Home() {
     : 0;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [researchMode, setResearchMode] = useState<ResearchModeId>(DEFAULT_RESEARCH_MODE);
+  const [urlPrefill, setUrlPrefill] = useState<{ query: string; keywords: string[] }>({
+    query: "",
+    keywords: [],
+  });
+  const urlBootstrapHandledRef = useRef(false);
+  const modeConfig = getResearchModeConfig(researchMode);
+  const readyDeepRequirements = deepCapability?.requirements.filter((item) => item.ready).length ?? 0;
+  const totalDeepRequirements = deepCapability?.requirements.length ?? 0;
+  const firstDeepBlocker = deepCapability?.requirements.find((item) => !item.ready);
+  const firstDeepBlockerLabel = firstDeepBlocker
+    ? t(`researchRequirement.${firstDeepBlocker.id}`, firstDeepBlocker.label)
+    : null;
+  const runtimeModeAvailability: Partial<Record<ResearchModeId, ResearchModeAvailability>> = {
+    standard: "available",
+    deep: deepCapability?.availability ?? "preview",
+  };
+  const runtimeModeReadiness: Partial<Record<ResearchModeId, { ready: number; total: number }>> =
+    deepCapability
+      ? { deep: { ready: readyDeepRequirements, total: totalDeepRequirements } }
+      : {};
+  const canStartSelectedMode =
+    researchMode === "standard" || deepCapability?.availability === "available";
+  const modeLabel = t(`researchMode.${researchMode}.label`, modeConfig.label);
+  const modeCapabilityNotice = researchMode === "deep" && deepCapability
+    ? deepCapability.availability === "available"
+      ? t("researchProtocol.deepReadyNotice")
+      : [
+          t("researchProtocol.deepPreviewNotice", {
+            ready: readyDeepRequirements,
+            total: totalDeepRequirements,
+          }),
+          firstDeepBlockerLabel
+            ? t("researchProtocol.nextBlocker", { label: firstDeepBlockerLabel })
+            : null,
+        ].filter((part): part is string => Boolean(part)).join(" ")
+    : t(
+        `researchMode.${researchMode}.capabilityNotice`,
+        modeConfig.capabilityNotice,
+        { seconds: modeConfig.maxSynchronousDurationSec },
+      );
+  const activeModeConfig = getResearchModeConfig(state.mode);
+  const activeModeLabel = t(`researchMode.${state.mode}.label`, activeModeConfig.label);
   // Tracks whether the user has manually clicked an agent tab during the
   // current research run. The auto-switch effect (below) follows progress by
   // jumping to the next completing agent, but must NOT override an explicit
@@ -88,17 +158,33 @@ export default function Home() {
 
   // Bridge: persist on completion, detect share links, restore from cache
   // Build a ResearchSession-shaped object for the bridge.
-  // Note: state doesn't have per-agent .output or session .citations, so we
-  // build those from state.agentOutputs and count from the agent outputs.
+  // Rebuild the session-level citation list from per-agent outputs so local
+  // dossier snapshots preserve an accurate source count after server expiry.
+  const bridgeCitations = Array.from(
+    new Map(
+      Object.values(state.agentOutputs)
+        .flatMap((output) => output?.citations ?? [])
+        .map((citation) => [citation.id, citation]),
+    ).values(),
+  );
+  const bridgeStatus: "pending" | "running" | "completed" | "cancelled" | "error" | null =
+    state.status === "loading"
+      ? "pending"
+      : state.status === "cancelling"
+        ? "running"
+        : state.status === "idle"
+          ? null
+          : state.status;
   const bridge = useSessionBridge(
-    hasSession
+    hasSession && bridgeStatus
       ? {
           id: state.sessionId || "",
           query: state.query,
           keywords: state.keywords,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          status: (state.status === "idle" ? "completed" : state.status) as any,
+          mode: state.mode,
+          createdAt: state.createdAt ?? state.updatedAt ?? "1970-01-01T00:00:00.000Z",
+          updatedAt: state.updatedAt ?? state.createdAt ?? "1970-01-01T00:00:00.000Z",
+          status: bridgeStatus,
           agents: Object.fromEntries(
             allAgentIds.map((id) => [
               id,
@@ -109,13 +195,64 @@ export default function Home() {
                 currentStep: state.agents[id].currentStep,
                 hasOutput: !!state.agentOutputs[id],
                 output: state.agentOutputs[id] || undefined,
+                ...(state.agents[id].degraded
+                  ? {
+                      degraded: true,
+                      degradedReason: state.agents[id].degradedReason,
+                    }
+                  : {}),
               },
             ]),
           ) as any,
-          citations: [],
+          citations: bridgeCitations,
+          ...(state.evidence ? { evidence: state.evidence } : {}),
+          ...(state.validation ? { validation: state.validation } : {}),
         }
       : null,
   );
+
+  // Templates and historical reports use two generations of query-string
+  // keys. Accept both so every existing "use template" / "rerun" path
+  // reliably prefills the studio. A durable session link takes precedence:
+  // it hydrates the authoritative snapshot instead of starting another run.
+  useEffect(() => {
+    if (urlBootstrapHandledRef.current) return;
+    urlBootstrapHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const resumeSessionId = normalizeResumeSessionId(params.get("session"));
+    if (resumeSessionId) {
+      void resumeResearch(resumeSessionId);
+      return;
+    }
+    const query = params.get("q") ?? params.get("query") ?? "";
+    const keywordsValue = params.get("k") ?? params.get("keywords") ?? "";
+    const keywords = keywordsValue
+      .split(",")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+    if (query || keywords.length > 0) setUrlPrefill({ query, keywords });
+    const requestedMode = params.get("mode");
+    if (requestedMode) setResearchMode(normalizeResearchMode(requestedMode));
+  }, [resumeResearch]);
+
+  // Keep the durable resume handle in the address bar as soon as a run has an
+  // id. Refreshing or copying the page then re-attaches to the same run rather
+  // than silently starting over or losing active progress.
+  useEffect(() => {
+    if (!state.sessionId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("session") === state.sessionId) return;
+    url.searchParams.set("session", state.sessionId);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [state.sessionId]);
+
+  useEffect(() => {
+    if (hasSession) setResearchMode(state.mode);
+  }, [hasSession, state.mode]);
 
   // Load dashboard stats on mount.
   // R224: fetch a single pre-aggregated payload from /api/research/stats
@@ -164,12 +301,14 @@ export default function Home() {
   // Persist a history entry with the real session id so local recovery links
   // point at /research/<sessionId> instead of a random browser-only id.
   useEffect(() => {
-    if (state.sessionId && state.query) {
+    if (state.sessionId && state.query && state.status !== "idle") {
       addEntry(state.query, state.keywords, {
         id: state.sessionId,
         status:
           state.status === "completed"
             ? "completed"
+            : state.status === "cancelled"
+              ? "cancelled"
             : state.status === "error"
               ? "failed"
               : "running",
@@ -194,23 +333,34 @@ export default function Home() {
 
   const handleSubmit = useCallback(
     (query: string, keywords: string[]) => {
+      if (!canStartSelectedMode) return;
       setSidebarOpen(false);
       userSelectedTabRef.current = false;
-      startResearch(query, keywords);
+      startResearch(query, keywords, researchMode);
     },
-    [startResearch],
+    [canStartSelectedMode, researchMode, startResearch],
   );
 
-  // Restore from a cached session: pretend the session is "running" briefly
-  // and populate outputs from cache. The simplest UX is to start a fresh
-  // session with the same query/keywords and overlay cached outputs.
+  const resetWorkspace = useCallback(() => {
+    reset();
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("session")) return;
+    url.searchParams.delete("session");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [reset]);
+
+  // Restore means restore: hydrate the cached dossier without spending quota
+  // or silently starting a different run.
   const handleRestoreFromCache = useCallback((cached: CachedSession) => {
     if (!cached.outputs) return;
-    // Hydrate from cache by re-submitting the query (mock provider is deterministic,
-    // but the cached outputs may include user-specific state).
     userSelectedTabRef.current = false;
-    startResearch(cached.query, cached.keywords);
-  }, [startResearch]);
+    setResearchMode(normalizeResearchMode(cached.mode));
+    restoreCachedSession(cached);
+  }, [restoreCachedSession]);
 
   // Keyboard shortcut: ⌘/Ctrl + Enter submits the query
   useEffect(() => {
@@ -221,12 +371,12 @@ export default function Home() {
       }
       if (e.key === "Escape" && hasSession && !isRunning) {
         if (sidebarOpen) setSidebarOpen(false);
-        else reset();
+        else resetWorkspace();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasSession, isRunning, reset]);
+  }, [hasSession, isRunning, resetWorkspace]);
 
   // Auto-switch tab to the first agent that completes — but only until the
   // user manually selects a tab. Once they've clicked one, we stop
@@ -246,19 +396,19 @@ export default function Home() {
   }, [state.agents, state.status, state.activeAgentTab, allAgentIds, setActiveAgentTab]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-white sticky top-0 z-10">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <img
               src="/logo.svg"
               alt="LaunchLens Research Studio"
               width={40}
               height={40}
-              className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-200 flex-shrink-0"
+              className="w-9 h-9 rounded-md flex-shrink-0"
             />
             <div className="min-w-0">
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight truncate">
+              <h1 className="text-base font-semibold text-slate-950 tracking-tight truncate">
                 LaunchLens Research Studio
               </h1>
               <p className="text-xs text-slate-500 truncate">
@@ -268,33 +418,35 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {state.status === "completed" && (
-              <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200">
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 {t("header.researchComplete")}
               </span>
             )}
             {hasSession && state.sessionId && state.status === "completed" && (
-              <ShareButton sessionId={state.sessionId} size="sm" label="Share" />
+              <ShareButton sessionId={state.sessionId} size="sm" label={t("header.share")} />
             )}
             <ProviderPill />
             <LanguageSwitcher />
             <ThemeToggle />
             {hasSession && isRunning && (
               <button
-                onClick={() => { setSidebarOpen(false); cancel(); }}
-                className="px-4 py-2 text-sm text-rose-700 hover:text-rose-900 hover:bg-rose-50 rounded-lg transition-colors font-medium"
-                aria-label="Stop running research"
+                onClick={() => { setSidebarOpen(false); void cancel(); }}
+                disabled={isCancelling}
+                className="px-3 py-2 text-sm text-rose-700 hover:text-rose-900 hover:bg-rose-50 rounded-md transition-colors font-medium disabled:cursor-wait disabled:opacity-60"
+                aria-label={isCancelling ? t("queryInput.cancellingAriaLabel") : t("queryInput.cancelAriaLabel")}
+                aria-busy={isCancelling}
               >
-                Stop
+                {isCancelling ? t("queryInput.cancellingButton") : t("queryInput.cancelButton")}
               </button>
             )}
             {hasSession && (
               <button
-                onClick={() => { setSidebarOpen(false); reset(); }}
+                onClick={() => { setSidebarOpen(false); resetWorkspace(); }}
                 disabled={isRunning}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50"
               >
-                New Research
+                {t("header.newResearch")}
               </button>
             )}
           </div>
@@ -302,7 +454,7 @@ export default function Home() {
       </header>
 
       {hasError && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4">
           <ActionableError
             variant="error"
             title={t("errors.retryTitle")}
@@ -324,7 +476,7 @@ export default function Home() {
               },
               {
                 label: t("errors.dismiss"),
-                onClick: reset,
+                onClick: resetWorkspace,
                 variant: "secondary",
               },
             ]}
@@ -336,13 +488,13 @@ export default function Home() {
           reconnect, polling) share the same aria-live region so screen readers
           announce the countdowns as they update. */}
       {(isRateLimited || isReconnecting || isPollingFallback) && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4">
           <div
             role="status"
             aria-live="polite"
             aria-atomic="true"
             className={
-              "rounded-xl p-3 flex items-center gap-3 border text-sm " +
+              "rounded-lg p-3 flex items-center gap-3 border text-sm " +
               (isRateLimited
                 ? "bg-amber-50 border-amber-200 text-amber-800"
                 : "bg-sky-50 border-sky-200 text-sky-800")
@@ -370,7 +522,7 @@ export default function Home() {
         </div>
       )}
 
-      <main id="main-content" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <main id="main-content" tabIndex={-1} className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5">
         {/* R205: when the completed run has agents that degraded to demo data,
             surface a session-level banner so a reader of the report knows some
             sections are illustrative. Per-agent "demo" badges exist on the
@@ -380,7 +532,7 @@ export default function Home() {
           <div
             role="status"
             aria-live="polite"
-            className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-3"
+            className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3"
           >
             <span className="text-amber-500 text-lg flex-shrink-0" aria-hidden>⚠️</span>
             <div className="flex-1 min-w-0 text-sm text-amber-800">
@@ -399,7 +551,9 @@ export default function Home() {
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {state.status === "loading" && t("status.loading")}
           {state.status === "running" && !isReconnecting && !isPollingFallback && t("status.running")}
+          {state.status === "cancelling" && t("status.cancelling")}
           {state.status === "completed" && t("status.completed")}
+          {state.status === "cancelled" && t("status.cancelled")}
           {state.status === "error" && (state.error || t("status.error"))}
           {isRateLimited && t("status.retryingIn", { seconds: String(rateLimitRemainingSec) })}
           {isReconnecting && t("status.reconnectingIn", { seconds: String(reconnectRemainingSec) })}
@@ -407,112 +561,116 @@ export default function Home() {
           {transient.rateLimitUntilMs !== null && rateLimitRemainingSec === 0 && t("status.readyToRetry")}
         </div>
         {!hasSession ? (
-          <div className="max-w-2xl mx-auto py-8">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold text-slate-800 tracking-tight mb-3">
-                {t("hero.title")}
+          <div className="py-3 sm:py-5">
+            <div className="mb-6 max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-300">
+                {t("workspace.hero.eyebrow")}
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+                {t("workspace.hero.title")}
               </h2>
-              <p className="text-slate-500 text-lg">
-                {t("hero.subtitle")}
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+                {t("workspace.hero.subtitle")}
               </p>
             </div>
-            <QueryInput onSubmit={handleSubmit} onCancel={cancel} isLoading={isRunning}
-              disabledUntilMs={transient.rateLimitUntilMs}
-              retryReadyPulse={transient.retryReadyPulse}
-            />
 
-            {stats && (
-              <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-                  <div className="text-2xl font-bold text-slate-800">{stats.totalRuns}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Total Research</div>
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+              <section className="rounded-xl border border-slate-200 bg-white lg:col-span-2" aria-labelledby="new-run-title">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.newRun.eyebrow")}</p>
+                    <h2 id="new-run-title" className="mt-1 text-base font-semibold text-slate-950">{t("workspace.newRun.title")}</h2>
+                  </div>
+                  <span className="hidden rounded bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 sm:inline">
+                    {t("workspace.newRun.teamComposition")}
+                  </span>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-                  <div className="text-2xl font-bold text-indigo-600">{stats.thisWeekRuns}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">This Week</div>
+                <div className="space-y-5 p-5 sm:p-6">
+                  <ResearchModeSelector
+                    value={researchMode}
+                    onChange={setResearchMode}
+                    runtimeAvailability={runtimeModeAvailability}
+                    readiness={runtimeModeReadiness}
+                  />
+                  <div className="border-t border-slate-100 pt-5">
+                    <QueryInput
+                      onSubmit={handleSubmit}
+                      onCancel={state.sessionId ? cancel : undefined}
+                      isLoading={isRunning}
+                      isCancelling={isCancelling}
+                      defaultQuery={urlPrefill.query}
+                      defaultKeywords={urlPrefill.keywords}
+                      disabledUntilMs={transient.rateLimitUntilMs}
+                      retryReadyPulse={transient.retryReadyPulse}
+                      submitDisabled={!canStartSelectedMode}
+                      submitDisabledReason={!canStartSelectedMode ? modeCapabilityNotice : undefined}
+                      submitLabel={canStartSelectedMode
+                        ? t("workspace.startMode", { mode: modeLabel })
+                        : t("workspace.deepResearchPreparing")}
+                      variant="embedded"
+                    />
+                  </div>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-                  <div className="text-2xl font-bold text-amber-600">{stats.starredCount}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Starred</div>
-                </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-                  <div className="text-2xl font-bold text-emerald-600">{stats.templates}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Templates</div>
-                </div>
+              </section>
+
+              <div className="space-y-5">
+                <ResearchProtocolPanel
+                  mode={researchMode}
+                  runtimeCapability={deepCapability}
+                />
+                <WorkspaceStatsStrip stats={stats} />
               </div>
-            )}
 
-            {suggestions.length > 0 && (
-              <div className="mt-8">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-slate-700">
-                    <span className="mr-1">💡</span>
-                    AI Research Suggestions
-                  </h3>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      className="suggestion-card"
-                      onClick={() => handleSubmit(s.title, s.keywords)}
-                      disabled={isRunning}
-                    >
-                      <div className="suggestion-category">
-                        <span className={`suggestion-category-tag ${s.category}`}>
-                          {s.category === "follow-up" ? "Follow-up" :
-                           s.category === "deep-dive" ? "Deep Dive" :
-                           s.category === "related" ? "Related" : "Trending"}
+              {suggestions.length > 0 && (
+                <section className="rounded-xl border border-slate-200 bg-white lg:col-span-2" aria-labelledby="suggested-research-title">
+                  <div className="border-b border-slate-100 px-4 py-3 sm:px-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{t("workspace.suggestions.eyebrow")}</p>
+                    <h2 id="suggested-research-title" className="mt-1 text-sm font-semibold text-slate-900">{t("workspace.suggestions.title")}</h2>
+                  </div>
+                  <div className="grid sm:grid-cols-2">
+                    {suggestions.map((suggestion, index) => (
+                      <button
+                        key={`${suggestion.title}-${index}`}
+                        type="button"
+                        className="border-t border-slate-100 px-4 py-4 text-left transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 sm:odd:border-r"
+                        onClick={() => handleSubmit(suggestion.title, suggestion.keywords)}
+                        disabled={isRunning || !canStartSelectedMode}
+                      >
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">
+                          {suggestion.category === "follow-up" ? t("workspace.suggestion.followUp") :
+                           suggestion.category === "deep-dive" ? t("workspace.suggestion.deepDive") :
+                           suggestion.category === "related" ? t("workspace.suggestion.related") : t("workspace.suggestion.trending")}
                         </span>
-                      </div>
-                      <div className="suggestion-title">{s.title}</div>
-                      <div className="suggestion-desc">{s.description}</div>
-                      <div className="suggestion-keywords">
-                        {s.keywords.slice(0, 3).map((kw: string, ki: number) => (
-                          <span key={ki} className="suggestion-kw">{kw}</span>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+                        <span className="mt-1.5 block text-sm font-semibold leading-5 text-slate-800">{suggestion.title}</span>
+                        <span className="mt-1 block text-xs leading-5 text-slate-500">{suggestion.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            <div className="mt-6 space-y-4">
-              <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
-              <CachedSessionsList
-                refreshKey={cacheRefreshKey}
-                onSelect={handleRestoreFromCache}
-                onClear={() => setCacheRefreshKey((k) => k + 1)}
-              />
-            </div>
-
-            <div className="mt-10">
-              <p className="text-center text-sm text-slate-500 mb-4">
-                {t("studio.poweredBy")}
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {allAgentIds.map((id) => {
-                  const meta = AGENT_METADATA[id];
-                  return (
-                    <div key={id} className="p-3 bg-white rounded-xl border border-slate-200 text-center">
-                      <div className="text-2xl mb-1" aria-hidden>{meta.icon}</div>
-                      <p className="text-sm font-semibold text-slate-700">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".name") as any, meta.name)}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".description") as any, meta.description)}</p>
-                    </div>
-                  );
-                })}
+              <div className="space-y-5">
+                <RecentQueries onSelect={handleSubmit} isLoading={isRunning || !canStartSelectedMode} />
+                <CachedSessionsList
+                  refreshKey={cacheRefreshKey}
+                  onSelect={handleRestoreFromCache}
+                  onClear={() => setCacheRefreshKey((key) => key + 1)}
+                />
               </div>
             </div>
 
-            <div className="mt-10 text-center text-xs text-slate-400 flex flex-wrap items-center justify-center gap-2">
+            <div className="mt-5">
+              <ResearchTeamRoster agentIds={allAgentIds} />
+            </div>
+
+            <div className="mt-6 text-center text-xs text-slate-600 flex flex-wrap items-center justify-center gap-2">
               <span>
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
                 <span className="mx-1">+</span>
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Enter</kbd>
                 <span className="ml-1">{t("studio.tipStart")}</span>
               </span>
-              <span className="text-slate-300">·</span>
+              <span className="text-slate-500">·</span>
               <span>
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Esc</kbd>
                 <span className="ml-1">{t("studio.tipReset")}</span>
@@ -520,19 +678,21 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row gap-6">
+          <div className="grid gap-4 lg:grid-cols-12">
             {/* Mobile sidebar toggle */}
             <button
               onClick={() => setSidebarOpen((v) => !v)}
-              className="lg:hidden flex items-center justify-between w-full py-3 px-4 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 shadow-sm"
+              className="lg:hidden flex items-center justify-between w-full py-3 px-4 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700"
               aria-expanded={sidebarOpen}
               aria-controls="studio-sidebar"
             >
               <span className="flex items-center gap-2">
-                <span aria-hidden>🎛️</span>
-                <span>Research controls</span>
+                <span>{t("workspace.controls")}</span>
                 <span className="text-xs text-slate-500">
-                  ({Object.values(state.agents).filter((a) => a.status === "done").length}/6 agents)
+                  {t("workspace.analystsProgress", {
+                    done: Object.values(state.agents).filter((agent) => agent.status === "done").length,
+                    total: 6,
+                  })}
                 </span>
               </span>
               <span aria-hidden className={"transition-transform " + (sidebarOpen ? "rotate-180" : "")}>▾</span>
@@ -540,37 +700,58 @@ export default function Home() {
             <aside
               id="studio-sidebar"
               data-no-print
-              className={"w-full lg:w-96 flex-shrink-0 space-y-4 " + (sidebarOpen ? "block" : "hidden lg:block")}
+              className={"space-y-4 lg:col-span-4 xl:col-span-3 " + (sidebarOpen ? "block" : "hidden lg:block")}
             >
-              <QueryInput onSubmit={handleSubmit} onCancel={cancel}
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <ResearchModeSelector
+                  value={state.mode}
+                  onChange={setResearchMode}
+                  disabled
+                  compact
+                  runtimeAvailability={runtimeModeAvailability}
+                  readiness={runtimeModeReadiness}
+                />
+              </div>
+
+              <QueryInput
+                onSubmit={handleSubmit}
+                onCancel={state.sessionId ? cancel : undefined}
                 isLoading={isRunning}
+                isCancelling={isCancelling}
                 defaultQuery={state.query}
                 defaultKeywords={state.keywords}
                 disabledUntilMs={transient.rateLimitUntilMs}
                 retryReadyPulse={transient.retryReadyPulse}
+                submitLabel={t("workspace.rerunMode", { mode: activeModeLabel })}
               />
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+              <section className="bg-white rounded-xl border border-slate-200 p-4" aria-labelledby="active-analysts-title">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-slate-800">{t("studio.researchAgents")}</h3>
+                  <h2 id="active-analysts-title" className="font-semibold text-slate-900 text-sm">{t("studio.researchAgents")}</h2>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    className={`text-[10px] px-2 py-1 rounded font-semibold uppercase tracking-wide ${
                       state.status === "completed"
                         ? "bg-emerald-100 text-emerald-700"
-                        : state.status === "running" || state.status === "loading"
+                        : state.status === "running" || state.status === "loading" || state.status === "cancelling"
                         ? "bg-amber-100 text-amber-700"
+                        : state.status === "cancelled"
+                        ? "bg-slate-200 text-slate-700"
                         : state.status === "error"
                         ? "bg-rose-100 text-rose-700"
                         : "bg-slate-100 text-slate-600"
                     }`}
                   >
                     {state.status === "completed"
-                      ? "Complete"
+                      ? t("workspace.runStatus.complete")
+                      : state.status === "cancelling"
+                      ? t("workspace.runStatus.cancelling")
                       : state.status === "running" || state.status === "loading"
-                      ? "Running"
+                      ? t("workspace.runStatus.running")
+                      : state.status === "cancelled"
+                      ? t("workspace.runStatus.cancelled")
                       : state.status === "error"
-                      ? "Error"
-                      : "Idle"}
+                      ? t("workspace.runStatus.error")
+                      : t("workspace.runStatus.idle")}
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -592,10 +773,11 @@ export default function Home() {
                         setActiveAgentTab(agentId);
                       }}
                       error={state.agentErrors[agentId]}
+                      cancelled={state.status === "cancelled"}
                     />
                   ))}
                 </div>
-              </div>
+              </section>
 
               {state.status === "completed" && state.sessionId && (
                 <ExportActions
@@ -606,12 +788,12 @@ export default function Home() {
                 />
               )}
 
-              {history.length > 0 && state.status !== "running" && (
-                <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
+              {history.length > 0 && !isRunning && (
+                <RecentQueries onSelect={handleSubmit} isLoading={isRunning || !canStartSelectedMode} />
               )}
             </aside>
 
-            <section className="flex-1 min-h-[600px]">
+            <section className="min-h-[600px] lg:col-span-8 xl:col-span-6">
               <ReportView
                 activeAgent={state.activeAgentTab}
                 outputs={state.agentOutputs}
@@ -622,13 +804,27 @@ export default function Home() {
                 }}
               />
             </section>
+
+            <aside className="lg:col-span-12 xl:col-span-3" aria-label={t("workspace.aria.evidenceValidation")}>
+              <ResearchProtocolPanel
+                mode={state.mode}
+                runtimeCapability={deepCapability}
+                deepRun={state.deepRun}
+                outputs={state.agentOutputs}
+                agents={state.agents}
+                evidence={state.evidence}
+                validation={state.validation}
+                status={state.status}
+                className="xl:sticky xl:top-20"
+              />
+            </aside>
           </div>
         )}
       </main>
 
-      <footer className="border-t border-slate-200 bg-white/50 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center">
-          <p className="text-xs text-slate-400">
+      <footer className="border-t border-slate-200 bg-white mt-8">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5 text-center">
+          <p className="text-xs text-slate-600">
             {t("footer.tagline")}
           </p>
         </div>

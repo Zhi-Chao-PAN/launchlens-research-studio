@@ -20,6 +20,7 @@
 import type { AgentOutput } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 import type { ConfidenceLevel } from "@/lib/schema/research-schema";
+import { canonicalizeSafeExternalUrl } from "@/lib/security/safe-external-url";
 
 const VALID_CONFIDENCE: ConfidenceLevel[] = ["low", "medium", "high"];
 
@@ -93,6 +94,7 @@ function normalizeCitation(c: unknown, index = 0, agentId?: AgentId) {
     o.url,
   );
   const title = firstNonEmptyString(o.title, o.name, o.source, snippet, o.url);
+  const safeUrl = canonicalizeSafeExternalUrl(o.url);
   return {
     id: asString(o.id, "c" + (index + 1)),
     title: title ? truncateForTitle(title) : "Untitled source",
@@ -100,7 +102,7 @@ function normalizeCitation(c: unknown, index = 0, agentId?: AgentId) {
     accessedAt: asString(o.accessedAt, new Date().toISOString()),
     confidence: coerceConfidence(o.confidence),
     agent: asString(o.agent, agentId ?? ""),
-    ...(typeof o.url === "string" && o.url ? { url: o.url } : {}),
+    ...(safeUrl ? { url: safeUrl } : {}),
   };
 }
 
@@ -223,11 +225,12 @@ function normalizeCompetitorAnalyst(o: Record<string, unknown>) {
       const x = asObject<Record<string, unknown>>(c);
       const pr = asObject<Record<string, unknown>>(x.pricing);
       const positioning = x.positioning;
+      const safeUrl = canonicalizeSafeExternalUrl(x.url);
       return {
         id: asString(x.id, "comp"),
         name: asString(x.name, "Unnamed competitor"),
         tagline: asString(x.tagline),
-        ...(typeof x.url === "string" && x.url ? { url: x.url } : {}),
+        ...(safeUrl ? { url: safeUrl } : {}),
         strengths: asStringArray(x.strengths),
         weaknesses: asStringArray(x.weaknesses),
         pricing: {
@@ -421,12 +424,13 @@ function normalizeChannelScout(o: Record<string, unknown>) {
     }),
     communityHubs: asArray(o.communityHubs).map((h) => {
       const x = asObject<Record<string, unknown>>(h);
+      const safeUrl = canonicalizeSafeExternalUrl(x.url);
       return {
         name: asString(x.name, "Unnamed hub"),
         platform: asString(x.platform),
         size: asString(x.size),
         focus: asString(x.focus),
-        ...(typeof x.url === "string" && x.url ? { url: x.url } : {}),
+        ...(safeUrl ? { url: safeUrl } : {}),
       };
     }),
     contentTopics: asArray(o.contentTopics).map((t) => {

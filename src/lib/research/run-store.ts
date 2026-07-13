@@ -6,15 +6,24 @@
 // an instance switch. This module mirrors completed/cancelled runs into Redis
 // when configured, while degrading to no-op when Redis env vars are absent.
 
-import type { ResearchRun } from "./storage";
-import type { ResearchSession } from "@/lib/schema/research-schema";
+import type { ResearchDossier, ResearchRun } from "./storage";
+import type { AgentId, ResearchSession } from "@/lib/schema/research-schema";
 import { getRedis } from "./redis-client";
+import { normalizeResearchMode } from "./research-modes";
 
 const RUN_KEY = (id: string) => `rs:run:${id}`;
 const RUN_INDEX_KEY = "rs:runs:index";
 const DEFAULT_RUN_RETENTION_SECONDS = 30 * 24 * 60 * 60;
 const MIN_RUN_RETENTION_SECONDS = 60 * 60;
 const MAX_INDEX_SIZE = 200;
+const DOSSIER_AGENT_IDS: readonly AgentId[] = [
+  "market-sizer",
+  "competitor-analyst",
+  "pain-detective",
+  "pricing-scout",
+  "channel-scout",
+  "synthesis",
+];
 
 export interface ResearchRunSearchOptions {
   query?: string;
@@ -23,6 +32,25 @@ export interface ResearchRunSearchOptions {
   limit?: number;
   offset?: number;
 }
+
+export interface ResearchRunSummary {
+  id: string;
+  query: string;
+  keywords: string[];
+  status: ResearchRun["status"];
+  provider: string;
+  model: string;
+  createdAt: number;
+  durationMs: number;
+  hasSources: boolean;
+}
+
+interface PersistedRunIndexSummary extends ResearchRunSummary {
+  /** Prevent a refreshed index TTL from keeping expired run summaries alive. */
+  expiresAt: number;
+}
+
+type PersistedRunIndexEntry = string | PersistedRunIndexSummary;
 
 export function researchRunFromSession(
   session: ResearchSession,
@@ -38,18 +66,26 @@ export function researchRunFromSession(
         : "";
 
   const createdMs = new Date(session.createdAt).getTime();
-  const durationMs = createdMs ? Date.now() - createdMs : 0;
+  const updatedMs = new Date(session.updatedAt).getTime();
+  const completedMs = Number.isFinite(updatedMs) && updatedMs >= createdMs
+    ? updatedMs
+    : Date.now();
+  const durationMs = Number.isFinite(createdMs) && createdMs > 0
+    ? Math.max(0, completedMs - createdMs)
+    : 0;
 
   return {
     id: session.id,
     query: session.query,
     keywords: session.keywords,
+    mode: normalizeResearchMode(session.mode),
     result: resultText,
     provider: session.providerId ?? "mock",
     model: session.providerModel ?? session.providerId ?? "default",
     createdAt: createdMs,
     durationMs,
     status,
+    dossier: researchDossierFromSession(session),
     sources:
       session.citations
         ?.slice(0, 20)
@@ -62,6 +98,30 @@ export function researchRunFromSession(
   };
 }
 
+function researchDossierFromSession(session: ResearchSession): ResearchDossier {
+  const agents = {} as ResearchDossier["agents"];
+
+  for (const agentId of DOSSIER_AGENT_IDS) {
+    const state = session.agents[agentId];
+    const evidence = session.evidence?.agents[agentId];
+    agents[agentId] = {
+      ...(state?.output ? { output: state.output } : {}),
+      ...(evidence ? { evidence } : {}),
+      ...(state?.resolvedProviderId ? { resolvedProviderId: state.resolvedProviderId } : {}),
+      degraded: state?.degraded === true,
+      ...(state?.degradedReason ? { degradedReason: state.degradedReason } : {}),
+    };
+  }
+
+  return {
+    version: 1,
+    agents,
+    ...(session.evidence ? { evidence: session.evidence } : {}),
+    ...(session.validation ? { validation: session.validation } : {}),
+    degraded: DOSSIER_AGENT_IDS.some((agentId) => session.agents[agentId]?.degraded === true),
+  };
+}
+
 function runRetentionSeconds(): number {
   const raw = process.env.LAUNCHLENS_RUN_RETENTION_SECONDS ?? process.env.LAUNCHLENS_TERMINAL_SESSION_TTL_SECONDS;
   if (!raw) return DEFAULT_RUN_RETENTION_SECONDS;
@@ -71,17 +131,66 @@ function runRetentionSeconds(): number {
     : DEFAULT_RUN_RETENTION_SECONDS;
 }
 
-function parseStringArray(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.filter((item): item is string => typeof item === "string");
-  if (typeof raw !== "string") return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
+function parseRunIndex(raw: unknown): PersistedRunIndexEntry[] {
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return [];
+    }
   }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((item): item is PersistedRunIndexEntry => {
+    if (typeof item === "string") return item.trim().length > 0;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const entry = item as Record<string, unknown>;
+    return (
+      typeof entry.id === "string" && entry.id.length > 0 &&
+      typeof entry.query === "string" &&
+      Array.isArray(entry.keywords) && entry.keywords.every((keyword) => typeof keyword === "string") &&
+      ["completed", "failed", "cancelled"].includes(String(entry.status)) &&
+      typeof entry.provider === "string" &&
+      typeof entry.model === "string" &&
+      typeof entry.createdAt === "number" && Number.isFinite(entry.createdAt) &&
+      typeof entry.durationMs === "number" && Number.isFinite(entry.durationMs) &&
+      typeof entry.hasSources === "boolean" &&
+      typeof entry.expiresAt === "number" && Number.isFinite(entry.expiresAt)
+    );
+  });
+}
+
+function summarizeRun(run: ResearchRun, expiresAt: number): PersistedRunIndexSummary {
+  return {
+    id: run.id,
+    query: run.query,
+    keywords: run.keywords,
+    status: run.status,
+    provider: run.provider,
+    model: run.model,
+    createdAt: run.createdAt,
+    durationMs: run.durationMs,
+    hasSources: Boolean(run.sources?.length),
+    expiresAt,
+  };
+}
+
+function publicSummary(entry: PersistedRunIndexSummary): ResearchRunSummary {
+  return {
+    id: entry.id,
+    query: entry.query,
+    keywords: entry.keywords,
+    status: entry.status,
+    provider: entry.provider,
+    model: entry.model,
+    createdAt: entry.createdAt,
+    durationMs: entry.durationMs,
+    hasSources: entry.hasSources,
+  };
+}
+
+function indexEntryId(entry: PersistedRunIndexEntry): string {
+  return typeof entry === "string" ? entry : entry.id;
 }
 
 function parseResearchRun(raw: unknown): ResearchRun | null {
@@ -97,22 +206,22 @@ function parseResearchRun(raw: unknown): ResearchRun | null {
   return null;
 }
 
-async function fetchRunIndex(): Promise<string[]> {
+async function fetchRunIndex(): Promise<PersistedRunIndexEntry[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
-    return parseStringArray(await redis.get<unknown>(RUN_INDEX_KEY));
+    return parseRunIndex(await redis.get<unknown>(RUN_INDEX_KEY));
   } catch (err) {
     console.error("[run-store] fetchRunIndex failed:", err);
     return [];
   }
 }
 
-async function storeRunIndex(ids: string[]): Promise<void> {
+async function storeRunIndex(entries: PersistedRunIndexEntry[]): Promise<void> {
   const redis = getRedis();
   if (!redis) return;
   try {
-    await redis.set(RUN_INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX_SIZE)), {
+    await redis.set(RUN_INDEX_KEY, JSON.stringify(entries.slice(0, MAX_INDEX_SIZE)), {
       ex: runRetentionSeconds(),
     });
   } catch (err) {
@@ -128,8 +237,12 @@ export async function storePersistentResearchRun(run: ResearchRun): Promise<void
       ex: runRetentionSeconds(),
     });
 
-    const existing = await fetchRunIndex();
-    const next = [run.id, ...existing.filter((id) => id !== run.id)].slice(0, MAX_INDEX_SIZE);
+    const retentionSeconds = runRetentionSeconds();
+    const now = Date.now();
+    const existing = (await fetchRunIndex()).filter((entry) =>
+      (typeof entry === "string" || entry.expiresAt > now) && indexEntryId(entry) !== run.id,
+    );
+    const next = [summarizeRun(run, now + retentionSeconds * 1000), ...existing].slice(0, MAX_INDEX_SIZE);
     await storeRunIndex(next);
   } catch (err) {
     console.error(`[run-store] storePersistentResearchRun(${run.id}) failed:`, err);
@@ -150,13 +263,23 @@ export async function getPersistentResearchRun(id: string): Promise<ResearchRun 
 
 export async function searchPersistentResearchRuns(
   options: ResearchRunSearchOptions = {},
-): Promise<{ runs: ResearchRun[]; total: number }> {
+): Promise<{ runs: ResearchRunSummary[]; total: number }> {
   const { query, status, provider, limit = 20, offset = 0 } = options;
   const ids = await fetchRunIndex();
   if (ids.length === 0) return { runs: [], total: 0 };
 
-  const loaded = await Promise.all(ids.map((id) => getPersistentResearchRun(id)));
-  let filtered = loaded.filter((run): run is ResearchRun => run !== null);
+  const now = Date.now();
+  const currentEntries = ids.filter((entry) => typeof entry === "string" || entry.expiresAt > now);
+  const legacyIds = currentEntries.filter((entry): entry is string => typeof entry === "string");
+  const legacyRuns = await Promise.all(legacyIds.map((id) => getPersistentResearchRun(id)));
+  let filtered: ResearchRunSummary[] = [
+    ...currentEntries
+      .filter((entry): entry is PersistedRunIndexSummary => typeof entry !== "string")
+      .map(publicSummary),
+    ...legacyRuns
+      .filter((run): run is ResearchRun => run !== null)
+      .map((run) => publicSummary(summarizeRun(run, now + runRetentionSeconds() * 1000))),
+  ];
 
   if (status) {
     filtered = filtered.filter((run) => run.status === status);
@@ -194,6 +317,6 @@ export async function deletePersistentResearchRuns(ids: string[]): Promise<numbe
   }
 
   const existing = await fetchRunIndex();
-  await storeRunIndex(existing.filter((id) => !cleanIds.includes(id)));
+  await storeRunIndex(existing.filter((entry) => !cleanIds.includes(indexEntryId(entry))));
   return deleted;
 }

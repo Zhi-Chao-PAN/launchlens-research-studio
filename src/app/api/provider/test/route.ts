@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
   const bearerToken = extractBearerToken(authHeader);
   const hasBypass = bearerToken ? isBypassToken(bearerToken, ip) : false;
   if (!hasBypass) {
-    const csrfOk = await checkCsrfToken(request);
-    if (!csrfOk) {
+    const csrfResult = checkCsrfToken(request);
+    if (!csrfResult.ok) {
       logRequest(403, false);
       return rotateCsrf(NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 }));
     }

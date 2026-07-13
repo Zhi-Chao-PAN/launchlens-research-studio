@@ -31,16 +31,67 @@ describe("POST /api/research product events", () => {
         body: JSON.stringify({
           query: "AI evidence workspace for product research teams",
           keywords: ["AI", "research"],
+          mode: "standard",
         }),
       }),
     );
     const body = await response.json();
 
     expect(response.status).toBe(201);
+    expect(body.mode).toBe("standard");
+    expect(body.modeCapabilities.availability).toBe("available");
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "research_started",
       body.sessionId,
     );
+  });
+
+  it("rejects an unknown mode before creating a session", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/research", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": "test-csrf",
+          cookie: "csrf_token=test-csrf",
+        },
+        body: JSON.stringify({ query: "AI research workspace", mode: "turbo" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.field).toBe("mode");
+    expect(recordResearchFunnelEvent).not.toHaveBeenCalled();
+  });
+
+  it("recognizes Deep Research but refuses to fake it on the 300-second path", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/research", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": "test-csrf",
+          cookie: "csrf_token=test-csrf",
+        },
+        body: JSON.stringify({ query: "AI research workspace", mode: "deep" }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({
+      code: "RESEARCH_MODE_UNAVAILABLE",
+      field: "mode",
+      mode: "deep",
+      modeCapabilities: {
+        availability: "preview",
+        requiresAsyncExecution: true,
+        maxSynchronousDurationSec: 300,
+      },
+    });
+    expect(body.error).toMatch(/async/i);
+    expect(recordResearchFunnelEvent).not.toHaveBeenCalled();
   });
 
   it("attaches sanitized Stage 2 context to the start milestone", async () => {

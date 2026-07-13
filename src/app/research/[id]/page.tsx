@@ -7,16 +7,23 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { SynthesisOutput, Source, KeyInsight, Opportunity, Risk } from "@/lib/research/synthesis-parser";
-import { parseSynthesis } from "@/lib/research/synthesis-parser";
 import { isRunStarred, toggleStar } from "@/lib/research/starred";
 import { listTemplates, createTemplate } from "@/lib/research/templates";
 import { DetailHeaderSkeleton, CardSkeleton } from "@/components/skeleton/Skeleton";
 import { ActionableError } from "@/components/ui/ActionableError";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { RelatedRuns } from "@/components/related/RelatedRuns";
-import { useCommandPalette } from "@/components/command-palette/CommandPaletteContext";
+import { useCommandPalette, type Command } from "@/components/command-palette/CommandPaletteContext";
 import { useHotkeys } from "@/lib/hooks/use-hotkeys";
 import { TagList } from "@/components/tags/TagList";
+import {
+  HistoricalDossierPanel,
+  resolveHistoricalSynthesis,
+} from "@/components/studio/HistoricalDossierPanel";
+import { CollapsibleSectionTitle } from "@/components/report/primitives/CollapsibleSectionTitle";
+import { SafeExternalLink } from "@/components/report/primitives/SafeExternalLink";
+import type { ResearchModeId } from "@/lib/research/research-modes";
+import type { ResearchDossier } from "@/lib/research/storage";
 import dynamic from "next/dynamic";
 
 // R220: split the 1500-line detail page. Heavy visual primitives
@@ -41,14 +48,16 @@ interface ResearchRun {
   id: string;
   query: string;
   keywords: string[];
+  mode?: ResearchModeId;
   result: string;
   sources?: Source[];
   provider: string;
   model: string;
   createdAt: number;
   durationMs: number;
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "cancelled";
   error?: string;
+  dossier?: ResearchDossier;
 }
 
 type OutputProfile = "idea" | "founder" | "analyst";
@@ -366,10 +375,11 @@ export default function ResearchDetailPage({ params }: { params: Promise<{ id: s
   const activeExplanation = EXPLANATION_COPY[activeExplanationKey];
   const isIdeaProfile = outputProfile === "idea";
   const isAnalystProfile = outputProfile === "analyst";
+  const canDistributeReport = run?.status === "completed";
 
   // Handle add to compare
   const handleAddToCompare = useCallback(() => {
-    if (!run) return;
+    if (!run || run.status !== "completed") return;
     try {
       const existing = JSON.parse(localStorage.getItem("launchlens:compare") || "[]");
       const updated = [...existing.filter((id: string) => id !== run.id), run.id].slice(-2);
@@ -393,10 +403,9 @@ async function loadRun() {
         }
         throw new Error(`HTTP ${res.status}`);
       }
-      const data = await res.json();
+      const data = await res.json() as ResearchRun;
       setRun(data);
-      const parsed = parseSynthesis(data.result);
-      setSynthesis(parsed);
+      setSynthesis(resolveHistoricalSynthesis(data.dossier, data.result));
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -470,7 +479,7 @@ async function loadRun() {
   }
 
   const handleExport = useCallback(async (format: "md" | "json" | "txt" | "pdf") => {
-    if (!run) return;
+    if (!run || run.status !== "completed") return;
 
     if (format === "pdf") {
       window.print();
@@ -740,7 +749,7 @@ async function loadRun() {
   }, [run]);
 
   const handleCopyMarkdown = useCallback(async () => {
-    if (!run) return;
+    if (!run || run.status !== "completed") return;
     const md = buildMarkdown(run, synthesis);
     try {
       await navigator.clipboard.writeText(md);
@@ -768,7 +777,7 @@ async function loadRun() {
   }, [run, showToast, t]);
 
   const handleGenerateShare = useCallback(async () => {
-    if (!run) return;
+    if (!run || run.status !== "completed") return;
     setShareLoading(true);
     setShareError(null);
     const { createShareAndCopyUrl, buildShareUrl } = await import("@/lib/research/share-api");
@@ -912,7 +921,7 @@ async function loadRun() {
   useEffect(() => {
     if (!run) return;
 
-    const unregister = registerCommands([
+    const commands: Command[] = [
       {
         id: "detail:star",
         label: "Toggle Star",
@@ -934,35 +943,6 @@ async function loadRun() {
         action: handleRerun,
       },
       {
-        id: "detail:export",
-        label: "Export Report",
-        description: "Download this report as Markdown",
-        icon: "??",
-        shortcut: "e",
-        category: "action",
-        keywords: ["export", "download", "markdown"],
-        action: () => handleExport("md"),
-      },
-      {
-        id: "detail:copy",
-        label: "Copy Report",
-        description: "Copy report to clipboard",
-        icon: "??",
-        shortcut: "c",
-        category: "action",
-        keywords: ["copy", "clipboard"],
-        action: handleCopyMarkdown,
-      },
-      {
-        id: "detail:share",
-        label: "Share",
-        description: "Generate a share link for this research",
-        icon: "??",
-        category: "action",
-        keywords: ["share", "link", "public"],
-        action: () => setShowShareDialog(true),
-      },
-      {
         id: "detail:save-template",
         label: "Save as Template",
         description: "Save this query as a reusable template",
@@ -981,16 +961,52 @@ async function loadRun() {
         keywords: ["back", "history", "list"],
         action: () => router.push("/history"),
       },
-    ]);
+    ];
+
+    if (canDistributeReport) {
+      commands.splice(2, 0,
+        {
+          id: "detail:export",
+          label: "Export Report",
+          description: "Download this report as Markdown",
+          icon: "??",
+          shortcut: "e",
+          category: "action",
+          keywords: ["export", "download", "markdown"],
+          action: () => handleExport("md"),
+        },
+        {
+          id: "detail:copy",
+          label: "Copy Report",
+          description: "Copy report to clipboard",
+          icon: "??",
+          shortcut: "c",
+          category: "action",
+          keywords: ["copy", "clipboard"],
+          action: handleCopyMarkdown,
+        },
+        {
+          id: "detail:share",
+          label: "Share",
+          description: "Generate a share link for this research",
+          icon: "??",
+          category: "action",
+          keywords: ["share", "link", "public"],
+          action: () => setShowShareDialog(true),
+        },
+      );
+    }
+
+    const unregister = registerCommands(commands);
 
     return unregister;
-  }, [run, registerCommands, router, handleToggleStar, handleRerun, handleExport, handleCopyMarkdown, handleSaveAsTemplate]);
+  }, [run, canDistributeReport, registerCommands, router, handleToggleStar, handleRerun, handleExport, handleCopyMarkdown, handleSaveAsTemplate]);
 
   // Keyboard shortcuts for detail page
   useHotkeys("s", handleToggleStar, { ignoreInputs: true, scope: "detail", enabled: !!run });
   useHotkeys("r", handleRerun, { ignoreInputs: true, scope: "detail", enabled: !!run && !isRunning });
-  useHotkeys("e", () => handleExport("md"), { ignoreInputs: true, scope: "detail", enabled: !!run });
-  useHotkeys("c", handleCopyMarkdown, { ignoreInputs: true, scope: "detail", enabled: !!run });
+  useHotkeys("e", () => handleExport("md"), { ignoreInputs: true, scope: "detail", enabled: canDistributeReport });
+  useHotkeys("c", handleCopyMarkdown, { ignoreInputs: true, scope: "detail", enabled: canDistributeReport });
   useHotkeys("b", () => router.push("/history"), { ignoreInputs: true, scope: "detail" });
 
   // Compute reverse citation map
@@ -1157,7 +1173,11 @@ async function loadRun() {
           </div>
           <div className="research-detail-meta">
             <span className={`research-status research-status-${run?.status}`}>
-              {run?.status === "completed" ? t("report.statusCompleted") : t("report.statusFailed")}
+              {run?.status === "completed"
+                ? t("report.statusCompleted")
+                : run?.status === "cancelled"
+                  ? t("report.statusCancelled")
+                  : t("report.statusFailed")}
             </span>
             <span className="research-provider">{run?.provider} / {run?.model}</span>
             <span className="research-time">{run ? formatTime(run.createdAt) : ""}</span>
@@ -1175,17 +1195,19 @@ async function loadRun() {
             <button onClick={handleSaveAsTemplate} className="research-action-btn">
               {t("report.saveAsTemplate")}
             </button>
-            <button onClick={() => setShowShareDialog(true)} className="research-action-btn">
-              {t("report.share")}
-            </button>
-            <button onClick={handleCopyMarkdown} className="research-action-btn">
-              {t("report.copyMarkdown")}
-            </button>
-            <button onClick={handleAddToCompare} className="research-action-btn">
-              {t("report.compare")}
-              {compareCount > 0 && <span className="research-action-badge">{compareCount}</span>}
-            </button>
-            <div className="research-export-menu" ref={exportMenuRef}>
+            {canDistributeReport && (
+              <>
+                <button onClick={() => setShowShareDialog(true)} className="research-action-btn">
+                  {t("report.share")}
+                </button>
+                <button onClick={handleCopyMarkdown} className="research-action-btn">
+                  {t("report.copyMarkdown")}
+                </button>
+                <button onClick={handleAddToCompare} className="research-action-btn">
+                  {t("report.compare")}
+                  {compareCount > 0 && <span className="research-action-badge">{compareCount}</span>}
+                </button>
+                <div className="research-export-menu" ref={exportMenuRef}>
               <button
                 onClick={() => setShowExportMenu((v) => !v)}
                 className="research-export-btn research-export-toggle"
@@ -1238,7 +1260,9 @@ async function loadRun() {
                   </button>
                 </div>
               )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
           {run?.keywords.length ? (
             <div className="research-keywords">
@@ -1247,6 +1271,7 @@ async function loadRun() {
               ))}
             </div>
           ) : null}
+          {canDistributeReport && (
           <section
             className="mt-5 rounded-2xl border border-stone-200 bg-[#fbfaf6]/90 p-4 shadow-[0_18px_60px_-52px_rgba(15,23,42,0.45)]"
             aria-label="Report output profile"
@@ -1329,6 +1354,7 @@ async function loadRun() {
               </div>
             )}
           </section>
+          )}
         </div>
       </header>
 
@@ -1410,22 +1436,30 @@ async function loadRun() {
           />
         )}
 
+        {run?.dossier && (
+          <HistoricalDossierPanel
+            key={run.id}
+            dossier={run.dossier}
+            mode={run.mode}
+            status={run.status}
+            fallbackProvider={run.provider}
+          />
+        )}
+
         {synthesis && (
           <>
             <section className="research-section" id="exec-summary">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("exec-summary")}
+              <CollapsibleSectionTitle
+                controls="exec-summary-content"
+                expanded={!collapsedSections.has("exec-summary")}
+                onToggle={() => toggleSection("exec-summary")}
                 onMouseEnter={() => activateExplanation("output-profile")}
                 onFocus={() => activateExplanation("output-profile")}
               >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("exec-summary") ? "▸" : "▾"}
-                </span>
                 {t("report.tocExecSummary")}
-              </h2>
+              </CollapsibleSectionTitle>
               {!collapsedSections.has("exec-summary") && (
-                <>
+                <div id="exec-summary-content">
                   <p className="research-exec-summary">
                     <CitationText
                       text={synthesis.execSummary}
@@ -1446,25 +1480,23 @@ async function loadRun() {
                       <KeywordCloud keywords={run?.keywords ?? []} />
                     </div>
                   )}
-                </>
+                </div>
               )}
             </section>
 
             {!isIdeaProfile && (
             <section className="research-section research-scores-section" id="scores">
-                <h2
-                  className="research-section-title collapsible"
-                  onClick={() => toggleSection("scores")}
+                <CollapsibleSectionTitle
+                  controls="scores-content"
+                  expanded={!collapsedSections.has("scores")}
+                  onToggle={() => toggleSection("scores")}
                   onMouseEnter={() => activateExplanation("scores")}
                   onFocus={() => activateExplanation("scores")}
                 >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("scores") ? "▸" : "▾"}
-                </span>
-                {t("report.tocScores")}
-              </h2>
+                  {t("report.tocScores")}
+                </CollapsibleSectionTitle>
               {!collapsedSections.has("scores") && (
-                <div className="research-scores-visual">
+                <div id="scores-content" className="research-scores-visual">
                   <div
                     className="research-gauges"
                     onMouseEnter={() => activateExplanation("scores")}
@@ -1482,19 +1514,17 @@ async function loadRun() {
             )}
 
             <section className="research-section" id="key-insights">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("key-insights")}
+              <CollapsibleSectionTitle
+                controls="key-insights-content"
+                expanded={!collapsedSections.has("key-insights")}
+                onToggle={() => toggleSection("key-insights")}
                 onMouseEnter={() => activateExplanation("confidence")}
                 onFocus={() => activateExplanation("confidence")}
               >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("key-insights") ? "▸" : "▾"}
-                </span>
                 {t("report.tocKeyInsights", { n: visibleInsights.length })}
-              </h2>
+              </CollapsibleSectionTitle>
               {!collapsedSections.has("key-insights") && (
-              <div className="research-insights">
+              <div id="key-insights-content" className="research-insights">
                 {visibleInsights.map((insight, i) => (
                   <div key={i} className="research-insight-item">
                     <div className="research-insight-header">
@@ -1533,19 +1563,17 @@ async function loadRun() {
             </section>
 
             <section className="research-section" id="opportunities">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("opportunities")}
+              <CollapsibleSectionTitle
+                controls="opportunities-content"
+                expanded={!collapsedSections.has("opportunities")}
+                onToggle={() => toggleSection("opportunities")}
                 onMouseEnter={() => activateExplanation("opportunities")}
                 onFocus={() => activateExplanation("opportunities")}
               >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("opportunities") ? "▸" : "▾"}
-                </span>
                 {t("report.tocOpportunities")}
-              </h2>
+              </CollapsibleSectionTitle>
               {!collapsedSections.has("opportunities") && (
-              <div className="research-cards">
+              <div id="opportunities-content" className="research-cards">
                 {visibleOpportunities.map((opp, i) => (
                   <div key={i} className="research-card research-card-opportunity">
                     <div className="research-card-header">
@@ -1574,19 +1602,17 @@ async function loadRun() {
             </section>
 
             <section className="research-section" id="risks">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("risks")}
+              <CollapsibleSectionTitle
+                controls="risks-content"
+                expanded={!collapsedSections.has("risks")}
+                onToggle={() => toggleSection("risks")}
                 onMouseEnter={() => activateExplanation("risks")}
                 onFocus={() => activateExplanation("risks")}
               >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("risks") ? "▸" : "▾"}
-                </span>
                 {t("report.tocRisks")}
-              </h2>
+              </CollapsibleSectionTitle>
               {!collapsedSections.has("risks") && (
-              <div className="research-cards">
+              <div id="risks-content" className="research-cards">
                 {visibleRisks.map((risk, i) => (
                   <div key={i} className="research-card research-card-risk">
                     <div className="research-card-header">
@@ -1615,19 +1641,17 @@ async function loadRun() {
             </section>
 
             <section className="research-section" id="next-step">
-              <h2
-                className="research-section-title collapsible"
-                onClick={() => toggleSection("next-step")}
+              <CollapsibleSectionTitle
+                controls="next-step-content"
+                expanded={!collapsedSections.has("next-step")}
+                onToggle={() => toggleSection("next-step")}
                 onMouseEnter={() => activateExplanation("next-step")}
                 onFocus={() => activateExplanation("next-step")}
               >
-                <span className="research-section-collapse-icon">
-                  {collapsedSections.has("next-step") ? "▸" : "▾"}
-                </span>
                 {t("report.tocNextStep")}
-              </h2>
+              </CollapsibleSectionTitle>
               {!collapsedSections.has("next-step") && (
-              <div className="research-next-step">
+              <div id="next-step-content" className="research-next-step">
                 {synthesis.recommendedNextStep}
               </div>
               )}
@@ -1635,19 +1659,17 @@ async function loadRun() {
 
             {synthesis.citations && synthesis.citations.length > 0 && (
               <section className="research-section" id="sources">
-                <h2
-                  className="research-section-title collapsible"
-                  onClick={() => toggleSection("sources")}
+                <CollapsibleSectionTitle
+                  controls="sources-content"
+                  expanded={!collapsedSections.has("sources")}
+                  onToggle={() => toggleSection("sources")}
                   onMouseEnter={() => activateExplanation("evidence-sources")}
                   onFocus={() => activateExplanation("evidence-sources")}
                 >
-                  <span className="research-section-collapse-icon">
-                    {collapsedSections.has("sources") ? "▸" : "▾"}
-                  </span>
                   {t("report.tocSources", { n: visibleCitations.length })}{isAnalystProfile ? "" : "+"}
-                </h2>
+                </CollapsibleSectionTitle>
                 {!collapsedSections.has("sources") && (
-                <>
+                <div id="sources-content">
                 {!isAnalystProfile && synthesis.citations.length > visibleCitations.length && (
                   <div className="mb-4 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-700">
                     {t("report.sourcesNoticeFull", { n: visibleCitations.length })}
@@ -1662,9 +1684,9 @@ async function loadRun() {
                     onMouseEnter={() => activateExplanation("evidence-sources")}
                     onFocus={() => activateExplanation("evidence-sources")}
                   >
-                      <a href={s.url} target="_blank" rel="noopener noreferrer" className="research-source-title">
+                      <SafeExternalLink href={s.url} className="research-source-title">
                         {s.title}
-                      </a>
+                      </SafeExternalLink>
                       {s.snippet && <p className="research-source-snippet">{s.snippet}</p>}
                       {sourceCitationMap.has(i) && (
                         <div className="research-source-cited-in">
@@ -1677,7 +1699,7 @@ async function loadRun() {
                     </li>
                   ))}
                 </ul>
-                </>
+                </div>
               )}
               </section>
             )}
@@ -1686,17 +1708,15 @@ async function loadRun() {
 
         {!synthesis && run?.result && (
           <section className="research-section" id="result">
-            <h2
-              className="research-section-title collapsible"
-              onClick={() => toggleSection("result")}
+            <CollapsibleSectionTitle
+              controls="result-content"
+              expanded={!collapsedSections.has("result")}
+              onToggle={() => toggleSection("result")}
             >
-              <span className="research-section-collapse-icon">
-                {collapsedSections.has("result") ? "▸" : "▾"}
-              </span>
               {t("report.tocResult")}
-            </h2>
+            </CollapsibleSectionTitle>
             {!collapsedSections.has("result") && (
-            <div className="research-result">
+            <div id="result-content" className="research-result">
               <pre className="research-result-text">{run.result}</pre>
             </div>
             )}
@@ -1724,7 +1744,7 @@ async function loadRun() {
       </div>
 
       {/* Share dialog */}
-      {showShareDialog && (
+      {canDistributeReport && showShareDialog && (
         <div className="research-modal-overlay" onClick={() => setShowShareDialog(false)}>
           <div className="research-modal research-modal-share" onClick={(e) => e.stopPropagation()}>
             <h3>{t("report.shareTitle")}</h3>

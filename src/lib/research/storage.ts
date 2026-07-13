@@ -14,14 +14,46 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ResearchModeId } from "./research-modes";
+import {
+  isValidResearchRunId,
+  resolveResearchRunFilePath,
+} from "./run-id";
+import type {
+  AgentEvidenceLedgerEntry,
+  AgentId,
+  AgentOutput,
+  AgentState,
+  EvidenceLedger,
+  ValidationLedger,
+} from "@/lib/schema/research-schema";
 
 const STORAGE_DIR = process.env.LAUNCHLENS_STORAGE_DIR || "";
 const MAX_MEMORY_RUNS = 50; // in-memory cap when no storage dir
+
+export interface ResearchDossierAgent {
+  output?: AgentOutput;
+  evidence?: AgentEvidenceLedgerEntry;
+  resolvedProviderId?: string;
+  degraded: boolean;
+  degradedReason?: AgentState["degradedReason"];
+}
+
+export interface ResearchDossier {
+  version: 1;
+  agents: Record<AgentId, ResearchDossierAgent>;
+  evidence?: EvidenceLedger;
+  /** Optional for dossiers persisted before structural validation shipped. */
+  validation?: ValidationLedger;
+  degraded: boolean;
+}
 
 export interface ResearchRun {
   id: string;
   query: string;
   keywords: string[];
+  /** Optional for backward compatibility with runs stored before modes existed. */
+  mode?: ResearchModeId;
   result: string;
   sources?: Array<{ title: string; url: string; snippet?: string }>;
   provider: string;
@@ -34,6 +66,8 @@ export interface ResearchRun {
   status: "completed" | "failed" | "cancelled";
   agent?: string;
   error?: string;
+  /** Optional so run files written before full dossier persistence still load. */
+  dossier?: ResearchDossier;
 }
 
 // In-memory cache (used even with disk storage, for fast listing)
@@ -77,7 +111,13 @@ export function generateRunId(): string {
  * Save a completed research run to storage.
  */
 export function saveResearchRun(run: ResearchRun): void {
-  // Add to in-memory list (most recent first)
+  if (!isValidResearchRunId(run.id)) return;
+
+  // Upsert into the in-memory list (most recent first). Terminal Deep records
+  // can be reconciled by both the worker and a later read; duplicate history
+  // rows must not be created by those idempotent observers.
+  const existingIndex = recentRuns.findIndex((item) => item.id === run.id);
+  if (existingIndex >= 0) recentRuns.splice(existingIndex, 1);
   recentRuns.unshift(run);
   if (recentRuns.length > MAX_MEMORY_RUNS) {
     recentRuns.length = MAX_MEMORY_RUNS;
@@ -87,7 +127,8 @@ export function saveResearchRun(run: ResearchRun): void {
   const runsDir = getRunsDir();
   if (!runsDir) return;
   try {
-    const filePath = path.join(runsDir, `${run.id}.json`);
+    const filePath = resolveResearchRunFilePath(runsDir, run.id);
+    if (!filePath) return;
     fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf8");
   } catch {
     // Best-effort persistence -don't fail the research run if storage fails
@@ -107,6 +148,8 @@ export function listResearchRuns(limit: number = 20): ResearchRun[] {
  * Returns null if not found.
  */
 export function getResearchRun(id: string): ResearchRun | null {
+  if (!isValidResearchRunId(id)) return null;
+
   // Check memory first
   const memMatch = recentRuns.find((r) => r.id === id);
   if (memMatch) return memMatch;
@@ -115,7 +158,8 @@ export function getResearchRun(id: string): ResearchRun | null {
   const runsDir = getRunsDir();
   if (!runsDir) return null;
   try {
-    const filePath = path.join(runsDir, `${id}.json`);
+    const filePath = resolveResearchRunFilePath(runsDir, id);
+    if (!filePath) return null;
     if (fs.existsSync(filePath)) {
       const data = fs.readFileSync(filePath, "utf8");
       const run = JSON.parse(data) as ResearchRun;
@@ -137,6 +181,8 @@ export function getResearchRun(id: string): ResearchRun | null {
  * Returns true if deleted, false if not found.
  */
 export function deleteResearchRun(id: string): boolean {
+  if (!isValidResearchRunId(id)) return false;
+
   // Remove from memory
   const memIdx = recentRuns.findIndex((r) => r.id === id);
   if (memIdx >= 0) {
@@ -147,7 +193,8 @@ export function deleteResearchRun(id: string): boolean {
   const runsDir = getRunsDir();
   if (!runsDir) return memIdx >= 0;
   try {
-    const filePath = path.join(runsDir, `${id}.json`);
+    const filePath = resolveResearchRunFilePath(runsDir, id);
+    if (!filePath) return memIdx >= 0;
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       return true;
@@ -202,9 +249,11 @@ export function searchResearchRuns(options: {
  * Returns count of imported runs.
  */
 export function bulkImportRuns(runs: ResearchRun[]): number {
+  const validRuns = runs.filter((run) => isValidResearchRunId(run.id));
+
   // Replace in-memory list (newest first)
   recentRuns.length = 0;
-  const sorted = [...runs].sort((a, b) => b.createdAt - a.createdAt);
+  const sorted = [...validRuns].sort((a, b) => b.createdAt - a.createdAt);
   for (const run of sorted.slice(0, MAX_MEMORY_RUNS)) {
     recentRuns.push(run);
   }
@@ -213,8 +262,9 @@ export function bulkImportRuns(runs: ResearchRun[]): number {
   const runsDir = getRunsDir();
   if (runsDir) {
     try {
-      for (const run of runs) {
-        const filePath = path.join(runsDir, `${run.id}.json`);
+      for (const run of validRuns) {
+        const filePath = resolveResearchRunFilePath(runsDir, run.id);
+        if (!filePath) continue;
         fs.writeFileSync(filePath, JSON.stringify(run, null, 2), "utf8");
       }
     } catch {
@@ -222,7 +272,7 @@ export function bulkImportRuns(runs: ResearchRun[]): number {
     }
   }
 
-  return Math.min(runs.length, MAX_MEMORY_RUNS);
+  return Math.min(validRuns.length, MAX_MEMORY_RUNS);
 }
 
 /**

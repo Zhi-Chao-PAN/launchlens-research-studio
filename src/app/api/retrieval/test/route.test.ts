@@ -1,0 +1,49 @@
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  checkCsrfToken: vi.fn(),
+  probeRetrievalProvider: vi.fn(),
+}));
+
+vi.mock("@/lib/api/rate-limit", () => ({
+  checkRateLimitForIp: vi.fn(() => ({ allowed: true, remaining: 9, resetMs: 0 })),
+}));
+vi.mock("@/lib/api/csrf", () => ({ checkCsrfToken: mocks.checkCsrfToken }));
+vi.mock("@/lib/api/csrf-rotate", () => ({
+  rotateCsrf: (response: Response) => response,
+}));
+vi.mock("@/lib/api/bypass-tokens", () => ({
+  extractBearerToken: vi.fn(() => undefined),
+  isBypassToken: vi.fn(() => false),
+}));
+vi.mock("@/lib/telemetry/request-log", () => ({
+  hashIp: vi.fn(() => "ip-hash"),
+  recordRequest: vi.fn(),
+}));
+vi.mock("@/lib/api/cors", () => ({
+  checkCors: vi.fn(() => ({ allowed: true, headers: {} })),
+  handleOptions: vi.fn(() => null),
+}));
+vi.mock("@/lib/providers/retrieval-registry", () => ({
+  probeRetrievalProvider: mocks.probeRetrievalProvider,
+}));
+
+import { POST } from "./route";
+
+describe("POST /api/retrieval/test CSRF boundary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.checkCsrfToken.mockReturnValue({ ok: false, reason: "missing-csrf" });
+  });
+
+  it("rejects a failed CSRF result object before invoking paid retrieval", async () => {
+    const response = await POST(
+      new NextRequest("https://example.test/api/retrieval/test", { method: "POST" }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ error: "Invalid CSRF token" });
+    expect(mocks.probeRetrievalProvider).not.toHaveBeenCalled();
+  });
+});

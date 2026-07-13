@@ -198,6 +198,8 @@ export function ReportSearchBar({ containerRef }: ReportSearchBarProps) {
     <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
       <div className="relative flex-1">
         <input
+          id="report-search"
+          name="report-search"
           ref={inputRef}
           type="text"
           value={query}

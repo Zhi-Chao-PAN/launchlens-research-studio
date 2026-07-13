@@ -74,8 +74,10 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(sources[0].url).toBe("https://example.com/ai-tools");
     expect(sources[0].snippet).toContain("AI tools");
     expect(sources[0].retrievedAt).toBe("2026-06-27T00:00:00.000Z");
-    expect(sources[0].confidence).toBe("high"); // score >= 0.7
-    expect(sources[1].confidence).toBe("medium"); // 0.45
+    // Retrieval relevance is not evidence reliability. Both sources remain
+    // medium confidence until a later claim-to-source validation pass.
+    expect(sources[0].confidence).toBe("medium");
+    expect(sources[1].confidence).toBe("medium");
   });
 
   it("drops results missing title or url", async () => {

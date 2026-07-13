@@ -2,6 +2,8 @@
 // All research agents conform to these output schemas so the synthesis layer
 // can reason across agent outputs with confidence.
 
+import type { ResearchModeId } from "@/lib/research/research-modes";
+
 export type AgentId =
   | "market-sizer"
   | "competitor-analyst"
@@ -23,6 +25,285 @@ export interface SourceCitation {
   confidence: ConfidenceLevel;
   agent: AgentId;
 }
+
+/** Outcome of the optional retrieval step for one agent. */
+export type EvidenceRetrievalStatus =
+  | "not_requested"
+  | "not_configured"
+  | "retrieved"
+  | "unavailable";
+
+/**
+ * `grounded` means at least one model citation was allowlisted against a
+ * source retrieved for this run. It is deliberately not a factual-validation
+ * claim: source/claim agreement still requires a later validation pass.
+ */
+export type EvidenceGroundingStatus = "grounded" | "ungrounded";
+
+export interface EvidenceAllowlistStats {
+  policy: "compatible" | "strict";
+  total: number;
+  matched: number;
+  rejected: number;
+  missingUrl: number;
+  retained: number;
+}
+
+/** Serializable subset of a retrieval result retained with the session. */
+export interface EvidenceSource extends SourceCitation {
+  retrievedAt?: string;
+  score?: number;
+}
+
+export interface AgentEvidenceLedgerEntry {
+  agentId: AgentId;
+  retrieval: {
+    status: EvidenceRetrievalStatus;
+    /** Direct agent retrieval, a synthesis union, or no source input. */
+    sourceOrigin: "agent_retrieval" | "specialist_union" | "none";
+    providerId?: string;
+    focusedQuery?: string;
+    sourceCount: number;
+    sources: EvidenceSource[];
+    unavailableReason?: string;
+  };
+  allowlist: EvidenceAllowlistStats;
+  grounding: EvidenceGroundingStatus;
+  updatedAt: string;
+}
+
+/** Additive, versioned evidence provenance retained on new sessions. */
+export interface EvidenceLedger {
+  version: 1;
+  agents: Partial<Record<AgentId, AgentEvidenceLedgerEntry>>;
+}
+
+export interface ValidationStructuralSections {
+  specialists: {
+    expected: 5;
+    completedWithOutput: number;
+    failed: number;
+    incomplete: number;
+    status: "complete" | "partial" | "none";
+  };
+  urlAllowlist: {
+    status: "not_run" | "matched" | "matched_with_rejections" | "no_matches";
+    strictAgentCount: number;
+    compatibleAgentCount: number;
+    matched: number;
+    rejected: number;
+    missingUrl: number;
+    groundedAgentCount: number;
+    interpretation: "url_membership_only";
+  };
+  sourceDiversity: {
+    status: "not_available" | "single_domain" | "multiple_domains";
+    uniqueSourceCount: number;
+    uniqueDomainCount: number;
+    interpretation: "descriptive_only";
+  };
+  citationCoverage: {
+    status: "not_available" | "complete" | "partial";
+    outputsEvaluated: number;
+    outputsWithCitations: number;
+    topLevelCitations: number;
+    citationsWithHttpUrl: number;
+    nestedReferences: number;
+    resolvedNestedReferences: number;
+    unresolvedNestedReferences: number;
+    interpretation: "structural_presence_and_id_resolution_only";
+  };
+  provenance: {
+    status:
+      | "none_observed"
+      | "mock_outputs_present"
+      | "degraded_outputs_present"
+      | "mock_and_degraded_outputs_present";
+    mockAgents: AgentId[];
+    degradedAgents: AgentId[];
+    interpretation: "execution_provenance_only";
+  };
+}
+
+/**
+ * The original structural evidence-integrity snapshot. Its semantics are
+ * intentionally frozen: V1 proves structural/provenance properties only and
+ * must never be interpreted as factual or claim-to-source validation.
+ */
+export interface ValidationLedgerV1 extends ValidationStructuralSections {
+  version: 1;
+  generatedAt: string;
+  /** `pre_synthesis` is produced once all specialists have settled. */
+  stage: "pre_synthesis" | "final";
+  protocol: {
+    requestedMode: ResearchModeId;
+    /** Standard currently executes exactly one structural pass. */
+    executedPasses: 1;
+    passKind: "structural_evidence_integrity";
+    /** Deep remains preview-only; no three-pass protocol is claimed here. */
+    deepMultiPassExecuted: false;
+  };
+  semanticValidation: {
+    status: "not_run";
+    claimToSourceEntailment: false;
+    factualAccuracy: false;
+    sourceReliability: false;
+    statement: string;
+  };
+  /** Compact, source-content-free context consumed by the synthesis prompt. */
+  synthesisSummary: string;
+}
+
+export const DEEP_VALIDATION_PASS_KINDS = [
+  "claim_source_entailment",
+  "independent_corroboration_conflict",
+  "adjudication",
+] as const;
+
+export type DeepValidationPassKind = (typeof DEEP_VALIDATION_PASS_KINDS)[number];
+export type ClaimReviewPassKind = Exclude<DeepValidationPassKind, "adjudication">;
+
+export type ResearchClaimKind =
+  | "market_metric"
+  | "competitor"
+  | "pain"
+  | "pricing"
+  | "channel"
+  | "recommendation";
+
+/**
+ * A stable, bounded claim extracted from one persisted specialist output.
+ * `valueHash` lets later stages reject reviews of a claim whose value changed.
+ */
+export interface ResearchClaim {
+  id: string;
+  agentId: Exclude<AgentId, "synthesis">;
+  fieldPath: string;
+  text: string;
+  kind: ResearchClaimKind;
+  criticality: "decision_critical" | "material";
+  sourceIds: string[];
+  valueHash: string;
+}
+
+export type ClaimReviewSourceOrigin =
+  | "agent_citation"
+  | "retrieved_evidence"
+  | "independent_retrieval";
+
+/** A source admitted by a trusted retrieval/citation boundary for review. */
+export interface ClaimReviewSource extends SourceCitation {
+  origin: ClaimReviewSourceOrigin;
+}
+
+export interface ClaimReviewerIdentity {
+  reviewerId: string;
+  providerId: string;
+  model?: string;
+  promptVersion: string;
+}
+
+export type ClaimReviewVerdict =
+  | "entailed"
+  | "partially_entailed"
+  | "not_entailed"
+  | "corroborated"
+  | "contradicted"
+  | "mixed"
+  | "insufficient_evidence";
+
+export interface ClaimReviewFinding {
+  claimId: string;
+  /** Hash copied from the reviewed claim; stale findings are discarded. */
+  claimValueHash: string;
+  pass: ClaimReviewPassKind;
+  reviewer: ClaimReviewerIdentity;
+  verdict: ClaimReviewVerdict;
+  confidence: ConfidenceLevel;
+  supportingSourceIds: string[];
+  contradictingSourceIds: string[];
+  rationale: string;
+}
+
+export type ClaimDisposition =
+  | "supported"
+  | "partially_supported"
+  | "conflicted"
+  | "unsupported"
+  | "insufficient_evidence";
+
+export interface ClaimAdjudication {
+  claimId: string;
+  /** Hash copied from the adjudicated claim; stale results are discarded. */
+  claimValueHash: string;
+  reviewer: ClaimReviewerIdentity;
+  disposition: ClaimDisposition;
+  confidence: ConfidenceLevel;
+  supportingSourceIds: string[];
+  contradictingSourceIds: string[];
+  reviewedPasses: DeepValidationPassKind[];
+  /** Derived by the application; reviewer-provided values are not trusted. */
+  synthesisEligible: boolean;
+  limitations: string[];
+}
+
+export interface ClaimAdjudicationCounts {
+  totalClaims: number;
+  adjudicated: number;
+  unreviewed: number;
+  supported: number;
+  partiallySupported: number;
+  conflicted: number;
+  unsupported: number;
+  insufficientEvidence: number;
+  synthesisEligible: number;
+}
+
+/**
+ * Deep validation is a claim/evidence support review, not a guarantee that an
+ * external-world fact is true. The explicit `not_established` value preserves
+ * that boundary even after all three passes complete.
+ */
+export interface ValidationLedgerV2 extends ValidationStructuralSections {
+  version: 2;
+  generatedAt: string;
+  stage: "pre_synthesis" | "final";
+  protocol: {
+    requestedMode: "deep";
+    plannedPasses: 3;
+    executedPasses: 0 | 1 | 2 | 3;
+    passKinds: [
+      "claim_source_entailment",
+      "independent_corroboration_conflict",
+      "adjudication",
+    ];
+    completedPassKinds: DeepValidationPassKind[];
+    deepMultiPassExecuted: boolean;
+  };
+  claims: ResearchClaim[];
+  reviewSources: ClaimReviewSource[];
+  findings: ClaimReviewFinding[];
+  adjudications: ClaimAdjudication[];
+  adjudicationCounts: ClaimAdjudicationCounts;
+  semanticValidation: {
+    status: "pending" | "in_progress" | "completed" | "partial" | "failed";
+    scope: "claim_evidence_support";
+    totalPasses: 3;
+    completedPasses: DeepValidationPassKind[];
+    progress: number;
+    reviewedClaimCount: number;
+    adjudicatedClaimCount: number;
+    reviewerDiversityCount: number;
+    factualAccuracy: "not_established";
+    sourceReliability: "not_assessed" | "assessed_not_proven";
+    statement: string;
+  };
+  /** Compact, source-content-free context consumed by the synthesis prompt. */
+  synthesisSummary: string;
+}
+
+/** Version is the discriminant; persisted V1 dossiers remain valid verbatim. */
+export type ValidationLedger = ValidationLedgerV1 | ValidationLedgerV2;
 
 // ---------- Market Sizer ----------
 
@@ -208,6 +489,9 @@ export interface ResearchSession {
   id: string;
   query: string;
   keywords: string[];
+  /** Research protocol selected when the session was created.
+   *  Optional only for snapshots persisted before mode support shipped. */
+  mode?: ResearchModeId;
   /** Persona/agent style ID that shapes all research outputs */
   personaId?: string;
   /** Optional privacy-safe user-test labels used to connect Stage 2 funnel evidence.
@@ -228,6 +512,10 @@ export interface ResearchSession {
   status: "pending" | "running" | "completed" | "error" | "cancelled";
   agents: Record<AgentId, AgentState>;
   citations: SourceCitation[];
+  /** Optional so sessions persisted before evidence capture remain readable. */
+  evidence?: EvidenceLedger;
+  /** Optional so sessions persisted before structural validation remain readable. */
+  validation?: ValidationLedger;
 }
 
 export interface ResearchEvent {

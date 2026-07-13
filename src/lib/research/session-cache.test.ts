@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 class MockStorage {
   private data = new Map<string, string>();
@@ -48,6 +48,7 @@ import {
   searchCachedSessions,
 } from "@/lib/research/session-cache";
 import type { ResearchSession, AgentOutput } from "@/lib/schema/research-schema";
+import { buildResearchValidation } from "@/lib/research/validation-ledger";
 
 function makeSession(id: string, query: string, withOutput = true): ResearchSession {
   const output: AgentOutput | null = withOutput
@@ -67,6 +68,7 @@ function makeSession(id: string, query: string, withOutput = true): ResearchSess
     id,
     query,
     keywords: ["ai"],
+    mode: "standard",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:01:00Z",
     status: "completed",
@@ -93,6 +95,7 @@ describe("saveSessionSnapshot", () => {
     expect(all).toHaveLength(1);
     expect(all[0].id).toBe("s1");
     expect(all[0].query).toBe("test query");
+    expect(all[0].mode).toBe("standard");
   });
 
   it("captures outputs and statuses", () => {
@@ -103,12 +106,42 @@ describe("saveSessionSnapshot", () => {
     expect(c.agentStatuses["market-sizer"].hasOutput).toBe(true);
   });
 
+  it("preserves evidence, structural validation, and degraded provenance", () => {
+    const session = makeSession("s-ledger", "grounded run");
+    session.evidence = { version: 1, agents: {} };
+    session.validation = buildResearchValidation(session, "2026-01-01T00:01:00.000Z");
+    session.agents["market-sizer"].degraded = true;
+    session.agents["market-sizer"].degradedReason = "provider_fallback";
+
+    saveSessionSnapshot(session);
+
+    const cached = getCachedSession("s-ledger")!;
+    expect(cached.evidence).toEqual(session.evidence);
+    expect(cached.validation?.stage).toBe("final");
+    expect(cached.agentStatuses["market-sizer"]).toMatchObject({
+      degraded: true,
+      degradedReason: "provider_fallback",
+    });
+  });
+
   it("overwrites existing entry with same id", () => {
     saveSessionSnapshot(makeSession("s1", "first"));
     saveSessionSnapshot(makeSession("s1", "second"));
     const all = listCachedSessions();
     expect(all).toHaveLength(1);
     expect(all[0].query).toBe("second");
+  });
+
+  it("does not rewrite an unchanged terminal snapshot", () => {
+    const session = makeSession("stable", "stable query");
+    const writeSpy = vi.spyOn(storage, "setItem");
+
+    saveSessionSnapshot(session);
+    const writesAfterFirstSave = writeSpy.mock.calls.length;
+    saveSessionSnapshot(session);
+
+    expect(writeSpy).toHaveBeenCalledTimes(writesAfterFirstSave);
+    writeSpy.mockRestore();
   });
 
   it("keeps most recent first", () => {
@@ -438,6 +471,7 @@ describe("warmup / preload (round 131)", () => {
 describe("session-cache pure helpers (round 157)", () => {
   const base = (overrides: any = {}) => ({
     id: "s1", query: "AI tools", keywords: ["ai", "saas"],
+    mode: "standard", status: "completed", savedAt: 1,
     createdAt: "2024-06-01T00:00:00.000Z", updatedAt: "2024-06-01T00:05:00.000Z",
     completedAt: "2024-06-01T00:05:00.000Z", citationCount: 12,
     outputs: { "market-sizer": { agent: "market-sizer", insights: [] } as any, synthesis: null },
@@ -501,6 +535,7 @@ describe("session-cache pure helpers (round 157)", () => {
     expect(cachedSessionsEqual(a, { ...a, citationCount: 3 })).toBe(false);
     expect(cachedSessionsEqual(a, { ...a, keywords: [...a.keywords, "x"] })).toBe(false);
     expect(cachedSessionsEqual(a, { ...a, agentStatuses: { ...a.agentStatuses, "market-sizer": { ...a.agentStatuses["market-sizer"], progress: 99 } } })).toBe(false);
+    expect(cachedSessionsEqual(a, { ...a, evidence: { version: 1, agents: {} } })).toBe(false);
   });
 
   it("searchCachedSessions matches query and keywords", () => {
@@ -533,12 +568,27 @@ describe("corrupted session-cache storage (round validation)", () => {
       { id: "no-query", keywords: [], status: "completed", createdAt: "", updatedAt: "", savedAt: 1, completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
       { id: "bad-keywords", query: "q", keywords: "not-an-array", status: "completed", createdAt: "", updatedAt: "", savedAt: 1, completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
       { id: "bad-savedAt", query: "q", keywords: [], status: "completed", createdAt: "", updatedAt: "", savedAt: "now", completedAt: "", outputs: {}, agentStatuses: {}, citationCount: 0 },
+      {
+        ...good,
+        id: "bad-evidence",
+        evidence: { version: 1, agents: { "market-sizer": { agentId: "market-sizer" } } },
+      },
+      {
+        ...good,
+        id: "bad-validation",
+        validation: { version: 1, generatedAt: "2025", stage: "final" },
+      },
       "string-not-object",
     ];
     localStorage.setItem("launchlens:sessions", JSON.stringify(payload));
     const all = listCachedSessions();
-    expect(all).toHaveLength(1);
-    expect(all[0].id).toBe("ok");
+    expect(all.map((session) => session.id)).toEqual([
+      "ok",
+      "bad-evidence",
+      "bad-validation",
+    ]);
+    expect(all[1].evidence).toBeUndefined();
+    expect(all[2].validation).toBeUndefined();
   });
 
   it("access-tracking storage also drops malformed entries", () => {

@@ -6,6 +6,7 @@
 // when no API key is configured.
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
+import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 
 export interface ProviderProgressEvent {
   // Fraction of the agent's work completed, 0..1.
@@ -21,6 +22,17 @@ export interface ProviderContext {
   query: string;
   keywords: string[];
   upstream?: AgentOutput[];
+  /**
+   * Sources returned by the retrieval layer for this agent run. Providers
+   * must pass them to the prompt as untrusted evidence data, never as
+   * executable instructions. Optional to preserve retrieval-free callers.
+   */
+  retrievedSources?: readonly RetrievedSource[];
+  /**
+   * Application-generated structural evidence counts for synthesis. This is
+   * never a factual or claim-to-source semantic validation result.
+   */
+  validationSummary?: string;
   /** Optional persona ID to shape the output (mock providers only for now) */
   personaId?: string;
   signal?: AbortSignal;

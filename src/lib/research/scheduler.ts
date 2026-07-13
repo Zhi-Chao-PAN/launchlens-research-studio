@@ -94,7 +94,7 @@ function loadSchedulesFromDisk(): Map<string, ResearchSchedule> {
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
     for (const file of files) {
       try {
-        const raw = fs.readFileSync(path.join(dir, file), "utf8");
+        const raw = fs.readFileSync(path.join(/* turbopackIgnore: true */ dir, file), "utf8");
         const s = JSON.parse(raw) as ResearchSchedule;
         map.set(s.id, s);
       } catch {
@@ -111,7 +111,7 @@ function persistSchedule(s: ResearchSchedule): void {
   const dir = getSchedulesDir();
   if (!dir) return;
   try {
-    const filePath = path.join(dir, `${s.id}.json`);
+    const filePath = path.join(/* turbopackIgnore: true */ dir, `${s.id}.json`);
     fs.writeFileSync(filePath, JSON.stringify(s, null, 2), "utf8");
   } catch {
     // best-effort persistence
@@ -122,7 +122,7 @@ function deleteScheduleFromDisk(id: string): void {
   const dir = getSchedulesDir();
   if (!dir) return;
   try {
-    fs.unlinkSync(path.join(dir, `${id}.json`));
+    fs.unlinkSync(path.join(/* turbopackIgnore: true */ dir, `${id}.json`));
   } catch {
     // best-effort
   }

@@ -1,8 +1,9 @@
 // R215: retrieval provider abstraction — parallel to ResearchProvider but for
 // web search / page fetching. Real LLM providers currently generate
 // citations from parametric memory alone; a RetrievalProvider injects
-// verified search results into the LLM's prompt and the engine rejects
-// LLM-cited URLs that weren't in the retrieved set.
+// retrieved, untrusted search results into the LLM's prompt and the engine
+// can restrict cited URLs to that run-scoped allowlist. URL membership is
+// provenance, not factual verification.
 //
 // Today only a Tavily adapter is planned (https://docs.tavily.com/), but
 // the interface is provider-agnostic so Serper, Brave Search, Firecrawl,
@@ -12,9 +13,9 @@ import type { SourceCitation } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 
 /**
- * A single retrieved source. Same shape the LLM is asked to emit as
- * `SourceCitation` — we pass these directly to the agent prompts and the
- * engine uses them to validate the LLM's output.
+ * A single retrieved source. It shares the citation transport shape because
+ * prompts and persisted ledgers consume it directly. Search relevance lives
+ * in `score`; `confidence` must not be inferred from relevance alone.
  */
 export type RetrievedSource = SourceCitation & {
   /** Relevance score returned by the search backend (0..1, optional). */
@@ -26,8 +27,9 @@ export type RetrievedSource = SourceCitation & {
 /**
  * Query a retrieval provider for sources relevant to an agent's prompt.
  * Providers should be resilient: when the API is unavailable or returns
- * no results, return an empty array rather than throwing, so the engine
- * can fall back to LLM-only generation gracefully.
+ * no results, return an empty array rather than throwing, so the engine can
+ * record retrieval as unavailable and continue with explicitly ungrounded
+ * generation.
  */
 export interface RetrievalProvider {
   readonly id: string;

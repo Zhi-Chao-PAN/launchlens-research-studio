@@ -2,15 +2,15 @@
 "use client";
 
 import type { PainDetectiveOutput } from "@/lib/schema/research-schema";
-import { SectionHeader } from "../primitives/SectionHeader";
+import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 const SEVERITY_STYLE = {
-  critical: { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", icon: "🔴", bar: "bg-rose-500", score: 5, key: "report.pain.critical" },
-  significant: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", icon: "🟡", bar: "bg-amber-500", score: 3, key: "report.pain.significant" },
-  mild: { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-600", icon: "⚪", bar: "bg-slate-400", score: 1, key: "report.pain.minor" },
+  critical: { text: "text-rose-800", bar: "bg-rose-700", score: 5, key: "report.pain.critical" },
+  significant: { text: "text-amber-900", bar: "bg-amber-700", score: 3, key: "report.pain.significant" },
+  mild: { text: "text-slate-700", bar: "bg-slate-500", score: 1, key: "report.pain.minor" },
 } as const;
 
 const FREQUENCY_KEY: Record<string, string> = {
@@ -33,55 +33,49 @@ export function PainDetectiveReport({ output }: { output: any }) {
       <SectionHeader
         title={t("report.pain.title")}
         description={data.summary}
-        icon="💬"
         count={totalPains}
-        accent="rose"
         onCopy={() => copy(generateAgentMarkdown("pain-detective", data), "pain-detective")}
         copied={copied === "pain-detective"}
         copyLabel={t("report.pain.copySection")}
       />
 
       {/* Severity distribution */}
-      <div className="bg-slate-50 rounded-xl p-3 flex items-center justify-around text-xs">
-        <div className="text-center">
-          <p className="text-rose-600 font-bold text-lg">{criticalCount}</p>
+      <div className="grid grid-cols-2 border-y border-slate-200 text-xs sm:grid-cols-4 sm:divide-x sm:divide-slate-200">
+        <div className="border-b border-slate-200 px-3 py-3 text-center sm:border-b-0">
+          <p className="font-mono text-lg font-semibold tabular-nums text-rose-800">{criticalCount}</p>
           <p className="text-slate-500">{t("report.pain.critical")}</p>
         </div>
-        <div className="h-8 w-px bg-slate-200" />
-        <div className="text-center">
-          <p className="text-amber-600 font-bold text-lg">{sigCount}</p>
+        <div className="border-b border-l border-slate-200 px-3 py-3 text-center sm:border-b-0 sm:border-l-0">
+          <p className="font-mono text-lg font-semibold tabular-nums text-amber-900">{sigCount}</p>
           <p className="text-slate-500">{t("report.pain.significant")}</p>
         </div>
-        <div className="h-8 w-px bg-slate-200" />
-        <div className="text-center">
-          <p className="text-slate-500 font-bold text-lg">{data.userPersonas.length}</p>
+        <div className="px-3 py-3 text-center">
+          <p className="font-mono text-lg font-semibold tabular-nums text-slate-800">{data.userPersonas.length}</p>
           <p className="text-slate-500">{t("report.pain.personas")}</p>
         </div>
-        <div className="h-8 w-px bg-slate-200" />
-        <div className="text-center">
-          <p className="text-indigo-600 font-bold text-lg">{data.unmetNeeds.length}</p>
+        <div className="border-l border-slate-200 px-3 py-3 text-center sm:border-l-0">
+          <p className="font-mono text-lg font-semibold tabular-nums text-slate-800">{data.unmetNeeds.length}</p>
           <p className="text-slate-500">{t("report.pain.unmetNeeds")}</p>
         </div>
       </div>
 
       {/* Pain Points */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.pain.topPainPoints")}</h3>
-        <div className="space-y-3">
+        <ReportSubheading title={t("report.pain.topPainPoints")} count={totalPains} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
           {data.painPoints.map((pain) => {
             const sev = SEVERITY_STYLE[pain.severity as keyof typeof SEVERITY_STYLE] || SEVERITY_STYLE.mild;
             const freqKey = FREQUENCY_KEY[pain.frequency as keyof typeof FREQUENCY_KEY] || "report.pain.frequency.occasional";
             return (
-              <div key={pain.id} className={`p-4 rounded-xl border ${sev.bg} ${sev.border}`}>
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 text-center">
-                    <p className={`text-2xl ${sev.text}`} aria-hidden>{sev.icon}</p>
-                    <p className={`text-[10px] font-bold uppercase mt-0.5 ${sev.text}`}>{t(sev.key)}</p>
+              <article key={pain.id} className="py-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-20 flex-shrink-0">
+                    <p className={`text-[10px] font-semibold uppercase tracking-widest ${sev.text}`}>{t(sev.key)}</p>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-semibold text-slate-800`}>{pain.pain}</p>
                     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
+                      <span className="border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-700">
                         {t(freqKey)}
                       </span>
                       {pain.userSegments.length > 0 && (
@@ -91,15 +85,15 @@ export function PainDetectiveReport({ output }: { output: any }) {
                       )}
                     </div>
                     {/* Severity bar */}
-                    <div className="mt-2 h-1 bg-slate-200 rounded-full overflow-hidden">
-                      <div className={`h-full ${sev.bar} transition-all duration-700`} style={{ width: `${(sev.score / 5) * 100}%` }} />
+                    <div className="mt-2 h-1 overflow-hidden rounded-sm bg-slate-100">
+                      <div className={`h-full rounded-sm ${sev.bar}`} style={{ width: `${(sev.score / 5) * 100}%` }} />
                     </div>
 
                     {/* Quotes — LLM-generated, leave verbatim */}
                     {pain.quotes.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {pain.quotes.slice(0, 2).map((q, i) => (
-                          <div key={i} className="pl-3 border-l-2 border-slate-300">
+                          <div key={i} className="border-l-2 border-slate-200 pl-3">
                             <p className="text-xs text-slate-700 italic leading-relaxed">&ldquo;{q.text}&rdquo;</p>
                             <p className="text-[10px] text-slate-500 mt-0.5">— {q.source}</p>
                           </div>
@@ -108,7 +102,7 @@ export function PainDetectiveReport({ output }: { output: any }) {
                     )}
                   </div>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
@@ -116,17 +110,15 @@ export function PainDetectiveReport({ output }: { output: any }) {
 
       {/* Unmet Needs */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          {t("report.pain.unmetNeeds")} <span className="text-xs text-slate-400 font-normal">({data.unmetNeeds.length})</span>
-        </h3>
-        <div className="space-y-2">
+        <ReportSubheading title={t("report.pain.unmetNeeds")} count={data.unmetNeeds.length} />
+        <div className="divide-y divide-slate-200 border-y border-slate-200">
           {data.unmetNeeds.map((u, i) => (
-            <div key={i} className="p-3 bg-rose-50 rounded-lg border border-rose-100">
-              <p className="text-sm font-semibold text-rose-900">{u.need}</p>
-              <p className="text-xs text-rose-700 mt-1">
+            <div key={i} className="py-3">
+              <p className="text-sm font-semibold text-slate-900">{u.need}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
                 <span className="font-semibold">{t("report.pain.whyUnmet")}</span> {u.whyUnmet}
               </p>
-              <p className="text-xs text-emerald-700 mt-1">
+              <p className="mt-1 text-xs leading-5 text-emerald-800">
                 <span className="font-semibold">{t("report.pain.opportunity")}</span> {u.opportunity}
               </p>
             </div>
@@ -136,12 +128,12 @@ export function PainDetectiveReport({ output }: { output: any }) {
 
       {/* User Personas */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t("report.pain.userPersonas")}</h3>
+        <ReportSubheading title={t("report.pain.userPersonas")} count={data.userPersonas.length} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {data.userPersonas.map((p, i) => (
-            <div key={i} className="p-4 bg-gradient-to-br from-indigo-50 to-violet-50 rounded-xl border border-indigo-100">
+            <article key={i} className="rounded-md border border-slate-200 bg-white p-4">
               <div className="flex items-start gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center border border-slate-200 bg-slate-100 font-mono text-sm font-semibold text-slate-800" aria-hidden>
                   {p.name.charAt(0)}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -151,29 +143,29 @@ export function PainDetectiveReport({ output }: { output: any }) {
               </div>
               <div className="space-y-1.5 mt-2">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600">{t("report.pain.goals")}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">{t("report.pain.goals")}</p>
                   <ul className="text-xs text-slate-700 space-y-0.5 mt-1">
                     {p.goals.map((g, j) => (
                       <li key={j} className="flex items-start gap-1.5">
-                        <span className="text-emerald-500 flex-shrink-0">→</span>
+                        <span className="flex-shrink-0 font-mono text-emerald-700" aria-hidden>+</span>
                         <span>{g}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600">{t("report.pain.frustrations")}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">{t("report.pain.frustrations")}</p>
                   <ul className="text-xs text-slate-700 space-y-0.5 mt-1">
                     {p.frustrations.map((f, j) => (
                       <li key={j} className="flex items-start gap-1.5">
-                        <span className="text-rose-500 flex-shrink-0">→</span>
+                        <span className="flex-shrink-0 font-mono text-rose-700" aria-hidden>&minus;</span>
                         <span>{f}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       </div>
