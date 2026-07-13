@@ -113,7 +113,7 @@ Deep is `available` only when all seven requirements are ready:
 
 If any check fails, the API and UI keep Deep in Preview and `POST /api/research` refuses to start it.
 
-Current repository state: the code path is implemented and `vercel.json` declares a five-minute recovery schedule. Deep remains capability-gated until that cadence and every other dependency are verified in the deployed environment.
+Current repository state: the code path is implemented, `.github/workflows/deep-recovery.yml` declares five-minute independent recovery, and `vercel.json` declares a daily Vercel Hobby fallback. Deep remains capability-gated until the primary workflow and every other dependency are verified in the deployed environment.
 
 ## Persistence and Lifecycle
 
@@ -167,5 +167,5 @@ Before release:
 
 Verify one recovery path before enabling Deep:
 
-1. **Current path:** deploy the declared five-minute Vercel cron, set `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=300`, and verify authenticated recovery against the production due index.
+1. **Current path:** configure the GitHub repository secret `LAUNCHLENS_CRON_SECRET`, enable the declared five-minute workflow, set `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=300`, and verify authenticated recovery against the production due index. Keep the daily Vercel cron as a secondary platform fallback.
 2. **Future alternative:** approve a managed queue/workflow service and migrate the dispatcher/recovery adapter while keeping the Redis record and semantic protocol contracts.

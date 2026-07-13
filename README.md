@@ -195,7 +195,7 @@ Production journey measurement is documented in
 [`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
 privacy-minimized, server-confirmed Redis funnel milestones.
 
-A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. A Vercel Cron entry POSTs to `/api/cron/scheduler` every five minutes to recover due work independently of browser connections and fast self-dispatch.
+A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. `.github/workflows/deep-recovery.yml` POSTs to `/api/cron/scheduler` every five minutes to recover due work independently of browser connections and fast self-dispatch. The Vercel Hobby-compatible daily cron remains a second recovery path.
 
 **One-time setup**
 
@@ -205,12 +205,12 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
    | Variable | Why |
    |----------|-----|
    | `OPENAI_API_KEY` *(or* `ANTHROPIC_API_KEY`*)* | Real LLM provider (otherwise the mock provider runs). At least one of the two is required for non-mock research. |
-   | `CRON_SECRET` | Required for `POST /api/cron/scheduler` and injected automatically by Vercel Cron. The endpoint refuses every call when this and the legacy `LAUNCHLENS_CRON_SECRET` alias are unset. Generate one with `openssl rand -hex 32`. |
+   | `CRON_SECRET` | Required for `POST /api/cron/scheduler` and injected automatically by Vercel Cron. Store the same value as the GitHub repository secret `LAUNCHLENS_CRON_SECRET` for the five-minute recovery workflow. The endpoint refuses every call when this and the legacy environment alias are unset. Generate one with `openssl rand -hex 32`. |
    | `TAVILY_API_KEY` *(optional for Standard; required for Deep)* | Enables Tavily-backed retrieval. Deep fails closed rather than falling back to mock retrieval. |
    | `LAUNCHLENS_DEEP_*` | Deep opt-in, authenticated worker wake, and recovery declarations. See [`.env.example`](./.env.example) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md). |
 
    A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
-3. Deploy. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`), bind the cron, and expose the preview URL.
+3. Add the repository secret `LAUNCHLENS_CRON_SECRET`, then deploy. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`), bind the daily fallback cron, and expose the production URL. GitHub Actions owns the five-minute recovery cadence on Hobby.
 
 **Post-deploy verification checklist**
 
@@ -228,7 +228,7 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 
 **Deep production gate**
 
-`GET /api/research/capabilities` checks seven Deep requirements: explicit opt-in, reachable Redis, real generation/retrieval/reviewer providers, authenticated worker wake, and independent recovery. The UI and `POST /api/research` keep Deep in Preview until all seven pass. The repository declares a five-minute recovery cron; do not enable Deep until that cadence, its distinct cron secret, and every other capability requirement are verified in the deployed environment.
+`GET /api/research/capabilities` checks seven Deep requirements: explicit opt-in, reachable Redis, real generation/retrieval/reviewer providers, authenticated worker wake, and independent recovery. The UI and `POST /api/research` keep Deep in Preview until all seven pass. The repository declares a five-minute GitHub Actions recovery workflow plus a daily Vercel fallback; do not enable Deep until the workflow, its distinct cron secret, and every other capability requirement are verified in the deployed environment.
 
 See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md) for the protocol and deployment contract.
 

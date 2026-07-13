@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The repository declares five-minute independent recovery; production launch remains capability-gated until the deployed schedule and all other dependencies are verified.
+Accepted. The repository declares five-minute independent recovery through GitHub Actions, with a daily Vercel Hobby fallback; production launch remains capability-gated until the deployed workflow and all other dependencies are verified.
 
 ## Date
 
@@ -79,7 +79,7 @@ Terminal history persistence is a derived, idempotent observer that runs only af
 - Provider configuration is locked for the lifetime of a run; drift fails the stage instead of silently changing provenance.
 - Three semantic passes are explicit, ordered, and idempotent. The ledger still reports factual accuracy as `not_established`; semantic review is not a guarantee of truth.
 - History may be rebuilt idempotently from a terminal Deep record without changing its lifecycle.
-- The repository now declares a five-minute Vercel recovery cron. Deep remains Preview until the deployed schedule, distinct secret, and due-work recovery behavior are verified, or an approved managed runner replaces it.
+- The repository now declares a five-minute GitHub Actions recovery workflow and a daily Vercel Hobby fallback. Deep remains Preview until the primary workflow, distinct secret, and due-work recovery behavior are verified, or an approved managed runner replaces it.
 
 ## Operational Invariants
 
