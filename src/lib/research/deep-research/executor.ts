@@ -197,7 +197,9 @@ function mapSpecialistError(error: unknown): DeepWorkExecutionError {
       error.code === "retrieval_insufficient" ||
       error.code === "evidence_insufficient";
     return new DeepWorkExecutionError(
-      `specialist_${error.code}`,
+      error.code === "provider_degraded" && error.degradedReason
+        ? `specialist_provider_${error.degradedReason}`
+        : `specialist_${error.code}`,
       retryable,
       retryable
         ? "The Deep Research specialist stage did not meet its strict evidence contract and will be retried."

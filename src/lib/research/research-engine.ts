@@ -88,7 +88,11 @@ export type ResearchAgentStageErrorCode =
 export class ResearchAgentStageError extends Error {
   readonly code: ResearchAgentStageErrorCode;
 
-  constructor(code: ResearchAgentStageErrorCode, message: string) {
+  constructor(
+    code: ResearchAgentStageErrorCode,
+    message: string,
+    readonly degradedReason?: NonNullable<AgentState["degradedReason"]>,
+  ) {
     super(message);
     this.name = "ResearchAgentStageError";
     this.code = code;
@@ -891,6 +895,7 @@ async function runAgent(
       throw new ResearchAgentStageError(
         "provider_degraded",
         "The configured model provider is temporarily unavailable.",
+        "breaker_open",
       );
     }
     const provider = breakerOpen ? mockResearchProvider : selected;
@@ -1078,6 +1083,7 @@ async function runAgent(
             throw new ResearchAgentStageError(
               "provider_degraded",
               "The configured model provider did not complete this Deep Research stage.",
+              degradedReasonCaptured,
             );
           }
           output = applyPersona(generateMockAgentOutput(agentId, session.query, session.keywords, allOutputs), session.personaId);
@@ -1132,6 +1138,7 @@ async function runAgent(
       throw new ResearchAgentStageError(
         "provider_degraded",
         "The configured model provider degraded while executing this Deep Research stage.",
+        degradedReasonCaptured ?? (breakerOpen ? "breaker_open" : "provider_fallback"),
       );
     }
 

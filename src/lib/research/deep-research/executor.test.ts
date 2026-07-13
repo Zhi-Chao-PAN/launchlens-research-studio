@@ -106,6 +106,24 @@ describe("ProductionDeepWorkExecutor", () => {
       });
   });
 
+  it("preserves the safe provider degradation reason for durable diagnostics", async () => {
+    const initial = record(0);
+    const specialistRunner = vi.fn(async () => {
+      throw new ResearchAgentStageError(
+        "provider_degraded",
+        "Provider output failed validation.",
+        "validation_error",
+      );
+    });
+    const { executor: workExecutor } = executor({ specialistRunner });
+
+    await expect(workExecutor.execute({ record: initial, work: initial.work[0] }))
+      .rejects.toMatchObject({
+        code: "specialist_provider_validation_error",
+        retryable: true,
+      });
+  });
+
   it("routes semantic work by fixed pass and rejects provider profile drift", async () => {
     const initial = record(5);
     const { executor: workExecutor, semanticReviewer } = executor();

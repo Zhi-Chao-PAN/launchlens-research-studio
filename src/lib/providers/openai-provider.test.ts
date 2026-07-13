@@ -389,4 +389,42 @@ describe("createOpenAIProvider", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(reasons).toEqual([]);
   });
+
+  it("recovers a streaming validation error with one non-streaming retry", async () => {
+    const invalidSse = `data: ${JSON.stringify({
+      choices: [{ delta: { content: JSON.stringify({ agent: "channel-scout" }) } }],
+    })}\n\ndata: [DONE]\n\n`;
+    let attempt = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: any) => {
+      attempt++;
+      const body = JSON.parse(init.body);
+      if (attempt === 1) {
+        expect(body.stream).toBe(true);
+        return new Response(invalidSse, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      expect(body.stream).toBe(false);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(validPayload) } }],
+        }),
+      } as any;
+    });
+    const provider = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
+    const reasons: string[] = [];
+
+    const out = await provider.generate("channel-scout", {
+      query: "q",
+      keywords: [],
+      onProgress: vi.fn(),
+      onFallback: (reason) => reasons.push(reason),
+    });
+
+    expect(out.agent).toBe("channel-scout");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(reasons).toEqual([]);
+  });
 });

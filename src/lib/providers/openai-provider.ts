@@ -185,6 +185,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           throw new Error("empty provider response");
         }
         let parsed: unknown;
+        let usedStructuredRetry = false;
         try {
           // Reasoning models (MiniMax-M3, DeepSeek-R1, o1-style) wrap their
           // JSON in <think>…</think> blocks and/or fences; a bare JSON.parse
@@ -194,6 +195,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           if (wantsStream) {
             try {
               ctx.onProgress?.({ fraction: 0.98, step: "Retrying structured response" });
+              usedStructuredRetry = true;
               text = await fetchNonStreamingText();
               if (!text) {
                 reportFallback("empty_response", { message: "empty provider response after parse retry" });
@@ -215,6 +217,39 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           // Invalid citations / malformed evidence still fail into mock.
           return validateOrNormalizeAgentOutput(agentId, parsed);
         } catch {
+          // Streaming models can produce valid JSON that is structurally
+          // incomplete. Give the provider one non-streaming repair attempt,
+          // just as we already do for a malformed streaming envelope. This is
+          // bounded to one extra call and remains inside the stage deadline.
+          if (wantsStream && !usedStructuredRetry) {
+            ctx.onProgress?.({ fraction: 0.98, step: "Retrying schema-valid response" });
+            let retryText: string;
+            try {
+              retryText = await fetchNonStreamingText();
+            } catch (retryError) {
+              throw retryError;
+            }
+            if (!retryText) {
+              reportFallback("empty_response", {
+                message: "empty provider response after validation retry",
+              });
+              throw new Error("empty provider response after validation retry");
+            }
+            let retryParsed: unknown;
+            try {
+              retryParsed = extractJsonObject(retryText);
+            } catch {
+              reportFallback("parse_error", {
+                message: "provider returned non-JSON after validation retry",
+              });
+              throw new Error("provider returned non-JSON after validation retry");
+            }
+            try {
+              return validateOrNormalizeAgentOutput(agentId, retryParsed);
+            } catch {
+              // Fall through to the stable validation_error below.
+            }
+          }
           reportFallback("validation_error", { message: "provider output failed schema validation" });
           throw new Error("provider output failed schema validation");
         }
