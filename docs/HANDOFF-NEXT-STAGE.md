@@ -14,7 +14,7 @@
 - `src/lib/export/brief-mapper.ts`:`toLaunchLensBrief(session)` 纯函数,从 6 个 agent 输出确定性派生 5 字段(`idea/audience/market/tone/constraints`,每字段 ≤1200 字符)
 - `src/app/api/research/[sessionId]/brief/route.ts`:GET 端点返回结构化 brief JSON
 - `src/components/report/ExportActions.tsx`:"Export LaunchLens brief" 按钮下载 `launchlens-brief-*.json`
-- 17 个单元测试,lint/tsc/1546 测试/build 全绿
+- 38 个单元测试(含 Deep fail-closed / poison-token 回归),lint/tsc/2059 测试/build 全绿
 
 launchlens-ai 侧已实现**对应导入**(commit `20fce86`,已推送 origin/main,已生产部署到 `https://launchlens-ai-two.vercel.app`):
 - `src/lib/launchlens/brief-from-json.ts`:接受 research-studio 信封 / 裸 LaunchLensInput / 旧式自由文本三种形状
@@ -182,7 +182,7 @@ https://launchlens-ai-two.vercel.app/#brief=<base64url-encoded-JSON>
 | 文件 | 作用 |
 |---|---|
 | `src/lib/export/brief-mapper.ts` | `toLaunchLensBrief()` 纯函数 + `serializeBrief()` |
-| `src/lib/export/brief-mapper.test.ts` | 17 个测试,改 mapper 后必须保持全绿 |
+| `src/lib/export/brief-mapper.test.ts` | 38 个测试(含 Deep fail-closed / poison-token 回归),改 mapper 后必须保持全绿 |
 | `src/app/api/research/[sessionId]/brief/route.ts` | brief GET 端点 |
 | `src/components/report/ExportActions.tsx` | 导出/跳转按钮所在,见 `handleExportLaunchLens` |
 | `src/lib/research/research-engine.ts` | session 生命周期 + agent 编排(工作流 A 改造重点) |

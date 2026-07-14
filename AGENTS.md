@@ -184,7 +184,7 @@ Research Studio uses a **5 + 1** agent architecture:
 | `topThreeOpportunities` | `Opportunity[]` | Highest-leverage opportunities |
 | `topThreeRisks` | `Risk[]` | Biggest risks with mitigation |
 | `recommendedNextStep` | `string` | Single most impactful next action |
-| `launchlensBrief` | `string` | Free-text brief (legacy). The structured, importable brief is derived by `toLaunchLensBrief()` in `src/lib/export/brief-mapper.ts`, which maps the six agents' outputs to launchlens-ai's five-field `LaunchLensInput` (`idea`/`audience`/`market`/`tone`/`constraints`, each ≤1200 chars). Available via the Export panel and `GET /api/research/[sessionId]/brief`. |
+| `launchlensBrief` | `string` | Free-text brief (legacy, not importable). The structured, importable brief is derived by `toLaunchLensBrief()` in `src/lib/export/brief-mapper.ts`, which maps the six agents' outputs to launchlens-ai's five-field `LaunchLensInput` (`idea`/`audience`/`market`/`tone`/`constraints`, each ≤1200 chars). Available via the Export panel and `GET /api/research/[sessionId]/brief`. For Deep sessions, the mapper fail-closes when validation is absent/incomplete and gates synthesis prose/scores on evidence sufficiency. |
 | `citations` | `SourceCitation[]` | All citations, deduplicated |
 
 ### Research Steps

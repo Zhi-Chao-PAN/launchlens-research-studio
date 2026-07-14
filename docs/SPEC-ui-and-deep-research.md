@@ -78,11 +78,27 @@ Review responses use strict structured JSON, caller-owned runtime validation, cl
 
 The ledger is explicit that factual accuracy is `not_established`. Semantic review can support, partially support, conflict, or exclude a claim; it is not a guarantee that the world is true.
 
+#### Deterministic Adjudication
+
+Pass 3 (`adjudication`) is not free-form model output. The application owns a pure decision table (`deep-adjudication-policy.ts`) that derives the authoritative disposition, supporting/contradicting source IDs, reviewed passes, and maximum confidence from the two bounded review passes. The model may add prose limitations or lower confidence, but it cannot change the disposition or attach different evidence. The ledger guard (`isValidationLedgerV2`) recomputes this derivation on load and rejects any persisted ledger whose adjudications disagree with the decision table, so identical pass results cannot drift across retries.
+
+#### Source-to-Claim Binding
+
+Independent retrieval sources (origin `independent_retrieval`) must declare which claim(s) they support via a `claimIds` field. The corroboration pass may only cite sources whose `claimIds` include the claim under review and whose `agent` matches the claim's `agentId`. This prevents a single expert's independent sources from being cross-applied to unrelated claims -- the root cause of the first dogfood round's 1/24 acceptance rate.
+
 ### Synthesis Boundary
 
 Deep synthesis receives only eligible adjudicated claims and their trusted supporting sources. Raw specialist outputs are intentionally excluded from the synthesis prompt after review, preventing rejected or conflicted claims from re-entering through a side channel.
 
 Synthesis output citations are canonicalized back to trusted source objects. A provider fallback, invented source ID, incomplete V2 ledger, or degraded/mock provenance fails the stage.
+
+### Export Boundary (Fail-Closed Brief)
+
+The LaunchLens brief mapper (`brief-mapper.ts`) is the sole producer of importable briefs. When a Deep session lacks a completed V2 validation ledger (missing, V1, or incomplete), the mapper **fail-closes**: it emits a minimal brief preserving the founder's query and flagging that no evidence has been established. It never falls through to the Standard branch, which would export unverified TAM, pricing, pain points, and synthesis scores.
+
+Even with a V2 ledger, synthesis prose (execSummary, recommendedNextStep) and score metadata only enter the brief when `hasSufficientDeepBriefEvidence` returns true (≥3 fully-supported claims from ≥2 agents). Otherwise the brief is constrained to evidence-backed claim text and neutral copy.
+
+The raw `launchlensBrief` field in the synthesis output is not importable. The report page's brief section directs users to the Export panel, which runs the validation-aware mapper. Markdown and text exports do not embed the raw brief.
 
 ## Durable Execution
 
