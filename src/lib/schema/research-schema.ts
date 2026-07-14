@@ -304,6 +304,19 @@ export interface ValidationLedgerV2 extends ValidationStructuralSections {
   };
   /** Compact, source-content-free context consumed by the synthesis prompt. */
   synthesisSummary: string;
+  /**
+   * Optional metadata about the targeted gap-fill pass that runs between
+   * semantic_pass_1 and semantic_pass_2. Present only when the gap-fill
+   * work unit actually executed and added targeted retrieval sources.
+   * Older V2 ledgers persisted before this field shipped remain valid
+   * verbatim because this field is purely additive.
+   */
+  gapFill?: {
+    completedAt: string;
+    targetedClaimIds: readonly string[];
+    sourcesAdded: number;
+    targetedClaimCount: number;
+  };
 }
 
 /** Version is the discriminant; persisted V1 dossiers remain valid verbatim. */

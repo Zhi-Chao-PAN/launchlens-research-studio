@@ -5,6 +5,7 @@ export type DeepRunLifecycle = "active" | "completed" | "cancelled" | "error";
 export type DeepWorkKind =
   | "specialist"
   | "semantic_pass_1"
+  | "gap_fill"
   | "semantic_pass_2"
   | "semantic_pass_3"
   | "synthesis"
@@ -107,6 +108,13 @@ export function createDeepWorkPlan(): DeepWorkUnit[] {
       status: "ready",
       attempts: 0,
       maxAttempts: 3,
+    },
+    {
+      id: "review:gap-fill",
+      kind: "gap_fill",
+      status: "ready",
+      attempts: 0,
+      maxAttempts: 2,
     },
     {
       id: "review:corroboration-conflict",

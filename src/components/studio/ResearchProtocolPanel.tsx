@@ -173,6 +173,10 @@ export function ResearchProtocolPanel({
   const currentDeepWorkLabel = deepRun?.currentWork
     ? t(`researchProtocol.deepWork.${deepRun.currentWork.kind}`, {
         agent: deepRun.currentWork.agentId?.replaceAll("-", " ") ?? "specialist",
+        count:
+          deepRun.currentWork.kind === "gap_fill"
+            ? (deepValidation?.gapFill?.targetedClaimCount ?? 0)
+            : 0,
       })
     : null;
   const evidenceSummary = safeEvidence ? summarizeEvidence(safeEvidence) : null;

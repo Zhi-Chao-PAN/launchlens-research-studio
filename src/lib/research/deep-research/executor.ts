@@ -1,6 +1,7 @@
 import { selectProvider } from "@/lib/providers/provider-registry";
 import { selectRetrievalProvider } from "@/lib/providers/retrieval-registry";
 import { selectStructuredCompletionProvider } from "@/lib/providers/structured-completion-registry";
+import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
 import {
   ResearchAgentStageError,
   runResearchAgentStage,
@@ -14,9 +15,11 @@ import {
   type DeepWorkExecutor,
 } from "./service";
 import { runDeepSynthesisStage } from "./synthesis-stage";
+import { runGapFillStage } from "./gap-fill-stage";
 
 type SpecialistRunner = typeof runResearchAgentStage;
 type SynthesisRunner = typeof runDeepSynthesisStage;
+type GapFillRunner = (session: ResearchSession, signal?: AbortSignal) => Promise<ResearchSession>;
 
 interface SemanticPassRunner {
   runPass(
@@ -31,8 +34,10 @@ export interface ProductionDeepWorkExecutorOptions {
   retrievalProviderId: string;
   reviewerProviderId: string;
   semanticReviewer: SemanticPassRunner;
+  retrieval: RetrievalProvider;
   specialistRunner?: SpecialistRunner;
   synthesisRunner?: SynthesisRunner;
+  gapFillRunner?: GapFillRunner;
   now?: () => number;
 }
 
@@ -40,11 +45,15 @@ export interface ProductionDeepWorkExecutorOptions {
 export class ProductionDeepWorkExecutor implements DeepWorkExecutor {
   private readonly specialistRunner: SpecialistRunner;
   private readonly synthesisRunner: SynthesisRunner;
+  private readonly gapFillRunner: GapFillRunner;
   private readonly now: () => number;
 
   constructor(private readonly options: ProductionDeepWorkExecutorOptions) {
     this.specialistRunner = options.specialistRunner ?? runResearchAgentStage;
     this.synthesisRunner = options.synthesisRunner ?? runDeepSynthesisStage;
+    this.gapFillRunner =
+      options.gapFillRunner ??
+      ((session, signal) => runGapFillStage(session, options.retrieval, { signal }));
     this.now = options.now ?? Date.now;
   }
 
@@ -76,6 +85,9 @@ export class ProductionDeepWorkExecutor implements DeepWorkExecutor {
         "claim_source_entailment",
         input.signal,
       );
+    }
+    if (input.work.kind === "gap_fill") {
+      return this.gapFillRunner(input.record.session, input.signal);
     }
     if (input.work.kind === "semantic_pass_2") {
       return this.options.semanticReviewer.runPass(
@@ -145,6 +157,7 @@ export function createProductionDeepWorkExecutor(): ProductionDeepWorkExecutor {
     retrievalProviderId: retrieval.id,
     reviewerProviderId: semanticReviewer.providerId,
     semanticReviewer,
+    retrieval,
   });
 }
 

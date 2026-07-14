@@ -198,7 +198,7 @@ describe("DeepResearchService", () => {
     });
   });
 
-  it("completes the fixed ten-unit graph and publishes history only after the terminal commit", async () => {
+  it("completes the fixed eleven-unit graph and publishes history only after the terminal commit", async () => {
     const repository = new MemoryDeepRunRepository();
     const observe = vi.fn(async () => undefined);
     const service = new DeepResearchService({
@@ -209,14 +209,15 @@ describe("DeepResearchService", () => {
     const session = deepSession("complete fixed graph");
     await service.start(session, profile);
 
+    // 5 specialists + gap_fill + 3 semantic passes + synthesis + finalize = 11 units.
     let lastResult: Awaited<ReturnType<DeepResearchService["signal"]>> | undefined;
-    for (let index = 0; index < 10; index++) {
+    for (let index = 0; index < 11; index++) {
       lastResult = await service.signal({
         kind: "continue",
         sessionId: session.id,
         workerId: `worker-${index}`,
       });
-      if (index < 9) {
+      if (index < 10) {
         expect(lastResult).toMatchObject({
           kind: "committed",
           record: { lifecycle: "active", currentWorkIndex: index + 1 },
@@ -230,7 +231,7 @@ describe("DeepResearchService", () => {
       wakeAccepted: false,
       record: {
         lifecycle: "completed",
-        currentWorkIndex: 10,
+        currentWorkIndex: 11,
         session: { status: "completed" },
       },
     });

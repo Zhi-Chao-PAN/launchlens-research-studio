@@ -744,6 +744,7 @@ export type DictionaryKey =
   | "researchProtocol.deepWorkCurrent"
   | "researchProtocol.deepWorkComplete"
   | "researchProtocol.deepWork.specialist"
+  | "researchProtocol.deepWork.gap_fill"
   | "researchProtocol.deepWork.semantic_pass_1"
   | "researchProtocol.deepWork.semantic_pass_2"
   | "researchProtocol.deepWork.semantic_pass_3"
@@ -1546,6 +1547,7 @@ const en: Dict = {
   "researchProtocol.deepWorkCurrent": "Current: {work} · attempt {attempt}/{max}",
   "researchProtocol.deepWorkComplete": "All {total} work units committed",
   "researchProtocol.deepWork.specialist": "Specialist · {agent}",
+  "researchProtocol.deepWork.gap_fill": "Gap-fill · {count} claim(s) targeted",
   "researchProtocol.deepWork.semantic_pass_1": "Review 1 · claim-source entailment",
   "researchProtocol.deepWork.semantic_pass_2": "Review 2 · corroboration and conflict",
   "researchProtocol.deepWork.semantic_pass_3": "Review 3 · adjudication",
@@ -2345,6 +2347,7 @@ const zhCN: Dict = {
   "researchProtocol.deepWorkCurrent": "当前：{work} · 第 {attempt}/{max} 次尝试",
   "researchProtocol.deepWorkComplete": "全部 {total} 个工作单元已提交",
   "researchProtocol.deepWork.specialist": "专项分析 · {agent}",
+  "researchProtocol.deepWork.gap_fill": "缺口填补 · 锁定 {count} 个声明",
   "researchProtocol.deepWork.semantic_pass_1": "审查一 · 主张与来源蕴含关系",
   "researchProtocol.deepWork.semantic_pass_2": "审查二 · 独立佐证与冲突",
   "researchProtocol.deepWork.semantic_pass_3": "审查三 · 最终裁决",
@@ -3144,6 +3147,7 @@ const ja: Dict = {
   "researchProtocol.deepWorkCurrent": "現在：{work} · 試行 {attempt}/{max}",
   "researchProtocol.deepWorkComplete": "全 {total} 作業単位をコミット済み",
   "researchProtocol.deepWork.specialist": "専門分析 · {agent}",
+  "researchProtocol.deepWork.gap_fill": "ギャップ補完 · {count} 件の主張を対象",
   "researchProtocol.deepWork.semantic_pass_1": "レビュー 1 · 主張と情報源の含意",
   "researchProtocol.deepWork.semantic_pass_2": "レビュー 2 · 裏付けと矛盾",
   "researchProtocol.deepWork.semantic_pass_3": "レビュー 3 · 裁定",
@@ -3943,6 +3947,7 @@ const ko: Dict = {
   "researchProtocol.deepWorkCurrent": "현재: {work} · 시도 {attempt}/{max}",
   "researchProtocol.deepWorkComplete": "작업 단위 {total}개 모두 커밋됨",
   "researchProtocol.deepWork.specialist": "전문 분석 · {agent}",
+  "researchProtocol.deepWork.gap_fill": "갭 필링 · {count}개 청구 대상",
   "researchProtocol.deepWork.semantic_pass_1": "검토 1 · 주장-출처 함의",
   "researchProtocol.deepWork.semantic_pass_2": "검토 2 · 독립 확인 및 충돌",
   "researchProtocol.deepWork.semantic_pass_3": "검토 3 · 판정",

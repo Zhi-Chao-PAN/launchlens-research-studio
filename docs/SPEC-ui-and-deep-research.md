@@ -86,6 +86,14 @@ Pass 3 (`adjudication`) is not free-form model output. The application owns a pu
 
 Independent retrieval sources (origin `independent_retrieval`) must declare which claim(s) they support via a `claimIds` field. The corroboration pass may only cite sources whose `claimIds` include the claim under review and whose `agent` matches the claim's `agentId`. This prevents a single expert's independent sources from being cross-applied to unrelated claims -- the root cause of the first dogfood round's 1/24 acceptance rate.
 
+#### Targeted Gap-Fill Pass
+
+Between Pass 1 and Pass 2, a separate `gap_fill` work unit inspects Pass 1 findings and identifies "gap" claims whose own cited sources did not entail them (verdict `not_entailed` or `insufficient_evidence`). For each gap claim (capped at 16 per run to bound latency), it issues a single targeted retrieval using `buildGapFillQuery(query, agentId, claimText)` -- phrased specifically to find a primary source that states the bounded figure, rather than the initial fan-out or the corroboration phrasing.
+
+Retrieved sources are registered as `independent_retrieval` with `claimIds: [claim.id]` and a `gap-` prefixed id. The `gapFill` ledger field records `completedAt`, `targetedClaimIds`, `sourcesAdded`, and `targetedClaimCount` so downstream Pass 2/3 can rerun only for the targeted slice (via `stripTargetedPassOutputs`).
+
+When no Pass 1 findings are gaps (the common case after the recent improvements), the stage stamps the ledger with a `gapFill` no-op marker and the run pays zero retrieval cost. This is what makes Deep mode measurably more thorough than Standard: Standard gives you all 5 specialists' first-pass outputs; Deep gives you those plus a second, claim-targeted retrieval pass for anything that was unsourced.
+
 ### Synthesis Boundary
 
 Deep synthesis receives only eligible adjudicated claims and their trusted supporting sources. Raw specialist outputs are intentionally excluded from the synthesis prompt after review, preventing rejected or conflicted claims from re-entering through a side channel.

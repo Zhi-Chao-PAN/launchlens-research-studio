@@ -142,6 +142,34 @@ export function buildDeepRetrievalQueries(
   );
 }
 
+/**
+ * Build a targeted gap-fill query for a single claim that failed its first
+ * entailment pass. The query is intentionally different from the initial
+ * deep fan-out and from the independent corroboration query: it asks the
+ * provider for a primary source that *states* the bounded claim, rather
+ * than for general category context or for independent corroboration.
+ *
+ * The claim text is included verbatim so the search engine can match the
+ * exact figure the reviewer found unsourced. The product context is
+ * appended at the end so truncation cannot drop the claim itself.
+ */
+export function buildGapFillQuery(
+  query: string,
+  agentId: Exclude<AgentId, "synthesis">,
+  claimText: string,
+): string {
+  const focus = AGENT_RETRIEVAL_FOCUS[agentId];
+  const base = query.replace(/\s+/g, " ").trim();
+  const productContext = base
+    ? truncateAtWordBoundary(base, 140)
+    : focus;
+  const boundedClaim = claimText.replace(/\s+/g, " ").trim().slice(0, 220);
+  return truncateAtWordBoundary(
+    `Primary source stating: ${boundedClaim}. Product context: ${productContext}`,
+    FOCUSED_QUERY_MAX_CHARS,
+  );
+}
+
 function truncateAtWordBoundary(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   const clipped = value.slice(0, maxChars);
