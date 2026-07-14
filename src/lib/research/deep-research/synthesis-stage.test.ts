@@ -20,9 +20,11 @@ import {
   applyClaimAdjudicationPass,
   applyClaimReviewPass,
   initializeDeepValidation,
+  registerTrustedReviewSources,
 } from "@/lib/research/deep-validation";
 import { createResearchSession, deleteSession } from "@/lib/research/research-engine";
 import type {
+  ClaimReviewSource,
   ClaimReviewerIdentity,
   ResearchSession,
   SourceCitation,
@@ -59,6 +61,47 @@ async function validatedSession(): Promise<ResearchSession> {
   };
   session.citations = [...market.citations];
   let ledger = initializeDeepValidation(session, { maxClaims: 6, maxClaimsPerAgent: 6 });
+
+  // Register independent retrieval sources bound to each claim. The
+  // corroboration pass may only cite independent_retrieval sources (not the
+  // agent's own citations), and each must declare which claim(s) it supports.
+  const independentSources: ClaimReviewSource[] = ledger.claims
+    .slice(0, 2)
+    .flatMap((claim, sourceIndex) => [
+      {
+        id: `ind_${sourceIndex}_a_${claim.id}`,
+        title: `Independent source ${sourceIndex}A`,
+        url: `https://ind${sourceIndex}a.example.com/evidence`,
+        snippet: `Independent corroboration for ${claim.fieldPath}.`,
+        accessedAt: new Date().toISOString(),
+        confidence: "medium" as const,
+        agent: claim.agentId,
+        origin: "independent_retrieval" as const,
+        claimIds: [claim.id],
+      },
+      {
+        id: `ind_${sourceIndex}_b_${claim.id}`,
+        title: `Independent source ${sourceIndex}B`,
+        url: `https://ind${sourceIndex}b.example.com/evidence`,
+        snippet: `Second independent source for ${claim.fieldPath}.`,
+        accessedAt: new Date().toISOString(),
+        confidence: "medium" as const,
+        agent: claim.agentId,
+        origin: "independent_retrieval" as const,
+        claimIds: [claim.id],
+      },
+    ]);
+  if (independentSources.length < 2) throw new Error("fixture requires two independent sources");
+  ledger = registerTrustedReviewSources(ledger, independentSources);
+
+  // Map each claim to its dedicated independent source for corroboration.
+  const claimIndependentSource = new Map(
+    ledger.claims.map((claim, index) => {
+      const source = independentSources[index % independentSources.length];
+      return [claim.id, source.id];
+    }),
+  );
+
   ledger = applyClaimReviewPass(
     ledger,
     "claim_source_entailment",
@@ -74,32 +117,30 @@ async function validatedSession(): Promise<ResearchSession> {
       rationale: "The cited source supports the bounded claim.",
     })),
   );
-  const firstTwoSources = ledger.reviewSources.slice(0, 2);
-  if (firstTwoSources.length < 2) throw new Error("fixture requires two sources");
   ledger = applyClaimReviewPass(
     ledger,
     "independent_corroboration_conflict",
-    ledger.claims.map((claim, index) => ({
+    ledger.claims.map((claim) => ({
       claimId: claim.id,
       claimValueHash: claim.valueHash,
       pass: "independent_corroboration_conflict",
       reviewer: reviewer("corroboration"),
       verdict: "corroborated",
       confidence: "medium",
-      supportingSourceIds: [firstTwoSources[index % 2].id],
+      supportingSourceIds: [claimIndependentSource.get(claim.id)!],
       contradictingSourceIds: [],
       rationale: "A second review corroborates the bounded claim.",
     })),
   );
   ledger = applyClaimAdjudicationPass(
     ledger,
-    ledger.claims.map((claim, index) => ({
+    ledger.claims.map((claim) => ({
       claimId: claim.id,
       claimValueHash: claim.valueHash,
       reviewer: reviewer("adjudicator"),
       disposition: "supported",
       confidence: "medium",
-      supportingSourceIds: [firstTwoSources[index % 2].id],
+      supportingSourceIds: [claimIndependentSource.get(claim.id)!],
       contradictingSourceIds: [],
       limitations: [],
     })),
@@ -143,7 +184,19 @@ describe("runDeepSynthesisStage", () => {
   it("uses eligible claims as the sole decision authority and canonicalizes citations", async () => {
     const session = await validatedSession();
     if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
-    const allowed = session.validation.reviewSources.slice(0, 2);
+    // The source catalog contains only sources referenced by eligible claims'
+    // supportingSourceIds -- i.e. the independent retrieval sources, not the
+    // agent's own citations. Pick two from the catalog for the canonicalization
+    // assertion.
+    const eligibleSourceIds = new Set(
+      session.validation.adjudications
+        .filter((a) => a.synthesisEligible)
+        .flatMap((a) => a.supportingSourceIds),
+    );
+    const allowed = session.validation.reviewSources
+      .filter((source) => eligibleSourceIds.has(source.id))
+      .slice(0, 2);
+    if (allowed.length < 2) throw new Error("fixture requires two catalog sources");
     const invented: SourceCitation = {
       id: "invented",
       title: "Invented",

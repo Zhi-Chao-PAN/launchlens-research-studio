@@ -224,8 +224,6 @@ function formatSynthesis(o: SynthesisOutput): string {
     }),
     ``,
     `### Recommended Next Step\n\n${o.recommendedNextStep}\n`,
-    `### LaunchLens Import Brief\n`,
-    `<details><summary>Click to expand importable brief</summary>\n\n\`\`\`\n${o.launchlensBrief}\n\`\`\`\n\n</details>`,
     `### Citations\n${formatCitations(o.citations)}`,
   ].join("\n");
 }
@@ -368,9 +366,5 @@ export function generateBriefOnly(outputs: Record<AgentId, AgentOutput | null>):
     `## Recommended Next Step`,
     ``,
     synth.recommendedNextStep,
-    ``,
-    `## Agent Consensus Brief`,
-    ``,
-    synth.launchlensBrief,
   ].join("\n");
 }

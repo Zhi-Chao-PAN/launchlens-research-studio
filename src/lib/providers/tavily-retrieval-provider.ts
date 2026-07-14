@@ -15,7 +15,8 @@ import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_BASE_URL = "https://api.tavily.com";
 const DEFAULT_MAX_RESULTS = 6;
-const HTTP_TIMEOUT_MS = 12_000;
+const BASIC_HTTP_TIMEOUT_MS = 12_000;
+const ADVANCED_HTTP_TIMEOUT_MS = 25_000;
 // Tavily recommends queries shorter than 400 characters. Enforce the bound at
 // the adapter edge because user briefs plus keywords can exceed it even when
 // upstream callers already compact their focused query.
@@ -61,9 +62,15 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     const maxResults = clampInt(opts.maxResults ?? DEFAULT_MAX_RESULTS, 1, 20);
     const query = buildQueryString(opts.query, opts.keywords);
     if (!query) return [];
+    const searchDepth = opts.searchDepth === "advanced" ? "advanced" : "basic";
+    const minimumScore = clampScore(opts.minScore);
+    const includeDomains = normalizeDomains(opts.includeDomains);
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => controller.abort(),
+      searchDepth === "advanced" ? ADVANCED_HTTP_TIMEOUT_MS : BASIC_HTTP_TIMEOUT_MS,
+    );
     // Wire the caller's AbortSignal to the controller too.
     const onAbort = () => controller.abort();
     if (opts.signal) {
@@ -86,10 +93,12 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
         },
         body: JSON.stringify({
           query,
-          search_depth: "basic",
+          search_depth: searchDepth,
+          ...(searchDepth === "advanced" ? { chunks_per_source: 3 } : {}),
           max_results: maxResults,
           topic: "general",
           include_answer: false,
+          ...(includeDomains.length > 0 ? { include_domains: includeDomains } : {}),
         }),
         signal: controller.signal,
       });
@@ -103,11 +112,15 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
       const sources: RetrievedSource[] = [];
       for (const r of results) {
         if (!r.url || !r.title) continue;
+        if (
+          minimumScore !== undefined &&
+          (typeof r.score !== "number" || r.score < minimumScore)
+        ) continue;
         sources.push({
           id: hashUrl(r.url),
           title: String(r.title).slice(0, 200),
           url: r.url,
-          snippet: String(r.content || "").slice(0, 500),
+          snippet: String(r.content || "").slice(0, searchDepth === "advanced" ? 900 : 500),
           accessedAt: retrievedAt,
           // Tavily's score measures query relevance, not source reliability.
           // Keep relevance in `score` and use a conservative neutral
@@ -143,6 +156,23 @@ function buildQueryString(query: string, keywords?: string[]): string {
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, Math.trunc(n)));
+}
+
+function clampScore(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeDomains(values: readonly string[] | undefined): string[] {
+  if (!values) return [];
+  const domains = new Set<string>();
+  for (const value of values.slice(0, 20)) {
+    const domain = String(value).trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
+    if (/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
+      domains.add(domain);
+    }
+  }
+  return [...domains];
 }
 
 function hashUrl(url: string): string {

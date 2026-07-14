@@ -3,7 +3,13 @@
 
 import { useState, useCallback } from "react";
 import { useToast } from "@/components/toast/ToastContext";
-import type { AgentId, AgentOutput, ResearchSession } from "@/lib/schema/research-schema";
+import type {
+  AgentId,
+  AgentOutput,
+  ResearchSession,
+  ValidationLedger,
+} from "@/lib/schema/research-schema";
+import type { ResearchModeId } from "@/lib/research/research-modes";
 import { generateMarkdownReport } from "@/lib/export/markdown-formatter";
 import { buildResearchExport, serializeJSON } from "@/lib/export/json-formatter";
 import { toLaunchLensBrief, serializeBrief, getLaunchLensAiUrl } from "@/lib/export/brief-mapper";
@@ -17,6 +23,8 @@ interface ExportActionsProps {
   query: string;
   keywords: string[];
   outputs: Record<AgentId, AgentOutput | null>;
+  mode?: ResearchModeId;
+  validation?: ValidationLedger;
 }
 
 function downloadFile(content: string, filename: string, type: string): void {
@@ -45,7 +53,14 @@ function downloadMultipleFiles(files: Record<string, string>): void {
 
 type CopyKind = "brief" | "full-md" | "json" | "launchlens" | null;
 
-export function ExportActions({ sessionId, query, keywords, outputs }: ExportActionsProps) {
+export function ExportActions({
+  sessionId,
+  query,
+  keywords,
+  outputs,
+  mode,
+  validation,
+}: ExportActionsProps) {
   const { showToast } = useToast();
   const [copied, setCopied] = useState<CopyKind>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -173,13 +188,15 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
       id: sessionId,
       query,
       keywords,
+      ...(mode ? { mode } : {}),
       createdAt: "",
       updatedAt: "",
       status: "completed",
       agents,
       citations: [],
+      ...(validation ? { validation } : {}),
     };
-  }, [sessionId, query, keywords, outputs]);
+  }, [sessionId, query, keywords, outputs, mode, validation]);
 
   // R252: Copy now emits the structured envelope (same object Send/Export use),
   // not the legacy free-text markdown brief. A user who copies and a user who
@@ -381,9 +398,9 @@ export function ExportActions({ sessionId, query, keywords, outputs }: ExportAct
           onClick={handleSendToLaunchLensAi}
           disabled={isExporting || !outputs.synthesis}
           data-testid="send-to-launchlens-ai"
-          className="w-full py-2 px-3 text-sm font-semibold bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50 shadow-sm"
+          className="w-full py-2 px-3 text-sm font-semibold bg-slate-950 hover:bg-slate-800 text-white rounded-lg transition-colors text-left flex items-center gap-2 disabled:opacity-50 shadow-sm"
         >
-          <span aria-hidden>🚀</span>
+          <span aria-hidden>{"\u2197"}</span>
           <span className="flex-1">Send to LaunchLens AI</span>
         </button>
         <p className="text-[11px] text-slate-500 px-1 leading-snug">

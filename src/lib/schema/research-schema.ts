@@ -63,6 +63,8 @@ export interface AgentEvidenceLedgerEntry {
     sourceOrigin: "agent_retrieval" | "specialist_union" | "none";
     providerId?: string;
     focusedQuery?: string;
+    /** All focused queries used by a fanned-out Deep retrieval. */
+    focusedQueries?: string[];
     sourceCount: number;
     sources: EvidenceSource[];
     unavailableReason?: string;
@@ -194,6 +196,8 @@ export type ClaimReviewSourceOrigin =
 /** A source admitted by a trusted retrieval/citation boundary for review. */
 export interface ClaimReviewSource extends SourceCitation {
   origin: ClaimReviewSourceOrigin;
+  /** Required for independently retrieved evidence; binds it to reviewed claims. */
+  claimIds?: string[];
 }
 
 export interface ClaimReviewerIdentity {

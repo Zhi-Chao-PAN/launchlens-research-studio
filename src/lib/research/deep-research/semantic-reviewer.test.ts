@@ -69,6 +69,7 @@ function successfulProvider(numericConfidence = false): StructuredCompletionProv
       id: string;
       agent?: AgentId;
       origin?: string;
+      claimIds?: string[];
     }>;
     if (schemaName === "deep_claim_source_entailment") {
       return {
@@ -89,7 +90,9 @@ function successfulProvider(numericConfidence = false): StructuredCompletionProv
         findings: claims.map((claim) => {
           const independent = sources.find(
             (source) =>
-              source.origin === "independent_retrieval" && source.agent === claim.agentId,
+              source.origin === "independent_retrieval" &&
+              source.agent === claim.agentId &&
+              source.claimIds?.includes(claim.id),
           )?.id;
           return {
             claimId: claim.id,
@@ -296,12 +299,14 @@ describe("DeepSemanticReviewer", () => {
     session = await new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() })
       .runPass(session, "claim_source_entailment");
     const queries: string[] = [];
+    const retrievalOptions: Array<{ searchDepth?: string; minScore?: number }> = [];
     const overlappingRetrieval: RetrievalProvider = {
       id: "overlapping-search",
       displayName: "Overlapping search",
       isMock: false,
-      async search({ agentId, query }) {
+      async search({ agentId, query, searchDepth, minScore }) {
         queries.push(query);
+        retrievalOptions.push({ searchDepth, minScore });
         const now = new Date().toISOString();
         return [{
           id: "shared-result",
@@ -319,17 +324,27 @@ describe("DeepSemanticReviewer", () => {
     session = await new DeepSemanticReviewer({ provider, retrieval: overlappingRetrieval })
       .runPass(session, "independent_corroboration_conflict");
 
-    expect(queries).toHaveLength(2);
-    expect(new Set(queries).size).toBe(2);
-    expect(queries.every((query) => query.length <= 280)).toBe(true);
     if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    expect(queries).toHaveLength(session.validation.claims.length);
+    expect(new Set(queries).size).toBe(queries.length);
+    expect(queries.every((query) => query.length <= 280)).toBe(true);
+    expect(queries.every((query) => !query.startsWith("Independent evidence"))).toBe(true);
+    expect(retrievalOptions.every((opts) => opts.searchDepth === "advanced")).toBe(true);
+    expect(retrievalOptions.every((opts) => opts.minScore === 0.35)).toBe(true);
     const independent = session.validation.reviewSources.filter(
       (source) => source.origin === "independent_retrieval",
     );
     expect(new Set(independent.map((source) => source.agent))).toEqual(
       new Set(["market-sizer", "competitor-analyst"]),
     );
-    expect(new Set(independent.map((source) => source.id)).size).toBe(2);
+    expect(new Set(independent.map((source) => source.id)).size).toBe(
+      session.validation.claims.length,
+    );
+    expect(
+      session.validation.claims.every((claim) =>
+        independent.some((source) => source.claimIds?.includes(claim.id)),
+      ),
+    ).toBe(true);
   });
 
   it("never treats an explicit mock reviewer as Deep capability", async () => {

@@ -59,6 +59,37 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(body.query).toMatch(/^pricing pages plans tiers\./);
   });
 
+  it("uses advanced chunks, safe domain filters, and a relevance floor for Deep queries", async () => {
+    const longContent = "evidence ".repeat(180);
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({
+        results: [
+          { title: "Relevant", url: "https://g2.com/products/example", content: longContent, score: 0.82 },
+          { title: "Noise", url: "https://g2.com/products/noise", content: "noise", score: 0.12 },
+        ],
+      }), { status: 200 }),
+    );
+    const provider = makeProvider({ fetchImpl });
+
+    const sources = await provider.search({
+      query: "voice of customer evidence",
+      searchDepth: "advanced",
+      minScore: 0.35,
+      includeDomains: ["https://G2.com/products", "not a host", "reddit.com"],
+    });
+
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body).toMatchObject({
+      search_depth: "advanced",
+      chunks_per_source: 3,
+      include_domains: ["g2.com", "reddit.com"],
+    });
+    expect(sources).toHaveLength(1);
+    expect(sources[0].title).toBe("Relevant");
+    expect(sources[0].snippet.length).toBe(900);
+  });
+
   it("returns parsed sources with deterministic ids and retrievedAt", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(

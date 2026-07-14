@@ -19,6 +19,11 @@ import {
   type ValidationLedgerV2,
 } from "@/lib/schema/research-schema";
 import { buildResearchValidation } from "./validation-ledger";
+import {
+  confidenceAtMost,
+  deriveDeterministicAdjudication,
+} from "./deep-adjudication-policy";
+import { canonicalizeSafeExternalUrl } from "@/lib/security/safe-external-url";
 
 const SPECIALIST_IDS = new Set<AgentId>(RESEARCH_AGENTS);
 const CONFIDENCE_LEVELS = new Set<ConfidenceLevel>(["low", "medium", "high"]);
@@ -140,15 +145,20 @@ export function extractDecisionCriticalClaims(
   );
   const allowedSourceIds = new Set(collectClaimReviewSources(session).map((source) => source.id));
   const claims: ResearchClaim[] = [];
-
-  for (const agentId of RESEARCH_AGENTS) {
-    if (claims.length >= maxClaims) break;
+  const candidateQueues = RESEARCH_AGENTS.map((agentId) => {
     const output = session.agents[agentId]?.output;
-    if (!output || output.agent !== agentId) continue;
+    return output && output.agent === agentId
+      ? claimCandidatesForOutput(output).slice(0, maxClaimsPerAgent)
+      : [];
+  });
 
-    const candidates = claimCandidatesForOutput(output).slice(0, maxClaimsPerAgent);
-    for (const candidate of candidates) {
+  // Round-robin keeps the global claim bound from starving later specialists
+  // (notably Channel Scout) when earlier schemas each expose many candidates.
+  for (let candidateIndex = 0; candidateIndex < maxClaimsPerAgent; candidateIndex += 1) {
+    for (const candidates of candidateQueues) {
       if (claims.length >= maxClaims) break;
+      const candidate = candidates[candidateIndex];
+      if (!candidate) continue;
       const text = boundedText(candidate.text, DEEP_VALIDATION_LIMITS.maxClaimTextLength);
       if (!text) continue;
       const sourceIds = uniqueStrings(candidate.sourceIds)
@@ -166,6 +176,7 @@ export function extractDecisionCriticalClaims(
         valueHash: `value_${stableHash(text)}`,
       });
     }
+    if (claims.length >= maxClaims) break;
   }
 
   return dedupeBy(claims, (claim) => claim.id);
@@ -612,12 +623,17 @@ function sanitizeFindings(
             )
             .map((source) => source.id),
         );
-    const supportingSourceIds = allowlistedIds(value.supportingSourceIds, allowedSources);
-    const contradictingSourceIds = allowlistedIds(value.contradictingSourceIds, allowedSources);
+    const proposedSupportingSourceIds = allowlistedIds(value.supportingSourceIds, allowedSources);
+    const proposedContradictingSourceIds = allowlistedIds(value.contradictingSourceIds, allowedSources);
     const verdict = evidenceBoundVerdict(
       value.verdict as ClaimReviewVerdict,
-      supportingSourceIds,
-      contradictingSourceIds,
+      proposedSupportingSourceIds,
+      proposedContradictingSourceIds,
+    );
+    const { supportingSourceIds, contradictingSourceIds } = normalizeFindingEvidence(
+      verdict,
+      proposedSupportingSourceIds,
+      proposedContradictingSourceIds,
     );
     const rationale = boundedText(value.rationale, DEEP_VALIDATION_LIMITS.maxRationaleLength);
     if (!rationale) continue;
@@ -643,7 +659,6 @@ function sanitizeAdjudications(
   values: readonly unknown[],
 ): ClaimAdjudication[] {
   const claims = new Map(ledger.claims.map((claim) => [claim.id, claim]));
-  const allowedSources = new Set(ledger.reviewSources.map((source) => source.id));
   const adjudications = new Map<string, ClaimAdjudication>();
 
   for (const value of values.slice(0, ledger.claims.length * 2 + 8)) {
@@ -654,20 +669,15 @@ function sanitizeAdjudications(
     const reviewer = normalizeReviewer(value.reviewer);
     if (!reviewer || !isConfidence(value.confidence) || !CLAIM_DISPOSITIONS.has(value.disposition as ClaimDisposition)) continue;
 
-    const supportingSourceIds = allowlistedIds(value.supportingSourceIds, allowedSources);
-    const contradictingSourceIds = allowlistedIds(value.contradictingSourceIds, allowedSources);
-    const disposition = evidenceBoundDisposition(
-      value.disposition as ClaimDisposition,
-      supportingSourceIds,
-      contradictingSourceIds,
-    );
-    const priorPasses = DEEP_VALIDATION_PASS_KINDS.slice(0, 2).filter((pass) =>
-      ledger.findings.some((finding) => finding.claimId === claim.id && finding.pass === pass),
-    );
+    const priorFindings = ledger.findings.filter((finding) => finding.claimId === claim.id);
+    // The model supplies qualifications, but the application owns the final
+    // decision table so identical pass results cannot drift across retries.
+    const policy = deriveDeterministicAdjudication(priorFindings);
+    const { disposition, supportingSourceIds, contradictingSourceIds } = policy;
     const limitations = normalizeLimitations(value.limitations, disposition);
-    const confidence = disposition === "partially_supported" && value.confidence === "high"
-      ? "medium"
-      : value.confidence;
+    const confidence = confidenceAtMost(value.confidence, policy.maximumConfidence)
+      ? value.confidence
+      : policy.maximumConfidence;
 
     adjudications.set(claim.id, {
       claimId: claim.id,
@@ -677,7 +687,7 @@ function sanitizeAdjudications(
       confidence,
       supportingSourceIds,
       contradictingSourceIds,
-      reviewedPasses: [...priorPasses, "adjudication"],
+      reviewedPasses: [...policy.reviewedPasses, "adjudication"],
       synthesisEligible: disposition === "supported" || disposition === "partially_supported",
       limitations,
     });
@@ -777,19 +787,19 @@ function evidenceBoundVerdict(
   return verdict;
 }
 
-function evidenceBoundDisposition(
-  disposition: ClaimDisposition,
-  supportingSourceIds: readonly string[],
-  contradictingSourceIds: readonly string[],
-): ClaimDisposition {
-  if (
-    (disposition === "supported" || disposition === "partially_supported") &&
-    supportingSourceIds.length === 0
-  ) return "insufficient_evidence";
-  if (disposition === "conflicted" && contradictingSourceIds.length === 0) {
-    return "insufficient_evidence";
+function normalizeFindingEvidence(
+  verdict: ClaimReviewVerdict,
+  supportingSourceIds: string[],
+  contradictingSourceIds: string[],
+): { supportingSourceIds: string[]; contradictingSourceIds: string[] } {
+  if (verdict === "entailed" || verdict === "partially_entailed" || verdict === "corroborated") {
+    return { supportingSourceIds, contradictingSourceIds: [] };
   }
-  return disposition;
+  if (verdict === "contradicted") {
+    return { supportingSourceIds: [], contradictingSourceIds };
+  }
+  if (verdict === "mixed") return { supportingSourceIds, contradictingSourceIds };
+  return { supportingSourceIds: [], contradictingSourceIds: [] };
 }
 
 function normalizeLimitations(value: unknown, disposition: ClaimDisposition): string[] {
@@ -837,7 +847,11 @@ function normalizeReviewSource(
     !isAgentId(value.agent)
   ) return undefined;
 
-  const url = normalizeHttpUrl(value.url);
+  const claimIds = origin === "independent_retrieval"
+    ? uniqueStrings(value.claimIds).map(safeIdentifier).filter(Boolean).slice(0, 16)
+    : [];
+  if (origin === "independent_retrieval" && claimIds.length === 0) return undefined;
+  const url = canonicalizeSafeExternalUrl(value.url);
   return {
     id,
     title,
@@ -847,6 +861,7 @@ function normalizeReviewSource(
     confidence: value.confidence,
     agent: value.agent,
     origin: origin as ClaimReviewSource["origin"],
+    ...(origin === "independent_retrieval" ? { claimIds } : {}),
   };
 }
 
@@ -916,17 +931,6 @@ function safeIdentifier(value: unknown): string {
   const normalized = value.trim();
   if (!normalized || normalized.length > 160 || /[\u0000-\u001F\u007F]/.test(normalized)) return "";
   return normalized;
-}
-
-function normalizeHttpUrl(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length > 2_048) return undefined;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
-    return url.href;
-  } catch {
-    return undefined;
-  }
 }
 
 function stableHash(input: string): string {

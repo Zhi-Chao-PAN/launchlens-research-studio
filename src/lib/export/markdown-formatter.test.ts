@@ -332,7 +332,8 @@ describe("generateBriefOnly", () => {
     expect(brief).toContain("# LaunchLens Import Brief");
     expect(brief).toContain("Opportunity Score: 75");
     expect(brief).toContain("Build MVP");
-    expect(brief).toContain("Test brief content");
+    // P1-3: raw launchlensBrief must not appear in markdown exports
+    expect(brief).not.toContain("Test brief content");
   });
 
   it("includes top opportunities and risks", () => {

@@ -53,6 +53,12 @@ export interface RetrievalQuery {
   agentId?: AgentId;
   /** Hard cap on returned sources; providers should clamp to this. */
   maxResults?: number;
+  /** Retrieval depth requested by evidence-intensive modes. */
+  searchDepth?: "basic" | "advanced";
+  /** Optional relevance floor. This filters topical noise, not reliability. */
+  minScore?: number;
+  /** Optional provider-neutral hostname allowlist for source-type queries. */
+  includeDomains?: string[];
   /** Optional AbortSignal so a cancelled research session stops the search. */
   signal?: AbortSignal;
 }

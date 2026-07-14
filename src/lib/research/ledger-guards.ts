@@ -11,6 +11,11 @@ import {
   type ValidationLedgerV2,
 } from "@/lib/schema/research-schema";
 import { isResearchModeId } from "./research-modes";
+import {
+  confidenceAtMost,
+  deriveDeterministicAdjudication,
+} from "./deep-adjudication-policy";
+import { canonicalizeSafeExternalUrl } from "@/lib/security/safe-external-url";
 
 const AGENT_IDS = new Set<AgentId>([
   "market-sizer",
@@ -71,6 +76,12 @@ function isEvidenceEntry(value: unknown, agentId: string): boolean {
     isOneOf(retrieval.sourceOrigin, ["agent_retrieval", "specialist_union", "none"] as const) &&
     isOptionalString(retrieval.providerId) &&
     isOptionalString(retrieval.focusedQuery) &&
+    (retrieval.focusedQueries === undefined ||
+      (Array.isArray(retrieval.focusedQueries) &&
+        retrieval.focusedQueries.length <= 8 &&
+        retrieval.focusedQueries.every((query) =>
+          typeof query === "string" && query.length > 0 && query.length <= 399
+        ))) &&
     isFiniteNonNegative(retrieval.sourceCount) &&
     Array.isArray(retrieval.sources) &&
     retrieval.sources.every(isEvidenceSource) &&
@@ -176,6 +187,8 @@ export function isValidationLedgerV2(value: unknown): value is ValidationLedgerV
   if (!isDeepProtocol(value.protocol)) return false;
   if (!Array.isArray(value.claims) || !Array.isArray(value.reviewSources)) return false;
   if (!Array.isArray(value.findings) || !Array.isArray(value.adjudications)) return false;
+  const rawFindings = value.findings;
+  const rawAdjudications = value.adjudications;
 
   const claims = value.claims;
   if (!claims.every(isResearchClaim)) return false;
@@ -186,33 +199,65 @@ export function isValidationLedgerV2(value: unknown): value is ValidationLedgerV
   if (!value.reviewSources.every(isClaimReviewSource)) return false;
   const sourceIds = value.reviewSources.map((source) => source.id);
   if (!hasUniqueStrings(sourceIds)) return false;
-  const allowedSourceIds = new Set(sourceIds);
-  if (claims.some((claim) => claim.sourceIds.some((sourceId) => !allowedSourceIds.has(sourceId)))) {
+  const reviewSourcesById = new Map(value.reviewSources.map((source) => [source.id, source]));
+  if (
+    claims.some((claim) =>
+      claim.sourceIds.some((sourceId) => {
+        const source = reviewSourcesById.get(sourceId);
+        return (
+          !source ||
+          source.agent !== claim.agentId ||
+          source.origin === "independent_retrieval"
+        );
+      }),
+    )
+  ) {
     return false;
   }
+  if (
+    value.reviewSources.some((source) => {
+      if (source.origin !== "independent_retrieval") return source.claimIds !== undefined;
+      if (!source.claimIds || source.claimIds.length === 0) return true;
+      return source.claimIds.some((claimId) => {
+        const claim = claimsById.get(claimId);
+        return !claim || claim.agentId !== source.agent;
+      });
+    })
+  ) return false;
 
   const completedPasses = new Set(value.protocol.completedPassKinds);
   if (
-    !value.findings.every((finding) =>
-      isClaimReviewFinding(finding, claimsById, allowedSourceIds, completedPasses),
+    !rawFindings.every((finding) =>
+      isClaimReviewFinding(finding, claimsById, reviewSourcesById, completedPasses),
     )
   ) return false;
-  const findingKeys = value.findings.map((finding) => `${finding.pass}\u0000${finding.claimId}`);
+  const findings = rawFindings as ClaimReviewFinding[];
+  const findingKeys = findings.map((finding) => `${finding.pass}\u0000${finding.claimId}`);
   if (!hasUniqueStrings(findingKeys)) return false;
 
   if (
-    !value.adjudications.every((adjudication) =>
-      isClaimAdjudication(adjudication, claimsById, allowedSourceIds, completedPasses),
-    )
+    !rawAdjudications.every((adjudication) => {
+      if (!isRecord(adjudication) || typeof adjudication.claimId !== "string") return false;
+      const claimFindings = findings.filter(
+        (finding) => finding.claimId === adjudication.claimId,
+      );
+      return isClaimAdjudication(
+        adjudication,
+        claimsById,
+        deriveDeterministicAdjudication(claimFindings),
+        completedPasses,
+      );
+    })
   ) return false;
-  if (!hasUniqueStrings(value.adjudications.map((adjudication) => adjudication.claimId))) return false;
+  const adjudications = rawAdjudications as ClaimAdjudication[];
+  if (!hasUniqueStrings(adjudications.map((adjudication) => adjudication.claimId))) return false;
 
-  const expectedCounts = adjudicationCounts(claims.length, value.adjudications);
+  const expectedCounts = adjudicationCounts(claims.length, adjudications);
   if (!sameAdjudicationCounts(value.adjudicationCounts, expectedCounts)) return false;
   const semanticLedger = {
     protocol: value.protocol,
-    findings: value.findings,
-    adjudications: value.adjudications,
+    findings,
+    adjudications,
   } as {
     protocol: ValidationLedgerV2["protocol"];
     findings: ClaimReviewFinding[];
@@ -330,7 +375,9 @@ function isClaimReviewSource(value: unknown): value is ValidationLedgerV2["revie
     isBoundedNonEmptyString(value.title, 512) &&
     isBoundedNonEmptyString(value.snippet, 2_000) &&
     isBoundedNonEmptyString(value.accessedAt, 64) &&
-    (value.url === undefined || isHttpUrl(value.url)) &&
+    (value.url === undefined || isCanonicalSafeExternalUrl(value.url)) &&
+    (value.claimIds === undefined ||
+      (isBoundedStringArray(value.claimIds, 16, 160) && hasUniqueStrings(value.claimIds))) &&
     isOneOf(value.origin, ["agent_citation", "retrieved_evidence", "independent_retrieval"] as const)
   );
 }
@@ -348,7 +395,7 @@ function isReviewerIdentity(value: unknown): value is ClaimReviewerIdentity {
 function isClaimReviewFinding(
   value: unknown,
   claimsById: ReadonlyMap<string, ResearchClaim>,
-  globallyAllowedSourceIds: ReadonlySet<string>,
+  reviewSourcesById: ReadonlyMap<string, ValidationLedgerV2["reviewSources"][number]>,
   completedPasses: ReadonlySet<string>,
 ): value is ClaimReviewFinding {
   if (!isRecord(value) || typeof value.claimId !== "string") return false;
@@ -366,7 +413,16 @@ function isClaimReviewFinding(
   if (!hasUniqueStrings(value.supportingSourceIds) || !hasUniqueStrings(value.contradictingSourceIds)) return false;
   const allowedSources = value.pass === "claim_source_entailment"
     ? new Set(claim.sourceIds)
-    : globallyAllowedSourceIds;
+    : new Set(
+        [...reviewSourcesById.values()]
+          .filter(
+            (source) =>
+              source.origin === "independent_retrieval" &&
+              source.agent === claim.agentId &&
+              source.claimIds?.includes(claim.id),
+          )
+          .map((source) => source.id),
+      );
   if ([...value.supportingSourceIds, ...value.contradictingSourceIds].some((id) => !allowedSources.has(id))) {
     return false;
   }
@@ -380,13 +436,24 @@ function isClaimReviewFinding(
     value.verdict === "mixed" &&
     (value.supportingSourceIds.length === 0 || value.contradictingSourceIds.length === 0)
   ) return false;
+  if (
+    (value.verdict === "entailed" ||
+      value.verdict === "partially_entailed" ||
+      value.verdict === "corroborated") &&
+    value.contradictingSourceIds.length > 0
+  ) return false;
+  if (value.verdict === "contradicted" && value.supportingSourceIds.length > 0) return false;
+  if (
+    (value.verdict === "not_entailed" || value.verdict === "insufficient_evidence") &&
+    (value.supportingSourceIds.length > 0 || value.contradictingSourceIds.length > 0)
+  ) return false;
   return true;
 }
 
 function isClaimAdjudication(
   value: unknown,
   claimsById: ReadonlyMap<string, ResearchClaim>,
-  allowedSourceIds: ReadonlySet<string>,
+  policy: ReturnType<typeof deriveDeterministicAdjudication>,
   completedPasses: ReadonlySet<string>,
 ): value is ClaimAdjudication {
   if (!isRecord(value) || typeof value.claimId !== "string") return false;
@@ -399,18 +466,19 @@ function isClaimAdjudication(
     "unsupported",
     "insufficient_evidence",
   ] as const)) return false;
+  if (value.disposition !== policy.disposition) return false;
   if (!isOneOf(value.confidence, ["low", "medium", "high"] as const)) return false;
-  if (value.disposition === "partially_supported" && value.confidence === "high") return false;
+  if (!confidenceAtMost(value.confidence, policy.maximumConfidence)) return false;
   if (!isBoundedStringArray(value.supportingSourceIds, 16, 160)) return false;
   if (!isBoundedStringArray(value.contradictingSourceIds, 16, 160)) return false;
   if (!hasUniqueStrings(value.supportingSourceIds) || !hasUniqueStrings(value.contradictingSourceIds)) return false;
-  if ([...value.supportingSourceIds, ...value.contradictingSourceIds].some((id) => !allowedSourceIds.has(id))) {
-    return false;
-  }
+  if (!isExactStringArray(value.supportingSourceIds, policy.supportingSourceIds)) return false;
+  if (!isExactStringArray(value.contradictingSourceIds, policy.contradictingSourceIds)) return false;
   if (!Array.isArray(value.reviewedPasses) || !hasUniqueStrings(value.reviewedPasses)) return false;
   if (!value.reviewedPasses.every((pass) => isOneOf(pass, DEEP_VALIDATION_PASS_KINDS))) return false;
+  const expectedPasses = [...policy.reviewedPasses, "adjudication"];
+  if (!isExactStringArray(value.reviewedPasses, expectedPasses)) return false;
   if (!value.reviewedPasses.every((pass) => completedPasses.has(pass))) return false;
-  if (value.reviewedPasses.at(-1) !== "adjudication") return false;
   const synthesisEligible = value.disposition === "supported" || value.disposition === "partially_supported";
   if (value.synthesisEligible !== synthesisEligible) return false;
   if (!isBoundedStringArray(value.limitations, 6, 320)) return false;
@@ -535,12 +603,6 @@ function isExactStringArray(value: unknown, expected: readonly string[]): value 
   );
 }
 
-function isHttpUrl(value: unknown): value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 2_048) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+function isCanonicalSafeExternalUrl(value: unknown): value is string {
+  return typeof value === "string" && canonicalizeSafeExternalUrl(value) === value;
 }

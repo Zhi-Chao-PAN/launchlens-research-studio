@@ -20,6 +20,7 @@ import { saveResearchRun } from "@/lib/research/storage";
 import { researchRunFromSession, storePersistentResearchRun } from "@/lib/research/run-store";
 import {
   allowlistAgentOutput,
+  buildDeepRetrievalQueries,
   buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
   createAgentEvidenceEntry,
@@ -30,6 +31,7 @@ import {
 import { buildResearchValidation } from "@/lib/research/validation-ledger";
 import { sleep } from "@/lib/utils/sleep";
 import { createConcurrencyLimiter } from "@/lib/utils/concurrency-limiter";
+import { canonicalizeSafeExternalUrl } from "@/lib/security/safe-external-url";
 import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 import {
   DEFAULT_RESEARCH_MODE,
@@ -704,7 +706,19 @@ function updateAgentState(
 interface AgentEvidenceInput {
   retrievedSources: RetrievedSource[];
   useStrictAllowlist: boolean;
+  deepCoverage?: {
+    coveredQueries: number;
+    distinctHosts: number;
+  };
 }
+
+const DEEP_VOC_DOMAINS = [
+  "reddit.com",
+  "indiehackers.com",
+  "g2.com",
+  "capterra.com",
+  "producthunt.com",
+];
 
 async function prepareAgentEvidence(
   session: ResearchSession,
@@ -758,15 +772,33 @@ async function prepareAgentEvidence(
     return { retrievedSources: [], useStrictAllowlist: false };
   }
 
-  const focusedQuery = buildFocusedRetrievalQuery(session.query, agentId);
+  const deepRetrieval = session.mode === "deep";
+  const focusedQueries = deepRetrieval
+    ? buildDeepRetrievalQueries(session.query, agentId)
+    : [buildFocusedRetrievalQuery(session.query, agentId)];
+  const focusedQuery = focusedQueries[0];
   try {
-    const rawSources = await retrievalProvider.search({
-      query: focusedQuery,
-      keywords: session.keywords,
-      agentId,
-      maxResults: 6,
-      signal,
-    });
+    const resultSets = await Promise.all(
+      focusedQueries.map((query, queryIndex) =>
+        retrievalProvider.search({
+          query,
+          keywords: deepRetrieval ? undefined : session.keywords,
+          agentId,
+          maxResults: deepRetrieval ? 5 : 6,
+          searchDepth: deepRetrieval ? "advanced" : "basic",
+          minScore: deepRetrieval ? 0.35 : undefined,
+          includeDomains:
+            deepRetrieval && agentId === "pain-detective" && queryIndex === 0
+              ? DEEP_VOC_DOMAINS
+              : undefined,
+          signal,
+        }),
+      ),
+    );
+    const deepSelection = deepRetrieval
+      ? selectDeepRetrievedSources(resultSets, 8)
+      : undefined;
+    const rawSources = deepSelection?.sources ?? resultSets[0] ?? [];
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
@@ -776,6 +808,7 @@ async function prepareAgentEvidence(
       sourceOrigin: retrievedSources.length > 0 ? "agent_retrieval" : "none",
       providerId: retrievalProvider.id,
       focusedQuery,
+      ...(deepRetrieval ? { focusedQueries } : {}),
       sourceCount: retrievedSources.length,
       sources: retrievedSources,
       ...(retrievedSources.length === 0 ? { unavailableReason: "no_usable_sources" } : {}),
@@ -785,6 +818,14 @@ async function prepareAgentEvidence(
     return {
       retrievedSources,
       useStrictAllowlist: retrievedSources.length > 0,
+      ...(deepSelection
+        ? {
+            deepCoverage: {
+              coveredQueries: deepSelection.coveredQueries,
+              distinctHosts: deepSelection.distinctHosts,
+            },
+          }
+        : {}),
     };
   } catch (error) {
     const aborted =
@@ -798,6 +839,7 @@ async function prepareAgentEvidence(
       sourceOrigin: "none",
       providerId: retrievalProvider.id,
       focusedQuery,
+      ...(deepRetrieval ? { focusedQueries } : {}),
       sourceCount: 0,
       sources: [],
       // Keep provider exception text out of persisted sessions: upstream
@@ -830,6 +872,38 @@ interface RunAgentExecutionOptions {
   minimumRetrievedSources?: number;
   deadlineMessage?: string;
   publishEvents?: boolean;
+}
+
+function selectDeepRetrievedSources(
+  resultSets: readonly (readonly RetrievedSource[])[],
+  maxSources: number,
+): { sources: RetrievedSource[]; coveredQueries: number; distinctHosts: number } {
+  const merged: RetrievedSource[] = [];
+  const seenUrls = new Set<string>();
+  const hostCounts = new Map<string, number>();
+  const coveredQueryIndexes = new Set<number>();
+  const maxLength = Math.max(0, ...resultSets.map((sources) => sources.length));
+  for (let index = 0; index < maxLength && merged.length < maxSources; index += 1) {
+    for (let queryIndex = 0; queryIndex < resultSets.length; queryIndex += 1) {
+      const sources = resultSets[queryIndex];
+      const source = sources[index];
+      if (!source?.url) continue;
+      const normalizedUrl = canonicalizeSafeExternalUrl(source.url);
+      if (!normalizedUrl) continue;
+      const hostname = new URL(normalizedUrl).hostname.toLowerCase();
+      if (seenUrls.has(normalizedUrl) || (hostCounts.get(hostname) ?? 0) >= 2) continue;
+      seenUrls.add(normalizedUrl);
+      hostCounts.set(hostname, (hostCounts.get(hostname) ?? 0) + 1);
+      coveredQueryIndexes.add(queryIndex);
+      merged.push({ ...source, url: normalizedUrl });
+      if (merged.length >= maxSources) break;
+    }
+  }
+  return {
+    sources: merged,
+    coveredQueries: coveredQueryIndexes.size,
+    distinctHosts: hostCounts.size,
+  };
 }
 
 // Simulate agent work progress with step-by-step updates.
@@ -951,6 +1025,17 @@ async function runAgent(
         throw new ResearchAgentStageError(
           "retrieval_insufficient",
           `Deep Research requires at least ${minimumRetrievedSources} usable retrieved sources for this specialist.`,
+        );
+      }
+      if (
+        session.mode === "deep" &&
+        evidenceInput.deepCoverage &&
+        (evidenceInput.deepCoverage.coveredQueries < 2 ||
+          evidenceInput.deepCoverage.distinctHosts < 3)
+      ) {
+        throw new ResearchAgentStageError(
+          "retrieval_insufficient",
+          "Deep Research requires admitted evidence from at least 2 focused queries and 3 distinct hosts.",
         );
       }
     }

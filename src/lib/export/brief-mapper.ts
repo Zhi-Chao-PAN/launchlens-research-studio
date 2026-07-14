@@ -15,6 +15,7 @@ import type {
   ResearchSession,
   SynthesisOutput,
 } from "@/lib/schema/research-schema";
+import { isResearchModeId } from "@/lib/research/research-modes";
 
 /** Schema version for the importable brief envelope. Bump when the shape changes
  *  so the downstream importer can migrate older exports. */
@@ -296,6 +297,139 @@ function buildConstraints(
   return joinNonEmpty(parts);
 }
 
+interface DeepBriefEvidence {
+  totalClaims: number;
+  fullySupported: Array<{
+    agentId: Exclude<AgentId, "synthesis">;
+    fieldPath: string;
+    text: string;
+  }>;
+  partiallySupportedCount: number;
+  complete: boolean;
+}
+
+function deepBriefEvidence(session: ResearchSession): DeepBriefEvidence | null {
+  const validation = session.validation;
+  if (!validation || validation.version !== 2) return null;
+  const claimsById = new Map(validation.claims.map((claim) => [claim.id, claim]));
+  const complete =
+    validation.protocol.executedPasses === 3 &&
+    validation.semanticValidation.status === "completed";
+  const fullySupported = complete
+    ? validation.adjudications.flatMap((adjudication) => {
+        if (adjudication.disposition !== "supported" || !adjudication.synthesisEligible) return [];
+        const claim = claimsById.get(adjudication.claimId);
+        return claim
+          ? [{ agentId: claim.agentId, fieldPath: claim.fieldPath, text: claim.text }]
+          : [];
+      })
+    : [];
+  return {
+    totalClaims: validation.claims.length,
+    fullySupported,
+    partiallySupportedCount: complete
+      ? validation.adjudications.filter(
+          (adjudication) => adjudication.disposition === "partially_supported",
+        ).length
+      : 0,
+    complete,
+  };
+}
+
+/**
+ * P1 fail-closed: when a Deep session lacks a completed V2 validation ledger
+ * (missing, V1, or incomplete), the mapper must NOT fall through to the
+ * Standard branch -- that would export unverified TAM, pricing, pain points,
+ * and synthesis scores as if they were evidence-backed. Instead, emit a
+ * minimal brief that preserves the founder's query and flags that evidence
+ * has not been established. No agent-derived figures enter the brief.
+ */
+function buildDeepFailClosedInput(session: ResearchSession): LaunchLensInput {
+  const query = (session.query || "").trim() || "Market opportunity hypothesis";
+  const status = !session.validation
+    ? "Deep validation ledger is absent; no claim has been reviewed."
+    : session.validation.version !== 2
+      ? "Deep validation ledger is an unsupported version; no claim has been reviewed."
+      : "Deep validation is incomplete; no claim has reached a bounded adjudication.";
+  return {
+    idea: clampField(
+      joinNonEmpty([query, `Evidence status: ${status} Treat all figures as unverified hypotheses.`]),
+      "idea",
+      [],
+    ),
+    audience: "Target audience is the requester-defined hypothesis; validate with primary interviews before launch.",
+    market: "Market size, growth, and competitor claims remain unverified.",
+    tone: DEFAULT_TONE,
+    constraints: "Evidence gate: 0 claims reviewed. Next: complete Deep three-pass validation before launch commitments.",
+  };
+}
+
+function buildDeepIdea(
+  session: ResearchSession,
+  evidence: DeepBriefEvidence,
+): string {
+  const supportedAgentCount = new Set(evidence.fullySupported.map((claim) => claim.agentId)).size;
+  const enoughEvidence =
+    evidence.complete &&
+    evidence.fullySupported.length >= Math.max(3, Math.ceil(evidence.totalClaims * 0.2)) &&
+    supportedAgentCount >= 2;
+  if (enoughEvidence) {
+    // P1-2: only when evidence is sufficient may we augment the idea with
+    // the synthesis exec summary. The query alone is always safe.
+    return buildIdea(session, null);
+  }
+  return joinNonEmpty([
+    session.query || "Market opportunity hypothesis",
+    `Evidence status: ${evidence.fullySupported.length}/${evidence.totalClaims} claims fully supported; treat unverified figures as hypotheses.`,
+  ]);
+}
+
+function buildDeepAudience(evidence: DeepBriefEvidence): string {
+  const claim = evidence.fullySupported.find(
+    (item) =>
+      item.fieldPath.startsWith("/targetSegments/") ||
+      item.fieldPath.startsWith("/painPoints/"),
+  );
+  return claim
+    ? `Evidence-backed audience signal: ${compactWords(claim.text, 190)}`
+    : "Target audience remains the requester-defined hypothesis; validate segments with primary interviews.";
+}
+
+function buildDeepMarket(evidence: DeepBriefEvidence): string {
+  const claims = evidence.fullySupported
+    .filter(
+      (claim) =>
+        claim.agentId === "market-sizer" || claim.agentId === "competitor-analyst",
+    )
+    .slice(0, 2)
+    .map((claim) => compactWords(claim.text, 90));
+  return claims.length > 0
+    ? finishCompactSentence(claims.join("; "), FIELD_ADVISORY_LIMITS.market)
+    : "TAM, growth, pricing, and competitor claims remain unverified.";
+}
+
+function buildDeepConstraints(
+  synthesis: SynthesisOutput | null,
+  evidence: DeepBriefEvidence,
+): string {
+  const parts = [
+    `Evidence gate: ${evidence.fullySupported.length}/${evidence.totalClaims} fully supported` +
+      (evidence.partiallySupportedCount > 0
+        ? `, ${evidence.partiallySupportedCount} partially supported`
+        : ""),
+  ];
+  // P1-2: only reuse the synthesis next-step when evidence is sufficient.
+  // Otherwise the unverified synthesis recommendation leaks into the brief.
+  if (synthesis && hasSufficientDeepBriefEvidence(evidence)) {
+    parts.push(synthesis.recommendedNextStep
+      ? `Next: ${compactWords(synthesis.recommendedNextStep, 190)}`
+      : "Next: collect primary evidence before launch commitments");
+  } else {
+    parts.push("Next: collect primary evidence before launch commitments");
+  }
+  return finishCompactSentence(parts.join("; "), FIELD_ADVISORY_LIMITS.constraints);
+}
+
 /** R231: optional override of the launchlens-ai production URL. Read once
  *  at module load so tests can set process.env.NEXT_PUBLIC_LAUNCHLENS_AI_URL
  *  before importing this module (or via the helper below). */
@@ -353,19 +487,40 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
   const competitor = asOutput<CompetitorAnalystOutput>(outputs["competitor-analyst"]?.output, "competitor-analyst");
   const pain = asOutput<PainDetectiveOutput>(outputs["pain-detective"]?.output, "pain-detective");
   const pricing = asOutput<PricingScoutOutput>(outputs["pricing-scout"]?.output, "pricing-scout");
+  const deepEvidence = deepBriefEvidence(session);
+  const isDeepMode = isResearchModeId(session.mode) && session.mode === "deep";
 
   const completedAgents: AgentId[] = (Object.keys(outputs) as AgentId[])
     .filter((id) => outputs[id]?.output != null)
     .sort();
 
   const truncated: (keyof LaunchLensInput)[] = [];
-  const input: LaunchLensInput = {
-    idea: clampField(buildIdea(session, synthesis), "idea", truncated),
-    audience: clampField(buildAudience(pain, market), "audience", truncated),
-    market: clampField(buildMarket(market, competitor, synthesis), "market", truncated),
-    tone: DEFAULT_TONE,
-    constraints: clampField(buildConstraints(pricing, pain, synthesis), "constraints", truncated),
-  };
+  // P1-1: Deep sessions must fail-closed when validation is absent or
+  // incomplete. They must never fall through to the Standard branch, which
+  // would export unverified TAM, pricing, pain points, and scores.
+  // P1-2: even with a V2 ledger, synthesis prose (execSummary, next-step)
+  // only enters the brief when evidence is sufficient.
+  const input: LaunchLensInput = deepEvidence
+    ? {
+        idea: clampField(buildDeepIdea(session, deepEvidence), "idea", truncated),
+        audience: clampField(buildDeepAudience(deepEvidence), "audience", truncated),
+        market: clampField(buildDeepMarket(deepEvidence), "market", truncated),
+        tone: DEFAULT_TONE,
+        constraints: clampField(
+          buildDeepConstraints(synthesis, deepEvidence),
+          "constraints",
+          truncated,
+        ),
+      }
+    : isDeepMode
+      ? buildDeepFailClosedInput(session)
+      : {
+          idea: clampField(buildIdea(session, synthesis), "idea", truncated),
+          audience: clampField(buildAudience(pain, market), "audience", truncated),
+          market: clampField(buildMarket(market, competitor, synthesis), "market", truncated),
+          tone: DEFAULT_TONE,
+          constraints: clampField(buildConstraints(pricing, pain, synthesis), "constraints", truncated),
+        };
 
   // Guarantee the idea clears launchlens-ai's 12-char server gate even when the
   // query and exec summary were both empty (extreme fallback path).
@@ -384,8 +539,26 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
     reportUrl: buildReportUrl(session.id),
     input,
     meta: {
-      opportunityScore: synthesis ? synthesis.opportunityScore : null,
-      riskScore: synthesis ? synthesis.riskScore : null,
+      // P1-2: scores only enter the brief when (a) synthesis is non-degraded
+      // AND (b) for Deep sessions, the V2 ledger exists and evidence is
+      // sufficient. Fail-closed Deep sessions and insufficient-evidence
+      // Deep sessions both yield null scores.
+      opportunityScore:
+        synthesis && deepEvidence && hasSufficientDeepBriefEvidence(deepEvidence)
+          ? synthesis.opportunityScore
+          : isDeepMode
+            ? null
+            : synthesis
+              ? synthesis.opportunityScore
+              : null,
+      riskScore:
+        synthesis && deepEvidence && hasSufficientDeepBriefEvidence(deepEvidence)
+          ? synthesis.riskScore
+          : isDeepMode
+            ? null
+            : synthesis
+              ? synthesis.riskScore
+              : null,
       completedAgents,
       truncated,
       // R254: tone is the fixed default, not a researched recommendation —
@@ -393,6 +566,15 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
       toneDefault: true,
     },
   };
+}
+
+function hasSufficientDeepBriefEvidence(evidence: DeepBriefEvidence): boolean {
+  const supportedAgentCount = new Set(evidence.fullySupported.map((claim) => claim.agentId)).size;
+  return (
+    evidence.complete &&
+    evidence.fullySupported.length >= Math.max(3, Math.ceil(evidence.totalClaims * 0.2)) &&
+    supportedAgentCount >= 2
+  );
 }
 
 /** Serialize a brief envelope to a pretty JSON string for download/copy. */

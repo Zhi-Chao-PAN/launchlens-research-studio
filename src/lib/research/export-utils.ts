@@ -97,14 +97,6 @@ export function synthesisToMarkdown(syn: SynthesisOutput, metadata?: {
   lines.push("> " + syn.recommendedNextStep);
   lines.push("");
 
-  // LaunchLens brief
-  if (syn.launchlensBrief) {
-    lines.push("## LaunchLens Brief");
-    lines.push("");
-    lines.push(syn.launchlensBrief);
-    lines.push("");
-  }
-
   // Sources
   if (metadata?.sources?.length) {
     lines.push("## Sources");

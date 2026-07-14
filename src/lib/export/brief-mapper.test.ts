@@ -166,6 +166,178 @@ describe("toLaunchLensBrief — field mapping", () => {
   });
 });
 
+describe("toLaunchLensBrief — Deep validation boundary", () => {
+  function deepValidation(
+    dispositions: Array<{
+      id: string;
+      agentId: "market-sizer" | "pain-detective" | "pricing-scout";
+      fieldPath: string;
+      text: string;
+      disposition: "supported" | "partially_supported" | "unsupported";
+    }>,
+  ): NonNullable<ResearchSession["validation"]> {
+    return {
+      version: 2,
+      protocol: { executedPasses: 3 },
+      semanticValidation: { status: "completed" },
+      claims: dispositions.map((item) => ({
+        id: item.id,
+        agentId: item.agentId,
+        fieldPath: item.fieldPath,
+        text: item.text,
+      })),
+      adjudications: dispositions.map((item) => ({
+        claimId: item.id,
+        disposition: item.disposition,
+        synthesisEligible:
+          item.disposition === "supported" || item.disposition === "partially_supported",
+      })),
+    } as unknown as NonNullable<ResearchSession["validation"]>;
+  }
+
+  it("does not re-export rejected TAM, growth, or pricing from raw specialist outputs", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD.",
+          disposition: "unsupported",
+        },
+        {
+          id: "pricing",
+          agentId: "pricing-scout",
+          fieldPath: "/recommendations/0",
+          text: "Recommended Starter price is 29 USD.",
+          disposition: "unsupported",
+        },
+        {
+          id: "pain",
+          agentId: "pain-detective",
+          fieldPath: "/painPoints/0",
+          text: "Users report evidence trust concerns.",
+          disposition: "partially_supported",
+        },
+      ]),
+    });
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("18%/yr");
+    expect(serialized).not.toContain("Starter");
+    expect(serialized).not.toContain("$29");
+    expect(brief.input.market).toMatch(/remain unverified/i);
+    expect(brief.input.constraints).toContain("0/3 fully supported");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("admits a fully supported Deep claim without reviving adjacent rejected fields", () => {
+    const brief = toLaunchLensBrief(buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD from the cited category report.",
+          disposition: "supported",
+        },
+        {
+          id: "pricing",
+          agentId: "pricing-scout",
+          fieldPath: "/recommendations/0",
+          text: "Recommended Starter price is 29 USD.",
+          disposition: "unsupported",
+        },
+      ]),
+    }));
+
+    expect(brief.input.market).toContain("TAM is 5000000000 USD");
+    expect(brief.input.constraints).not.toContain("Starter");
+  });
+
+  // P1-1 regression: Deep mode with NO validation ledger must fail-closed.
+  // It must never fall through to the Standard branch, which would export
+  // unverified TAM, pricing, pain points, and synthesis scores.
+  it("fail-closes when Deep mode has no validation ledger (poison-token regression)", () => {
+    const session = buildSession({ mode: "deep" });
+    // Poison tokens that would only appear if the Standard branch ran.
+    const synthesis = session.agents.synthesis.output as SynthesisOutput;
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    // No specialist-derived figures may enter the brief.
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("18%/yr");
+    expect(serialized).not.toContain("AcmeCorp");
+    expect(serialized).not.toContain("Starter");
+    expect(serialized).not.toContain("$29");
+    expect(serialized).not.toContain("Solo Founder");
+    // No synthesis prose may enter the brief either.
+    expect(serialized).not.toContain(synthesis.execSummary);
+    expect(serialized).not.toContain(synthesis.recommendedNextStep);
+    expect(serialized).not.toContain(synthesis.launchlensBrief);
+    // Scores must be null -- the synthesis has not been evidence-validated.
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    // The query is always preserved.
+    expect(brief.input.idea).toContain("AI onboarding analyst");
+  });
+
+  // P1-1 regression: Deep mode with a V1 (unsupported) validation ledger
+  // must also fail-closed.
+  it("fail-closes when Deep mode has a V1 validation ledger (poison-token regression)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: { version: 1 } as unknown as ResearchSession["validation"],
+    });
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("Starter");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  // P1-2 regression: when Deep evidence exists but is insufficient, synthesis
+  // prose (execSummary, recommendedNextStep) must NOT leak into the brief.
+  it("does not leak synthesis execSummary or next-step when Deep evidence is insufficient (poison-token regression)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD.",
+          disposition: "unsupported",
+        },
+      ]),
+    });
+    const synthesis = session.agents.synthesis.output as SynthesisOutput;
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    // execSummary must not appear in the idea field.
+    expect(brief.input.idea).not.toContain(synthesis.execSummary);
+    // recommendedNextStep must not appear in the constraints field.
+    expect(brief.input.constraints).not.toContain(synthesis.recommendedNextStep);
+    // The serialized brief must not contain the execSummary anywhere.
+    expect(serialized).not.toContain(synthesis.execSummary);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+});
+
 describe("toLaunchLensBrief — truncation", () => {
   it("compresses rich agent outputs before falling back to visible truncation", () => {
     const rich = buildSession({

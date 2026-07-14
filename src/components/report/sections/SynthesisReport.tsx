@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState } from "react";
 import type { SynthesisOutput } from "@/lib/schema/research-schema";
 import { ReportSubheading, SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
@@ -22,7 +21,6 @@ export function SynthesisReport({ output }: { output: any }) {
   const data = output as SynthesisOutput;
   const { copied, copy } = useCopyText();
   const { t } = useLocale();
-  const [briefExpanded, setBriefExpanded] = useState(false);
 
   const opportunityScore = data.opportunityScore;
   const riskScore = data.riskScore;
@@ -130,37 +128,13 @@ export function SynthesisReport({ output }: { output: any }) {
       </section>
 
       <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
-        <button
-          type="button"
-          onClick={() => setBriefExpanded((value) => !value)}
-          className="flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-500"
-          aria-expanded={briefExpanded}
-        >
-          <span>
-            <span className="block font-semibold text-slate-900">{t("report.synthesis.importBrief")}</span>
-            <span className="mt-0.5 block text-xs text-slate-500">{t("report.synthesis.importBriefSubtitle")}</span>
-          </span>
-          <span className="font-mono text-lg font-normal text-slate-500" aria-hidden>{briefExpanded ? "−" : "+"}</span>
-        </button>
-        {briefExpanded && (
-          <div className="border-t border-slate-200">
-            <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap bg-slate-50 px-4 py-4 font-mono text-xs leading-5 text-slate-700">
-              {data.launchlensBrief}
-            </pre>
-            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3">
-              <p className="font-mono text-xs tabular-nums text-slate-500">
-                {data.launchlensBrief.length.toLocaleString()} {t("report.synthesis.charactersSuffix")}
-              </p>
-              <button
-                type="button"
-                onClick={() => copy(data.launchlensBrief, "brief-content")}
-                className="min-h-9 border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-              >
-                {copied === "brief-content" ? t("report.synthesis.copiedBrief") : t("report.synthesis.copyBrief")}
-              </button>
-            </div>
-          </div>
-        )}
+        <div className="px-4 py-4">
+          <span className="block font-semibold text-slate-900">{t("report.synthesis.importBrief")}</span>
+          <span className="mt-0.5 block text-xs text-slate-500">{t("report.synthesis.importBriefSubtitle")}</span>
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            {t("report.synthesis.useExportPanel")}
+          </p>
+        </div>
       </section>
 
       <CitationList citations={data.citations} />

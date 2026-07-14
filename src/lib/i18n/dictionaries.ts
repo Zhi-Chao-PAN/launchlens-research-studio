@@ -637,6 +637,7 @@ export type DictionaryKey =
   | "report.synthesis.nextStep"
   | "report.synthesis.importBrief"
   | "report.synthesis.importBriefSubtitle"
+  | "report.synthesis.useExportPanel"
   | "report.synthesis.charactersSuffix"
   | "report.synthesis.copyBrief"
   | "report.synthesis.copiedBrief"
@@ -1063,6 +1064,7 @@ const en: Dict = {
   "report.synthesis.nextStep": "Recommended Next Step",
   "report.synthesis.importBrief": "LaunchLens Import Brief",
   "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.useExportPanel": "Use the Export panel above to copy or send the validation-aware brief. The raw synthesis text is not importable to avoid exporting unverified figures.",
   "report.synthesis.charactersSuffix": "characters",
   "report.synthesis.copyBrief": "Copy brief",
   "report.synthesis.copiedBrief": "Copied!",
@@ -1861,6 +1863,7 @@ const zhCN: Dict = {
   "report.synthesis.nextStep": "推荐下一步",
   "report.synthesis.importBrief": "LaunchLens 导入简报",
   "report.synthesis.importBriefSubtitle": "可粘贴到 launchlens-ai 生成 GTM 策略",
+  "report.synthesis.useExportPanel": "请使用上方的导出面板复制或发送经过验证的简报。原始综合文本不可导入，以避免导出未经验证的数据。",
   "report.synthesis.charactersSuffix": "字符",
   "report.synthesis.copyBrief": "复制简报",
   "report.synthesis.copiedBrief": "已复制！",
@@ -2659,6 +2662,7 @@ const ja: Dict = {
   "report.synthesis.nextStep": "Recommended Next Step",
   "report.synthesis.importBrief": "LaunchLens Import Brief",
   "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.useExportPanel": "Use the Export panel above to copy or send the validation-aware brief. The raw synthesis text is not importable to avoid exporting unverified figures.",
   "report.synthesis.charactersSuffix": "characters",
   "report.synthesis.copyBrief": "Copy brief",
   "report.synthesis.copiedBrief": "Copied!",
@@ -3832,6 +3836,7 @@ const ko: Dict = {
   "report.synthesis.nextStep": "Recommended Next Step",
   "report.synthesis.importBrief": "LaunchLens Import Brief",
   "report.synthesis.importBriefSubtitle": "Ready to paste into launchlens-ai for GTM strategy generation",
+  "report.synthesis.useExportPanel": "Use the Export panel above to copy or send the validation-aware brief. The raw synthesis text is not importable to avoid exporting unverified figures.",
   "report.synthesis.charactersSuffix": "characters",
   "report.synthesis.copyBrief": "Copy brief",
   "report.synthesis.copiedBrief": "Copied!",

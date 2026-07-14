@@ -13,6 +13,7 @@ import {
 import type {
   ClaimReviewFinding,
   ClaimReviewPassKind,
+  ClaimReviewSource,
   ClaimReviewerIdentity,
   DeepValidationPassKind,
   ResearchClaim,
@@ -119,7 +120,9 @@ export class DeepSemanticReviewer {
         "Deep semantic validation passes must execute in order.",
       );
     }
-    return initializeDeepValidation(session, { maxClaims: 24, maxClaimsPerAgent: 6 });
+    // Five claims per specialist keeps the reviewer prompt bounded while
+    // guaranteeing all five research dimensions enter the semantic ledger.
+    return initializeDeepValidation(session, { maxClaims: 25, maxClaimsPerAgent: 5 });
   }
 
   private assertRuntimeCapability(): void {
@@ -143,28 +146,38 @@ export class DeepSemanticReviewer {
     session: ResearchSession,
     ledger: ValidationLedgerV2,
     signal?: AbortSignal,
-  ) {
+  ): Promise<ClaimReviewSource[]> {
     const groups = groupClaimsByAgent(ledger.claims);
-    const sources: Array<RetrievedSource & { origin: "independent_retrieval" }> = [];
+    const sources: ClaimReviewSource[] = [];
     for (const [agentId, claims] of groups) {
       throwIfAborted(signal);
-      const query = buildIndependentQuery(session.query, claims);
-      const retrieved = await this.options.retrieval.search({
-        query,
-        keywords: session.keywords.slice(0, 8),
-        agentId,
-        maxResults: 6,
-        signal,
-      });
+      const retrievedSets = await Promise.all(
+        claims.map((claim) =>
+          this.options.retrieval.search({
+            query: buildIndependentQuery(session.query, claim),
+            agentId,
+            maxResults: 3,
+            searchDepth: "advanced",
+            minScore: 0.35,
+            signal,
+          }),
+        ),
+      );
       throwIfAborted(signal);
-      for (const source of retrieved) {
-        sources.push({
-          ...source,
-          id: scopeIndependentSourceId(source.id, agentId),
-          agent: agentId,
-          origin: "independent_retrieval",
-        });
-      }
+      const agentSources = dedupeSources(
+        retrievedSets.flatMap((retrieved, claimIndex) => {
+          const claim = claims[claimIndex];
+          if (!claim) return [];
+          return retrieved.map((source) => ({
+            ...source,
+            id: scopeIndependentSourceId(source.id, claim),
+            agent: agentId,
+            origin: "independent_retrieval" as const,
+            claimIds: [claim.id],
+          }));
+        }),
+      ).slice(0, 15);
+      sources.push(...agentSources);
     }
 
     return dedupeSources(sources);
@@ -212,7 +225,7 @@ function requestForClaimReview(
     : [
         "For every claim, compare the original evidence with independently retrieved sources.",
         "Identify corroboration and material conflict; absence of evidence is not corroboration.",
-        "A corroborating or contradicting source must have origin independent_retrieval and the same agent as the claim.",
+        "A corroborating or contradicting source must have origin independent_retrieval and list that exact claim ID in claimIds.",
         "Never use an original citation or another agent's retrieval as pass-two evidence.",
         "Use verdict: corroborated, contradicted, mixed, or insufficient_evidence.",
       ];
@@ -251,6 +264,7 @@ function requestForAdjudication(
       "You are the final conservative adjudicator for a bounded claim-evidence review.",
       "Adjudicate every claim using only the two supplied review passes and allowlisted source IDs.",
       "Use disposition: supported, partially_supported, conflicted, unsupported, or insufficient_evidence.",
+      "Decision policy: entailed plus corroborated is supported; one supported pass is partially_supported; contradiction is conflicted; not_entailed without corroboration is unsupported; otherwise evidence is insufficient.",
       "A supported disposition requires at least one supporting source; conflicted requires a contradicting source.",
       "Copy claimId and claimValueHash exactly. Preserve material qualifications in limitations.",
       "Output: {\"adjudications\":[{claimId,claimValueHash,disposition,confidence,supportingSourceIds,contradictingSourceIds,limitations}]}",
@@ -264,6 +278,7 @@ function requestForAdjudication(
         id: source.id,
         title: source.title,
         origin: source.origin,
+        claimIds: source.claimIds,
       })),
     }),
     signal,
@@ -298,6 +313,7 @@ function promptSources(ledger: ValidationLedgerV2, claimOwnedOnly: boolean) {
       confidence: source.confidence,
       agent: source.agent,
       origin: source.origin,
+      claimIds: source.claimIds,
     }));
 }
 
@@ -425,24 +441,26 @@ function groupClaimsByAgent(claims: readonly ResearchClaim[]) {
   return groups;
 }
 
-function buildIndependentQuery(query: string, claims: readonly ResearchClaim[]): string {
-  const agentId = claims[0]?.agentId ?? "specialist";
-  const claimText = claims
-    .slice(0, 3)
-    .map((claim) => claim.text)
-    .join(" | ");
+function buildIndependentQuery(query: string, claim: ResearchClaim): string {
+  const focus: Record<ResearchClaim["agentId"], string> = {
+    "market-sizer": "Dated market-report evidence",
+    "competitor-analyst": "Official product, pricing, or comparison evidence",
+    "pain-detective": "Voice-of-customer, forum, or product-review evidence",
+    "pricing-scout": "Official pricing or willingness-to-pay evidence",
+    "channel-scout": "Acquisition-channel benchmark or community evidence",
+  };
   return truncateSearchText(
-    `Independent evidence for ${agentId}: ${claimText}. Product context: ${query}`,
+    `${focus[claim.agentId]}. Claim to check: ${claim.text}. Product context: ${query}`,
     280,
   );
 }
 
-function scopeIndependentSourceId(sourceId: string, agentId: ResearchClaim["agentId"]): string {
+function scopeIndependentSourceId(sourceId: string, claim: ResearchClaim): string {
   const bounded = String(sourceId)
     .replace(/[\u0000-\u001F\u007F]/g, "-")
     .trim()
-    .slice(0, 120) || "source";
-  return `ind-${agentId}-${bounded}`.slice(0, 160);
+    .slice(0, 80) || "source";
+  return `ind-${claim.agentId}-${claim.id}-${bounded}`.slice(0, 160);
 }
 
 function truncateSearchText(value: string, maxChars: number): string {
@@ -453,7 +471,7 @@ function truncateSearchText(value: string, maxChars: number): string {
   return (boundary >= Math.floor(maxChars * 0.75) ? clipped.slice(0, boundary) : clipped).trim();
 }
 
-function dedupeSources<T extends RetrievedSource>(sources: readonly T[]): T[] {
+function dedupeSources<T extends { id: string }>(sources: readonly T[]): T[] {
   const unique = new Map<string, T>();
   for (const source of sources) {
     if (!unique.has(source.id)) unique.set(source.id, source);
