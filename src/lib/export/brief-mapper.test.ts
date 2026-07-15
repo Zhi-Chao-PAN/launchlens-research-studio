@@ -876,3 +876,239 @@ describe("toLaunchLensBrief — handoff contract (mirrors launchlens-ai decoder)
     expect(hash.length).toBeLessThan(8000);
   });
 });
+
+describe("toLaunchLensBrief — Deep evidence boundary poison tests", () => {
+  // Each test below forges a deliberate defect in the V2 validation ledger
+  // and asserts the Brief mapper cannot be tricked into exporting the
+  // poisoned content as if it were evidence-backed.
+
+  function deepWithClaims(
+    claims: Array<{
+      id: string;
+      agentId: "market-sizer" | "pain-detective" | "pricing-scout";
+      fieldPath: string;
+      text: string;
+      valueHash: string;
+    }>,
+    adjudications: Array<{
+      claimId: string;
+      claimValueHash: string;
+      disposition: "supported" | "partially_supported" | "unsupported";
+      synthesisEligible: boolean;
+    }>,
+    extras: Partial<{
+      gapFill: {
+        completedAt: string;
+        targetedClaimIds: readonly string[];
+        sourcesAdded: number;
+        targetedClaimCount: number;
+      };
+    }> = {},
+  ): NonNullable<ResearchSession["validation"]> {
+    return {
+      version: 2,
+      protocol: { executedPasses: 3 },
+      semanticValidation: { status: "completed" },
+      claims,
+      adjudications,
+      ...extras,
+    } as unknown as NonNullable<ResearchSession["validation"]>;
+  }
+
+  it("refuses a forged adjudication whose claimValueHash does not match the claim", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "real-hash-123",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "forged-hash-999",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+    // The forged adjudication must not surface as a fully-supported claim.
+    expect(serialized).not.toContain("$5B");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("refuses a phantom claim id in adjudications (no matching claim in claims array)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "real_claim",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h1",
+          },
+        ],
+        [
+          {
+            claimId: "ghost_claim",
+            claimValueHash: "h-ghost",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    const brief = toLaunchLensBrief(session);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    expect(serializeBrief(brief, false)).not.toContain("$5B");
+  });
+
+  it("blocks synthesis execSummary from leaking into the brief idea when not fully supported", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "unsupported",
+            synthesisEligible: false,
+          },
+        ],
+      ),
+    });
+    // Plant a poisoned synthesis output that the mapper must NOT echo.
+    session.agents.synthesis = {
+      id: "synthesis",
+      status: "done",
+      progress: 100,
+      currentStep: "Done",
+      output: {
+        agent: "synthesis",
+        execSummary: "POISON_TOKEN_EXEC_SUMMARY",
+        opportunityScore: 91,
+        riskScore: 12,
+        keyInsights: [],
+        topThreeOpportunities: [],
+        topThreeRisks: [],
+        recommendedNextStep: "POISON_TOKEN_NEXT_STEP",
+        launchlensBrief: "",
+        citations: [],
+      },
+    };
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+    expect(serialized).not.toContain("POISON_TOKEN_EXEC_SUMMARY");
+    expect(serialized).not.toContain("POISON_TOKEN_NEXT_STEP");
+    expect(serialized).not.toContain("$5B");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("nulls opportunityScore and riskScore when synthesis is degraded even with claims supported", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    session.agents.synthesis = {
+      id: "synthesis",
+      status: "done",
+      progress: 100,
+      currentStep: "Done",
+      degraded: true,
+      output: {
+        agent: "synthesis",
+        execSummary: "degraded",
+        opportunityScore: 91,
+        riskScore: 12,
+        keyInsights: [],
+        topThreeOpportunities: [],
+        topThreeRisks: [],
+        recommendedNextStep: "go",
+        launchlensBrief: "",
+        citations: [],
+      },
+    };
+    const brief = toLaunchLensBrief(session);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("survives a synthetic gapFill whose sourcesAdded does not match the catalog (defensive)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+        {
+          gapFill: {
+            completedAt: new Date().toISOString(),
+            targetedClaimIds: [],
+            sourcesAdded: 99, // poisoned: no gap sources in catalog
+            targetedClaimCount: 0,
+          },
+        },
+      ),
+    });
+    // The Brief mapper never reads gapFill (it does not affect the
+    // evidence boundary), so a forged gapFill must not unlock additional
+    // content beyond what the adjudications allow. The supported TAM
+    // claim legitimately surfaces; nothing else does.
+    const brief = toLaunchLensBrief(session);
+    expect(brief.input.market).toContain("$5B");
+  });
+});

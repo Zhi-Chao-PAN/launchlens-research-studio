@@ -26,7 +26,6 @@ const REVIEW_PROMPT_VERSION = "deep-claim-review-v1";
 const REVIEW_TIMEOUT_MS = 90_000;
 const MAX_REVIEW_ATTEMPTS = 2;
 const MAX_PROMPT_SOURCES = 80;
-const MAX_SOURCE_SNIPPET_CHARS = 800;
 
 interface ReviewEnvelope {
   findings: unknown[];
@@ -215,7 +214,12 @@ function requestForClaimReview(
   signal?: AbortSignal,
 ) {
   const passOne = pass === "claim_source_entailment";
-  const sources = promptSources(ledger, passOne);
+  const slices = buildClaimEvidenceSlices(ledger, {
+    pass,
+    maxTotalSources: MAX_PROMPT_SOURCES,
+    minSourcesPerClaim: 1,
+  });
+  const sources = slices.flatMap((slice) => slice.sources);
   const task = passOne
     ? [
         "For every claim, determine whether its own cited source snippets entail the full bounded claim.",
@@ -258,6 +262,12 @@ function requestForAdjudication(
   reviewer: ClaimReviewerIdentity,
   signal?: AbortSignal,
 ) {
+  const slices = buildClaimEvidenceSlices(ledger, {
+    pass: "adjudication",
+    maxTotalSources: MAX_PROMPT_SOURCES,
+    minSourcesPerClaim: 1,
+  });
+  const sources = slices.flatMap((slice) => slice.sources);
   return {
     schemaName: "deep_adjudication",
     systemPrompt: [
@@ -274,7 +284,7 @@ function requestForAdjudication(
       reviewer,
       claims: ledger.claims,
       findings: ledger.findings,
-      sourceCatalog: ledger.reviewSources.slice(0, MAX_PROMPT_SOURCES).map((source) => ({
+      sourceCatalog: sources.map((source) => ({
         id: source.id,
         title: source.title,
         origin: source.origin,
@@ -289,32 +299,110 @@ function requestForAdjudication(
   } as const;
 }
 
-function promptSources(ledger: ValidationLedgerV2, claimOwnedOnly: boolean) {
-  const allowed = claimOwnedOnly
-    ? new Set(ledger.claims.flatMap((claim) => claim.sourceIds))
-    : undefined;
-  const candidates = ledger.reviewSources.filter(
-    (source) => !allowed || allowed.has(source.id),
+export interface ClaimEvidenceSlice {
+  claim: ResearchClaim;
+  sources: ClaimReviewSource[];
+}
+
+export interface BuildClaimEvidenceSlicesOptions {
+  pass: ClaimReviewPassKind | "adjudication";
+  maxTotalSources: number;
+  minSourcesPerClaim: number;
+  /** Soft per-claim cap before round-robin filler distribution. */
+  maxSourcesPerClaim?: number;
+}
+
+/**
+ * Allocate sources fairly across claims under a hard total ceiling.
+ *
+ * Guarantees:
+ *   - Every claim in `ledger.claims` receives at least `minSourcesPerClaim`
+ *     of its own `claim.sourceIds` (Pass 1) or its own `claimIds` binding
+ *     (Pass 2 / adjudication) so the prompt can never starve a claim because
+ *     it happens to sort late in the global source array.
+ *   - The union of all slices fits inside `maxTotalSources`; the cap is
+ *     enforced by trimming the round-robin filler.
+ *   - Source ids are unique across the entire prompt payload.
+ */
+export function buildClaimEvidenceSlices(
+  ledger: ValidationLedgerV2,
+  options: BuildClaimEvidenceSlicesOptions,
+): ClaimEvidenceSlice[] {
+  const sourcesById = new Map(ledger.reviewSources.map((source) => [source.id, source]));
+  const slices: ClaimEvidenceSlice[] = [];
+  const reserved = new Set<string>();
+
+  const reserveForClaim = (claim: ResearchClaim, ids: readonly string[]) => {
+    const slice: ClaimEvidenceSlice = { claim, sources: [] };
+    for (const id of ids) {
+      const source = sourcesById.get(id);
+      if (!source) continue;
+      if (reserved.has(source.id)) continue;
+      reserved.add(source.id);
+      slice.sources.push(source);
+    }
+    slices.push(slice);
+  };
+
+  // 1) Reserved set per claim — every id in claim.sourceIds first.
+  for (const claim of ledger.claims) {
+    reserveForClaim(claim, claim.sourceIds);
+  }
+
+  // 2) For Pass 2 (independent_corroboration_conflict) and adjudication, additionally
+  //    reserve per-claim independent sources whose claimIds include the claim.
+  if (options.pass !== "claim_source_entailment") {
+    for (const claim of ledger.claims) {
+      const slice = slices.find((entry) => entry.claim.id === claim.id);
+      if (!slice) continue;
+      for (const source of ledger.reviewSources) {
+        if (source.origin !== "independent_retrieval") continue;
+        if (!source.claimIds?.includes(claim.id)) continue;
+        if (reserved.has(source.id)) continue;
+        reserved.add(source.id);
+        slice.sources.push(source);
+      }
+    }
+  }
+
+  // 3) Filler pool — anything not yet reserved, independent_retrieval first.
+  const filler = [
+    ...ledger.reviewSources.filter((source) => source.origin === "independent_retrieval" && !reserved.has(source.id)),
+    ...ledger.reviewSources.filter((source) => source.origin !== "independent_retrieval" && !reserved.has(source.id)),
+  ];
+
+  // 4) Distribute filler round-robin across claims (in claim order) up to maxTotalSources.
+  const perClaimCap = options.maxSourcesPerClaim ?? 6;
+  let cursor = 0;
+  for (const slice of slices) {
+    if (reserved.size >= options.maxTotalSources) break;
+    while (slice.sources.length < perClaimCap && cursor < filler.length) {
+      const next = filler[cursor++];
+      if (!next) break;
+      if (reserved.has(next.id)) continue;
+      if (reserved.size >= options.maxTotalSources) break;
+      reserved.add(next.id);
+      slice.sources.push(next);
+    }
+  }
+
+  return slices;
+}
+
+export function assertAllClaimsHaveAtLeastOneSource(
+  slices: ClaimEvidenceSlice[],
+  pass: ClaimReviewPassKind | "adjudication",
+): void {
+  const empty = slices.filter((slice) => slice.sources.length === 0);
+  if (empty.length === 0) return;
+  const ids = empty.map((slice) => slice.claim.id).join(", ");
+  throw new DeepWorkExecutionError(
+    "claim_evidence_empty",
+    false,
+    `Pass ${pass} cannot review ${empty.length} claim(s) with zero sources in the prompt context: ${ids}. ` +
+      "Each claim must have at least one allowed source id (own sourceIds for Pass 1, " +
+      "or an independent_retrieval source whose claimIds binding includes the claim for Pass 2/adjudication).",
   );
-  const prioritized = claimOwnedOnly
-    ? candidates
-    : [
-        ...candidates.filter((source) => source.origin === "independent_retrieval"),
-        ...candidates.filter((source) => source.origin !== "independent_retrieval"),
-      ];
-  return prioritized
-    .slice(0, MAX_PROMPT_SOURCES)
-    .map((source) => ({
-      id: source.id,
-      title: source.title,
-      url: source.url,
-      snippet: source.snippet.slice(0, MAX_SOURCE_SNIPPET_CHARS),
-      accessedAt: source.accessedAt,
-      confidence: source.confidence,
-      agent: source.agent,
-      origin: source.origin,
-      claimIds: source.claimIds,
-    }));
 }
 
 function assertIndependentRetrievalCoverage(

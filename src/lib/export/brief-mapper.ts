@@ -319,9 +319,13 @@ function deepBriefEvidence(session: ResearchSession): DeepBriefEvidence | null {
     ? validation.adjudications.flatMap((adjudication) => {
         if (adjudication.disposition !== "supported" || !adjudication.synthesisEligible) return [];
         const claim = claimsById.get(adjudication.claimId);
-        return claim
-          ? [{ agentId: claim.agentId, fieldPath: claim.fieldPath, text: claim.text }]
-          : [];
+        if (!claim) return [];
+        // Hash-bind: a forged adjudication that claims support for a
+        // different value of the same claimId is rejected here. The
+        // ledger guard recomputes the deterministic decision table on
+        // load, but valueHash is the application-owned second line.
+        if (claim.valueHash !== adjudication.claimValueHash) return [];
+        return [{ agentId: claim.agentId, fieldPath: claim.fieldPath, text: claim.text }];
       })
     : [];
   return {

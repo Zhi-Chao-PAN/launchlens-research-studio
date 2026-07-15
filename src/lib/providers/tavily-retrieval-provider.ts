@@ -11,6 +11,7 @@
 // every run behaves identically to R214.
 
 import type { RetrievalProvider, RetrievalQuery, RetrievedSource } from "./retrieval.types";
+import { RetrievalError } from "./retrieval.types";
 import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_BASE_URL = "https://api.tavily.com";
@@ -81,7 +82,12 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     // Pre-aborted caller signal — short-circuit before doing any I/O.
     if (controller.signal.aborted) {
       clearTimeout(timer);
-      return [];
+      throw new RetrievalError(
+        "network_error",
+        false,
+        "Retrieval aborted before Tavily was contacted.",
+        { cause: controller.signal.reason },
+      );
     }
 
     try {
@@ -103,8 +109,14 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
         signal: controller.signal,
       });
       if (!res.ok) {
-        // Surface as an empty result; engine falls back to LLM-only.
-        return [];
+        // HTTP failure: 4xx (other than 429) is a permanent config error;
+        // 5xx and 429 are transient and should be retried by the work unit.
+        const retryable = res.status === 429 || res.status >= 500;
+        throw new RetrievalError(
+          "http_error",
+          retryable,
+          `Tavily returned HTTP ${res.status} ${res.statusText || ""}`.trim(),
+        );
       }
       const json = (await res.json()) as TavilyResponse;
       const results = Array.isArray(json.results) ? json.results : [];
@@ -132,9 +144,25 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
         });
       }
       return sources.slice(0, maxResults);
-    } catch {
-      // Network / abort / JSON parse / any failure — degrade silently.
-      return [];
+    } catch (error) {
+      if (error instanceof RetrievalError) throw error;
+      // Distinguish caller/timeout aborts (non-retryable) from network/parse
+      // failures (retryable). The deadline timer calls controller.abort()
+      // without a reason; pass the reason through when present.
+      if (controller.signal.aborted) {
+        throw new RetrievalError(
+          "network_error",
+          false,
+          "Tavily retrieval was aborted before completion.",
+          { cause: error },
+        );
+      }
+      throw new RetrievalError(
+        "network_error",
+        true,
+        "Tavily retrieval failed with a network or runtime error.",
+        { cause: error },
+      );
     } finally {
       clearTimeout(timer);
       if (opts.signal) opts.signal.removeEventListener("abort", onAbort);

@@ -264,7 +264,69 @@ export function isValidationLedgerV2(value: unknown): value is ValidationLedgerV
     adjudications: ClaimAdjudication[];
   };
   if (!isDeepSemanticValidation(value.semanticValidation, semanticLedger, expectedCounts)) return false;
+  if (!isValidGapFill(value.gapFill, claims, value.reviewSources)) return false;
   return typeof value.synthesisSummary === "string";
+}
+
+/**
+ * Strict guard for the optional `gapFill` metadata. Verifies:
+ *   - shape (record with the four documented fields)
+ *   - `completedAt` is an ISO 8601 timestamp not in the future
+ *   - `targetedClaimIds` references only claims that exist
+ *   - `sourcesAdded` matches the count of `independent_retrieval` review
+ *     sources whose `claimIds` are a subset of `targetedClaimIds`
+ *   - `targetedClaimCount` equals `targetedClaimIds.length`
+ *   - `sourcesAdded` and `targetedClaimCount` are non-negative integers
+ */
+function isValidGapFill(
+  rawGapFill: unknown,
+  claims: ReadonlyArray<{ id: string }>,
+  reviewSources: ReadonlyArray<{
+    id: string;
+    origin: string;
+    claimIds?: string[];
+  }>,
+): boolean {
+  if (rawGapFill === undefined) return true;
+  if (!isRecord(rawGapFill)) return false;
+  const { completedAt, targetedClaimIds, sourcesAdded, targetedClaimCount } = rawGapFill;
+  if (typeof completedAt !== "string") return false;
+  const completedAtMs = Date.parse(completedAt);
+  if (!Number.isFinite(completedAtMs)) return false;
+  if (completedAtMs > Date.now() + 60_000) return false;
+  if (!Array.isArray(targetedClaimIds)) return false;
+  if (targetedClaimIds.some((id) => typeof id !== "string")) return false;
+  if (!Number.isInteger(sourcesAdded) || (sourcesAdded as number) < 0) return false;
+  if (!Number.isInteger(targetedClaimCount) || (targetedClaimCount as number) < 0) return false;
+  // `targetedClaimCount` records how many gap-eligible claims the stage
+  // identified; the actual sources added is a subset of those claims'
+  // claimIds. A non-zero targeted count with zero sources added is the
+  // legitimate "retrieval returned nothing for every gap claim" path,
+  // so we only require the two counters to agree when sources were
+  // actually added.
+  if (
+    (sourcesAdded as number) > 0 &&
+    (targetedClaimCount as number) !== targetedClaimIds.length
+  ) {
+    return false;
+  }
+  if (targetedClaimIds.length > (targetedClaimCount as number)) return false;
+  const claimIds = new Set(claims.map((claim) => claim.id));
+  if (targetedClaimIds.some((id) => !claimIds.has(id as string))) return false;
+  const targeted = new Set(targetedClaimIds as string[]);
+  // The independent_retrieval sources actually added by gap-fill are
+  // exactly those whose claim binding lives entirely inside the targeted
+  // slice. Anything not targeting the gap claims is not gap-fill output.
+  const matched = reviewSources.filter(
+    (source) =>
+      source.origin === "independent_retrieval" &&
+      Array.isArray(source.claimIds) &&
+      source.claimIds.length > 0 &&
+      source.claimIds.every((id) => targeted.has(id as string)) &&
+      source.id.startsWith("gap-"),
+  );
+  if (matched.length !== sourcesAdded) return false;
+  return true;
 }
 
 export function isValidationLedger(value: unknown): value is ValidationLedger {

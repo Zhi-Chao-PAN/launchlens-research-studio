@@ -4,8 +4,8 @@
 // those claims die and propagate as `unsupported` / `conflicted`, this stage
 // issues a *single* targeted retrieval per such claim, bound exclusively to
 // that claim (origin: independent_retrieval, claimIds: [claim.id]), and
-// returns an updated ledger + the targetedClaimIds so Pass 1/2/3 can rerun
-// only for that slice.
+// registers the new sources so Pass 2/3 -- which always run over the full
+// claim set -- can pick them up via their normal claim↔source binding.
 //
 // Why this is a separate stage instead of more queries inside Pass 2:
 //   - Pass 2 currently runs ONE query per claim against independent sources.
@@ -16,8 +16,20 @@
 //     honest: each unit is observable, retryable, and visible in the UI.
 //   - It is also a no-op when no claims failed Pass 1 (the most common case
 //     after the recent improvements), so well-prepared runs pay zero cost.
+//
+// Error semantics:
+//   - A retrieval that resolves to `[]` (search succeeded, zero hits) is a
+//     legitimate no-op and the stage stamps the ledger with sourcesAdded=0.
+//   - A retrieval that throws is split into two outcomes:
+//       * transient (network / 5xx / 429 / parse) -> retryable error, the
+//         durable work unit fails into the standard retry/backoff path.
+//       * permanent (4xx auth, missing config, abort) -> non-retryable
+//         error, the work unit fails closed and the run terminates
+//         cleanly with an error rather than advancing with phantom
+//         evidence.
 
-import type { RetrievalProvider, RetrievedSource } from "@/lib/providers/retrieval.types";
+import type { RetrievedSource } from "@/lib/providers/retrieval.types";
+import { RetrievalError } from "@/lib/providers/retrieval.types";
 import {
   canonicalizeSafeExternalUrl,
 } from "@/lib/security/safe-external-url";
@@ -79,15 +91,19 @@ export function identifyGapClaims(ledger: ValidationLedgerV2): ResearchClaim[] {
  *  1. identify gap claims from Pass 1 findings
  *  2. issue a single targeted retrieval per claim
  *  3. register the new sources as independent_retrieval bound to the claim
- *  4. stamp the ledger with gapFill metadata so the executor can rerun Pass 1/2/3
- *     only for the targeted slice.
+ *  4. stamp the ledger with gapFill metadata so the UI can report what was
+ *     targeted and so the durable execution does not repeat the stage.
  *
  * Idempotent: if the stage has already executed for this session (gapFill
  * field present), the existing ledger is returned untouched.
+ *
+ * Throws `DeepWorkExecutionError` (with `retryable` flag preserved from the
+ * underlying `RetrievalError`) when retrieval fails for any reason other
+ * than a successful-but-empty response.
  */
 export async function runGapFillStage(
   sourceSession: ResearchSession,
-  retrieval: RetrievalProvider,
+  retrieval: import("@/lib/providers/retrieval.types").RetrievalProvider,
   options: RunGapFillOptions = {},
 ): Promise<ResearchSession> {
   if (retrieval.isMock) {
@@ -121,10 +137,16 @@ export async function runGapFillStage(
   let newSources: ClaimReviewSource[] = [];
   try {
     newSources = await retrieveGapSources(gapClaims, session.query, retrieval, signal);
+  } catch (error) {
+    throw translateRetrievalError(error);
   } finally {
     clearTimeout(timer);
   }
 
+  // newSources.length === 0 is the legitimate "search succeeded, zero hits"
+  // path -- the durable plan advances with a no-op ledger marker so the
+  // UI can prove the stage actually ran. Anything else (throw above) is
+  // either transient (retry) or permanent (fail closed).
   if (newSources.length === 0) {
     const next = stampNoOp(session, ledger, gapClaims.length);
     return next;
@@ -135,6 +157,45 @@ export async function runGapFillStage(
   session.validation = stamped;
   session.updatedAt = new Date().toISOString();
   return session;
+}
+
+/**
+ * Translate a raw retrieval failure into a typed `DeepWorkExecutionError`
+ * preserving the `retryable` contract. A bare `Error` (anything other than
+ * a `RetrievalError`) is treated as transient network failure so the durable
+ * work unit routes it through retry/backoff rather than masking it.
+ */
+function translateRetrievalError(error: unknown): DeepWorkExecutionError {
+  if (error instanceof RetrievalError) {
+    return new DeepWorkExecutionError(
+      "gap_fill_retrieval_error",
+      error.retryable,
+      `Gap-fill retrieval failed (${error.code}, retryable=${error.retryable}): ${error.message}`,
+      { cause: error },
+    );
+  }
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return new DeepWorkExecutionError(
+      "gap_fill_retrieval_aborted",
+      false,
+      `Gap-fill retrieval was aborted: ${error.message}`,
+      { cause: error },
+    );
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return new DeepWorkExecutionError(
+      "gap_fill_retrieval_aborted",
+      false,
+      `Gap-fill retrieval was aborted: ${error.message}`,
+      { cause: error },
+    );
+  }
+  return new DeepWorkExecutionError(
+    "gap_fill_retrieval_error",
+    true,
+    "Gap-fill retrieval failed with an unknown error.",
+    { cause: error },
+  );
 }
 
 function clampTimeout(ms: number): number {
@@ -201,13 +262,17 @@ function stampGapFill(
 async function retrieveGapSources(
   gapClaims: readonly ResearchClaim[],
   query: string,
-  retrieval: RetrievalProvider,
+  retrieval: import("@/lib/providers/retrieval.types").RetrievalProvider,
   signal: AbortSignal,
 ): Promise<ClaimReviewSource[]> {
   const byAgent = groupByAgent(gapClaims);
   const allSources: ClaimReviewSource[] = [];
   for (const [agentId, claims] of byAgent) {
     if (signal.aborted) break;
+    // Per-agent Promise.all. A single failure rejects the surrounding
+    // Promise.all (no silent .catch), so the caller -- runGapFillStage --
+    // can translate the error into a typed DeepWorkExecutionError and the
+    // durable work unit can decide between retry and fail-closed.
     const retrievedSets = await Promise.all(
       claims.map((claim) =>
         retrieval.search({
@@ -217,7 +282,7 @@ async function retrieveGapSources(
           searchDepth: "advanced",
           minScore: GAP_FILL_MIN_SCORE,
           signal,
-        }).catch(() => [] as RetrievedSource[]),
+        }),
       ),
     );
     for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
@@ -280,29 +345,4 @@ function dedupeSources<T extends { id: string }>(sources: readonly T[]): T[] {
     if (!unique.has(source.id)) unique.set(source.id, source);
   }
   return [...unique.values()];
-}
-
-/**
- * Strip findings and adjudications for the targeted claim IDs so the
- * downstream Pass 1/2/3 rerun can produce fresh entries. Other claims'
- * findings/adjudications are preserved. Returns the updated ledger so the
- * caller can pass it back into the executor.
- *
- * This is exported so the executor / semantic reviewer can rewind the
- * protocol exactly once: after gap-fill sources are registered, the
- * targeted slice needs a clean slate.
- */
-export function stripTargetedPassOutputs(
-  ledger: ValidationLedgerV2,
-  targetedClaimIds: readonly string[],
-): ValidationLedgerV2 {
-  if (targetedClaimIds.length === 0) return ledger;
-  const targeted = new Set(targetedClaimIds);
-  return {
-    ...ledger,
-    findings: ledger.findings.filter((finding) => !targeted.has(finding.claimId)),
-    adjudications: ledger.adjudications.filter(
-      (adjudication) => !targeted.has(adjudication.claimId),
-    ),
-  };
 }

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
 import { TavilyRetrievalProvider } from "./tavily-retrieval-provider";
+import { RetrievalError } from "./retrieval.types";
 
 function makeProvider(opts: {
   apiKey?: string;
@@ -147,29 +148,38 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(sources[0].url).toBe("https://ok.com");
   });
 
-  it("returns empty array on non-2xx (graceful degradation)", async () => {
+  it("throws a non-retryable RetrievalError on non-2xx (graceful degradation surfaced)", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("forbidden", { status: 403 }));
     const provider = makeProvider({ fetchImpl });
-    const sources = await provider.search({ query: "x" });
-    expect(sources).toEqual([]);
+    await expect(provider.search({ query: "x" })).rejects.toBeInstanceOf(RetrievalError);
+    await expect(provider.search({ query: "x" })).rejects.toMatchObject({
+      code: "http_error",
+      retryable: false,
+    });
   });
 
-  it("returns empty array on network error", async () => {
+  it("throws a retryable RetrievalError on network error", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => {
       throw new Error("DNS failure");
     });
     const provider = makeProvider({ fetchImpl });
-    const sources = await provider.search({ query: "x" });
-    expect(sources).toEqual([]);
+    await expect(provider.search({ query: "x" })).rejects.toBeInstanceOf(RetrievalError);
+    await expect(provider.search({ query: "x" })).rejects.toMatchObject({
+      code: "network_error",
+      retryable: true,
+    });
   });
 
-  it("returns empty array on invalid JSON body", async () => {
+  it("throws a retryable RetrievalError on invalid JSON body", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response("not json at all", { status: 200 }),
     );
     const provider = makeProvider({ fetchImpl });
-    const sources = await provider.search({ query: "x" });
-    expect(sources).toEqual([]);
+    await expect(provider.search({ query: "x" })).rejects.toBeInstanceOf(RetrievalError);
+    await expect(provider.search({ query: "x" })).rejects.toMatchObject({
+      code: "network_error",
+      retryable: true,
+    });
   });
 
   it("clamps maxResults to the [1,20] range", async () => {
@@ -195,7 +205,7 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("respects the caller's AbortSignal (pre-aborted)", async () => {
+  it("respects the caller's AbortSignal (pre-aborted) by throwing a non-retryable RetrievalError", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => {
       // Should never be reached — pre-aborted caller signal triggers the
       // early return path.
@@ -204,8 +214,9 @@ describe("TavilyRetrievalProvider (R215)", () => {
     const provider = makeProvider({ fetchImpl });
     const ctrl = new AbortController();
     ctrl.abort();
-    const sources = await provider.search({ query: "x", signal: ctrl.signal });
-    expect(sources).toEqual([]);
+    await expect(
+      provider.search({ query: "x", signal: ctrl.signal }),
+    ).rejects.toMatchObject({ code: "network_error", retryable: false });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
