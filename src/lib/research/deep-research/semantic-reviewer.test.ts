@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { createDeterministicStructuredCompletionProvider } from "@/lib/providers/mock-structured-completion";
-import type { StructuredCompletionProvider } from "@/lib/providers/structured-completion";
+import {
+  StructuredCompletionError,
+  type StructuredCompletionRequest,
+  type StructuredCompletionProvider,
+} from "@/lib/providers/structured-completion";
 import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
 import { createResearchSession, deleteSession } from "@/lib/research/research-engine";
 import type {
@@ -253,6 +257,203 @@ describe("DeepSemanticReviewer", () => {
         finding.claimId === claim.id && finding.claimValueHash === claim.valueHash
       )
     )).toBe(true);
+  });
+
+  it("adjudicates all claims through bounded claim-scoped batches", async () => {
+    let session = await fixtureSession([
+      "market-sizer",
+      "competitor-analyst",
+      "pain-detective",
+      "pricing-scout",
+      "channel-scout",
+    ]);
+    const base = successfulProvider();
+    const adjudicationPayloads: Record<string, unknown>[] = [];
+    let activeAdjudicationCalls = 0;
+    let maxActiveAdjudicationCalls = 0;
+    const provider: StructuredCompletionProvider = {
+      ...base,
+      async complete<T>(request: StructuredCompletionRequest<T>) {
+        if (request.schemaName === "deep_adjudication") {
+          adjudicationPayloads.push(parsePayload(request.userPrompt));
+          activeAdjudicationCalls += 1;
+          maxActiveAdjudicationCalls = Math.max(
+            maxActiveAdjudicationCalls,
+            activeAdjudicationCalls,
+          );
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            return await base.complete<T>(request);
+          } finally {
+            activeAdjudicationCalls -= 1;
+          }
+        }
+        return base.complete<T>(request);
+      },
+    };
+    const reviewer = new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() });
+
+    session = await reviewer.runPass(session, "claim_source_entailment");
+    session = await reviewer.runPass(session, "independent_corroboration_conflict");
+    const claims = session.validation?.version === 2 ? session.validation.claims : [];
+    session = await reviewer.runPass(session, "adjudication");
+
+    expect(claims).toHaveLength(25);
+    expect(adjudicationPayloads).toHaveLength(4);
+    expect(adjudicationPayloads.map((payload) =>
+      (payload.claims as ResearchClaim[]).length
+    )).toEqual([7, 7, 7, 4]);
+    expect(maxActiveAdjudicationCalls).toBe(3);
+    expect(activeAdjudicationCalls).toBe(0);
+    expect(adjudicationPayloads.every((payload) => {
+      const batchClaims = payload.claims as ResearchClaim[];
+      const batchClaimIds = new Set(batchClaims.map((claim) => claim.id));
+      const findings = payload.findings as Array<{ claimId: string }>;
+      const sourceCatalog = payload.sourceCatalog as Array<{ claimIds?: string[] }>;
+      return findings.length === batchClaims.length * 2 &&
+        findings.every((finding) => batchClaimIds.has(finding.claimId)) &&
+        sourceCatalog.every((source) =>
+          source.claimIds?.every((claimId) => batchClaimIds.has(claimId)) ?? true
+        );
+    })).toBe(true);
+    expect(new Set(adjudicationPayloads.flatMap((payload) =>
+      (payload.claims as ResearchClaim[]).map((claim) => claim.id)
+    ))).toEqual(new Set(claims.map((claim) => claim.id)));
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    expect(session.validation.adjudications).toHaveLength(claims.length);
+  });
+
+  it("lets the durable stage retry a failed adjudication wave without inner retries", async () => {
+    let session = await fixtureSession([
+      "market-sizer",
+      "competitor-analyst",
+      "pain-detective",
+      "pricing-scout",
+      "channel-scout",
+    ]);
+    const base = successfulProvider();
+    let adjudicationCalls = 0;
+    let activeAdjudicationCalls = 0;
+    const provider: StructuredCompletionProvider = {
+      ...base,
+      async complete<T>(request: StructuredCompletionRequest<T>) {
+        if (request.schemaName === "deep_adjudication") {
+          adjudicationCalls += 1;
+          const callIndex = adjudicationCalls;
+          activeAdjudicationCalls += 1;
+          try {
+            await new Promise((resolve) => setTimeout(resolve, callIndex === 1 ? 5 : 20));
+            if (callIndex === 1) {
+              throw new StructuredCompletionError({
+                code: "timeout",
+                providerId: "review-provider",
+                message: "Timed out in the bounded batch.",
+                retryable: true,
+              });
+            }
+            return await base.complete<T>(request);
+          } finally {
+            activeAdjudicationCalls -= 1;
+          }
+        }
+        return base.complete<T>(request);
+      },
+    };
+    const reviewer = new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() });
+    session = await reviewer.runPass(session, "claim_source_entailment");
+    session = await reviewer.runPass(session, "independent_corroboration_conflict");
+
+    await expect(reviewer.runPass(session, "adjudication")).rejects.toMatchObject({
+      code: "semantic_reviewer_timeout",
+      retryable: true,
+    });
+    expect(adjudicationCalls).toBe(3);
+    expect(activeAdjudicationCalls).toBe(0);
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    expect(session.validation.protocol.completedPassKinds).not.toContain("adjudication");
+    expect(session.validation.adjudications).toHaveLength(0);
+  });
+
+  it("rejects a structurally valid cross-batch adjudication response", async () => {
+    let session = await fixtureSession([
+      "market-sizer",
+      "competitor-analyst",
+      "pain-detective",
+      "pricing-scout",
+      "channel-scout",
+    ]);
+    const setupReviewer = new DeepSemanticReviewer({
+      provider: successfulProvider(),
+      retrieval: liveRetrieval(),
+    });
+    session = await setupReviewer.runPass(session, "claim_source_entailment");
+    session = await setupReviewer.runPass(session, "independent_corroboration_conflict");
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    const allClaims = session.validation.claims;
+    const corruptProvider = liveScriptedProvider(({ userPrompt }) => {
+      const payload = parsePayload(userPrompt);
+      const batchClaims = payload.claims as ResearchClaim[];
+      const foreignClaim = allClaims.find(
+        (claim) => !batchClaims.some((batchClaim) => batchClaim.id === claim.id),
+      );
+      if (!foreignClaim) throw new Error("fixture requires a foreign claim");
+      return {
+        adjudications: batchClaims.map((claim, index) => ({
+          claimId: index === 0 ? foreignClaim.id : claim.id,
+          claimValueHash: index === 0 ? foreignClaim.valueHash : claim.valueHash,
+          disposition: "insufficient_evidence",
+          confidence: "low",
+          supportingSourceIds: [],
+          contradictingSourceIds: [],
+          limitations: [],
+        })),
+      };
+    });
+    const reviewer = new DeepSemanticReviewer({
+      provider: corruptProvider,
+      retrieval: liveRetrieval(),
+    });
+
+    await expect(reviewer.runPass(session, "adjudication")).rejects.toMatchObject({
+      code: "semantic_reviewer_validation_failed",
+      retryable: true,
+    });
+    expect(session.validation.protocol.completedPassKinds).not.toContain("adjudication");
+    expect(session.validation.adjudications).toHaveLength(0);
+  });
+
+  it("retains two bounded reviewer attempts for non-adjudication passes", async () => {
+    const session = await fixtureSession();
+    const base = successfulProvider();
+    let calls = 0;
+    const provider: StructuredCompletionProvider = {
+      ...base,
+      async complete<T>(request: StructuredCompletionRequest<T>) {
+        if (request.schemaName === "deep_claim_source_entailment") {
+          calls += 1;
+          if (calls === 1) {
+            throw new StructuredCompletionError({
+              code: "timeout",
+              providerId: "review-provider",
+              message: "Transient pass-one timeout.",
+              retryable: true,
+            });
+          }
+        }
+        return base.complete<T>(request);
+      },
+    };
+    const reviewer = new DeepSemanticReviewer({
+      provider,
+      retrieval: liveRetrieval(),
+      sleep: async () => undefined,
+    });
+
+    const reviewed = await reviewer.runPass(session, "claim_source_entailment");
+    expect(calls).toBe(2);
+    if (reviewed.validation?.version !== 2) throw new Error("expected V2 ledger");
+    expect(reviewed.validation.protocol.completedPassKinds)
+      .toContain("claim_source_entailment");
   });
 
   it("rejects incomplete reviewer coverage so the durable stage can retry", async () => {

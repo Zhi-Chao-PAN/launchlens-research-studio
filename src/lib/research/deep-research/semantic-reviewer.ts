@@ -27,6 +27,10 @@ const REVIEW_PROMPT_VERSION = "deep-claim-review-v1";
 const REVIEW_TIMEOUT_MS = 90_000;
 const MAX_REVIEW_ATTEMPTS = 2;
 const MAX_PROMPT_SOURCES = 80;
+const ADJUDICATION_BATCH_SIZE = 7;
+const ADJUDICATION_BATCH_CONCURRENCY = 3;
+const ADJUDICATION_BATCH_ATTEMPTS = 1;
+const ADJUDICATION_STAGE_TIMEOUT_MS = 220_000;
 
 interface ReviewEnvelope {
   findings: unknown[];
@@ -84,12 +88,8 @@ export class DeepSemanticReviewer {
 
     const reviewer = reviewerIdentity(this.options.provider, pass);
     if (pass === "adjudication") {
-      const response = await this.completeWithRetry<AdjudicationEnvelope>(
-        requestForAdjudication(ledger, reviewer, signal),
-        isAdjudicationEnvelope,
-        signal,
-      );
-      const controlled = overwriteAdjudicationAuthority(response.adjudications, reviewer);
+      const adjudications = await this.completeAdjudicationBatches(ledger, reviewer, signal);
+      const controlled = overwriteAdjudicationAuthority(adjudications, reviewer);
       ledger = applyClaimAdjudicationPass(ledger, controlled);
       assertCompleteAdjudicationCoverage(ledger);
     } else {
@@ -106,6 +106,71 @@ export class DeepSemanticReviewer {
     next.validation = ledger;
     next.updatedAt = new Date().toISOString();
     return next;
+  }
+
+  /**
+   * Keep terminal adjudication inside the durable-work lease without weakening
+   * all-claim coverage. Each provider request sees only its claim-scoped
+   * findings and sources; the ledger is committed once, after every batch has
+   * settled successfully.
+   */
+  private async completeAdjudicationBatches(
+    ledger: ValidationLedgerV2,
+    reviewer: ClaimReviewerIdentity,
+    signal?: AbortSignal,
+  ): Promise<unknown[]> {
+    const batches = chunkValues(ledger.claims, ADJUDICATION_BATCH_SIZE);
+    const adjudications: unknown[] = [];
+    const stageController = new AbortController();
+    let stageTimedOut = false;
+    const abortFromCaller = () => stageController.abort(signal?.reason);
+    signal?.addEventListener("abort", abortFromCaller, { once: true });
+    if (signal?.aborted) abortFromCaller();
+    const stageTimer = setTimeout(() => {
+      stageTimedOut = true;
+      stageController.abort(new DOMException("Adjudication stage timed out", "TimeoutError"));
+    }, ADJUDICATION_STAGE_TIMEOUT_MS);
+
+    try {
+      for (let offset = 0; offset < batches.length; offset += ADJUDICATION_BATCH_CONCURRENCY) {
+        throwIfAborted(stageController.signal);
+        const wave = batches.slice(offset, offset + ADJUDICATION_BATCH_CONCURRENCY);
+        const settled = await Promise.allSettled(
+          wave.map((claims) =>
+            this.completeWithRetry<AdjudicationEnvelope>(
+              requestForAdjudication(ledger, claims, reviewer, stageController.signal),
+              adjudicationEnvelopeValidator(claims),
+              stageController.signal,
+              ADJUDICATION_BATCH_ATTEMPTS,
+            )
+          ),
+        );
+        const failure = settled.find(
+          (result): result is PromiseRejectedResult => result.status === "rejected",
+        );
+        if (failure) throw failure.reason;
+
+        settled.forEach((result) => {
+          if (result.status === "fulfilled") {
+            adjudications.push(...result.value.adjudications);
+          }
+        });
+      }
+      return adjudications;
+    } catch (error) {
+      if (stageTimedOut) {
+        throw new DeepWorkExecutionError(
+          "semantic_reviewer_timeout",
+          true,
+          "The bounded adjudication stage exceeded its execution budget.",
+          { cause: error },
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(stageTimer);
+      signal?.removeEventListener("abort", abortFromCaller);
+    }
   }
 
   private ledgerForPass(
@@ -196,14 +261,16 @@ export class DeepSemanticReviewer {
     request: Omit<Parameters<StructuredCompletionProvider["complete"]>[0], "validate">,
     validate: (value: unknown) => value is T,
     signal?: AbortSignal,
+    maxAttempts: number = MAX_REVIEW_ATTEMPTS,
   ): Promise<T> {
-    for (let attempt = 1; attempt <= MAX_REVIEW_ATTEMPTS; attempt += 1) {
+    const attempts = Math.max(1, Math.trunc(maxAttempts));
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       throwIfAborted(signal);
       try {
         return await this.options.provider.complete<T>({ ...request, validate });
       } catch (error) {
         const retryable = error instanceof StructuredCompletionError && error.retryable;
-        if (!retryable || attempt === MAX_REVIEW_ATTEMPTS) {
+        if (!retryable || attempt === attempts) {
           throw toReviewExecutionError(error);
         }
         await this.sleep(250 * attempt, signal);
@@ -269,14 +336,17 @@ function requestForClaimReview(
 
 function requestForAdjudication(
   ledger: ValidationLedgerV2,
+  claims: readonly ResearchClaim[],
   reviewer: ClaimReviewerIdentity,
   signal?: AbortSignal,
 ) {
-  const slices = buildClaimEvidenceSlices(ledger, {
+  const claimIds = new Set(claims.map((claim) => claim.id));
+  const slices = buildClaimEvidenceSlicesForClaims(ledger, claims, {
     pass: "adjudication",
     maxTotalSources: MAX_PROMPT_SOURCES,
     minSourcesPerClaim: 1,
   });
+  assertAllClaimsHaveAtLeastOneSource(slices, "adjudication");
   const sources = uniqueSourcesFromSlices(slices);
   return {
     schemaName: "deep_adjudication",
@@ -292,21 +362,29 @@ function requestForAdjudication(
     userPrompt: serializeUntrustedResearchData({
       reviewScope: "claim_evidence_support_not_factual_truth",
       reviewer,
-      claims: ledger.claims,
-      findings: ledger.findings,
+      claims,
+      findings: ledger.findings.filter((finding) => claimIds.has(finding.claimId)),
       sourceCatalog: sources.map((source) => ({
         id: source.id,
         title: source.title,
         origin: source.origin,
-        claimIds: source.claimIds,
+        claimIds: source.claimIds?.filter((claimId) => claimIds.has(claimId)),
       })),
     }),
     signal,
     timeoutMs: REVIEW_TIMEOUT_MS,
-    maxOutputTokens: 8_192,
-    maxOutputChars: 90_000,
+    maxOutputTokens: 4_096,
+    maxOutputChars: 30_000,
     temperature: 0,
   } as const;
+}
+
+function chunkValues<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += size) {
+    chunks.push(values.slice(offset, offset + size));
+  }
+  return chunks;
 }
 
 export interface ClaimEvidenceSlice {
@@ -443,13 +521,21 @@ export function buildClaimEvidenceSlices(
   ledger: ValidationLedgerV2,
   options: BuildClaimEvidenceSlicesOptions,
 ): ClaimEvidenceSlice[] {
+  return buildClaimEvidenceSlicesForClaims(ledger, ledger.claims, options);
+}
+
+function buildClaimEvidenceSlicesForClaims(
+  ledger: ValidationLedgerV2,
+  claims: readonly ResearchClaim[],
+  options: BuildClaimEvidenceSlicesOptions,
+): ClaimEvidenceSlice[] {
   const sourcesById = new Map(ledger.reviewSources.map((source) => [source.id, source]));
   const perClaimCap = Math.max(0, options.maxSourcesPerClaim ?? 6);
   const minPerClaim = Math.min(perClaimCap, Math.max(0, options.minSourcesPerClaim));
   const maxTotalSources = Math.max(0, options.maxTotalSources);
   const catalogIds = new Set<string>();
 
-  const bindings = ledger.claims.map((claim) => {
+  const bindings = claims.map((claim) => {
     const original = claim.sourceIds
       .map((id) => sourcesById.get(id))
       .filter((source): source is ClaimReviewSource => Boolean(source))
@@ -724,12 +810,39 @@ function isAdjudicationEnvelope(value: unknown): value is AdjudicationEnvelope {
   return isRecord(value) && Array.isArray(value.adjudications);
 }
 
+function adjudicationEnvelopeValidator(
+  claims: readonly ResearchClaim[],
+): (value: unknown) => value is AdjudicationEnvelope {
+  const expectedClaims = new Map(claims.map((claim) => [claim.id, claim.valueHash]));
+  return (value: unknown): value is AdjudicationEnvelope => {
+    if (!isAdjudicationEnvelope(value) || value.adjudications.length !== claims.length) {
+      return false;
+    }
+    const seen = new Set<string>();
+    for (const adjudication of value.adjudications) {
+      if (!isRecord(adjudication) || typeof adjudication.claimId !== "string") return false;
+      if (seen.has(adjudication.claimId)) return false;
+      if (expectedClaims.get(adjudication.claimId) !== adjudication.claimValueHash) return false;
+      seen.add(adjudication.claimId);
+    }
+    return seen.size === expectedClaims.size;
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function toReviewExecutionError(error: unknown): DeepWorkExecutionError {
   if (error instanceof DeepWorkExecutionError) return error;
+  if (error instanceof StructuredCompletionError && error.code === "aborted") {
+    return new DeepWorkExecutionError(
+      "execution_aborted",
+      true,
+      "Deep semantic review was interrupted and will be retried.",
+      { cause: error },
+    );
+  }
   if (error instanceof StructuredCompletionError) {
     return new DeepWorkExecutionError(
       `semantic_reviewer_${error.code}`,
