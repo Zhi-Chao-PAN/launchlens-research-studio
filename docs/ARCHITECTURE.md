@@ -2,7 +2,7 @@
 
 This document describes the technical architecture of LaunchLens Research Studio in detail.
 
-> Current execution model: Standard keeps the request-bound 5+1 engine, while Deep Research uses a Redis-authoritative ten-unit work graph with observer-only SSE. See [ADR-001](./decisions/ADR-001-durable-deep-research.md) for the durability, fencing, validation, and recovery rationale.
+> Current execution model: Standard keeps the request-bound 5+1 engine, while Deep Research uses a Redis-authoritative eleven-unit work graph with observer-only SSE. See [ADR-001](./decisions/ADR-001-durable-deep-research.md) for the durability, fencing, validation, and recovery rationale.
 
 ---
 

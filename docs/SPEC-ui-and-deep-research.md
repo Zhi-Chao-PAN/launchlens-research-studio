@@ -10,7 +10,7 @@ Decision record: [ADR-001](./decisions/ADR-001-durable-deep-research.md)
 LaunchLens Research Studio now has two honest research products:
 
 - **Standard**: a focused 5+1 exploratory scan targeting 3–5 minutes.
-- **Deep Research**: a durable ten-unit protocol targeting 10–20 minutes, with mandatory real retrieval, three ordered semantic review passes, evidence-constrained synthesis, and resumable progress.
+- **Deep Research**: a durable eleven-unit protocol targeting 10–20 minutes, with mandatory real retrieval, three ordered semantic review passes, a dedicated gap-fill pass, evidence-constrained synthesis, and resumable progress.
 
 The premium workspace and Deep implementation exist in code. Deep remains **Preview** in an environment until its runtime capability probe verifies every production dependency. This repository does not silently convert a missing production dependency into mock or shallow output.
 
@@ -37,7 +37,7 @@ The premium workspace and Deep implementation exist in code. Deep remains **Prev
 - Show Standard and Deep side by side with runtime and validation depth.
 - Read Deep availability from `GET /api/research/capabilities`; never rely only on a compile-time label.
 - When Deep is Preview, show the number of ready production controls and the first blocker.
-- When a Deep run is active, show committed progress across its fixed ten-unit work graph.
+- When a Deep run is active, show committed progress across its fixed eleven-unit work graph.
 - A historical dossier that executed the V2 three-pass protocol must be described by its recorded protocol, even if the current environment cannot start a new Deep run.
 
 ## Deep Research Protocol
@@ -49,11 +49,12 @@ The work graph is fixed and ordered:
 3. Pain specialist.
 4. Competitor specialist.
 5. Market sizing specialist.
-6. Claim-to-source entailment review.
-7. Independent corroboration and conflict review.
-8. Adjudication.
-9. Evidence-constrained synthesis.
-10. Final integrity gate.
+6. Claim-to-source entailment review (Pass 1).
+7. Targeted gap-fill retrieval (its own work unit, runs after Pass 1 and before Pass 2).
+8. Independent corroboration and conflict review (Pass 2).
+9. Adjudication (Pass 3).
+10. Evidence-constrained synthesis.
+11. Final integrity gate.
 
 Each worker wake claims at most one unit. Every unit has bounded attempts. A successful unit is committed through revision, lease, and fencing checks before another wake is requested.
 
@@ -90,7 +91,9 @@ Independent retrieval sources (origin `independent_retrieval`) must declare whic
 
 Between Pass 1 and Pass 2, a separate `gap_fill` work unit inspects Pass 1 findings and identifies "gap" claims whose own cited sources did not entail them (verdict `not_entailed` or `insufficient_evidence`). For each gap claim (capped at 16 per run to bound latency), it issues a single targeted retrieval using `buildGapFillQuery(query, agentId, claimText)` -- phrased specifically to find a primary source that states the bounded figure, rather than the initial fan-out or the corroboration phrasing.
 
-Retrieved sources are registered as `independent_retrieval` with `claimIds: [claim.id]` and a `gap-` prefixed id. The `gapFill` ledger field records `completedAt`, `targetedClaimIds`, `sourcesAdded`, and `targetedClaimCount` so downstream Pass 2/3 can rerun only for the targeted slice (via `stripTargetedPassOutputs`).
+Retrieved sources are registered as `independent_retrieval` with `claimIds: [claim.id]` and a `gap-` prefixed id. The `gapFill` ledger field records `completedAt`, `targetedClaimIds`, `sourcesAdded`, and `targetedClaimCount` so the UI, ledger guard, and durable execution can prove what was targeted.
+
+Pass 2 and Pass 3 are not narrowed to the targeted slice: they run their normal full-claim protocol, but with the new gap-fill sources now visible in `reviewSources`. Because gap-fill sources carry a per-claim `claimIds` binding and the corroboration pass enforces claim↔source binding, the new sources naturally reach exactly the gap claims that need them without requiring a separate `stripTargetedPassOutputs` rewind. (That helper remains in the test suite as a documentation of the prior design but is not invoked in production code paths.)
 
 When no Pass 1 findings are gaps (the common case after the recent improvements), the stage stamps the ledger with a `gapFill` no-op marker and the run pays zero retrieval cost. This is what makes Deep mode measurably more thorough than Standard: Standard gives you all 5 specialists' first-pass outputs; Deep gives you those plus a second, claim-targeted retrieval pass for anything that was unsourced.
 

@@ -1,4 +1,4 @@
-import type { RetrievalProvider, RetrievedSource } from "@/lib/providers/retrieval.types";
+import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
 import {
   serializeUntrustedResearchData,
   StructuredCompletionError,

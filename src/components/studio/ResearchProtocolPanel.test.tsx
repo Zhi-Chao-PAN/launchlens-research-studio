@@ -304,12 +304,12 @@ describe("ResearchProtocolPanel", () => {
     expect(screen.getAllByText(/Next blocker: independent recovery/)).toHaveLength(2);
   });
 
-  it("renders the durable ten-unit work graph from observer progress", () => {
+  it("renders the durable eleven-unit work graph from observer progress", () => {
     const deepRun: DeepRunProgress = {
       revision: 12,
       lifecycle: "active",
       currentWorkIndex: 5,
-      totalWork: 10,
+      totalWork: 11,
       currentWork: {
         id: "review:claim-source-entailment",
         kind: "semantic_pass_1",
@@ -330,11 +330,11 @@ describe("ResearchProtocolPanel", () => {
       />,
     );
 
-    expect(screen.getByText(/5\/10 work units committed/)).toBeTruthy();
+    expect(screen.getByText(/5\/11 work units committed/)).toBeTruthy();
     expect(screen.getByText(/Review 1 · claim-source entailment/)).toBeTruthy();
     expect(screen.getByText(/attempt 2\/3/)).toBeTruthy();
-    const graph = screen.getByRole("progressbar", { name: /5\/10 work units committed/ });
+    const graph = screen.getByRole("progressbar", { name: /5\/11 work units committed/ });
     expect(graph.getAttribute("aria-valuenow")).toBe("5");
-    expect(graph.querySelectorAll("span")).toHaveLength(10);
+    expect(graph.querySelectorAll("span")).toHaveLength(11);
   });
 });

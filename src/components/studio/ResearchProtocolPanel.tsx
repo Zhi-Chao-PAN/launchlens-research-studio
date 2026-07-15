@@ -410,7 +410,7 @@ export function ResearchProtocolPanel({
             </span>
           </div>
           <div
-            className="mt-2 grid grid-cols-10 gap-1"
+            className="mt-2 grid grid-cols-11 gap-1"
             role="progressbar"
             aria-label={t("researchProtocol.deepWorkProgress", {
               completed: committedDeepWork,
