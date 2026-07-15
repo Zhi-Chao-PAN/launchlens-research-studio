@@ -7,6 +7,7 @@
 } from "@/lib/schema/research-schema";
 import type { Stage2TrackingContext } from "@/lib/analytics/stage2-context";
 import { randomBytes } from "node:crypto";
+import { getDomain } from "tldts";
 import type { ProviderFallbackDetail, ProviderFallbackReason } from "@/lib/providers/provider.types";
 import { generateMockAgentOutput } from "@/lib/providers/mock-provider";
 import { applyPersona } from "@/lib/providers/mock-persona";
@@ -15,12 +16,16 @@ import { recordTelemetry } from "@/lib/telemetry/telemetry";
 import { isOpen as breakerIsOpen, recordSuccess as breakerRecordSuccess, recordFailure as breakerRecordFailure } from "@/lib/utils/circuit-breaker";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { selectRetrievalProvider } from "@/lib/providers/retrieval-registry";
-import type { RetrievedSource } from "@/lib/providers/retrieval.types";
+import {
+  RetrievalError,
+  type RetrievedSource,
+} from "@/lib/providers/retrieval.types";
 import { saveResearchRun } from "@/lib/research/storage";
 import { researchRunFromSession, storePersistentResearchRun } from "@/lib/research/run-store";
 import {
   allowlistAgentOutput,
   buildDeepRetrievalQueries,
+  buildDeepRetrievalRescueQueries,
   buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
   createAgentEvidenceEntry,
@@ -63,6 +68,7 @@ const MAX_STANDARD_SESSION_BUDGET_MS = 285_000;
 const MAX_DEEP_AGENT_STAGE_BUDGET_MS = 240_000;
 const MIN_DEEP_RETRIEVED_SOURCES = 2;
 const MAX_DEEP_RETRIEVED_SOURCES = 6;
+const DEEP_MIN_RETRIEVAL_SCORE = 0.35;
 const DEEP_CANCEL_POLL_INTERVAL_MS = 500;
 
 const SPECIALIST_AGENT_IDS = new Set<AgentId>([
@@ -94,6 +100,8 @@ export class ResearchAgentStageError extends Error {
     code: ResearchAgentStageErrorCode,
     message: string,
     readonly degradedReason?: NonNullable<AgentState["degradedReason"]>,
+    /** Explicit durable retry decision when the stage has stronger evidence than its error code. */
+    readonly retryable?: boolean,
   ) {
     super(message);
     this.name = "ResearchAgentStageError";
@@ -706,9 +714,14 @@ function updateAgentState(
 interface AgentEvidenceInput {
   retrievedSources: RetrievedSource[];
   useStrictAllowlist: boolean;
+  retrievalFailure?: {
+    code: string;
+    retryable: boolean;
+  };
   deepCoverage?: {
     coveredQueries: number;
     distinctHosts: number;
+    queryCount: number;
   };
 }
 
@@ -725,6 +738,7 @@ async function prepareAgentEvidence(
   agentId: AgentId,
   canUseRetrievedEvidence: boolean,
   signal?: AbortSignal,
+  minimumSources: number = MIN_DEEP_RETRIEVED_SOURCES,
 ): Promise<AgentEvidenceInput> {
   const ledger = ensureEvidenceLedger(session);
   const entry = ledger.agents[agentId]!;
@@ -776,9 +790,10 @@ async function prepareAgentEvidence(
   const focusedQueries = deepRetrieval
     ? buildDeepRetrievalQueries(session.query, agentId)
     : [buildFocusedRetrievalQuery(session.query, agentId)];
+  const executedQueries = [...focusedQueries];
   const focusedQuery = focusedQueries[0];
   try {
-    const resultSets = await Promise.all(
+    const primarySettled = await Promise.allSettled(
       focusedQueries.map((query, queryIndex) =>
         retrievalProvider.search({
           query,
@@ -786,7 +801,7 @@ async function prepareAgentEvidence(
           agentId,
           maxResults: deepRetrieval ? 5 : 6,
           searchDepth: deepRetrieval ? "advanced" : "basic",
-          minScore: deepRetrieval ? 0.35 : undefined,
+          minScore: deepRetrieval ? DEEP_MIN_RETRIEVAL_SCORE : undefined,
           includeDomains:
             deepRetrieval && agentId === "pain-detective" && queryIndex === 0
               ? DEEP_VOC_DOMAINS
@@ -795,9 +810,64 @@ async function prepareAgentEvidence(
         }),
       ),
     );
-    const deepSelection = deepRetrieval
+    const failures = rejectedReasons(primarySettled);
+    if (!deepRetrieval && primarySettled[0]?.status === "rejected") {
+      throw primarySettled[0].reason;
+    }
+    if (
+      deepRetrieval &&
+      failures.length > 0 &&
+      primarySettled.every((result) => result.status === "rejected")
+    ) {
+      throw preferredRetrievalFailure(failures);
+    }
+    const resultSets = primarySettled.map((result) =>
+      result.status === "fulfilled"
+        ? (deepRetrieval ? admitDeepSourceCandidates(result.value) : result.value)
+        : [],
+    );
+    let deepSelection = deepRetrieval
       ? selectDeepRetrievedSources(resultSets, 8)
       : undefined;
+
+    if (
+      deepRetrieval &&
+      deepSelection &&
+      needsDeepRetrievalRescue(deepSelection, minimumSources)
+    ) {
+      const rescueQueries = buildDeepRetrievalRescueQueries(session.query, agentId);
+      const excludedDomains = sourcePublisherDomains(deepSelection.sources);
+      executedQueries.push(...rescueQueries);
+      const rescueSettled = await Promise.allSettled(
+        rescueQueries.map((query) =>
+          retrievalProvider.search({
+            query,
+            agentId,
+            maxResults: 8,
+            searchDepth: "advanced",
+            minScore: DEEP_MIN_RETRIEVAL_SCORE,
+            excludeDomains: excludedDomains,
+            signal,
+          }),
+        ),
+      );
+      failures.push(...rejectedReasons(rescueSettled));
+      const rescueSets = rescueSettled.map((result) =>
+        result.status === "fulfilled" ? admitDeepSourceCandidates(result.value) : [],
+      );
+      resultSets.push(...rescueSets);
+      deepSelection = selectDeepRetrievedSources(resultSets, 8);
+    }
+
+    if (
+      deepRetrieval &&
+      deepSelection &&
+      needsDeepRetrievalRescue(deepSelection, minimumSources) &&
+      failures.length > 0
+    ) {
+      throw preferredRetrievalFailure(failures);
+    }
+
     const rawSources = deepSelection?.sources ?? resultSets[0] ?? [];
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -808,7 +878,7 @@ async function prepareAgentEvidence(
       sourceOrigin: retrievedSources.length > 0 ? "agent_retrieval" : "none",
       providerId: retrievalProvider.id,
       focusedQuery,
-      ...(deepRetrieval ? { focusedQueries } : {}),
+      ...(deepRetrieval ? { focusedQueries: executedQueries } : {}),
       sourceCount: retrievedSources.length,
       sources: retrievedSources,
       ...(retrievedSources.length === 0 ? { unavailableReason: "no_usable_sources" } : {}),
@@ -823,6 +893,7 @@ async function prepareAgentEvidence(
             deepCoverage: {
               coveredQueries: deepSelection.coveredQueries,
               distinctHosts: deepSelection.distinctHosts,
+              queryCount: executedQueries.length,
             },
           }
         : {}),
@@ -839,7 +910,7 @@ async function prepareAgentEvidence(
       sourceOrigin: "none",
       providerId: retrievalProvider.id,
       focusedQuery,
-      ...(deepRetrieval ? { focusedQueries } : {}),
+      ...(deepRetrieval ? { focusedQueries: executedQueries } : {}),
       sourceCount: 0,
       sources: [],
       // Keep provider exception text out of persisted sessions: upstream
@@ -848,7 +919,13 @@ async function prepareAgentEvidence(
     };
     entry.grounding = "ungrounded";
     entry.updatedAt = new Date().toISOString();
-    return { retrievedSources: [], useStrictAllowlist: false };
+    return {
+      retrievedSources: [],
+      useStrictAllowlist: false,
+      retrievalFailure: error instanceof RetrievalError
+        ? { code: error.code, retryable: error.retryable }
+        : { code: "unexpected_failure", retryable: true },
+    };
   }
 }
 
@@ -880,7 +957,7 @@ function selectDeepRetrievedSources(
 ): { sources: RetrievedSource[]; coveredQueries: number; distinctHosts: number } {
   const merged: RetrievedSource[] = [];
   const seenUrls = new Set<string>();
-  const hostCounts = new Map<string, number>();
+  const publisherCounts = new Map<string, number>();
   const coveredQueryIndexes = new Set<number>();
   const maxLength = Math.max(0, ...resultSets.map((sources) => sources.length));
   for (let index = 0; index < maxLength && merged.length < maxSources; index += 1) {
@@ -890,10 +967,17 @@ function selectDeepRetrievedSources(
       if (!source?.url) continue;
       const normalizedUrl = canonicalizeSafeExternalUrl(source.url);
       if (!normalizedUrl) continue;
-      const hostname = new URL(normalizedUrl).hostname.toLowerCase();
-      if (seenUrls.has(normalizedUrl) || (hostCounts.get(hostname) ?? 0) >= 2) continue;
+      const publisherDomain = publisherDomainForUrl(normalizedUrl);
+      if (
+        !publisherDomain ||
+        seenUrls.has(normalizedUrl) ||
+        (publisherCounts.get(publisherDomain) ?? 0) >= 2
+      ) continue;
       seenUrls.add(normalizedUrl);
-      hostCounts.set(hostname, (hostCounts.get(hostname) ?? 0) + 1);
+      publisherCounts.set(
+        publisherDomain,
+        (publisherCounts.get(publisherDomain) ?? 0) + 1,
+      );
       coveredQueryIndexes.add(queryIndex);
       merged.push({ ...source, url: normalizedUrl });
       if (merged.length >= maxSources) break;
@@ -902,8 +986,74 @@ function selectDeepRetrievedSources(
   return {
     sources: merged,
     coveredQueries: coveredQueryIndexes.size,
-    distinctHosts: hostCounts.size,
+    // Kept under the existing field name for the public progress contract;
+    // the count is PSL-aware publisher domains, not attacker-controlled subdomains.
+    distinctHosts: publisherCounts.size,
   };
+}
+
+function admitDeepSourceCandidates(
+  sources: readonly RetrievedSource[],
+): RetrievedSource[] {
+  return sources.filter((source) =>
+    typeof source.title === "string" &&
+    source.title.trim().length > 0 &&
+    typeof source.snippet === "string" &&
+    source.snippet.trim().length > 0 &&
+    typeof source.score === "number" &&
+    Number.isFinite(source.score) &&
+    source.score >= DEEP_MIN_RETRIEVAL_SCORE,
+  );
+}
+
+function rejectedReasons(
+  results: readonly PromiseSettledResult<unknown>[],
+): unknown[] {
+  return results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+}
+
+function preferredRetrievalFailure(failures: readonly unknown[]): unknown {
+  return (
+    failures.find(
+      (failure) => failure instanceof RetrievalError && failure.retryable,
+    ) ??
+    failures.find((failure) => failure instanceof RetrievalError) ??
+    failures[0] ??
+    new RetrievalError(
+      "network_error",
+      true,
+      "Deep retrieval fan-out failed without a typed provider error.",
+    )
+  );
+}
+
+function needsDeepRetrievalRescue(
+  selection: ReturnType<typeof selectDeepRetrievedSources>,
+  minimumSources: number,
+): boolean {
+  return (
+    selection.sources.length < minimumSources ||
+    selection.coveredQueries < 2 ||
+    selection.distinctHosts < 3
+  );
+}
+
+function sourcePublisherDomains(sources: readonly RetrievedSource[]): string[] {
+  const domains = new Set<string>();
+  for (const source of sources) {
+    const safeUrl = canonicalizeSafeExternalUrl(source.url);
+    if (!safeUrl) continue;
+    const publisherDomain = publisherDomainForUrl(safeUrl);
+    if (publisherDomain) domains.add(publisherDomain);
+  }
+  return [...domains].slice(0, 20);
+}
+
+function publisherDomainForUrl(safeUrl: string): string {
+  const hostname = new URL(safeUrl).hostname.toLowerCase();
+  return getDomain(hostname, { allowPrivateDomains: true }) ?? hostname;
 }
 
 // Simulate agent work progress with step-by-step updates.
@@ -1010,6 +1160,7 @@ async function runAgent(
       agentId,
       !provider.isMock,
       executionSignal,
+      minimumRetrievedSources,
     );
     if (strict) {
       const retrieval = ensureEvidenceLedger(session).agents[agentId]!.retrieval;
@@ -1018,26 +1169,38 @@ async function runAgent(
         (retrieval.status === "unavailable" &&
           retrieval.unavailableReason !== "no_usable_sources")
       ) {
+        const failureCode = retrieval.status === "not_configured"
+          ? "not_configured"
+          : (evidenceInput.retrievalFailure?.code ?? "unexpected_failure");
         throw new ResearchAgentStageError(
           "retrieval_unavailable",
-          "Deep Research requires an available real retrieval provider.",
+          `Deep Research retrieval provider is unavailable (${failureCode}).`,
+          undefined,
+          retrieval.status === "unavailable"
+            ? (evidenceInput.retrievalFailure?.retryable ?? true)
+            : false,
+        );
+      }
+      if (
+        session.mode === "deep" &&
+        evidenceInput.deepCoverage &&
+        (evidenceInput.retrievedSources.length < minimumRetrievedSources ||
+          evidenceInput.deepCoverage.coveredQueries < 2 ||
+          evidenceInput.deepCoverage.distinctHosts < 3)
+      ) {
+        throw new ResearchAgentStageError(
+          "retrieval_insufficient",
+          `Deep retrieval admitted ${evidenceInput.retrievedSources.length}/${minimumRetrievedSources} usable sources from ${evidenceInput.deepCoverage.coveredQueries}/${evidenceInput.deepCoverage.queryCount} queries across ${evidenceInput.deepCoverage.distinctHosts}/3 publisher domains after bounded diversity rescue.`,
+          undefined,
+          false,
         );
       }
       if (evidenceInput.retrievedSources.length < minimumRetrievedSources) {
         throw new ResearchAgentStageError(
           "retrieval_insufficient",
           `Deep Research requires at least ${minimumRetrievedSources} usable retrieved sources for this specialist.`,
-        );
-      }
-      if (
-        session.mode === "deep" &&
-        evidenceInput.deepCoverage &&
-        (evidenceInput.deepCoverage.coveredQueries < 2 ||
-          evidenceInput.deepCoverage.distinctHosts < 3)
-      ) {
-        throw new ResearchAgentStageError(
-          "retrieval_insufficient",
-          "Deep Research requires admitted evidence from at least 2 focused queries and 3 distinct hosts.",
+          undefined,
+          false,
         );
       }
     }

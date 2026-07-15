@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { TavilyRetrievalProvider } from "./tavily-retrieval-provider";
 import { RetrievalError } from "./retrieval.types";
 
@@ -18,6 +18,10 @@ function makeProvider(opts: {
 }
 
 describe("TavilyRetrievalProvider (R215)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("posts to /search with the right headers and body", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify({ results: [] }), {
@@ -91,6 +95,36 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(sources[0].snippet.length).toBe(900);
   });
 
+  it("normalizes, deduplicates, filters, and caps excluded domains in the request body", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ results: [] }), { status: 200 }),
+    );
+    const provider = makeProvider({ fetchImpl });
+    const validDomains = Array.from({ length: 25 }, (_, index) => `source-${index}.example.com`);
+
+    await provider.search({
+      query: "exclude low-quality sources",
+      excludeDomains: [
+        " https://SPAM.example.com/articles ",
+        "spam.example.com",
+        "not a host",
+        "localhost",
+        "https://user@credential.example.com",
+        ...validDomains,
+      ],
+    });
+
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as { exclude_domains?: string[] };
+    expect(body.exclude_domains).toHaveLength(20);
+    expect(body.exclude_domains).toEqual([
+      "spam.example.com",
+      ...validDomains.slice(0, 19),
+    ]);
+    expect(body.exclude_domains).not.toContain("not a host");
+    expect(body.exclude_domains).not.toContain("credential.example.com");
+  });
+
   it("returns parsed sources with deterministic ids and retrievedAt", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(
@@ -129,13 +163,14 @@ describe("TavilyRetrievalProvider (R215)", () => {
     expect(sources[1].confidence).toBe("medium");
   });
 
-  it("drops results missing title or url", async () => {
+  it("drops results missing title, url, or an evidence snippet", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
           results: [
             { url: "https://a.com", content: "x" }, // no title → drop
             { title: "no-url", content: "x" }, // no url → drop
+            { title: "no-content", url: "https://empty.example" },
             { title: "ok", url: "https://ok.com", content: "x" },
           ],
         }),
@@ -168,6 +203,30 @@ describe("TavilyRetrievalProvider (R215)", () => {
       code: "network_error",
       retryable: true,
     });
+  });
+
+  it("treats an internal provider timeout as retryable", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      }),
+    );
+    const provider = makeProvider({ fetchImpl });
+
+    const assertion = expect(
+      provider.search({ query: "slow retrieval" }),
+    ).rejects.toMatchObject({
+      code: "network_error",
+      retryable: true,
+      message: expect.stringContaining("timed out"),
+    });
+    await vi.advanceTimersByTimeAsync(12_000);
+    await assertion;
   });
 
   it("throws a retryable RetrievalError on invalid JSON body", async () => {

@@ -10,6 +10,7 @@ import type {
   RetrievalQuery,
   RetrievedSource,
 } from "@/lib/providers/retrieval.types";
+import { RetrievalError } from "@/lib/providers/retrieval.types";
 
 const mocks = vi.hoisted(() => ({
   provider: undefined as ResearchProvider | undefined,
@@ -43,12 +44,12 @@ import {
 
 const AGENT_ID = "market-sizer" as const;
 
-function source(index: number): RetrievedSource {
+function source(index: number, hostname = "evidence.example"): RetrievedSource {
   const now = "2026-07-13T10:00:00.000Z";
   return {
     id: `raw-source-${index}`,
     title: `Independent source ${index}`,
-    url: `https://evidence.example/source-${index}`,
+    url: `https://${hostname}/source-${index}`,
     snippet: `Evidence excerpt ${index}`,
     accessedAt: now,
     retrievedAt: now,
@@ -215,8 +216,36 @@ describe("runResearchAgentStage", () => {
 
     await expect(
       runResearchAgentStage(session.id, AGENT_ID, { stepDelayMs: 0 }),
-    ).rejects.toMatchObject({ code: "retrieval_unavailable" });
+    ).rejects.toMatchObject({
+      code: "retrieval_unavailable",
+      message: expect.stringContaining("not_configured"),
+      retryable: false,
+    });
     expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "permanent", retryable: false },
+    { label: "transient", retryable: true },
+  ])("preserves a typed $label retrieval retry decision", async ({ retryable }) => {
+    mocks.search.mockRejectedValue(
+      new RetrievalError("http_error", retryable, "safe test retrieval failure"),
+    );
+    const session = createResearchSession(
+      "typed retrieval failure",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    await expect(
+      runResearchAgentStage(session.id, AGENT_ID, { stepDelayMs: 0 }),
+    ).rejects.toMatchObject({
+      code: "retrieval_unavailable",
+      message: expect.stringContaining("http_error"),
+      retryable,
+    });
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 
@@ -230,6 +259,170 @@ describe("runResearchAgentStage", () => {
     await expect(
       runResearchAgentStage(session.id, AGENT_ID, { stepDelayMs: 0 }),
     ).rejects.toMatchObject({ code: "retrieval_insufficient" });
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("performs a bounded diversity rescue without weakening the Deep evidence contract", async () => {
+    mocks.search.mockImplementation(async (query) => {
+      if (query.excludeDomains?.includes("dominant.example")) {
+        return [
+          source(2, "independent-a.example"),
+          source(3, "independent-b.example"),
+        ];
+      }
+      return [source(1, "dominant.example")];
+    });
+    const session = createResearchSession(
+      "Deep market evidence for a bilingual APAC research workspace",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    const result = await runResearchAgentStage(session.id, AGENT_ID, {
+      minimumRetrievedSources: 3,
+      stepDelayMs: 0,
+    });
+
+    expect(mocks.search).toHaveBeenCalledTimes(5);
+    const rescueCalls = mocks.search.mock.calls.slice(3).map(([query]) => query);
+    expect(rescueCalls).toHaveLength(2);
+    expect(rescueCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          excludeDomains: ["dominant.example"],
+          maxResults: 8,
+          minScore: 0.35,
+          searchDepth: "advanced",
+        }),
+      ]),
+    );
+    expect(result.session.evidence?.agents[AGENT_ID]).toMatchObject({
+      retrieval: {
+        status: "retrieved",
+        sourceCount: 3,
+        focusedQueries: expect.arrayContaining([
+          expect.stringContaining("Independent evidence"),
+        ]),
+      },
+      grounding: "grounded",
+    });
+    expect(result.session.evidence?.agents[AGENT_ID]?.retrieval.focusedQueries).toHaveLength(5);
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports safe Deep retrieval coverage diagnostics after diversity rescue is exhausted", async () => {
+    mocks.search.mockResolvedValue([]);
+    const session = createResearchSession(
+      "Deep evidence diagnostics for an APAC SaaS product",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    await expect(
+      runResearchAgentStage(session.id, AGENT_ID, {
+        minimumRetrievedSources: 3,
+        stepDelayMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "retrieval_insufficient",
+      retryable: false,
+      message: expect.stringMatching(
+        /admitted 0\/3 usable sources from 0\/5 queries across 0\/3 publisher domains/i,
+      ),
+    });
+    expect(mocks.search).toHaveBeenCalledTimes(5);
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("does not admit low-score or empty-snippet rescue candidates", async () => {
+    mocks.search.mockResolvedValue([
+      { ...source(1, "low-score.example"), score: 0.34 },
+      { ...source(2, "empty-snippet.example"), snippet: "" },
+    ]);
+    const session = createResearchSession(
+      "Deep source quality for an APAC market research workspace",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    await expect(
+      runResearchAgentStage(session.id, AGENT_ID, {
+        minimumRetrievedSources: 3,
+        stepDelayMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "retrieval_insufficient",
+      message: expect.stringMatching(/admitted 0\/3 usable sources/i),
+      retryable: false,
+    });
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("keeps sufficient fulfilled rescue evidence when a sibling rescue request fails", async () => {
+    mocks.search.mockImplementation(async (query) => {
+      if (query.query.startsWith("Independent evidence")) {
+        return [
+          source(2, "independent-a.example"),
+          source(3, "independent-b.example"),
+        ];
+      }
+      if (query.query.startsWith("Dated primary")) {
+        throw new RetrievalError("http_error", true, "transient sibling rescue failure");
+      }
+      return [source(1, "dominant.example")];
+    });
+    const session = createResearchSession(
+      "Deep partial rescue for an APAC market research workspace",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    const result = await runResearchAgentStage(session.id, AGENT_ID, {
+      minimumRetrievedSources: 3,
+      stepDelayMs: 0,
+    });
+
+    expect(mocks.search).toHaveBeenCalledTimes(5);
+    expect(result.session.evidence?.agents[AGENT_ID]?.retrieval).toMatchObject({
+      status: "retrieved",
+      sourceCount: 3,
+    });
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts publisher domains instead of allowing sibling subdomains to fake diversity", async () => {
+    mocks.search.mockResolvedValue([
+      source(1, "www.vendor.co.uk"),
+      source(2, "blog.vendor.co.uk"),
+      source(3, "docs.vendor.co.uk"),
+    ]);
+    const session = createResearchSession(
+      "Deep publisher diversity for an APAC market research workspace",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    await expect(
+      runResearchAgentStage(session.id, AGENT_ID, {
+        minimumRetrievedSources: 3,
+        stepDelayMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: "retrieval_insufficient",
+      retryable: false,
+      message: expect.stringMatching(/across 1\/3 publisher domains/i),
+    });
+    const rescueCalls = mocks.search.mock.calls.slice(3).map(([query]) => query);
+    expect(rescueCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ excludeDomains: ["vendor.co.uk"] }),
+      ]),
+    );
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 

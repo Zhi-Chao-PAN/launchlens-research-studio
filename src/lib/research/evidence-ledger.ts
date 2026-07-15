@@ -143,6 +143,31 @@ export function buildDeepRetrievalQueries(
 }
 
 /**
+ * Bounded rescue queries for Deep runs whose initial fan-out is too narrow.
+ * These deliberately ask for additional publishers and named primary evidence;
+ * the caller also excludes already-admitted hosts at the provider boundary.
+ */
+export function buildDeepRetrievalRescueQueries(
+  query: string,
+  agentId: Exclude<AgentId, "synthesis">,
+): string[] {
+  const base = query.replace(/\s+/g, " ").trim();
+  const productContext = base
+    ? truncateAtWordBoundary(base, 150)
+    : AGENT_RETRIEVAL_FOCUS[agentId];
+  const focus = AGENT_RETRIEVAL_FOCUS[agentId];
+  return [
+    `Independent evidence from additional publishers for ${focus}`,
+    `Dated primary, official, and analyst sources naming products or buyer benchmarks for ${focus}`,
+  ].map((intent) =>
+    truncateAtWordBoundary(
+      `${intent}. Product context: ${productContext}`,
+      FOCUSED_QUERY_MAX_CHARS,
+    ),
+  );
+}
+
+/**
  * Build a targeted gap-fill query for a single claim that failed its first
  * entailment pass. The query is intentionally different from the initial
  * deep fan-out and from the independent corroboration query: it asks the
@@ -194,7 +219,6 @@ export function canonicalizeRetrievedSources(
     const rawUrl = typeof candidate.url === "string" ? candidate.url.trim() : "";
     const normalizedUrl = canonicalizeSafeExternalUrl(rawUrl);
     if (!normalizedUrl || seenUrls.has(normalizedUrl)) continue;
-    seenUrls.add(normalizedUrl);
 
     const title = typeof candidate.title === "string" && candidate.title.trim()
       ? candidate.title.trim().slice(0, 300)
@@ -202,6 +226,8 @@ export function canonicalizeRetrievedSources(
     const snippet = typeof candidate.snippet === "string"
       ? candidate.snippet.trim().slice(0, 1200)
       : "";
+    if (!snippet) continue;
+    seenUrls.add(normalizedUrl);
     const accessedAt = isIsoLike(candidate.accessedAt) ? candidate.accessedAt : now;
     const retrievedAt = isIsoLike(candidate.retrievedAt) ? candidate.retrievedAt : accessedAt;
     const confidence =

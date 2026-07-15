@@ -102,12 +102,14 @@ describe("ProductionDeepWorkExecutor", () => {
     expect(initial.session.agents["pricing-scout"].status).toBe("idle");
   });
 
-  it("maps strict stage failures into bounded durable retry semantics", async () => {
+  it("honors an explicit non-retryable decision after bounded retrieval rescue", async () => {
     const initial = record(0);
     const specialistRunner = vi.fn(async () => {
       throw new ResearchAgentStageError(
         "retrieval_insufficient",
         "Not enough sources.",
+        undefined,
+        false,
       );
     });
     const { executor: workExecutor } = executor({ specialistRunner });
@@ -115,6 +117,27 @@ describe("ProductionDeepWorkExecutor", () => {
     await expect(workExecutor.execute({ record: initial, work: initial.work[0] }))
       .rejects.toMatchObject({
         code: "specialist_retrieval_insufficient",
+        message: "Not enough sources.",
+        retryable: false,
+      });
+  });
+
+  it("preserves safe typed retrieval diagnostics for durable observers", async () => {
+    const initial = record(0);
+    const specialistRunner = vi.fn(async () => {
+      throw new ResearchAgentStageError(
+        "retrieval_unavailable",
+        "Deep Research retrieval provider is unavailable (http_error).",
+        undefined,
+        true,
+      );
+    });
+    const { executor: workExecutor } = executor({ specialistRunner });
+
+    await expect(workExecutor.execute({ record: initial, work: initial.work[0] }))
+      .rejects.toMatchObject({
+        code: "specialist_retrieval_unavailable",
+        message: "Deep Research retrieval provider is unavailable (http_error).",
         retryable: true,
       });
   });

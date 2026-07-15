@@ -22,6 +22,7 @@ const ADVANCED_HTTP_TIMEOUT_MS = 25_000;
 // the adapter edge because user briefs plus keywords can exceed it even when
 // upstream callers already compact their focused query.
 const MAX_QUERY_CHARS = 399;
+const MAX_DOMAIN_FILTERS = 20;
 
 interface TavilyRawResult {
   title?: string;
@@ -66,10 +67,15 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     const searchDepth = opts.searchDepth === "advanced" ? "advanced" : "basic";
     const minimumScore = clampScore(opts.minScore);
     const includeDomains = normalizeDomains(opts.includeDomains);
+    const excludeDomains = normalizeDomains(opts.excludeDomains);
 
     const controller = new AbortController();
+    let timedOut = false;
     const timer = setTimeout(
-      () => controller.abort(),
+      () => {
+        timedOut = true;
+        controller.abort(new DOMException("Tavily retrieval timed out.", "TimeoutError"));
+      },
       searchDepth === "advanced" ? ADVANCED_HTTP_TIMEOUT_MS : BASIC_HTTP_TIMEOUT_MS,
     );
     // Wire the caller's AbortSignal to the controller too.
@@ -105,6 +111,7 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
           topic: "general",
           include_answer: false,
           ...(includeDomains.length > 0 ? { include_domains: includeDomains } : {}),
+          ...(excludeDomains.length > 0 ? { exclude_domains: excludeDomains } : {}),
         }),
         signal: controller.signal,
       });
@@ -123,7 +130,8 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
       const retrievedAt = this.now().toISOString();
       const sources: RetrievedSource[] = [];
       for (const r of results) {
-        if (!r.url || !r.title) continue;
+        const snippet = typeof r.content === "string" ? r.content.trim() : "";
+        if (!r.url || !r.title || !snippet) continue;
         if (
           minimumScore !== undefined &&
           (typeof r.score !== "number" || r.score < minimumScore)
@@ -132,7 +140,7 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
           id: hashUrl(r.url),
           title: String(r.title).slice(0, 200),
           url: r.url,
-          snippet: String(r.content || "").slice(0, searchDepth === "advanced" ? 900 : 500),
+          snippet: snippet.slice(0, searchDepth === "advanced" ? 900 : 500),
           accessedAt: retrievedAt,
           // Tavily's score measures query relevance, not source reliability.
           // Keep relevance in `score` and use a conservative neutral
@@ -150,10 +158,13 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
       // failures (retryable). The deadline timer calls controller.abort()
       // without a reason; pass the reason through when present.
       if (controller.signal.aborted) {
+        const callerAborted = opts.signal?.aborted === true;
         throw new RetrievalError(
           "network_error",
-          false,
-          "Tavily retrieval was aborted before completion.",
+          timedOut && !callerAborted,
+          timedOut && !callerAborted
+            ? "Tavily retrieval timed out before completion."
+            : "Tavily retrieval was aborted by its caller before completion.",
           { cause: error },
         );
       }
@@ -194,10 +205,11 @@ function clampScore(value: number | undefined): number | undefined {
 function normalizeDomains(values: readonly string[] | undefined): string[] {
   if (!values) return [];
   const domains = new Set<string>();
-  for (const value of values.slice(0, 20)) {
+  for (const value of values) {
     const domain = String(value).trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
     if (/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
       domains.add(domain);
+      if (domains.size === MAX_DOMAIN_FILTERS) break;
     }
   }
   return [...domains];

@@ -204,20 +204,23 @@ function mapSpecialistError(error: unknown): DeepWorkExecutionError {
   if (error instanceof DeepWorkExecutionError) return error;
   if (error instanceof ResearchAgentStageError) {
     const retryable =
-      error.code === "aborted" ||
-      error.code === "deadline_exceeded" ||
-      error.code === "provider_degraded" ||
-      error.code === "retrieval_unavailable" ||
-      error.code === "retrieval_insufficient" ||
-      error.code === "evidence_insufficient";
+      error.retryable ??
+      (error.code === "aborted" ||
+        error.code === "deadline_exceeded" ||
+        error.code === "provider_degraded" ||
+        error.code === "retrieval_unavailable" ||
+        error.code === "retrieval_insufficient" ||
+        error.code === "evidence_insufficient");
     return new DeepWorkExecutionError(
       error.code === "provider_degraded" && error.degradedReason
         ? `specialist_provider_${error.degradedReason}`
         : `specialist_${error.code}`,
       retryable,
-      retryable
-        ? "The Deep Research specialist stage did not meet its strict evidence contract and will be retried."
-        : "The Deep Research specialist stage cannot run under the current configuration.",
+      error.code === "retrieval_insufficient" || error.code === "retrieval_unavailable"
+        ? error.message
+        : retryable
+          ? "The Deep Research specialist stage did not meet its strict evidence contract and will be retried."
+          : "The Deep Research specialist stage cannot run under the current configuration.",
       { cause: error },
     );
   }
