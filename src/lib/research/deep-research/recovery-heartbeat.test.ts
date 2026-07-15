@@ -483,4 +483,22 @@ describe("recovery history series", () => {
     const history = await readRecoveryHistory({ redis: fake as never });
     expect(history.map((e) => e.requestId)).toEqual(["ok"]);
   });
+
+  it("readRecoveryHistory accepts objects returned by Upstash JSON decoding", async () => {
+    const fake = makeFakeRedis();
+    fake.lists.set(RECOVERY_HISTORY_KEY, [
+      {
+        ok: true,
+        at: "2026-07-13T08:00:00.000Z",
+        durationMs: 5,
+        dispatched: 1,
+        failed: 0,
+        errorCode: null,
+        requestId: "decoded-object",
+      },
+    ] as unknown as string[]);
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ requestId: "decoded-object", ok: true });
+  });
 });
