@@ -7,6 +7,7 @@ import {
   runResearchAgentStage,
   type ResearchAgentStageResult,
 } from "@/lib/research/research-engine";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import type { ResearchSession } from "@/lib/schema/research-schema";
 import { DeepSemanticReviewer } from "./semantic-reviewer";
 import {
@@ -231,7 +232,7 @@ function mapSpecialistError(error: unknown): DeepWorkExecutionError {
 function finalizeProjection(session: ResearchSession): ResearchSession {
   const validation = session.validation;
   if (
-    validation?.version !== 2 ||
+    !isValidationLedgerV2(validation) ||
     validation.protocol.executedPasses !== 3 ||
     validation.semanticValidation.status !== "completed" ||
     validation.provenance.mockAgents.length > 0 ||

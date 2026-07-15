@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createResearchSession, deleteSession } from "@/lib/research/research-engine";
+import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
+import {
+  applyClaimReviewPass,
+  initializeDeepValidation,
+} from "@/lib/research/deep-validation";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import { createDeepWorkPlan, type DeepRunRecordV1 } from "./model";
 
 const redis = vi.hoisted(() => ({
@@ -12,6 +18,7 @@ vi.mock("@/lib/research/redis-client", () => ({
 }));
 
 import { RedisDeepRunRepository } from "./redis-repository";
+import { DeepRunRepositoryUnavailableError } from "./repository";
 
 const createdSessionIds: string[] = [];
 
@@ -101,5 +108,68 @@ describe("RedisDeepRunRepository Upstash response contract", () => {
       now: 999,
       leaseMs: 1_000,
     })).resolves.toMatchObject({ kind: "not_due" });
+  });
+
+  it("fails closed when a deserialized durable record has a broken claim valueHash binding", async () => {
+    const repository = new RedisDeepRunRepository();
+    const initial = record();
+    const output = await mockResearchProvider.generate("market-sizer", {
+      query: initial.session.query,
+      keywords: initial.session.keywords,
+    });
+    initial.session.agents["market-sizer"] = {
+      ...initial.session.agents["market-sizer"],
+      status: "done",
+      progress: 100,
+      currentStep: "Complete",
+      output,
+      resolvedProviderId: "live-model",
+      degraded: false,
+    };
+    initial.session.citations = [...output.citations];
+    let ledger = initializeDeepValidation(initial.session, {
+      maxClaims: 6,
+      maxClaimsPerAgent: 6,
+    });
+    ledger = applyClaimReviewPass(
+      ledger,
+      "claim_source_entailment",
+      ledger.claims.map((claim) => ({
+        claimId: claim.id,
+        claimValueHash: claim.valueHash,
+        pass: "claim_source_entailment" as const,
+        reviewer: {
+          reviewerId: "redis-integrity-reviewer",
+          providerId: "review-provider",
+          model: "review-model",
+          promptVersion: "v1",
+        },
+        verdict: claim.sourceIds.length > 0 ? "entailed" as const : "insufficient_evidence" as const,
+        confidence: "medium" as const,
+        supportingSourceIds: claim.sourceIds.slice(0, 1),
+        contradictingSourceIds: [],
+        rationale: "Fixture review.",
+      })),
+    );
+    expect(isValidationLedgerV2(ledger)).toBe(true);
+    initial.session.validation = ledger;
+    const claim = ledger.claims[0];
+    if (!claim) throw new Error("fixture requires a claim");
+    claim.valueHash = `tampered_${claim.valueHash}`;
+    expect(isValidationLedgerV2(ledger)).toBe(false);
+
+    redisState.enabled = true;
+    redis.eval.mockResolvedValueOnce({ kind: "not_due", record: initial });
+
+    await expect(repository.claim({
+      sessionId: initial.sessionId,
+      workerId: "worker-1",
+      token: "lease-token",
+      now: 999,
+      leaseMs: 1_000,
+    })).rejects.toMatchObject({
+      name: DeepRunRepositoryUnavailableError.name,
+      message: "Durable Deep Research validation ledger failed its integrity check.",
+    });
   });
 });

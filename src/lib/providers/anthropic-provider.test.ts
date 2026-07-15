@@ -43,6 +43,20 @@ describe("createAnthropicProvider", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("strict mode surfaces a bounded 401 instead of swallowing it into mock", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
+    const provider = createAnthropicProvider({
+      apiKey: "sk-managed",
+      fetchImpl: fetchImpl as any,
+      failureMode: "throw",
+      maxAttempts: 1,
+    });
+
+    await expect(provider.generate("market-sizer", { query: "q", keywords: [] }))
+      .rejects.toMatchObject({ kind: "http", status: 401 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to mock when JSON is malformed", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,

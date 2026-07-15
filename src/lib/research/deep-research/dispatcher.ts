@@ -5,6 +5,7 @@ const DISPATCH_TIMEOUT_MS = 5_000;
 export interface HttpDeepWakeDispatcherOptions {
   origin: string;
   secret: string;
+  protectionBypassSecret?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -33,16 +34,20 @@ export class HttpDeepWakeDispatcher implements DeepWakeDispatcher {
     if (!/^[a-z0-9]+$/i.test(sessionId)) throw new Error("Invalid Deep session id.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.options.secret}`,
+      "x-launchlens-deep-worker-secret": this.options.secret,
+    };
+    if (this.options.protectionBypassSecret?.trim()) {
+      headers["x-vercel-protection-bypass"] = this.options.protectionBypassSecret;
+    }
     try {
       const response = await this.fetchImpl(
         `${new URL(this.options.origin).origin}/api/internal/deep-research/continue`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.options.secret}`,
-            "x-launchlens-deep-worker-secret": this.options.secret,
-          },
+          headers,
           body: JSON.stringify({ sessionId }),
           signal: controller.signal,
           cache: "no-store",

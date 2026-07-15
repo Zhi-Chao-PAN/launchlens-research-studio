@@ -4,6 +4,15 @@ import { getRedis } from "@/lib/research/redis-client";
 import { RESEARCH_MODE_CONFIGS } from "@/lib/research/research-modes";
 import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
 import {
+  resolveProviderCredentials,
+  type LlmProvider,
+  type ResolvedProviderCredential,
+} from "@/lib/admin/provider-credentials";
+import {
+  isManagedKeyringEnabled,
+  resolveManagedKeyringProvider,
+} from "@/lib/providers/managed-keyring-config";
+import {
   readRecoveryHeartbeat,
   readRecoveryHistory,
   MIN_CONSECUTIVE_OK_FOR_HEALTHY,
@@ -66,6 +75,12 @@ export interface RecoveryObservation {
   observedTicks: number;
   /** Number of failed ticks across the bounded history window. */
   observedFailures: number;
+  /** Smallest interval in the tail window used for cadence proof. */
+  minObservedIntervalMs: number | null;
+  /** Largest interval in the tail window used for cadence proof. */
+  maxObservedIntervalMs: number | null;
+  /** Wall-clock span covered by the tail window used for cadence proof. */
+  cadenceSpanMs: number | null;
 }
 
 export interface DeepCapabilityRequirement {
@@ -109,6 +124,7 @@ export interface ProbeDeepCapabilityOptions {
   probeRedis?: () => Promise<boolean>;
   readHeartbeat?: () => Promise<RecoveryHeartbeat>;
   readHistory?: () => Promise<RecoveryHistoryEntry[]>;
+  resolveManagedCredentials?: (provider: LlmProvider, observedAt: Date) => Promise<boolean>;
   now?: () => Date;
 }
 
@@ -120,6 +136,7 @@ export async function probeDeepResearchCapability(
 ): Promise<DeepResearchCapability> {
   const env = options.env ?? process.env;
   const now = options.now ?? (() => new Date());
+  const observedAt = now();
   const explicitOptIn = env.LAUNCHLENS_DEEP_ENABLED === "1";
   const redisConfigured = hasRedisPair(env);
   let redisReachable = false;
@@ -133,6 +150,23 @@ export async function probeDeepResearchCapability(
 
   const generation = selectProvider(env as NodeJS.ProcessEnv);
   const reviewer = selectStructuredCompletionProvider(env);
+  const keyringEnabled = isManagedKeyringEnabled(env);
+  const keyringProvider = resolveManagedKeyringProvider(env);
+  let managedCredentialsReady = !keyringEnabled;
+  if (keyringProvider && redisReachable) {
+    try {
+      managedCredentialsReady = await (
+        options.resolveManagedCredentials ?? defaultResolveManagedCredentials
+      )(keyringProvider, observedAt);
+    } catch {
+      managedCredentialsReady = false;
+    }
+  }
+  const generationReady = !generation.isMock && managedCredentialsReady;
+  const reviewerReady =
+    reviewer.kind === "configured" &&
+    !reviewer.provider.isMock &&
+    managedCredentialsReady;
   const retrievalReady = hasRealRetrievalConfiguration(env);
   const workerOrigin = resolveDeepWorkerOrigin(env);
   const workerSecretReady = (env.LAUNCHLENS_DEEP_WORKER_SECRET?.length ?? 0) >= 24;
@@ -161,7 +195,7 @@ export async function probeDeepResearchCapability(
     history,
     heartbeat,
     freshnessBudgetMs,
-    now: now(),
+    now: observedAt,
     recoveryDeclared: recoveryReady,
   });
   const lastRecoveryAt = heartbeat.lastOkAt;
@@ -190,10 +224,12 @@ export async function probeDeepResearchCapability(
     },
     {
       id: "generation_provider",
-      ready: !generation.isMock,
+      ready: generationReady,
       label: "Research model",
-      detail: generation.isMock
-        ? "A real generation provider is required; mock fallback is forbidden."
+      detail: !generationReady
+        ? keyringEnabled
+          ? "The managed keyring must contain at least one enabled, decryptable provider credential."
+          : "A real generation provider is required; mock fallback is forbidden."
         : `Configured provider: ${generation.id}.`,
     },
     {
@@ -206,10 +242,10 @@ export async function probeDeepResearchCapability(
     },
     {
       id: "semantic_reviewer",
-      ready: reviewer.kind === "configured" && !reviewer.provider.isMock,
+      ready: reviewerReady,
       label: "Semantic reviewer",
       detail:
-        reviewer.kind === "configured" && !reviewer.provider.isMock
+        reviewerReady && reviewer.kind === "configured"
           ? `Structured reviewer: ${reviewer.provider.id} (${reviewer.provider.model}).`
           : "A strict structured-completion reviewer is required.",
     },
@@ -259,7 +295,7 @@ export async function probeDeepResearchCapability(
     depthLabel: RESEARCH_MODE_CONFIGS.deep.depthLabel,
     availability: available ? "available" : "preview",
     degraded,
-    checkedAt: now().toISOString(),
+    checkedAt: observedAt.toISOString(),
     requirements,
     blockers,
     capabilityNotice: available
@@ -285,11 +321,12 @@ export async function probeDeepResearchCapability(
 export function resolveDeepWorkerOrigin(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string | null {
-  const raw =
-    env.LAUNCHLENS_DEEP_WORKER_BASE_URL ||
-    env.VERCEL_PROJECT_PRODUCTION_URL ||
-    env.VERCEL_URL ||
-    "";
+  const explicitOrigin = env.LAUNCHLENS_DEEP_WORKER_BASE_URL?.trim();
+  const vercelEnvironment = env.VERCEL_ENV?.trim().toLowerCase();
+  const vercelOrigin = vercelEnvironment === "production"
+    ? env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL
+    : env.VERCEL_URL;
+  const raw = explicitOrigin || vercelOrigin?.trim() || "";
   if (!raw) return null;
   const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   try {
@@ -348,6 +385,26 @@ async function defaultReadHistory(): Promise<RecoveryHistoryEntry[]> {
   return readRecoveryHistory();
 }
 
+async function defaultResolveManagedCredentials(
+  provider: LlmProvider,
+  observedAt: Date,
+): Promise<boolean> {
+  const credentials = await resolveProviderCredentials(provider);
+  return credentials.some((credential) =>
+    isManagedCredentialAdmissible(credential, observedAt),
+  );
+}
+
+export function isManagedCredentialAdmissible(
+  credential: Pick<ResolvedProviderCredential, "health">,
+  observedAt: Date,
+): boolean {
+  if (credential.health.status !== "cooldown") return true;
+  if (!credential.health.cooldownUntil) return false;
+  const cooldownUntil = Date.parse(credential.health.cooldownUntil);
+  return Number.isFinite(cooldownUntil) && cooldownUntil <= observedAt.getTime();
+}
+
 /**
  * R1C: derive the discrete recovery state from the bounded history
  * series plus the latest-heartbeat freshness. The state machine is:
@@ -387,6 +444,20 @@ export function computeRecoveryObservation(args: {
     if (!series[i].ok) break;
     consecutiveOk++;
   }
+  const cadenceWindow = series.slice(-Math.min(required, consecutiveOk));
+  const cadenceTimes = cadenceWindow.map((entry) => new Date(entry.at).getTime());
+  const cadenceIntervals = cadenceTimes.slice(1).map((time, index) => time - cadenceTimes[index]);
+  const cadenceTimestampsValid = cadenceTimes.every(Number.isFinite) && cadenceIntervals.every((value) => value > 0);
+  const minObservedIntervalMs = cadenceIntervals.length > 0 && cadenceTimestampsValid
+    ? Math.min(...cadenceIntervals)
+    : null;
+  const maxObservedIntervalMs = cadenceIntervals.length > 0 && cadenceTimestampsValid
+    ? Math.max(...cadenceIntervals)
+    : null;
+  const cadenceSpanMs = cadenceTimes.length > 1 && cadenceTimestampsValid
+    ? cadenceTimes[cadenceTimes.length - 1] - cadenceTimes[0]
+    : null;
+  const cadenceMetrics = { minObservedIntervalMs, maxObservedIntervalMs, cadenceSpanMs };
   if (!args.recoveryDeclared) {
     return {
       state: "configured",
@@ -398,6 +469,7 @@ export function computeRecoveryObservation(args: {
       detail: "Independent recovery is not declared; the heartbeat series is observed but does not gate availability.",
       observedTicks,
       observedFailures,
+      ...cadenceMetrics,
     };
   }
   if (observedTicks === 0) {
@@ -411,6 +483,7 @@ export function computeRecoveryObservation(args: {
       detail: "No recovery tick observed yet. The cron trigger has not completed a tick since the last deploy.",
       observedTicks: 0,
       observedFailures: 0,
+      ...cadenceMetrics,
     };
   }
   // We have at least one tick. The latest tick is the arbiter of `delayed`.
@@ -430,6 +503,7 @@ export function computeRecoveryObservation(args: {
       detail: `Recovery is delayed because ${reason}. ${consecutiveOk} consecutive ok tick${consecutiveOk === 1 ? "" : "s"} observed at the tail.`,
       observedTicks,
       observedFailures,
+      ...cadenceMetrics,
     };
   }
   if (consecutiveOk < required) {
@@ -443,6 +517,53 @@ export function computeRecoveryObservation(args: {
       detail: `Recovery is warming: ${consecutiveOk} consecutive ok tick${consecutiveOk === 1 ? "" : "s"} observed; ${required} are required to call the scheduler healthy.`,
       observedTicks,
       observedFailures,
+      ...cadenceMetrics,
+    };
+  }
+  const minimumProofIntervalMs = Math.min(
+    60_000,
+    Math.max(1, Math.floor(args.freshnessBudgetMs / 2)),
+  );
+  if (!cadenceTimestampsValid || cadenceIntervals.length < required - 1) {
+    return {
+      state: "warming",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: "Recovery is warming: the scheduler has not produced a complete, chronological cadence window yet.",
+      observedTicks,
+      observedFailures,
+      ...cadenceMetrics,
+    };
+  }
+  if (maxObservedIntervalMs !== null && maxObservedIntervalMs > args.freshnessBudgetMs) {
+    return {
+      state: "delayed",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: `Recovery is delayed because the observed maximum interval is ${Math.round(maxObservedIntervalMs / 1000)}s, exceeding the ${Math.round(args.freshnessBudgetMs / 1000)}s budget.`,
+      observedTicks,
+      observedFailures,
+      ...cadenceMetrics,
+    };
+  }
+  if (minObservedIntervalMs !== null && minObservedIntervalMs < minimumProofIntervalMs) {
+    return {
+      state: "warming",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: `Recovery is warming: ticks arrived only ${Math.round(minObservedIntervalMs / 1000)}s apart, below the ${Math.round(minimumProofIntervalMs / 1000)}s minimum observation interval, so a manual burst cannot prove scheduler cadence.`,
+      observedTicks,
+      observedFailures,
+      ...cadenceMetrics,
     };
   }
   return {
@@ -452,9 +573,10 @@ export function computeRecoveryObservation(args: {
     lastTickAt,
     lastTickAgeMs,
     lastTickOk,
-    detail: `Recovery is healthy: ${consecutiveOk} consecutive ok ticks at the tail; the most recent completed ${Math.round(lastTickAgeMs / 1000)}s ago.`,
+    detail: `Recovery is healthy: ${consecutiveOk} consecutive ok ticks at the tail; maximum observed interval ${Math.round((maxObservedIntervalMs ?? 0) / 1000)}s; the most recent completed ${Math.round(lastTickAgeMs / 1000)}s ago.`,
     observedTicks,
     observedFailures,
+    ...cadenceMetrics,
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeRecoveryObservation,
+  isManagedCredentialAdmissible,
   probeDeepResearchCapability,
   resolveDeepWorkerOrigin,
 } from "./capability";
@@ -9,17 +10,6 @@ import {
   type RecoveryHeartbeat,
   type RecoveryHistoryEntry,
 } from "./recovery-heartbeat";
-
-function staleHeartbeat(now: Date): RecoveryHeartbeat {
-  return {
-    lastOkAt: new Date(now.getTime() - 10 * 60 * 1000).toISOString(),
-    lastErrorAt: null,
-    lastErrorCode: null,
-    lastOkDurationMs: 200,
-    lastDispatched: 0,
-    lastFailed: 0,
-  };
-}
 
 function freshHeartbeat(now: Date): RecoveryHeartbeat {
   return {
@@ -97,6 +87,79 @@ describe("probeDeepResearchCapability", () => {
       recoveryState: "healthy",
     });
     expect(capability.requirements.every((item) => item.ready)).toBe(true);
+  });
+
+  it("accepts a managed keyring only after an enabled credential can be resolved", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const managedEnv = {
+      ...readyEnv,
+      OPENAI_API_KEY: "",
+      LAUNCHLENS_REVIEW_OPENAI_KEY: "",
+      LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+      LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
+    };
+    const capability = await probeDeepResearchCapability({
+      env: managedEnv,
+      probeRedis: async () => true,
+      resolveManagedCredentials: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => healthyHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("available");
+    expect(capability.requirements.find((item) => item.id === "generation_provider")?.ready).toBe(true);
+    expect(capability.requirements.find((item) => item.id === "semantic_reviewer")?.ready).toBe(true);
+  });
+
+  it("fails the model gates closed when the managed keyring is empty or unreadable", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...readyEnv,
+        OPENAI_API_KEY: "",
+        LAUNCHLENS_REVIEW_OPENAI_KEY: "",
+        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
+      },
+      probeRedis: async () => true,
+      resolveManagedCredentials: async () => false,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => healthyHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toEqual(expect.arrayContaining([
+      "generation_provider",
+      "semantic_reviewer",
+    ]));
+    expect(capability.requirements.find((item) => item.id === "generation_provider")?.detail)
+      .toMatch(/managed keyring/i);
+  });
+
+  it("fails closed on an invalid managed provider even when legacy keys exist", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...readyEnv,
+        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: " 1 ",
+        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: " unsupported ",
+      },
+      probeRedis: async () => true,
+      resolveManagedCredentials: async () => {
+        throw new Error("invalid providers must not reach credential resolution");
+      },
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => healthyHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toEqual(expect.arrayContaining([
+      "generation_provider",
+      "semantic_reviewer",
+    ]));
   });
 
   it("flips to delayed with recovery_freshness degradation when the heartbeat is stale", async () => {
@@ -337,10 +400,79 @@ describe("probeDeepResearchCapability", () => {
   });
 });
 
+describe("isManagedCredentialAdmissible", () => {
+  const observedAt = new Date("2026-07-13T00:00:00.000Z");
+  const health = {
+    consecutiveFailures: 1,
+    lastSuccessAt: null,
+    lastFailureAt: "2026-07-12T23:59:00.000Z",
+    lastFailureReason: "rate_limit" as const,
+  };
+
+  it("rejects an active or malformed cooldown and admits an expired cooldown", () => {
+    expect(isManagedCredentialAdmissible({
+      health: { ...health, status: "cooldown", cooldownUntil: "2026-07-13T00:01:00.000Z" },
+    }, observedAt)).toBe(false);
+    expect(isManagedCredentialAdmissible({
+      health: { ...health, status: "cooldown", cooldownUntil: null },
+    }, observedAt)).toBe(false);
+    expect(isManagedCredentialAdmissible({
+      health: { ...health, status: "cooldown", cooldownUntil: "2026-07-12T23:59:59.000Z" },
+    }, observedAt)).toBe(true);
+  });
+
+  it("admits healthy, degraded, and not-yet-observed credentials", () => {
+    for (const status of ["healthy", "degraded", "unknown"] as const) {
+      expect(isManagedCredentialAdmissible({
+        health: { ...health, status, cooldownUntil: null },
+      }, observedAt)).toBe(true);
+    }
+  });
+});
+
 describe("resolveDeepWorkerOrigin", () => {
   it("normalizes a Vercel host and strips paths", () => {
     expect(resolveDeepWorkerOrigin({ VERCEL_URL: "preview.example/path" }))
       .toBe("https://preview.example");
+  });
+
+  it("always prefers the explicit worker origin", () => {
+    expect(resolveDeepWorkerOrigin({
+      LAUNCHLENS_DEEP_WORKER_BASE_URL: "https://worker.example/path",
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "preview.example",
+      VERCEL_PROJECT_PRODUCTION_URL: "production.example",
+    })).toBe("https://worker.example");
+  });
+
+  it("uses the deployment URL for Preview even when a production URL is present", () => {
+    expect(resolveDeepWorkerOrigin({
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "preview.example",
+      VERCEL_PROJECT_PRODUCTION_URL: "production.example",
+    })).toBe("https://preview.example");
+  });
+
+  it("prefers the project production URL only in Production", () => {
+    expect(resolveDeepWorkerOrigin({
+      VERCEL_ENV: "production",
+      VERCEL_URL: "deployment.example",
+      VERCEL_PROJECT_PRODUCTION_URL: "production.example",
+    })).toBe("https://production.example");
+  });
+
+  it("does not route Preview work to Production when only a production URL is present", () => {
+    expect(resolveDeepWorkerOrigin({
+      VERCEL_ENV: "preview",
+      VERCEL_PROJECT_PRODUCTION_URL: "production.example",
+    })).toBeNull();
+  });
+
+  it("defaults to the deployment URL when VERCEL_ENV is unavailable", () => {
+    expect(resolveDeepWorkerOrigin({
+      VERCEL_URL: "deployment.example",
+      VERCEL_PROJECT_PRODUCTION_URL: "production.example",
+    })).toBe("https://deployment.example");
   });
 
   it("rejects credentials and malformed URLs", () => {
@@ -425,7 +557,53 @@ describe("computeRecoveryObservation", () => {
     });
     expect(obs.state).toBe("healthy");
     expect(obs.consecutiveOk).toBe(3);
+    expect(obs.maxObservedIntervalMs).toBe(300_000);
+    expect(obs.cadenceSpanMs).toBe(600_000);
     expect(obs.detail).toMatch(/healthy/);
+  });
+
+  it("keeps rapid manual bursts warming even when three ticks are fresh and successful", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: healthyHistory(now, 3, 1_000, 1_000),
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("warming");
+    expect(obs.minObservedIntervalMs).toBe(1_000);
+    expect(obs.detail).toMatch(/manual burst/i);
+  });
+
+  it("marks a fresh tail delayed when the observed interval exceeded the SLA", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const history = healthyHistory(now, 3, 300_000, 30_000);
+    history[0] = { ...history[0], at: new Date(new Date(history[1].at).getTime() - 301_000).toISOString() };
+    const obs = computeRecoveryObservation({
+      history,
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("delayed");
+    expect(obs.maxObservedIntervalMs).toBe(301_000);
+    expect(obs.detail).toMatch(/maximum interval/i);
   });
 
   it("returns 'delayed' when freshness budget is exceeded even with a healthy series", () => {
@@ -480,7 +658,6 @@ describe("computeRecoveryObservation", () => {
   });
 
   it("counts only consecutive ok ticks at the tail (non-tail failures reset the count)", () => {
-    const now = new Date("2026-07-13T00:00:00.000Z");
     const history: RecoveryHistoryEntry[] = [
       { ok: true, at: "2026-07-13T00:00:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: null, requestId: "a" },
       { ok: false, at: "2026-07-13T00:05:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: "x", requestId: "b" },

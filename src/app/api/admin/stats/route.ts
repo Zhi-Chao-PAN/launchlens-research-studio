@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     const allRuns = listResearchRuns();
     const completedRuns = allRuns.filter((r) => r.status === "completed").length;
     const failedRuns = allRuns.filter((r) => r.status === "failed").length;
-    const runningRuns = allRuns.length - completedRuns - failedRuns;
+    const cancelledRuns = allRuns.filter((r) => r.status === "cancelled").length;
+    const runningRuns = Math.max(0, allRuns.length - completedRuns - failedRuns - cancelledRuns);
 
     const completed = allRuns.filter((r) => r.status === "completed");
     const avgDuration = completed.length > 0

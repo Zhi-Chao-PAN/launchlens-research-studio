@@ -16,8 +16,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
@@ -28,8 +28,8 @@ jobs:
     name: TypeScript
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
@@ -40,37 +40,40 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
       - run: npm ci
-      - run: npm test
+      - run: npm run test:coverage
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: coverage/
+          if-no-files-found: error
 
   build:
     name: Build
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
       - run: npm ci
       - run: npm run build
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: next-build
           path: .next/
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 3
 
   smoke:
@@ -78,8 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
@@ -113,8 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
@@ -124,7 +127,8 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Start production server
         run: |
-          E2E_PORT=3020 nohup npx next start -p 3020 > /tmp/next-e2e.log 2>&1 &
+          mkdir -p output/playwright
+          E2E_PORT=3020 nohup npx next start -p 3020 > output/playwright/next-e2e-server.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3020 > /dev/null 2>&1; then
               echo "Server ready"
@@ -145,10 +149,16 @@ jobs:
         env:
           CI: "true"
           LAUNCHLENS_CSRF_STRICT: "0"
+      - name: Run admin security and responsive E2E
+        run: node e2e/admin-ui-e2e.js
+        env:
+          CI: "true"
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-screenshots
-          path: screenshots/
+          path: |
+            screenshots/
+            output/playwright/
           retention-days: 7

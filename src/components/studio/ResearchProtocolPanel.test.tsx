@@ -65,8 +65,11 @@ function deepCapability(
       lastTickAgeMs: 0,
       lastTickOk: true,
       detail: "Recovery is healthy",
-      observedTicks: 3,
-      observedFailures: 0,
+    observedTicks: 3,
+    observedFailures: 0,
+    minObservedIntervalMs: 300_000,
+    maxObservedIntervalMs: 300_000,
+    cadenceSpanMs: 600_000,
     },
   };
 }

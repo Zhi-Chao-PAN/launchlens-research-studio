@@ -241,6 +241,20 @@ describe("runDeepSynthesisStage", () => {
     });
   });
 
+  it("fails before model execution when a persisted claim valueHash binding is corrupted", async () => {
+    const session = await validatedSession();
+    if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    const claim = session.validation.claims[0];
+    if (!claim) throw new Error("fixture requires a claim");
+    claim.valueHash = `tampered_${claim.valueHash}`;
+
+    await expect(runDeepSynthesisStage(session)).rejects.toMatchObject({
+      code: "semantic_validation_incomplete",
+      retryable: false,
+    });
+    expect(providerState.generate).not.toHaveBeenCalled();
+  });
+
   it("fails before model execution when three-pass validation is absent", async () => {
     const session = createResearchSession("not validated", [], undefined, { mode: "deep" });
     sessionIds.push(session.id);

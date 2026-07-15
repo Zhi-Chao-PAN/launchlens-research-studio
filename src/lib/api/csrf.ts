@@ -12,7 +12,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "./csrf-constants";
 
-// R230: the constants live in csrf-constants.ts so Edge middleware can
+// R230: the constants live in csrf-constants.ts so the global proxy can
 // import them without dragging node:crypto into its bundle. Re-export
 // them from this file so existing route-handler imports keep working.
 export { CSRF_COOKIE_NAME, CSRF_HEADER_NAME };

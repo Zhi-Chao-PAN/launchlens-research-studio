@@ -96,6 +96,13 @@ function makeFakeRedis() {
       const normStop = stop < 0 ? len + stop : stop;
       return arr.slice(normStart, normStop + 1) as unknown as T[];
     },
+    async eval(_script: string, keys: string[], args: string[]): Promise<number> {
+      const key = keys[0];
+      if (store.get(key) !== args[0]) return 0;
+      store.delete(key);
+      expirations.delete(key);
+      return 1;
+    },
   };
 }
 
@@ -227,7 +234,7 @@ describe("releaseRecoveryLock", () => {
 });
 
 /**
- * Real interruption drill.
+ * Simulated interruption unit drill.
  *
  * Simulates a tick that acquired the lock, then the lambda was
  * SIGKILLed before it could release or write a heartbeat. A second
@@ -241,7 +248,7 @@ describe("releaseRecoveryLock", () => {
  * interruption sequence. If this passes, the system can self-heal from
  * a crashed recovery tick without operator intervention.
  */
-describe("interruption drill", () => {
+describe("simulated interruption unit drill", () => {
   it("dedupes concurrent ticks while holder is alive, then recovers after TTL", async () => {
     const fake = makeFakeRedis();
     // 1) Tick A acquires the lock with a short TTL, simulating a tick
@@ -388,6 +395,26 @@ describe("recovery history series", () => {
       "tick-6",
       "tick-7",
     ]);
+  });
+
+  it("historyLimit returns the newest bounded window rather than the oldest entries", async () => {
+    const fake = makeFakeRedis();
+    for (let i = 0; i < 6; i += 1) {
+      await appendRecoveryHistoryEntry(
+        {
+          ok: true,
+          at: `2026-07-13T05:0${i}:00.000Z`,
+          durationMs: i,
+          dispatched: 0,
+          failed: 0,
+          errorCode: null,
+          requestId: `tick-${i}`,
+        },
+        { redis: fake as never },
+      );
+    }
+    const history = await readRecoveryHistory({ redis: fake as never, historyLimit: 3 });
+    expect(history.map((entry) => entry.requestId)).toEqual(["tick-3", "tick-4", "tick-5"]);
   });
 
   it("writeRecoveryHeartbeat also pushes to the history list", async () => {

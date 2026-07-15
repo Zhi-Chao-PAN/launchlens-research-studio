@@ -17,6 +17,7 @@ import {
   assertAllClaimsHaveAtLeastOneSource,
   buildClaimEvidenceSlices,
   findingsForPass,
+  uniqueSourcesFromSlices,
 } from "./semantic-reviewer";
 import { initializeDeepValidation } from "@/lib/research/deep-validation";
 
@@ -209,6 +210,25 @@ describe("DeepSemanticReviewer", () => {
         reviewerId: "deep-entailment-reviewer",
         providerId: "review-provider",
         model: "review-model",
+      });
+  });
+
+  it("rejects a resumed ledger whose claim-to-source binding is non-canonical", async () => {
+    const session = await fixtureSession();
+    const ledger = initializeDeepValidation(session, { maxClaims: 6, maxClaimsPerAgent: 6 });
+    const claim = ledger.claims[0];
+    if (!claim) throw new Error("fixture requires a claim");
+    claim.sourceIds = ["missing-source-binding"];
+    session.validation = ledger;
+    const reviewer = new DeepSemanticReviewer({
+      provider: successfulProvider(),
+      retrieval: liveRetrieval(),
+    });
+
+    await expect(reviewer.runPass(session, "claim_source_entailment"))
+      .rejects.toMatchObject({
+        code: "validation_protocol_out_of_order",
+        retryable: false,
       });
   });
 
@@ -577,7 +597,7 @@ describe("buildClaimEvidenceSlices", () => {
    * the filler until `reserved.size >= maxTotalSources`. The filler
    * break was the only global guard; a heavy reserved set bypassed it.
    */
-  it("hard-caps the union of reserved and filler at maxTotalSources", () => {
+  it("fails closed when the required floor itself exceeds maxTotalSources", () => {
     // 100 claims each with 1 own source + a giant pool of filler.
     const claims: ResearchClaim[] = [];
     const sources: ClaimReviewSource[] = [];
@@ -592,22 +612,52 @@ describe("buildClaimEvidenceSlices", () => {
     }
     const ledger = makeLedger(claims, sources);
 
-    const slices = buildClaimEvidenceSlices(ledger, {
+    expect(() => buildClaimEvidenceSlices(ledger, {
       pass: "claim_source_entailment",
       maxTotalSources: 80,
       minSourcesPerClaim: 1,
       maxSourcesPerClaim: 4,
+    })).toThrowError(/cannot admit the required per-claim evidence floor/);
+  });
+
+  it("allocates a complete minimum round before fair filler and de-duplicates the catalog", () => {
+    const claims: ResearchClaim[] = [];
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const ownIds = Array.from({ length: 6 }, (_, sourceIndex) => `own_${i}_${sourceIndex}`);
+      claims.push(makeClaim({ id: `claim_${i}`, valueHash: `h_${i}`, sourceIds: ownIds }));
+      ownIds.forEach((id) => sources.push(makeSource({ id, agent: baseAgentId })));
+    }
+    const ledger = makeLedger(claims, sources);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+      maxSourcesPerClaim: 6,
     });
 
-    const total = slices.reduce((acc, slice) => acc + slice.sources.length, 0);
-    // The prompt MUST contain at most maxTotalSources unique sources.
-    expect(total).toBeLessThanOrEqual(80);
-    // No duplicate ids across the whole payload.
-    const seen = new Set<string>();
-    for (const slice of slices) for (const source of slice.sources) {
-      expect(seen.has(source.id)).toBe(false);
-      seen.add(source.id);
-    }
+    expect(slices).toHaveLength(25);
+    expect(slices.every((slice) => slice.sources.length >= 1)).toBe(true);
+    expect(slices.at(-1)?.sources[0]?.id).toBe("own_24_0");
+    expect(uniqueSourcesFromSlices(slices)).toHaveLength(80);
+    expect(Math.max(...slices.map((slice) => slice.sources.length)) - Math.min(...slices.map((slice) => slice.sources.length))).toBeLessThanOrEqual(1);
+
+    const shared = makeSource({ id: "shared", agent: baseAgentId });
+    const sharedLedger = makeLedger(
+      [
+        makeClaim({ id: "shared_a", valueHash: "h_a", sourceIds: ["shared"] }),
+        makeClaim({ id: "shared_b", valueHash: "h_b", sourceIds: ["shared"] }),
+      ],
+      [shared],
+    );
+    const sharedSlices = buildClaimEvidenceSlices(sharedLedger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 1,
+      minSourcesPerClaim: 1,
+    });
+    expect(sharedSlices.every((slice) => slice.sources[0]?.id === "shared")).toBe(true);
+    expect(uniqueSourcesFromSlices(sharedSlices)).toEqual([shared]);
   });
 
   /**
@@ -630,7 +680,7 @@ describe("buildClaimEvidenceSlices", () => {
     const ledger = makeLedger([claim], [indep]);
 
     const slices = buildClaimEvidenceSlices(ledger, {
-      pass: "claim_source_entailment",
+      pass: "independent_corroboration_conflict",
       maxTotalSources: 80,
       minSourcesPerClaim: 1,
     });
@@ -661,7 +711,7 @@ describe("buildClaimEvidenceSlices", () => {
     const ledger = makeLedger([target, sibling], [siblingBound]);
 
     const slices = buildClaimEvidenceSlices(ledger, {
-      pass: "claim_source_entailment",
+      pass: "independent_corroboration_conflict",
       maxTotalSources: 80,
       minSourcesPerClaim: 1,
     });

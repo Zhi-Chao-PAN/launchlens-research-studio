@@ -128,7 +128,7 @@ SSE and polling are observer-only for Deep. Connecting to `/stream` never starts
 
 ## Capability Gate
 
-Deep is `available` only when all seven requirements are ready:
+Deep is `available` only when all eight requirements are ready:
 
 1. `LAUNCHLENS_DEEP_ENABLED=1` explicit operator opt-in.
 2. Reachable Upstash Redis authority.
@@ -137,10 +137,11 @@ Deep is `available` only when all seven requirements are ready:
 5. Real strict structured-completion reviewer.
 6. Authenticated worker origin and a dedicated secret of at least 24 characters.
 7. Independent cron recovery declared at no more than 300 seconds, with a separate cron secret of at least 24 characters.
+8. Recovery freshness proven by a bounded, chronological series of successful ticks whose observed interval stays within the declared budget. Rapid manual bursts do not count as scheduler cadence.
 
 If any check fails, the API and UI keep Deep in Preview and `POST /api/research` refuses to start it.
 
-Current repository state: the code path is implemented, `.github/workflows/deep-recovery.yml` declares five-minute independent recovery, and `vercel.json` declares a daily Vercel Hobby fallback. Deep remains capability-gated until the primary workflow and every other dependency are verified in the deployed environment.
+Current repository state: the code path and heartbeat proof are implemented. `.github/workflows/deep-recovery.yml` is a manual emergency trigger and `vercel.json` does not claim a misleading daily fallback. Deep remains capability-gated until one external scheduler actually produces the required <=300-second cadence and every other dependency is verified in the deployed environment.
 
 ## Persistence and Lifecycle
 
@@ -194,5 +195,6 @@ Before release:
 
 Verify one recovery path before enabling Deep:
 
-1. **Current path:** configure the GitHub repository secret `LAUNCHLENS_CRON_SECRET`, enable the declared five-minute workflow, set `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=300`, and verify authenticated recovery against the production due index. Keep the daily Vercel cron as a secondary platform fallback.
-2. **Future alternative:** approve a managed queue/workflow service and migrate the dispatcher/recovery adapter while keeping the Redis record and semantic protocol contracts.
+1. Configure exactly one independent scheduler with `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=300` and authenticate its POST to `/api/cron/scheduler` with the distinct cron secret.
+2. Observe at least the required consecutive production ticks at realistic intervals, verify stale-lock self-healing after TTL, and confirm the capability changes from warming to healthy without manual history edits.
+3. Keep the GitHub workflow as a manual emergency trigger. If a managed queue/workflow service later replaces cron, preserve the Redis record and semantic protocol contracts.

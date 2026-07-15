@@ -4,8 +4,11 @@ import {
   extractBearerToken,
   getTokenInfo,
   isAdminToken,
-  checkAdminRateLimit,
+  recordAdminTokenHashUsage,
+  checkAdminIpRateLimit,
+  checkAdminTokenRateLimit,
 } from "@/lib/api/bypass-tokens";
+import { readAdminSession } from "@/lib/api/admin-session";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { hashIp } from "@/lib/telemetry/request-log";
 
@@ -46,9 +49,13 @@ function getIp(request: NextRequest): string {
  */
 export function requireAdmin(request: NextRequest): AdminAuthResult {
   const ip = getIp(request);
+  const ipRate = checkAdminIpRateLimit(ip);
+  if (!ipRate.allowed) return rateLimited(ipRate);
+
   const auth = request.headers.get("authorization");
   const tok = extractBearerToken(auth);
-  if (!tok) {
+  const session = tok ? null : readAdminSession(request);
+  if (!tok && !session) {
     recordAuthAudit("auth_failed", {
       ipHash: hashIp(ip),
       detail: "admin endpoint: missing-auth",
@@ -61,7 +68,26 @@ export function requireAdmin(request: NextRequest): AdminAuthResult {
     };
   }
 
-  const info = getTokenInfo(tok);
+  if (session) {
+    if (!recordAdminTokenHashUsage(session.tokenHash, ip)) {
+      recordAuthAudit("auth_failed", {
+        ipHash: hashIp(ip),
+        tokenHash: session.tokenHash,
+        detail: "admin endpoint: invalid-session",
+      });
+      return {
+        ok: false,
+        status: 401,
+        reason: "invalid-token",
+        response: NextResponse.json({ error: "Unauthorized: invalid-session" }, { status: 401 }),
+      };
+    }
+    const rate = checkAdminTokenRateLimit(session.tokenHash);
+    if (!rate.allowed) return rateLimited(rate);
+    return { ok: true, tokenHash: session.tokenHash, ip };
+  }
+
+  const info = getTokenInfo(tok!);
   if (!info) {
     recordAuthAudit("auth_failed", {
       ipHash: hashIp(ip),
@@ -89,21 +115,30 @@ export function requireAdmin(request: NextRequest): AdminAuthResult {
   }
 
   // Record usage via isAdminToken (this also writes auth_success).
-  isAdminToken(tok, ip);
+  isAdminToken(tok!, ip);
 
-  // Layered rate limit: per-IP and per-token-hash, stricter of the two wins.
-  const rate = checkAdminRateLimit(ip, info.hash);
-  if (!rate.allowed) {
-    return {
-      ok: false,
-      status: 429,
-      reason: "rate-limited",
-      response: NextResponse.json(
-        { error: "Rate limit exceeded.", resetMs: rate.resetMs },
-        { status: 429, headers: { "X-RateLimit-Remaining": String(rate.remaining) } },
-      ),
-    };
-  }
+  // The anonymous IP bucket was consumed before authentication. Consume the
+  // credential bucket only after a valid admin identity has been established.
+  const rate = checkAdminTokenRateLimit(info.hash);
+  if (!rate.allowed) return rateLimited(rate);
 
   return { ok: true, tokenHash: info.hash, ip };
+}
+
+function rateLimited(rate: { resetMs: number; remaining: number }): AdminAuthFail {
+  return {
+    ok: false,
+    status: 429,
+    reason: "rate-limited",
+    response: NextResponse.json(
+      { error: "Rate limit exceeded.", resetMs: rate.resetMs },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.max(1, Math.ceil(rate.resetMs / 1000))),
+          "X-RateLimit-Remaining": String(rate.remaining),
+        },
+      },
+    ),
+  };
 }

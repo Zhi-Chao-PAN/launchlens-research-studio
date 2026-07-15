@@ -2,6 +2,7 @@ import { selectProvider } from "@/lib/providers/provider-registry";
 import type { ProviderFallbackDetail, ProviderFallbackReason } from "@/lib/providers/provider.types";
 import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 import { buildDeepSynthesisContext } from "@/lib/research/deep-validation";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import type {
   AgentOutput,
   ResearchSession,
@@ -53,7 +54,7 @@ export async function runDeepSynthesisStage(
     );
   }
 
-  const provider = selectProvider();
+  const provider = selectProvider(process.env, { failureMode: "throw" });
   if (provider.isMock) {
     throw new DeepWorkExecutionError(
       "mock_provider_forbidden",
@@ -153,7 +154,7 @@ function requireCompletedValidation(
   value: ResearchSession["validation"],
 ): ValidationLedgerV2 {
   if (
-    value?.version !== 2 ||
+    !isValidationLedgerV2(value) ||
     value.protocol.executedPasses !== 3 ||
     !value.protocol.deepMultiPassExecuted ||
     value.semanticValidation.status !== "completed"

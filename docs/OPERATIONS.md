@@ -1,75 +1,140 @@
 # Operations guide
 
-This guide is for operators running the studio with real LLM keys.
+This guide describes the production contract for real providers, the
+administrator key vault, and durable Deep Research. The complete variable list
+is in [`.env.example`](../.env.example).
 
-## Provider selection
+## Runtime authority
 
-The runtime picks a provider based on environment variables. Order of
-precedence:
+Choose one provider credential authority per deployment:
 
-1. LAUNCHLENS_PROVIDER=mock      always use the deterministic mock.
-2. LAUNCHLENS_PROVIDER=openai    require OpenAI even when Anthropic is set.
-3. LAUNCHLENS_PROVIDER=anthropic require Anthropic.
-4. ANTHROPIC_API_KEY set         auto-prefer Anthropic.
-5. OPENAI_API_KEY set            fall back to OpenAI.
-6. otherwise                     use the mock.
+- **Managed production mode:** set
+  `LAUNCHLENS_PROVIDER_KEYRING_ENABLED=1` and declare exactly one runtime
+  provider with `LAUNCHLENS_PROVIDER_KEYRING_PROVIDER=openai|anthropic`.
+  Redis-backed slots 1, 2, and 3 are the only provider credentials.
+- **Legacy compatibility mode:** leave the keyring disabled and provide one
+  environment key. This is convenient for local development but does not
+  provide ordered credential failover.
+- **Mock mode:** use `LAUNCHLENS_PROVIDER=mock` for demos and deterministic CI.
 
-Real providers always fall back to the mock on:
+The managed deployment provider is the authority used by the console, runtime,
+capability gate, structured reviewer, and scheduler checks. It is intentionally
+read-only in `/admin`.
 
-- HTTP 4xx (degrade immediately to keep quota intact)
-- HTTP 5xx or 429 after 3 retry attempts with exponential backoff
-- JSON parse failure
-- output-validator schema violation
+## Production prerequisites
 
-## Diagnostics endpoints
+### Persistence and administrator access
 
-- GET /api/health
-  Returns status, version, uptime, current provider info, and a
-  breakers snapshot. Use this for liveness probes.
+Configure one complete Redis pair:
 
-- GET /api/telemetry?limit=50
-  Returns summary (total, success rate, average ms, per-provider and
-  per-agent breakdown), breakers, and the most recent N records
-  (default 50, max 200).
+```text
+UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+or
+KV_REST_API_URL + KV_REST_API_TOKEN
+```
 
-- POST /api/vitals
-  Sink for client-side beacons (web vitals + crash breadcrumbs). Logs
-  payload in non-production environments.
+Then configure:
 
-## Reliability primitives
+- `LAUNCHLENS_ADMIN_TOKENS`: long, rotatable bootstrap tokens;
+- `LAUNCHLENS_ADMIN_SESSION_SECRET`: a distinct secret of at least 32 random
+  bytes;
+- `LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET`: canonical Base64 for exactly 32
+  random bytes;
+- `LAUNCHLENS_PROVIDER_KEYRING_ENABLED=1`;
+- `LAUNCHLENS_PROVIDER_KEYRING_PROVIDER=openai|anthropic`.
 
-### Circuit breaker
+Use `/admin` to populate the three ordered slots. The API never returns provider
+keys, suffixes, or fingerprints. Treat loss of the encryption secret as loss of
+the encrypted credentials; the runtime intentionally does not guess or decrypt
+with another value.
 
-Per-provider state lives in src/lib/utils/circuit-breaker.ts. Default
-config: 5 consecutive failures opens the breaker for 60 seconds.
-While open, the engine short-circuits to the deterministic mock and
-records telemetry under "<provider>(breaker:open->mock)" so the
-fallback is auditable.
+### Deep Research
 
-A single success after the cooldown closes the breaker.
+`GET /api/research/capabilities` evaluates eight requirements before Deep can
+leave Preview:
 
-### Rate limiting
+1. explicit Deep opt-in;
+2. reachable Redis;
+3. a real generation provider with at least one usable credential;
+4. real Tavily retrieval;
+5. a strict semantic reviewer;
+6. an authenticated worker wake;
+7. a declared independent recovery source;
+8. fresh, chronological recovery heartbeat evidence.
 
-POST /api/research uses checkRateLimit keyed by the first
-X-Forwarded-For value. Default capacity 10, refill interval 60 s.
-Blocked requests return 429 with X-RateLimit-Remaining and
-X-RateLimit-Reset-Ms response headers.
+At minimum, configure `LAUNCHLENS_DEEP_ENABLED`, a distinct
+`LAUNCHLENS_DEEP_WORKER_SECRET`, `TAVILY_API_KEY`, `CRON_SECRET`, recovery mode
+and maximum delay, plus one independent scheduler that POSTs to
+`/api/cron/scheduler` at an observed cadence of at most 300 seconds. The worker
+secret and cron secret must be different and at least 24 characters.
 
-### Retry
+The checked-in GitHub recovery workflow is manual emergency tooling. It is not
+the production clock and cannot satisfy cadence freshness by declaration.
 
-retryWithBackoff (src/lib/utils/retry.ts) is shared by both real
-providers. Default 3 attempts, base 200 ms, cap 2 s, 25 percent jitter.
-Only failures whose message starts with "retriable HTTP" trigger a
-retry; everything else surfaces immediately.
+## Failure contracts
 
-## Tuning
+Managed provider slots are attempted strictly `1 -> 2 -> 3`, with at most one
+upstream request per slot for one logical operation. Authentication, quota,
+rate-limit, network, timeout-response, and 5xx failures may rotate to the next
+slot. Schema, configuration, parsing, empty-response, and validation failures
+stop immediately. Abort signals also stop immediately.
 
-| Knob                       | Default | Where                                        |
-| -------------------------- | ------- | -------------------------------------------- |
-| Rate limit capacity        | 10      | src/lib/api/rate-limit.ts (DEFAULT_CONFIG)   |
-| Rate limit interval        | 60 s    | src/lib/api/rate-limit.ts (DEFAULT_CONFIG)   |
-| Breaker threshold          | 5       | src/lib/utils/circuit-breaker.ts             |
-| Breaker cooldown           | 60 s    | src/lib/utils/circuit-breaker.ts             |
-| Retry max attempts         | 3       | src/lib/utils/retry.ts                       |
-| Retry base delay           | 200 ms  | src/lib/utils/retry.ts                       |
-| Telemetry ring capacity    | 200     | src/lib/telemetry/telemetry.ts               |
+- **Standard:** after the managed path is exhausted, one deterministic mock
+  fallback is allowed only with explicit degraded/fallback provenance.
+- **Deep and semantic review:** fail closed. Provider or retrieval failure must
+  never be represented as verified research.
+
+When managed mode is enabled, legacy environment keys are never used as an
+implicit fourth credential.
+
+## Vercel deployment protection and worker routing
+
+For protected Preview deployments, enable Vercel **Protection Bypass for
+Automation**. Vercel injects `VERCEL_AUTOMATION_BYPASS_SECRET`; the Deep wake
+dispatcher forwards it only in the `x-vercel-protection-bypass` header. Do not
+copy the value into source control, URLs, diagnostics, or logs.
+
+Worker-origin precedence is environment-aware:
+
+1. `LAUNCHLENS_DEEP_WORKER_BASE_URL`, when explicitly set;
+2. `VERCEL_URL` for Preview and other non-Production deployments;
+3. `VERCEL_PROJECT_PRODUCTION_URL`, preferred only when
+   `VERCEL_ENV=production` (with `VERCEL_URL` as its fallback).
+
+This prevents a protected Preview deployment from accidentally waking the
+Production worker. Worker origins require HTTPS except for loopback local
+development.
+
+## Diagnostics
+
+- `GET /api/health` provides liveness and current runtime status.
+- `GET /api/research/capabilities` explains every Deep gate requirement and the
+  observed recovery state.
+- `/admin` shows the deployment provider plus non-secret slot configuration and
+  health metadata.
+- `GET /api/telemetry?limit=50` provides recent provider/agent summaries where
+  enabled by the deployment.
+- CI always uploads `screenshots/` and `output/playwright/`; server startup logs
+  are retained there so browser failures can be diagnosed without rerunning the
+  job.
+
+Never diagnose by printing administrator tokens, provider keys, encryption
+secrets, the Deep worker secret, the cron secret, or the Vercel bypass secret.
+
+## Release checklist
+
+1. Run lint, typecheck, unit tests, production build, smoke, and browser E2E.
+2. Confirm the managed provider shown in `/admin` matches the intended
+   deployment provider and at least one slot is enabled and decryptable.
+3. Verify a Standard real-provider run records real provenance; separately
+   verify that an intentional total provider failure is visibly degraded.
+4. Verify Deep rejects missing retrieval/reviewer/provider prerequisites instead
+   of falling back to mock.
+5. Trigger one authenticated worker wake against the actual deployment origin.
+   On protected Preview, verify the request does not redirect to Vercel SSO.
+6. Invoke the independent scheduler normally and wait for genuine chronological
+   heartbeat history; rapid manual bursts are not cadence proof.
+7. Recheck `GET /api/research/capabilities` and confirm all eight requirements
+   pass before presenting Deep as available.
+8. Inspect CI artifacts and Vercel logs for secret-free failures before
+   promotion.

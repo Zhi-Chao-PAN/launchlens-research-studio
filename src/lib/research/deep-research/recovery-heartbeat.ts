@@ -13,7 +13,7 @@
 //     degraded so the UI can show "Recovery delayed" instead of a false
 //     "available".
 //   - A rolling series of recent ticks is kept at
-//     `rs:deep:recovery:history` (a Redis list, oldest first, bounded
+//     `rs:deep:recovery:history` (stored newest first, read oldest first, bounded
 //     by `DEFAULT_HISTORY_MAX_ENTRIES`). The gate reads this series to
 //     require a *bounded series* of consecutive successful ticks before
 //     claiming `healthy` — one sample is not enough evidence that the
@@ -42,6 +42,13 @@ export const DEFAULT_HISTORY_MAX_ENTRIES = 64; // ~5.3h of 5-min ticks
  * deploy that happened to fire once.
  */
 export const MIN_CONSECUTIVE_OK_FOR_HEALTHY = 3;
+
+const RELEASE_RECOVERY_LOCK_SCRIPT = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`;
 
 export interface RecoveryHeartbeat {
   lastOkAt: string | null;
@@ -181,10 +188,9 @@ export async function readRecoveryHistory(
   if (!redis) return [];
   try {
     const limit = options.historyLimit ?? DEFAULT_HISTORY_MAX_ENTRIES;
-    // Redis LRANGE is inclusive at both ends. We pull the newest `limit`
-    // entries (indices -limit..-1) and reverse to oldest-first order so
-    // downstream analytics see a chronological stream.
-    const raw = await redis.lrange<string | null>(RECOVERY_HISTORY_KEY, -limit, -1);
+    // LPUSH stores newest entries at index 0. Pull 0..limit-1 and reverse
+    // so callers receive the newest bounded window in chronological order.
+    const raw = await redis.lrange<string | null>(RECOVERY_HISTORY_KEY, 0, Math.max(0, limit - 1));
     if (!Array.isArray(raw)) return [];
     const entries = raw
       .map((entry) => parseHistoryEntry(entry))
@@ -288,11 +294,9 @@ export async function releaseRecoveryLock(
   const redis = options.redis ?? getRedis();
   if (!redis) return;
   try {
-    // Only release if we still own the lock.
-    const current = await redis.get<string | null>(HEARTBEAT_LOCK_KEY);
-    if (current === requestId) {
-      await redis.del(HEARTBEAT_LOCK_KEY);
-    }
+    // Compare-and-delete atomically. A separate GET/DEL can erase a new
+    // holder if our lease expires between those two commands.
+    await redis.eval(RELEASE_RECOVERY_LOCK_SCRIPT, [HEARTBEAT_LOCK_KEY], [requestId]);
   } catch {
     // Best-effort: TTL also releases the lock if we crash.
   }

@@ -10,6 +10,7 @@ import {
   getTokenInfo,
   checkAdminRateLimit,
 } from "@/lib/api/bypass-tokens";
+import { clearAuthAudit, snapshotAuthAudit } from "@/lib/api/auth-audit";
 
 // Note: hasTokenScope may or may not exist yet - let's test what we have.
 // Actually it doesn't exist in the new version; we use isAdminToken instead.
@@ -17,6 +18,7 @@ import {
 describe("bypass-tokens", () => {
   beforeEach(() => {
     clearBypassTokens();
+    clearAuthAudit();
   });
 
   describe("createBypassToken + scopes", () => {
@@ -116,6 +118,14 @@ describe("bypass-tokens", () => {
       isBypassToken(tok, "1.2.3.4");
       const after = listBypassTokens()[0];
       expect(after.lastIp).toBe("1.2.3.4");
+    });
+
+    it("hashes the IP in audit events instead of storing the raw address", () => {
+      const tok = createBypassToken("admin", "audit-ip-test");
+      isAdminToken(tok, "203.0.113.42");
+      const event = snapshotAuthAudit().at(-1);
+      expect(event?.ipHash).toMatch(/^[a-f0-9]{8}$/);
+      expect(event?.ipHash).not.toBe("203.0.113.42");
     });
   });
 

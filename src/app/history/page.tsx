@@ -1,6 +1,5 @@
 "use client";
 
-import { fetchWithCsrf } from "@/lib/api/csrf-client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
@@ -34,13 +33,6 @@ import {
 type HistoryRun = HistoryRunForView;
 
 type StatusFilter = "all" | Exclude<HistoryStatus, "running">;
-
-interface RunsResponse {
-  runs?: HistoryRun[];
-  total?: number;
-  limit?: number;
-  offset?: number;
-}
 
 interface FullResearchRun {
   id: string;
@@ -119,82 +111,42 @@ export default function HistoryPage() {
     setError(null);
 
     try {
-      const params = new URLSearchParams();
       const useClientSideStarredFilter = starredOnly;
-      params.set("limit", useClientSideStarredFilter ? "100" : String(PAGE_SIZE));
-      params.set("offset", useClientSideStarredFilter ? "0" : String((page - 1) * PAGE_SIZE));
-
-      if (searchQuery.trim()) {
-        params.set("q", searchQuery.trim());
-      }
-
-      if (statusFilter !== "all") {
-        params.set("status", statusFilter);
-      }
-
-      const response = await fetch(`/api/research/runs?${params.toString()}`, {
-        cache: "no-store",
+      if (!localHistoryHydrated) return;
+      let nextRuns = mergeServerRunsWithLocalHistory([], localHistory, {
+        query: searchQuery,
+        status: statusFilter === "all" ? undefined : statusFilter,
       });
-
-      if (!response.ok) {
-        throw new Error(`History request failed with HTTP ${response.status}`);
-      }
-
-      const data = (await response.json()) as RunsResponse;
-      let nextRuns = Array.isArray(data.runs) ? data.runs : [];
-      if (localHistoryHydrated) {
-        nextRuns = mergeServerRunsWithLocalHistory(nextRuns, localHistory, {
-          query: searchQuery,
-          status: statusFilter === "all" ? undefined : statusFilter,
-        });
-      }
 
       if (useClientSideStarredFilter) {
         nextRuns = nextRuns.filter((run) => starredIds.has(run.id));
       }
 
       const sorted = sortHistoryRuns(nextRuns, sortBy);
-      const serverTotal = typeof data.total === "number" ? data.total : sorted.length;
-      const nextTotal = useClientSideStarredFilter ? sorted.length : Math.max(serverTotal, sorted.length);
+      const nextTotal = sorted.length;
       const nextTotalPages = useClientSideStarredFilter
         ? 1
         : Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+      const visible = useClientSideStarredFilter
+        ? sorted
+        : sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-      setRuns(sorted);
+      setRuns(visible);
       setTotalRuns(nextTotal);
       setTotalPages(nextTotalPages);
       setSelectedIds((prev) => {
-        const visibleIds = new Set(sorted.map((run) => run.id));
+        const visibleIds = new Set(visible.map((run) => run.id));
         return new Set([...prev].filter((id) => visibleIds.has(id)));
       });
     } catch (loadError) {
-      const message = loadError instanceof Error ? loadError.message : t("history.loadFailed");
-      const localFallback = localHistoryHydrated
-        ? sortHistoryRuns(
-            mergeServerRunsWithLocalHistory([], localHistory, {
-              query: searchQuery,
-              status: statusFilter === "all" ? undefined : statusFilter,
-            }),
-            sortBy,
-          )
-        : [];
-
-      if (localFallback.length > 0) {
-        setError(null);
-        setRuns(localFallback);
-        setTotalRuns(localFallback.length);
-        setTotalPages(1);
-        showToast(t("history.localFallback", { count: localFallback.length, message }), "warning");
-      } else {
-        setError(message);
-        setRuns([]);
-        setTotalRuns(0);
-        setTotalPages(1);
-      }
+      setError(loadError instanceof Error ? loadError.message : t("history.loadFailed"));
+      setRuns([]);
+      setTotalRuns(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, [localHistory, localHistoryHydrated, page, searchQuery, showToast, sortBy, starredIds, starredOnly, statusFilter, t]);
+  }, [localHistory, localHistoryHydrated, page, searchQuery, sortBy, starredIds, starredOnly, statusFilter, t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -258,31 +210,11 @@ export default function HistoryPage() {
     setBulkActionLoading(true);
 
     try {
-      const ids = [...selectedIds].join(",");
-      const response = await fetchWithCsrf(`/api/research/runs?ids=${encodeURIComponent(ids)}`, {
-        method: "DELETE",
-      });
-
-      // The public history view intentionally cannot enumerate or mutate the
-      // server-wide run store. When it is showing the local recovery history,
-      // a 401 means this action should remain local instead of presenting a
-      // broken destructive control.
-      if (response.status === 401) {
-        for (const id of selectedIds) removeLocalHistoryEntry(id);
-        setRuns((current) => current.filter((run) => !selectedIds.has(run.id)));
-        setTotalRuns((current) => Math.max(0, current - selectedIds.size));
-        showToast(t("history.deleteSuccess", { count: selectedIds.size }), "success");
-        clearSelection();
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(`Delete failed with HTTP ${response.status}`);
-      }
-
+      for (const id of selectedIds) removeLocalHistoryEntry(id);
+      setRuns((current) => current.filter((run) => !selectedIds.has(run.id)));
+      setTotalRuns((current) => Math.max(0, current - selectedIds.size));
       showToast(t("history.deleteSuccess", { count: selectedIds.size }), "success");
       clearSelection();
-      await loadRuns();
     } catch (deleteError) {
       const message = deleteError instanceof Error ? deleteError.message : t("history.deleteFailed");
       showToast(message, "error");

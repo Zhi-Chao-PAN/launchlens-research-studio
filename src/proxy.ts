@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf-constants";
 
 /**
- * Global middleware for `/api/*` requests.
+ * Global proxy for `/api/*` requests.
  *
  * R202: this is the first line of defence. Each route may still apply its
  * own finer-grained checks (admin token, per-route rate limits, etc).
@@ -24,10 +24,10 @@ import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/lib/api/csrf-constants";
  *  - Admin-token gating. The four `/api/admin/*` endpoints use the
  *    `requireAdmin` helper inside the route, because that path also
  *    needs to record audit events and apply the per-token-hash rate limit
- *    that is impossible from edge middleware.
+ *    that is intentionally handled by the route rather than the global proxy.
  *  - CORS. The existing per-route `checkCors` helper reads env-derived
- *    allowed-origin lists that we don't want to surface to the edge
- *    bundle. CORS preflight is handled by the existing OPTIONS handlers.
+ *    allowed-origin lists that we keep out of this global request boundary.
+ *    CORS preflight is handled by the existing OPTIONS handlers.
  */
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -42,7 +42,7 @@ export const config = {
   matcher: "/api/:path*",
 };
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const method = (request.method || "GET").toUpperCase();
   const pathname = request.nextUrl.pathname;
 
@@ -99,7 +99,7 @@ export function middleware(request: NextRequest) {
 }
 
 export function safeEqual(a: string, b: string): boolean {
-  // Constant-time string compare — Edge runtime (no node:crypto) friendly.
+  // Constant-time string compare without a runtime-specific crypto dependency.
   // CSRF tokens are base64-encoded random strings; length is exposed via the
   // short-circuit on line 1, which is fine since the length itself is not
   // secret. The XOR-accumulate loop below ensures per-byte comparisons

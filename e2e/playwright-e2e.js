@@ -100,7 +100,12 @@ async function run() {
   console.log("Server ready.\n");
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // Keep this broad product-flow suite deterministic across developer/CI
+  // machines. Locale switching itself is covered by the dedicated admin E2E.
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    locale: "en-US",
+  });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (err) => errors.push("pageerror: " + err.message));
@@ -252,8 +257,15 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"),
 
     // ====== Test 6: Wait for completion + check ExportActions ======
     console.log("\n[6] Export actions");
-    await page.waitForSelector('button[aria-pressed]:has-text("Synthesis")', { timeout: 60000 });
-    log("Research completes", true);
+    // The Synthesis tab can render before the overall run has transitioned to
+    // `completed`.  The Share action is intentionally completion-gated, so it
+    // is the stable user-visible signal that the whole run has finished.
+    const shareButton = page.getByRole("button", { name: "Share", exact: true }).first();
+    const researchCompleted = await shareButton
+      .waitFor({ state: "visible", timeout: 60000 })
+      .then(() => true)
+      .catch(() => false);
+    log("Research completes", researchCompleted);
 
     const downloadButtons = await page.locator('button').filter({ hasText: /Download Markdown|Download JSON|Download CSVs|Print/i }).count();
     log("Export download buttons present", downloadButtons >= 3, `count=${downloadButtons}`);
@@ -263,8 +275,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"),
 
     // ====== Test 7: Share button ======
     console.log("\n[7] Share button");
-    const shareButton = page.locator('button:has-text("Share")').first();
-    if (await shareButton.count() > 0) {
+    if (await shareButton.isVisible().catch(() => false)) {
       log("Share button exists", true);
     } else {
       log("Share button exists", false, "not found");
@@ -283,7 +294,10 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-dark-mode.png"),
     // ====== Test 9: Mobile viewport ======
     console.log("\n[9] Mobile viewport");
     await context.close();
-    const mobileCtx = await browser.newContext({ viewport: { width: 375, height: 667 } });
+    const mobileCtx = await browser.newContext({
+      viewport: { width: 375, height: 667 },
+      locale: "en-US",
+    });
     const mobilePage = await mobileCtx.newPage();
     await mobilePage.goto(BASE_URL, { waitUntil: "networkidle" });
     await settle(mobilePage, 300);

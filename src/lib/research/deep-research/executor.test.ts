@@ -151,4 +151,24 @@ describe("ProductionDeepWorkExecutor", () => {
     await expect(workExecutor.execute({ record: initial, work: initial.work[5] }))
       .rejects.toMatchObject({ code: "execution_profile_changed", retryable: false });
   });
+
+  it("fails finalization when status flags conceal a non-canonical ledger", async () => {
+    const initial = record(10);
+    initial.session.validation = {
+      version: 2,
+      protocol: { executedPasses: 3 },
+      semanticValidation: { status: "completed" },
+      provenance: { mockAgents: [], degradedAgents: [] },
+    } as never;
+    initial.session.agents.synthesis = {
+      ...initial.session.agents.synthesis,
+      status: "done",
+      degraded: false,
+      output: { agent: "synthesis" } as never,
+    };
+    const { executor: workExecutor } = executor();
+
+    await expect(workExecutor.execute({ record: initial, work: initial.work[10] }))
+      .rejects.toMatchObject({ code: "finalization_contract_failed", retryable: false });
+  });
 });

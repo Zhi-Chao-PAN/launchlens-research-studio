@@ -10,6 +10,7 @@ import {
   initializeDeepValidation,
   registerTrustedReviewSources,
 } from "@/lib/research/deep-validation";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import type {
   ClaimReviewFinding,
   ClaimReviewPassKind,
@@ -111,7 +112,16 @@ export class DeepSemanticReviewer {
     session: ResearchSession,
     pass: DeepValidationPassKind,
   ): ValidationLedgerV2 {
-    if (session.validation?.version === 2) return session.validation;
+    if (session.validation !== undefined) {
+      if (!isValidationLedgerV2(session.validation)) {
+        throw new DeepWorkExecutionError(
+          "validation_protocol_out_of_order",
+          false,
+          "Deep semantic validation cannot resume from a non-canonical validation ledger.",
+        );
+      }
+      return session.validation;
+    }
     if (pass !== "claim_source_entailment") {
       throw new DeepWorkExecutionError(
         "validation_protocol_out_of_order",
@@ -219,7 +229,7 @@ function requestForClaimReview(
     maxTotalSources: MAX_PROMPT_SOURCES,
     minSourcesPerClaim: 1,
   });
-  const sources = slices.flatMap((slice) => slice.sources);
+  const sources = uniqueSourcesFromSlices(slices);
   const task = passOne
     ? [
         "For every claim, determine whether its own cited source snippets entail the full bounded claim.",
@@ -267,7 +277,7 @@ function requestForAdjudication(
     maxTotalSources: MAX_PROMPT_SOURCES,
     minSourcesPerClaim: 1,
   });
-  const sources = slices.flatMap((slice) => slice.sources);
+  const sources = uniqueSourcesFromSlices(slices);
   return {
     schemaName: "deep_adjudication",
     systemPrompt: [
@@ -329,7 +339,8 @@ export interface BuildClaimEvidenceSlicesOptions {
  *     round-robin filler.
  *   - Source ids are unique across the entire prompt payload.
  */
-export function buildClaimEvidenceSlices(
+/** @deprecated Kept temporarily for compatibility with serialized test fixtures. */
+export function buildClaimEvidenceSlicesLegacy(
   ledger: ValidationLedgerV2,
   options: BuildClaimEvidenceSlicesOptions,
 ): ClaimEvidenceSlice[] {
@@ -420,6 +431,111 @@ export function buildClaimEvidenceSlices(
   }
 
   return slices;
+}
+
+/**
+ * Build a claim-to-source mapping with a de-duplicated global catalog budget.
+ * Minimum evidence is admitted for every claim as one atomic round before
+ * filler is distributed. A shared source may therefore appear in multiple
+ * slices while counting only once toward `maxTotalSources`.
+ */
+export function buildClaimEvidenceSlices(
+  ledger: ValidationLedgerV2,
+  options: BuildClaimEvidenceSlicesOptions,
+): ClaimEvidenceSlice[] {
+  const sourcesById = new Map(ledger.reviewSources.map((source) => [source.id, source]));
+  const perClaimCap = Math.max(0, options.maxSourcesPerClaim ?? 6);
+  const minPerClaim = Math.min(perClaimCap, Math.max(0, options.minSourcesPerClaim));
+  const maxTotalSources = Math.max(0, options.maxTotalSources);
+  const catalogIds = new Set<string>();
+
+  const bindings = ledger.claims.map((claim) => {
+    const original = claim.sourceIds
+      .map((id) => sourcesById.get(id))
+      .filter((source): source is ClaimReviewSource => Boolean(source))
+      .filter((source) => source.agent === claim.agentId);
+    const independent = ledger.reviewSources.filter(
+      (source) =>
+        source.origin === "independent_retrieval" &&
+        source.agent === claim.agentId &&
+        source.claimIds?.includes(claim.id),
+    );
+    const minimumCandidates = options.pass === "independent_corroboration_conflict"
+      ? independent
+      : options.pass === "claim_source_entailment"
+        ? original
+        : dedupeReviewSources([...original, ...independent]);
+    const allCandidates = options.pass === "claim_source_entailment"
+      ? original
+      : dedupeReviewSources([...independent, ...original]);
+    return {
+      slice: { claim, sources: [] } as ClaimEvidenceSlice,
+      minimumCandidates,
+      allCandidates,
+      cursor: 0,
+    };
+  });
+
+  for (let round = 0; round < minPerClaim; round += 1) {
+    const proposed = bindings.map((binding) => {
+      const selected = new Set(binding.slice.sources.map((source) => source.id));
+      return binding.minimumCandidates.find((source) => !selected.has(source.id));
+    });
+    const proposedCatalog = new Set([
+      ...catalogIds,
+      ...proposed.filter((source): source is ClaimReviewSource => Boolean(source)).map((source) => source.id),
+    ]);
+    if (proposedCatalog.size > maxTotalSources) {
+      throw new DeepWorkExecutionError(
+        "claim_evidence_budget_exhausted",
+        false,
+        `The ${maxTotalSources}-source prompt budget cannot admit the required per-claim evidence floor.`,
+      );
+    }
+    proposed.forEach((source, index) => {
+      if (!source) return;
+      bindings[index].slice.sources.push(source);
+      catalogIds.add(source.id);
+    });
+  }
+
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const binding of bindings) {
+      if (binding.slice.sources.length >= perClaimCap) continue;
+      const selected = new Set(binding.slice.sources.map((source) => source.id));
+      while (
+        binding.cursor < binding.allCandidates.length &&
+        selected.has(binding.allCandidates[binding.cursor].id)
+      ) {
+        binding.cursor += 1;
+      }
+      const next = binding.allCandidates[binding.cursor++];
+      if (!next) continue;
+      if (!catalogIds.has(next.id) && catalogIds.size >= maxTotalSources) continue;
+      binding.slice.sources.push(next);
+      catalogIds.add(next.id);
+      progressed = true;
+    }
+  }
+
+  return bindings.map((binding) => binding.slice);
+}
+
+function dedupeReviewSources(sources: readonly ClaimReviewSource[]): ClaimReviewSource[] {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    if (seen.has(source.id)) return false;
+    seen.add(source.id);
+    return true;
+  });
+}
+
+export function uniqueSourcesFromSlices(
+  slices: readonly ClaimEvidenceSlice[],
+): ClaimReviewSource[] {
+  return dedupeReviewSources(slices.flatMap((slice) => slice.sources));
 }
 
 export function assertAllClaimsHaveAtLeastOneSource(

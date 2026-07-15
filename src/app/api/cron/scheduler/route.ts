@@ -10,6 +10,10 @@ import {
   releaseRecoveryLock,
   writeRecoveryHeartbeat,
 } from "@/lib/research/deep-research/recovery-heartbeat";
+import {
+  isManagedKeyringEnabled,
+  resolveManagedKeyringProvider,
+} from "@/lib/providers/managed-keyring-config";
 
 // R212: serverless-friendly scheduler trigger.
 //
@@ -222,17 +226,40 @@ export function checkStructuralRecoveryReadiness(
   if (cronSecret && workerSecret && cronSecret === workerSecret) missing.push("secrets-equal");
   if (!resolveDeepWorkerOrigin(env)) missing.push("worker-origin");
   // Real provider: must be configured and not mock-forced.
-  if (!env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) missing.push("provider-key");
-  if (env.LAUNCHLENS_PROVIDER === "mock") missing.push("provider-forced-mock");
+  const keyringEnabled = isManagedKeyringEnabled(env);
+  const managedProvider = resolveManagedKeyringProvider(env);
+  const hasLegacyProviderKey = Boolean(
+    env.OPENAI_API_KEY || env.LAUNCHLENS_OPENAI_KEY || env.ANTHROPIC_API_KEY,
+  );
+  if (keyringEnabled ? !managedProvider : !hasLegacyProviderKey) {
+    missing.push("provider-key");
+  }
+  if (env.LAUNCHLENS_PROVIDER?.trim().toLowerCase() === "mock") {
+    missing.push("provider-forced-mock");
+  }
   // Real retrieval: must be configured and not mock-forced.
   if (!env.TAVILY_API_KEY) missing.push("retrieval-key");
   if (env.LAUNCHLENS_SEARCH_PROVIDER === "mock") missing.push("retrieval-forced-mock");
   // Real reviewer: must be configured and not mock-forced.
+  const managedReviewerOverride = env.LAUNCHLENS_REVIEW_PROVIDER
+    ?.trim()
+    .toLowerCase();
+  const managedReviewerReady = Boolean(
+    managedProvider &&
+      managedReviewerOverride !== "mock" &&
+      (!managedReviewerOverride || managedReviewerOverride === managedProvider),
+  );
+  const legacyReviewerReady = Boolean(
+    env.LAUNCHLENS_REVIEW_OPENAI_KEY ||
+      env.LAUNCHLENS_REVIEW_ANTHROPIC_KEY ||
+      env.OPENAI_API_KEY ||
+      env.LAUNCHLENS_OPENAI_KEY ||
+      env.ANTHROPIC_API_KEY,
+  );
   if (
-    !env.LAUNCHLENS_REVIEW_OPENAI_KEY &&
-    !env.LAUNCHLENS_REVIEW_ANTHROPIC_KEY &&
-    !env.OPENAI_API_KEY &&
-    !env.ANTHROPIC_API_KEY
+    keyringEnabled
+      ? !managedReviewerReady
+      : !legacyReviewerReady
   ) {
     missing.push("reviewer-key");
   }

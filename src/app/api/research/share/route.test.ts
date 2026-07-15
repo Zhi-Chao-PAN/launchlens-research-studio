@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const {
+  checkRateLimit,
   checkRateLimitForIp,
   createShareToken,
   getSharesForRun,
@@ -10,6 +11,7 @@ const {
   rotateCsrf,
   verifyCsrf,
 } = vi.hoisted(() => ({
+  checkRateLimit: vi.fn(() => ({ allowed: true, remaining: 10, resetMs: 0 })),
   checkRateLimitForIp: vi.fn(() => ({ allowed: true, resetMs: 0 })),
   createShareToken: vi.fn(() => ({
     token: "share-token",
@@ -26,7 +28,7 @@ const {
 
 vi.mock("@/lib/api/csrf-guard", () => ({ verifyCsrf }));
 vi.mock("@/lib/api/csrf-rotate", () => ({ rotateCsrf }));
-vi.mock("@/lib/api/rate-limit", () => ({ checkRateLimitForIp }));
+vi.mock("@/lib/api/rate-limit", () => ({ checkRateLimit, checkRateLimitForIp }));
 vi.mock("@/lib/research/resolve-run", () => ({ resolveResearchRun }));
 vi.mock("@/lib/research/share-tokens", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/research/share-tokens")>();
@@ -136,6 +138,20 @@ describe("GET /api/research/share", () => {
   it("rejects an arbitrary bearer string", async () => {
     const response = await GET(getRequest("not-a-registered-token"));
     expect(response.status).toBe(401);
+    expect(getSharesForRun).not.toHaveBeenCalled();
+  });
+
+  it("does not let a valid admin token bypass the pre-authentication IP limit", async () => {
+    checkRateLimit.mockReturnValueOnce({ allowed: false, remaining: 0, resetMs: 30_000 });
+
+    const response = await GET(getRequest("share-admin"));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(checkRateLimit).toHaveBeenCalledWith(
+      "admin:ip:anonymous",
+      { capacity: 30, refillIntervalMs: 60_000 },
+    );
     expect(getSharesForRun).not.toHaveBeenCalled();
   });
 
