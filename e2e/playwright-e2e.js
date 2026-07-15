@@ -118,14 +118,20 @@ async function run() {
     await settle(page, 300);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
 
-    await page.waitForSelector("h2:has-text(\"Research any market\")", { timeout: 8000 }).catch(() => {});
-    const heroVisible = await page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first().isVisible();
+    // Wait for the hero h2 to be attached and visible. The old code used
+    // waitForSelector().catch(() => {}) which swallowed the timeout, then
+    // isChecked isVisible() on a possibly-not-yet-hydrated node. Use
+    // waitFor() which resolves only when the element is visible.
+    const heroLocator = page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first();
+    const heroVisible = await heroLocator.waitFor({ state: "visible", timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
     log("Hero text visible", heroVisible);
 
-    const hasQueryInput = await page.locator("textarea").first().isVisible();
+    const hasQueryInput = await page.locator("textarea").first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
     log("Query textarea visible", hasQueryInput);
 
-    const hasStartButton = await page.locator('button:has-text("Start Research")').first().isVisible();
+    const hasStartButton = await page.locator('button:has-text("Start Research")').first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
     log("Start Research button visible", hasStartButton);
 
     // ====== Test 2: Theme toggle ======
@@ -170,7 +176,10 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
     const healthJson = await healthResponse.json();
     log('health endpoint serves provider info', healthResponse.status() === 200 && healthJson.status === 'ok' && !!healthJson.provider, 'provider=' + (healthJson.provider && healthJson.provider.id));
     const telemetryResponse = await page.request.get(BASE_URL + '/api/telemetry');
-    log('telemetry endpoint serves summary', telemetryResponse.status() === 200);
+    // The telemetry endpoint is admin-gated (R202). Without an admin bearer
+    // token the probe gets 401/403; that proves the endpoint exists and is
+    // protected, which is the property we want to verify in E2E.
+    log('telemetry endpoint is gated', telemetryResponse.status() === 401 || telemetryResponse.status() === 403, 'status=' + telemetryResponse.status());
     const diagnosticsResponse = await page.request.get(BASE_URL + '/diagnostics');
     log('diagnostics page renders 200', diagnosticsResponse.status() === 200);
     const diagHtml = await diagnosticsResponse.text();
