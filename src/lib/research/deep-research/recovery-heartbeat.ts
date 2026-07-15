@@ -12,6 +12,12 @@
 //     declared max delay, the gate reports `recovery_freshness` as
 //     degraded so the UI can show "Recovery delayed" instead of a false
 //     "available".
+//   - A rolling series of recent ticks is kept at
+//     `rs:deep:recovery:history` (a Redis list, oldest first, bounded
+//     by `DEFAULT_HISTORY_MAX_ENTRIES`). The gate reads this series to
+//     require a *bounded series* of consecutive successful ticks before
+//     claiming `healthy` — one sample is not enough evidence that the
+//     scheduler actually meets its cadence.
 //
 // All operations are best-effort: a missing or unreachable Redis makes
 // the heartbeat unavailable, which is reported as degraded (not as a
@@ -23,9 +29,19 @@ import { getRedis } from "@/lib/research/redis-client";
 export const HEARTBEAT_KEY = "rs:deep:recovery:heartbeat";
 export const HEARTBEAT_META_KEY = "rs:deep:recovery:last_run_meta";
 export const HEARTBEAT_LOCK_KEY = "rs:deep:recovery:tick:lock";
+export const RECOVERY_HISTORY_KEY = "rs:deep:recovery:history";
 
 export const DEFAULT_HEARTBEAT_TTL_SECONDS = 35 * 60; // 5x the 5-min cron
 export const DEFAULT_LOCK_TTL_SECONDS = 240; // 4 minutes
+export const DEFAULT_HISTORY_TTL_SECONDS = 24 * 60 * 60; // 24h sliding window
+export const DEFAULT_HISTORY_MAX_ENTRIES = 64; // ~5.3h of 5-min ticks
+/**
+ * Number of consecutive successful ticks required before the capability
+ * gate will mark recovery as `healthy`. With a single sample we have no
+ * evidence the scheduler actually meets its cadence — it is just a cold
+ * deploy that happened to fire once.
+ */
+export const MIN_CONSECUTIVE_OK_FOR_HEALTHY = 3;
 
 export interface RecoveryHeartbeat {
   lastOkAt: string | null;
@@ -36,9 +52,21 @@ export interface RecoveryHeartbeat {
   lastFailed: number | null;
 }
 
+export interface RecoveryHistoryEntry {
+  ok: boolean;
+  at: string;
+  durationMs: number;
+  dispatched: number;
+  failed: number;
+  errorCode: string | null;
+  requestId: string;
+}
+
 export interface ReadHeartbeatOptions {
   redis?: ReturnType<typeof getRedis>;
   now?: () => Date;
+  historyLimit?: number;
+  historyTtlSeconds?: number;
 }
 
 export async function readRecoveryHeartbeat(
@@ -85,6 +113,8 @@ export interface WriteHeartbeatOptions {
   ttlSeconds?: number;
   redis?: ReturnType<typeof getRedis>;
   now?: () => Date;
+  historyTtlSeconds?: number;
+  historyMaxEntries?: number;
 }
 
 export async function writeRecoveryHeartbeat(
@@ -114,6 +144,100 @@ export async function writeRecoveryHeartbeat(
     await redis.expire(HEARTBEAT_META_KEY, ttl);
   } catch {
     // Best-effort: heartbeat is observability, not authority.
+  }
+  // The rolling history MUST be written even if the meta hash above
+  // failed — otherwise the capability gate would not see this tick at
+  // all. We isolate the failure: an exception here never throws.
+  try {
+    await appendRecoveryHistoryEntry(
+      {
+        ok: options.ok,
+        at: now,
+        durationMs: options.durationMs,
+        dispatched: options.dispatched ?? 0,
+        failed: options.failed ?? 0,
+        errorCode: options.ok ? null : options.errorCode ?? "unknown",
+        requestId: options.requestId,
+      },
+      {
+        redis,
+        ttlSeconds: options.historyTtlSeconds,
+        maxEntries: options.historyMaxEntries,
+      },
+    );
+  } catch {
+    // Best-effort: history is observability, not authority.
+  }
+}
+
+/**
+ * Read the rolling history of recent recovery ticks, oldest first.
+ * Length is bounded by the writer's `historyMaxEntries`.
+ */
+export async function readRecoveryHistory(
+  options: ReadHeartbeatOptions = {},
+): Promise<RecoveryHistoryEntry[]> {
+  const redis = options.redis ?? getRedis();
+  if (!redis) return [];
+  try {
+    const limit = options.historyLimit ?? DEFAULT_HISTORY_MAX_ENTRIES;
+    // Redis LRANGE is inclusive at both ends. We pull the newest `limit`
+    // entries (indices -limit..-1) and reverse to oldest-first order so
+    // downstream analytics see a chronological stream.
+    const raw = await redis.lrange<string | null>(RECOVERY_HISTORY_KEY, -limit, -1);
+    if (!Array.isArray(raw)) return [];
+    const entries = raw
+      .map((entry) => parseHistoryEntry(entry))
+      .filter((entry): entry is RecoveryHistoryEntry => entry !== null);
+    return entries.reverse();
+  } catch {
+    return [];
+  }
+}
+
+export interface AppendHistoryEntryOptions {
+  redis?: ReturnType<typeof getRedis>;
+  ttlSeconds?: number;
+  maxEntries?: number;
+}
+
+export async function appendRecoveryHistoryEntry(
+  entry: RecoveryHistoryEntry,
+  options: AppendHistoryEntryOptions = {},
+): Promise<void> {
+  const redis = options.redis ?? getRedis();
+  if (!redis) return;
+  const ttl = options.ttlSeconds ?? DEFAULT_HISTORY_TTL_SECONDS;
+  const max = options.maxEntries ?? DEFAULT_HISTORY_MAX_ENTRIES;
+  try {
+    const payload = JSON.stringify(entry);
+    // LPUSH inserts at the head (newest), LTRIM trims to the most recent
+    // `max` entries (indices 0..max-1). This is the idiomatic bounded
+    // list pattern in Redis.
+    await redis.lpush(RECOVERY_HISTORY_KEY, payload);
+    await redis.ltrim(RECOVERY_HISTORY_KEY, 0, Math.max(0, max - 1));
+    await redis.expire(RECOVERY_HISTORY_KEY, ttl);
+  } catch {
+    // Best-effort: history is observability, not authority.
+  }
+}
+
+function parseHistoryEntry(raw: unknown): RecoveryHistoryEntry | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<RecoveryHistoryEntry>;
+    if (typeof parsed.at !== "string") return null;
+    return {
+      ok: parsed.ok === true,
+      at: parsed.at,
+      durationMs: typeof parsed.durationMs === "number" ? parsed.durationMs : 0,
+      dispatched: typeof parsed.dispatched === "number" ? parsed.dispatched : 0,
+      failed: typeof parsed.failed === "number" ? parsed.failed : 0,
+      errorCode: typeof parsed.errorCode === "string" ? parsed.errorCode : null,
+      requestId: typeof parsed.requestId === "string" ? parsed.requestId : "",
+    };
+  } catch {
+    return null;
   }
 }
 

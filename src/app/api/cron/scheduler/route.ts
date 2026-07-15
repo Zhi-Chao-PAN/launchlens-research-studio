@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { tickSchedules } from "@/lib/research/scheduler";
 import { pruneStaleSessions } from "@/lib/research/research-engine";
 import { jsonErrorLocalized } from "@/lib/api/validation";
-import { probeDeepResearchCapability } from "@/lib/research/deep-research/capability";
+import { resolveDeepWorkerOrigin } from "@/lib/research/deep-research/capability";
 import { createDeepResearchService } from "@/lib/research/deep-research/runtime";
 import {
   acquireRecoveryLock,
@@ -100,21 +100,41 @@ export async function POST(request: NextRequest) {
     let failed = 0;
     try {
       triggered = await tickSchedules();
+      // R400: structural gate only. The cron tick is the producer of the
+      // recovery heartbeat; gating it on the heartbeat freshness (which is
+      // what `probeDeepResearchCapability().availability` does) would be
+      // self-referential and would prevent the first tick after a fresh
+      // deploy from ever running recovery. Instead we verify only the
+      // *structural* prerequisites (opt-in, real providers, redis, secret,
+      // worker origin). `recovery_freshness` is reported back via the
+      // heartbeat itself and surfaced to the UI as an observation, never
+      // used to gate execution here.
       if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
-        const capability = await probeDeepResearchCapability();
-        if (capability.availability === "available") {
-          const result = await createDeepResearchService().signal({
-            kind: "recover",
-            limit: 25,
-          });
-          deepRecovery = { kind: "recovered", result };
-          if (result && typeof result === "object") {
-            const r = result as { dispatched?: unknown; failed?: unknown };
-            if (typeof r.dispatched === "number") dispatched = r.dispatched;
-            if (typeof r.failed === "number") failed = r.failed;
+        const structural = checkStructuralRecoveryReadiness(process.env);
+        if (structural.ready) {
+          try {
+            const result = await createDeepResearchService().signal({
+              kind: "recover",
+              limit: 25,
+            });
+            deepRecovery = { kind: "recovered", result };
+            if (result && typeof result === "object") {
+              const r = result as { dispatched?: unknown; failed?: unknown };
+              if (typeof r.dispatched === "number") dispatched = r.dispatched;
+              if (typeof r.failed === "number") failed = r.failed;
+            }
+          } catch (err) {
+            // R400: do not write a successful heartbeat when the recovery
+            // signal itself failed. The catch handler below will stamp the
+            // failure into the heartbeat metadata.
+            deepRecovery = {
+              kind: "recover-failed",
+              error: err instanceof Error ? err.message : String(err),
+            };
+            throw err;
           }
         } else {
-          deepRecovery = { kind: "preview", blockers: capability.blockers };
+          deepRecovery = { kind: "structural-blocked", missing: structural.missing };
         }
       }
       // R217: piggyback session-map eviction on the cron tick so the
@@ -174,4 +194,54 @@ export function resolveCronSecret(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string {
   return env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET || "";
+}
+
+/**
+ * R400: structural readiness for the recovery tick. The cron tick is the
+ * producer of the recovery heartbeat, so it must NOT be gated on heartbeat
+ * freshness (that would be self-referential and would prevent the first
+ * tick after a fresh deploy from ever running recovery). Instead we check
+ * the *structural* prerequisites: opt-in, real model provider, real retrieval,
+ * real reviewer, durable Redis, dedicated worker secret, and a separate
+ * cron secret of at least 24 characters.
+ *
+ * `recovery_freshness` is reported back to the operator via the heartbeat
+ * itself and surfaced to the UI as an observation, never used here as a
+ * gate. This is what makes the first tick on a fresh deploy (or after a
+ * long pause) still execute the recovery sweep.
+ */
+export function checkStructuralRecoveryReadiness(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): { ready: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (env.LAUNCHLENS_DEEP_ENABLED !== "1") missing.push("deep-not-enabled");
+  const cronSecret = env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET || "";
+  if (cronSecret.length < 24) missing.push("cron-secret");
+  const workerSecret = env.LAUNCHLENS_DEEP_WORKER_SECRET || "";
+  if (workerSecret.length < 24) missing.push("worker-secret");
+  if (cronSecret && workerSecret && cronSecret === workerSecret) missing.push("secrets-equal");
+  if (!resolveDeepWorkerOrigin(env)) missing.push("worker-origin");
+  // Real provider: must be configured and not mock-forced.
+  if (!env.OPENAI_API_KEY && !env.ANTHROPIC_API_KEY) missing.push("provider-key");
+  if (env.LAUNCHLENS_PROVIDER === "mock") missing.push("provider-forced-mock");
+  // Real retrieval: must be configured and not mock-forced.
+  if (!env.TAVILY_API_KEY) missing.push("retrieval-key");
+  if (env.LAUNCHLENS_SEARCH_PROVIDER === "mock") missing.push("retrieval-forced-mock");
+  // Real reviewer: must be configured and not mock-forced.
+  if (
+    !env.LAUNCHLENS_REVIEW_OPENAI_KEY &&
+    !env.LAUNCHLENS_REVIEW_ANTHROPIC_KEY &&
+    !env.OPENAI_API_KEY &&
+    !env.ANTHROPIC_API_KEY
+  ) {
+    missing.push("reviewer-key");
+  }
+  // Redis authority.
+  if (
+    !(env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL) ||
+    !(env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN)
+  ) {
+    missing.push("redis");
+  }
+  return { ready: missing.length === 0, missing };
 }

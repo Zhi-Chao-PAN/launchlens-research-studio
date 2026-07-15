@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { probeDeepResearchCapability, resolveDeepWorkerOrigin } from "./capability";
-import type { RecoveryHeartbeat } from "./recovery-heartbeat";
+import {
+  computeRecoveryObservation,
+  probeDeepResearchCapability,
+  resolveDeepWorkerOrigin,
+} from "./capability";
+import {
+  MIN_CONSECUTIVE_OK_FOR_HEALTHY,
+  type RecoveryHeartbeat,
+  type RecoveryHistoryEntry,
+} from "./recovery-heartbeat";
 
 function staleHeartbeat(now: Date): RecoveryHeartbeat {
   return {
@@ -22,6 +30,33 @@ function freshHeartbeat(now: Date): RecoveryHeartbeat {
     lastDispatched: 0,
     lastFailed: 0,
   };
+}
+
+/**
+ * Build a rolling history of N consecutive ok ticks ending `endAgeMs`
+ * before `now`. Use this for healthy / warming tests so the gate can
+ * actually see a series instead of a single point.
+ */
+function healthyHistory(
+  now: Date,
+  count = MIN_CONSECUTIVE_OK_FOR_HEALTHY,
+  stepMs = 5 * 60 * 1000,
+  endAgeMs = 30 * 1000,
+): RecoveryHistoryEntry[] {
+  const out: RecoveryHistoryEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const age = endAgeMs + (count - 1 - i) * stepMs;
+    out.push({
+      ok: true,
+      at: new Date(now.getTime() - age).toISOString(),
+      durationMs: 200 + i,
+      dispatched: 0,
+      failed: 0,
+      errorCode: null,
+      requestId: `tick-${i}`,
+    });
+  }
+  return out;
 }
 
 const readyEnv = {
@@ -47,6 +82,10 @@ describe("probeDeepResearchCapability", () => {
       env: readyEnv,
       probeRedis: async () => true,
       readHeartbeat: async () => freshHeartbeat(now),
+      // R1C: must hand the gate a *series* of consecutive ok ticks
+      // before it can mark recovery healthy -- a single sample is not
+      // evidence the cron source actually meets its cadence.
+      readHistory: async () => healthyHistory(now),
       now: () => now,
     });
     expect(capability).toMatchObject({
@@ -55,20 +94,37 @@ describe("probeDeepResearchCapability", () => {
       checkedAt: now.toISOString(),
       validationPasses: 3,
       retrieval: "required",
+      recoveryState: "healthy",
     });
     expect(capability.requirements.every((item) => item.ready)).toBe(true);
   });
 
-  it("flips to preview with recovery_freshness degradation when the heartbeat is stale", async () => {
+  it("flips to delayed with recovery_freshness degradation when the heartbeat is stale", async () => {
     const now = new Date("2026-07-13T00:00:00.000Z");
+    // History is healthy but the latest tick is 10 minutes old -- the
+    // cron source has stopped firing even though previous ticks exist.
+    const history = healthyHistory(now).map((e, i, arr) =>
+      i === arr.length - 1
+        ? { ...e, at: new Date(now.getTime() - 10 * 60 * 1000).toISOString() }
+        : e,
+    );
     const capability = await probeDeepResearchCapability({
       env: readyEnv,
       probeRedis: async () => true,
-      readHeartbeat: async () => staleHeartbeat(now),
+      readHeartbeat: async () => ({
+        lastOkAt: history[history.length - 1].at,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: 200,
+        lastDispatched: 0,
+        lastFailed: 0,
+      }),
+      readHistory: async () => history,
       now: () => now,
     });
     expect(capability.availability).toBe("preview");
     expect(capability.degraded).toBe(true);
+    expect(capability.recoveryState).toBe("delayed");
     expect(capability.blockers).toEqual([]);
     const freshness = capability.requirements.find(
       (r) => r.id === "recovery_freshness",
@@ -77,10 +133,10 @@ describe("probeDeepResearchCapability", () => {
     expect(freshness?.detail).toMatch(/delayed/i);
     expect(capability.lastRecoveryAt).not.toBeNull();
     expect(capability.lastRecoveryAgeMs).not.toBeNull();
-    expect(capability.capabilityNotice).toMatch(/Recovery delayed|no fresh heartbeat/);
+    expect(capability.capabilityNotice).toMatch(/delayed|stopped firing/);
   });
 
-  it("treats a never-observed heartbeat as stale and degrades recovery_freshness", async () => {
+  it("treats a never-observed heartbeat as configured and degrades recovery_freshness", async () => {
     const now = new Date("2026-07-13T00:00:00.000Z");
     const capability = await probeDeepResearchCapability({
       env: readyEnv,
@@ -93,15 +149,17 @@ describe("probeDeepResearchCapability", () => {
         lastDispatched: null,
         lastFailed: null,
       }),
+      readHistory: async () => [],
       now: () => now,
     });
     expect(capability.availability).toBe("preview");
     expect(capability.lastRecoveryAt).toBeNull();
+    expect(capability.recoveryState).toBe("configured");
     const freshness = capability.requirements.find(
       (r) => r.id === "recovery_freshness",
     );
     expect(freshness?.ready).toBe(false);
-    expect(freshness?.detail).toMatch(/No successful recovery tick/);
+    expect(freshness?.detail).toMatch(/No recovery tick observed yet/);
   });
 
   it("does not add recovery_freshness as a blocker when independent_recovery is not declared", async () => {
@@ -114,11 +172,114 @@ describe("probeDeepResearchCapability", () => {
       (r) => r.id === "recovery_freshness",
     );
     // When independent_recovery is not declared, recovery_freshness is
-    // intentionally not enforced — it must never add its own blocker.
+    // intentionally not enforced -- it must never add its own blocker.
     expect(freshness?.detail).toMatch(/Skipped/);
     expect(capability.blockers).toContain("independent_recovery");
     expect(capability.blockers).not.toContain("recovery_freshness");
     expect(capability.degraded).toBe(false);
+  });
+
+  it("does not promote to available with only a single successful tick", async () => {
+    // The whole point of Phase 1C: one cold-deploy sample is not enough
+    // to call the scheduler "healthy". The gate must surface warming.
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const singleTick: RecoveryHistoryEntry[] = [
+      {
+        ok: true,
+        at: new Date(now.getTime() - 30 * 1000).toISOString(),
+        durationMs: 200,
+        dispatched: 0,
+        failed: 0,
+        errorCode: null,
+        requestId: "tick-solo",
+      },
+    ];
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => singleTick,
+      now: () => now,
+    });
+    expect(capability.recoveryState).toBe("warming");
+    expect(capability.availability).toBe("preview");
+    expect(capability.degraded).toBe(false);
+    // Notice + detail both reflect warming so the UI surfaces the state.
+    expect(capability.capabilityNotice).toMatch(/first ticks|Preview while the series fills/i);
+    const freshness = capability.requirements.find(
+      (r) => r.id === "recovery_freshness",
+    );
+    expect(freshness?.ready).toBe(false);
+    expect(freshness?.detail).toMatch(/warming|consecutive/i);
+  });
+
+  it("promotes from warming to healthy once the series fills", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => healthyHistory(now), // 3 consecutive ok
+      now: () => now,
+    });
+    expect(capability.recoveryState).toBe("healthy");
+    expect(capability.recoveryObservation.consecutiveOk).toBe(
+      MIN_CONSECUTIVE_OK_FOR_HEALTHY,
+    );
+    expect(capability.availability).toBe("available");
+  });
+
+  it("decays from healthy to delayed when the latest tick is older than the budget", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    // 8 minutes stale == 180s past the 5-min budget. Build a fully healthy
+    // series (3 consecutive ticks each 5 min apart ending at "now - 30s"),
+    // then push the LAST tick to `now - 8min` so the freshness check fires.
+    const baseSeries = healthyHistory(now, 3, 5 * 60 * 1000, 30_000);
+    const history = baseSeries.map((entry, i, arr) =>
+      i === arr.length - 1
+        ? { ...entry, at: new Date(now.getTime() - 8 * 60 * 1000).toISOString() }
+        : entry,
+    );
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => ({
+        lastOkAt: history[history.length - 1].at,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: 200,
+        lastDispatched: 0,
+        lastFailed: 0,
+      }),
+      readHistory: async () => history,
+      now: () => now,
+    });
+    expect(capability.recoveryState).toBe("delayed");
+    expect(capability.availability).toBe("preview");
+    expect(capability.degraded).toBe(true);
+  });
+
+  it("decays to delayed when the most recent tick failed, even if the budget is fresh", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const base = healthyHistory(now);
+    base[base.length - 1] = {
+      ...base[base.length - 1],
+      ok: false,
+      errorCode: "ECONNRESET",
+    };
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => base,
+      now: () => now,
+    });
+    expect(capability.recoveryState).toBe("delayed");
+    expect(capability.availability).toBe("preview");
+    const freshness = capability.requirements.find(
+      (r) => r.id === "recovery_freshness",
+    );
+    expect(freshness?.detail).toMatch(/most recent tick failed/);
   });
 
   it("fails closed when recovery is merely daily or not independently declared", async () => {
@@ -191,5 +352,269 @@ describe("resolveDeepWorkerOrigin", () => {
       .toBeNull();
     expect(resolveDeepWorkerOrigin({ LAUNCHLENS_DEEP_WORKER_BASE_URL: "http://localhost:3000" }))
       .toBe("http://localhost:3000");
+  });
+});
+
+describe("computeRecoveryObservation", () => {
+  it("returns 'configured' when the history is empty and recovery is declared", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: [],
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("configured");
+    expect(obs.detail).toMatch(/No recovery tick observed yet/);
+  });
+
+  it("returns 'warming' when 1 of 3 consecutive ticks is observed", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: [
+        {
+          ok: true,
+          at: new Date(now.getTime() - 30_000).toISOString(),
+          durationMs: 100,
+          dispatched: 0,
+          failed: 0,
+          errorCode: null,
+          requestId: "t0",
+        },
+      ],
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("warming");
+    expect(obs.consecutiveOk).toBe(1);
+    expect(obs.requiredForHealthy).toBe(3);
+  });
+
+  it("returns 'healthy' when the last N ticks are ok and within the budget", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: healthyHistory(now),
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("healthy");
+    expect(obs.consecutiveOk).toBe(3);
+    expect(obs.detail).toMatch(/healthy/);
+  });
+
+  it("returns 'delayed' when freshness budget is exceeded even with a healthy series", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const history = healthyHistory(now).map((entry, i, arr) =>
+      i === arr.length - 1
+        ? { ...entry, at: new Date(now.getTime() - 600_000).toISOString() }
+        : entry,
+    );
+    const obs = computeRecoveryObservation({
+      history,
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("delayed");
+    expect(obs.detail).toMatch(/budget/i);
+  });
+
+  it("returns 'delayed' when the most recent tick failed", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const history = healthyHistory(now);
+    history[history.length - 1] = {
+      ...history[history.length - 1],
+      ok: false,
+      errorCode: "X",
+    };
+    const obs = computeRecoveryObservation({
+      history,
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    expect(obs.state).toBe("delayed");
+    expect(obs.detail).toMatch(/most recent tick failed/);
+  });
+
+  it("counts only consecutive ok ticks at the tail (non-tail failures reset the count)", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const history: RecoveryHistoryEntry[] = [
+      { ok: true, at: "2026-07-13T00:00:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: null, requestId: "a" },
+      { ok: false, at: "2026-07-13T00:05:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: "x", requestId: "b" },
+      { ok: true, at: "2026-07-13T00:10:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: null, requestId: "c" },
+      { ok: true, at: "2026-07-13T00:15:00.000Z", durationMs: 0, dispatched: 0, failed: 0, errorCode: null, requestId: "d" },
+    ];
+    const obs = computeRecoveryObservation({
+      history,
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now: new Date("2026-07-13T00:20:00.000Z"),
+    });
+    expect(obs.consecutiveOk).toBe(2);
+    // 2 < required 3 -> warming.
+    expect(obs.state).toBe("warming");
+  });
+
+  it("is unaffected by single-sample heuristic: a single tick never reaches healthy", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: [
+        {
+          ok: true,
+          at: new Date(now.getTime() - 1000).toISOString(),
+          durationMs: 200,
+          dispatched: 0,
+          failed: 0,
+          errorCode: null,
+          requestId: "solo",
+        },
+      ],
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: true,
+      now,
+    });
+    // Must NOT be healthy with only one sample, no matter how fresh.
+    expect(obs.state).not.toBe("healthy");
+    expect(obs.state).toBe("warming");
+  });
+
+  it("returns 'configured' (skipped) when recovery is not declared, regardless of history", () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const obs = computeRecoveryObservation({
+      history: healthyHistory(now),
+      heartbeat: {
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      },
+      freshnessBudgetMs: 300_000,
+      recoveryDeclared: false,
+      now,
+    });
+    expect(obs.state).toBe("configured");
+    expect(obs.detail).toMatch(/not declared/i);
+  });
+
+  it("observation detail strings differ for each of the four states", () => {
+    // Pin the wording so the UI copy never regresses silently.
+    const samples: Array<{ state: string; expect: RegExp }> = [
+      { state: "configured", expect: /No recovery tick observed/ },
+      { state: "warming", expect: /warming/ },
+      { state: "healthy", expect: /healthy/ },
+      { state: "delayed", expect: /delayed/ },
+    ];
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const cases: Array<{ state: string; obs: ReturnType<typeof computeRecoveryObservation> }> = [
+      {
+        state: "configured",
+        obs: computeRecoveryObservation({
+          history: [],
+          heartbeat: { lastOkAt: null, lastErrorAt: null, lastErrorCode: null, lastOkDurationMs: null, lastDispatched: null, lastFailed: null },
+          freshnessBudgetMs: 300_000,
+          recoveryDeclared: true,
+          now,
+        }),
+      },
+      {
+        state: "warming",
+        obs: computeRecoveryObservation({
+          history: healthyHistory(now, 1),
+          heartbeat: { lastOkAt: null, lastErrorAt: null, lastErrorCode: null, lastOkDurationMs: null, lastDispatched: null, lastFailed: null },
+          freshnessBudgetMs: 300_000,
+          recoveryDeclared: true,
+          now,
+        }),
+      },
+      {
+        state: "healthy",
+        obs: computeRecoveryObservation({
+          history: healthyHistory(now),
+          heartbeat: { lastOkAt: null, lastErrorAt: null, lastErrorCode: null, lastOkDurationMs: null, lastDispatched: null, lastFailed: null },
+          freshnessBudgetMs: 300_000,
+          recoveryDeclared: true,
+          now,
+        }),
+      },
+      {
+        state: "delayed",
+        obs: computeRecoveryObservation({
+          history: healthyHistory(now).map((e, i, arr) =>
+            i === arr.length - 1
+              ? { ...e, at: new Date(now.getTime() - 10 * 60 * 1000).toISOString() }
+              : e,
+          ),
+          heartbeat: { lastOkAt: null, lastErrorAt: null, lastErrorCode: null, lastOkDurationMs: null, lastDispatched: null, lastFailed: null },
+          freshnessBudgetMs: 300_000,
+          recoveryDeclared: true,
+          now,
+        }),
+      },
+    ];
+    for (const expected of samples) {
+      const obs = cases.find((c) => c.state === expected.state)!.obs;
+      expect(obs.detail).toMatch(expected.expect);
+    }
   });
 });

@@ -5,7 +5,10 @@ import { RESEARCH_MODE_CONFIGS } from "@/lib/research/research-modes";
 import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
 import {
   readRecoveryHeartbeat,
+  readRecoveryHistory,
+  MIN_CONSECUTIVE_OK_FOR_HEALTHY,
   type RecoveryHeartbeat,
+  type RecoveryHistoryEntry,
 } from "./recovery-heartbeat";
 
 export type DeepCapabilityRequirementId =
@@ -17,6 +20,53 @@ export type DeepCapabilityRequirementId =
   | "worker_wake"
   | "independent_recovery"
   | "recovery_freshness";
+
+/**
+ * Discrete states for the independent-recovery capability observation:
+ *
+ *   - `configured`: cron recovery is structurally declared (env OK) but
+ *     no heartbeat has ever been observed yet (cold deploy, fresh Redis,
+ *     or post-reset). The scheduler has not yet proven it can fire.
+ *
+ *   - `warming`: at least one successful tick has been observed but the
+ *     series is too short (`MIN_CONSECUTIVE_OK_FOR_HEALTHY`) to call the
+ *     scheduler reliable. New deployments and Preview environments live
+ *     here until the series fills.
+ *
+ *   - `healthy`: at least `MIN_CONSECUTIVE_OK_FOR_HEALTHY` consecutive
+ *     successful ticks are visible in the rolling history AND the most
+ *     recent tick is within the freshness budget. The scheduler is
+ *     observably meeting its cadence.
+ *
+ *   - `delayed`: a healthy series exists but the latest tick is older
+ *     than the freshness budget, OR the last observed tick failed. The
+ *     scheduler stopped firing or has started failing.
+ *
+ * The state is reported via the `recovery_freshness` requirement; the
+ * `recoveryState` field on `DeepResearchCapability` exposes the same
+ * value to callers that want to drive UI without re-parsing the detail.
+ */
+export type RecoveryState = "configured" | "warming" | "healthy" | "delayed";
+
+export interface RecoveryObservation {
+  state: RecoveryState;
+  /** Number of consecutive ok ticks at the tail of the rolling history. */
+  consecutiveOk: number;
+  /** Number of ticks required for the gate to call the series healthy. */
+  requiredForHealthy: number;
+  /** Most recent tick timestamp (ISO) or null if no tick was ever observed. */
+  lastTickAt: string | null;
+  /** Milliseconds since the most recent tick; null if none observed. */
+  lastTickAgeMs: number | null;
+  /** Whether the most recent tick was successful. */
+  lastTickOk: boolean;
+  /** Detailed reason string suitable for UI rendering. */
+  detail: string;
+  /** Total observed ticks across the bounded history window. */
+  observedTicks: number;
+  /** Number of failed ticks across the bounded history window. */
+  observedFailures: number;
+}
 
 export interface DeepCapabilityRequirement {
   id: DeepCapabilityRequirementId;
@@ -48,12 +98,17 @@ export interface DeepResearchCapability {
   lastRecoveryAt: string | null;
   /** Milliseconds since the last successful tick; null if never. */
   lastRecoveryAgeMs: number | null;
+  /** Discrete recovery state derived from the rolling heartbeat series. */
+  recoveryState: RecoveryState;
+  /** Detailed recovery observation (consecutive-ok count, ticks, age, etc.). */
+  recoveryObservation: RecoveryObservation;
 }
 
 export interface ProbeDeepCapabilityOptions {
   env?: Readonly<Record<string, string | undefined>>;
   probeRedis?: () => Promise<boolean>;
   readHeartbeat?: () => Promise<RecoveryHeartbeat>;
+  readHistory?: () => Promise<RecoveryHistoryEntry[]>;
   now?: () => Date;
 }
 
@@ -90,22 +145,29 @@ export async function probeDeepResearchCapability(
     (recoverySecret?.length ?? 0) >= 24 &&
     recoverySecret !== env.LAUNCHLENS_DEEP_WORKER_SECRET;
 
-  // Heartbeat freshness: only meaningful when the cron recovery is the
-  // declared mechanism. The freshness threshold is the smaller of the
-  // declared max delay and 5 minutes -- the system's recovery budget.
-  const heartbeat = await (options.readHeartbeat ?? defaultReadHeartbeat)();
+  // Heartbeat freshness & series: only meaningful when the cron recovery
+  // is the declared mechanism. The freshness threshold is the smaller of
+  // the declared max delay and 5 minutes — the system's recovery budget.
+  // The state is derived from the rolling history so a single sample
+  // cannot unlock the gate.
+  const readHb = options.readHeartbeat ?? defaultReadHeartbeat;
+  const readHistory = options.readHistory ?? defaultReadHistory;
+  const [heartbeat, history] = await Promise.all([readHb(), readHistory()]);
   const freshnessBudgetMs = Math.min(
     (recoveryDelay ?? 0) * 1000,
     DEFAULT_MAX_RECOVERY_FRESHNESS_MS,
   );
+  const recoveryObservation = computeRecoveryObservation({
+    history,
+    heartbeat,
+    freshnessBudgetMs,
+    now: now(),
+    recoveryDeclared: recoveryReady,
+  });
   const lastRecoveryAt = heartbeat.lastOkAt;
-  const lastRecoveryAgeMs = lastRecoveryAt
-    ? Math.max(0, now().getTime() - new Date(lastRecoveryAt).getTime())
-    : null;
+  const lastRecoveryAgeMs = lastTickAgeFromObservation(recoveryObservation);
   const heartbeatFresh =
-    recoveryReady && lastRecoveryAt !== null &&
-    lastRecoveryAgeMs !== null &&
-    lastRecoveryAgeMs <= freshnessBudgetMs;
+    recoveryObservation.state === "healthy";
 
   const requirements: DeepCapabilityRequirement[] = [
     {
@@ -174,18 +236,21 @@ export async function probeDeepResearchCapability(
       label: "Recovery heartbeat",
       detail: !recoveryReady
         ? "Skipped: independent recovery is not declared."
-        : lastRecoveryAt === null
-          ? "No successful recovery tick observed yet. The cron trigger has not completed a tick since the last deploy."
-          : heartbeatFresh
-            ? `Last successful recovery tick ${Math.round((lastRecoveryAgeMs ?? 0) / 1000)}s ago; threshold ${Math.round(freshnessBudgetMs / 1000)}s.`
-            : `Last successful recovery tick ${Math.round((lastRecoveryAgeMs ?? 0) / 1000)}s ago; threshold ${Math.round(freshnessBudgetMs / 1000)}s. Recovery is delayed.`,
+        : describeRecoveryState(recoveryObservation),
     },
   ];
   const blockers = requirements
     .filter((item) => item.id !== "recovery_freshness" && !item.ready)
     .map((item) => item.id);
-  const freshnessStale = !heartbeatFresh && recoveryReady;
-  const available = blockers.length === 0 && !freshnessStale;
+  const recoveryDeclared = recoveryReady;
+  // Available iff: every required control is ready AND the recovery
+  // series is healthy (or recovery is not declared — handled by blockers).
+  // A `warming` series shows the scheduler hasn't yet proven its cadence;
+  // a `delayed` series means the cron source stopped firing.
+  const available = blockers.length === 0 && (
+    !recoveryDeclared || recoveryObservation.state === "healthy"
+  );
+  const degraded = recoveryDeclared && recoveryObservation.state === "delayed" && blockers.length === 0;
   return {
     mode: "deep",
     id: "deep",
@@ -193,15 +258,17 @@ export async function probeDeepResearchCapability(
     description: RESEARCH_MODE_CONFIGS.deep.description,
     depthLabel: RESEARCH_MODE_CONFIGS.deep.depthLabel,
     availability: available ? "available" : "preview",
-    degraded: freshnessStale && blockers.length === 0,
+    degraded,
     checkedAt: now().toISOString(),
     requirements,
     blockers,
     capabilityNotice: available
       ? "Durable 10-20 minute Deep Research is ready with mandatory retrieval and three semantic validation passes."
-      : freshnessStale && blockers.length === 0
-        ? "Independent recovery trigger is configured but no fresh heartbeat has been observed. The cron source may have stopped firing."
-        : `Durable async Deep Research remains Preview until ${blockers.length} production requirement${blockers.length === 1 ? "" : "s"} are ready.`,
+      : degraded
+        ? "Independent recovery trigger was healthy but the latest observed tick exceeded the budget. The cron source may have stopped firing; check GitHub Actions / Vercel Cron and the heartbeat history."
+        : blockers.length === 0 && recoveryObservation.state === "warming"
+          ? `Independent recovery is configured and the first ticks have been observed (${recoveryObservation.consecutiveOk} ok of ${recoveryObservation.requiredForHealthy} needed). Showing Preview while the series fills.`
+          : `Durable async Deep Research remains Preview until ${blockers.length} production requirement${blockers.length === 1 ? "" : "s"} are ready.`,
     expectedDurationSec: { ...RESEARCH_MODE_CONFIGS.deep.expectedDurationSec },
     expectedDurationLabel: RESEARCH_MODE_CONFIGS.deep.expectedDurationLabel,
     validationPasses: 3,
@@ -210,6 +277,8 @@ export async function probeDeepResearchCapability(
     maxSynchronousDurationSec: 300,
     lastRecoveryAt,
     lastRecoveryAgeMs,
+    recoveryState: recoveryObservation.state,
+    recoveryObservation,
   };
 }
 
@@ -273,4 +342,132 @@ async function defaultRedisProbe(): Promise<boolean> {
 
 async function defaultReadHeartbeat(): Promise<RecoveryHeartbeat> {
   return readRecoveryHeartbeat();
+}
+
+async function defaultReadHistory(): Promise<RecoveryHistoryEntry[]> {
+  return readRecoveryHistory();
+}
+
+/**
+ * R1C: derive the discrete recovery state from the bounded history
+ * series plus the latest-heartbeat freshness. The state machine is:
+ *
+ *   configured  no ticks observed at all
+ *   warming     one or more ticks observed but the tail does not yet
+ *               contain MIN_CONSECUTIVE_OK_FOR_HEALTHY consecutive oks
+ *   healthy     tail has >= MIN_CONSECUTIVE_OK_FOR_HEALTHY consecutive
+ *               oks AND the latest tick is within the freshness budget
+ *   delayed     latest tick is older than the budget OR the latest
+ *               tick failed; even a previously-healthy series decays
+ *               to delayed if the cron source stops firing
+ *
+ * The function is pure — it does not read Redis. Callers are
+ * responsible for fetching `heartbeat` and `history`.
+ */
+export function computeRecoveryObservation(args: {
+  history: RecoveryHistoryEntry[];
+  heartbeat: RecoveryHeartbeat;
+  freshnessBudgetMs: number;
+  recoveryDeclared: boolean;
+  now: Date;
+  requiredForHealthy?: number;
+}): RecoveryObservation {
+  const required = args.requiredForHealthy ?? MIN_CONSECUTIVE_OK_FOR_HEALTHY;
+  const series = args.history ?? [];
+  const last = series.length > 0 ? series[series.length - 1] : null;
+  const lastTickAt = last?.at ?? args.heartbeat.lastOkAt ?? null;
+  const lastTickAgeMs = lastTickAt
+    ? Math.max(0, args.now.getTime() - new Date(lastTickAt).getTime())
+    : null;
+  const lastTickOk = last?.ok ?? false;
+  const observedTicks = series.length;
+  const observedFailures = series.reduce((n, entry) => n + (entry.ok ? 0 : 1), 0);
+  let consecutiveOk = 0;
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (!series[i].ok) break;
+    consecutiveOk++;
+  }
+  if (!args.recoveryDeclared) {
+    return {
+      state: "configured",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: "Independent recovery is not declared; the heartbeat series is observed but does not gate availability.",
+      observedTicks,
+      observedFailures,
+    };
+  }
+  if (observedTicks === 0) {
+    return {
+      state: "configured",
+      consecutiveOk: 0,
+      requiredForHealthy: required,
+      lastTickAt: null,
+      lastTickAgeMs: null,
+      lastTickOk: false,
+      detail: "No recovery tick observed yet. The cron trigger has not completed a tick since the last deploy.",
+      observedTicks: 0,
+      observedFailures: 0,
+    };
+  }
+  // We have at least one tick. The latest tick is the arbiter of `delayed`.
+  if (!lastTickOk || lastTickAgeMs === null || lastTickAgeMs > args.freshnessBudgetMs) {
+    const reason = !lastTickOk
+      ? "the most recent tick failed"
+      : lastTickAgeMs === null
+        ? "the most recent tick has no timestamp"
+        : `the most recent tick is ${Math.round(lastTickAgeMs / 1000)}s old, exceeding the ${Math.round(args.freshnessBudgetMs / 1000)}s budget`;
+    return {
+      state: "delayed",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: `Recovery is delayed because ${reason}. ${consecutiveOk} consecutive ok tick${consecutiveOk === 1 ? "" : "s"} observed at the tail.`,
+      observedTicks,
+      observedFailures,
+    };
+  }
+  if (consecutiveOk < required) {
+    return {
+      state: "warming",
+      consecutiveOk,
+      requiredForHealthy: required,
+      lastTickAt,
+      lastTickAgeMs,
+      lastTickOk,
+      detail: `Recovery is warming: ${consecutiveOk} consecutive ok tick${consecutiveOk === 1 ? "" : "s"} observed; ${required} are required to call the scheduler healthy.`,
+      observedTicks,
+      observedFailures,
+    };
+  }
+  return {
+    state: "healthy",
+    consecutiveOk,
+    requiredForHealthy: required,
+    lastTickAt,
+    lastTickAgeMs,
+    lastTickOk,
+    detail: `Recovery is healthy: ${consecutiveOk} consecutive ok ticks at the tail; the most recent completed ${Math.round(lastTickAgeMs / 1000)}s ago.`,
+    observedTicks,
+    observedFailures,
+  };
+}
+
+/**
+ * Convert a recovery observation into a UI-friendly copy fragment.
+ * Distinct copy for each of the four states; identical shape across
+ * environments so a screenshot test can pin the wording.
+ */
+export function describeRecoveryState(observation: RecoveryObservation): string {
+  return observation.detail;
+}
+
+function lastTickAgeFromObservation(observation: RecoveryObservation): number | null {
+  if (observation.state === "configured") return null;
+  return observation.lastTickAgeMs;
 }

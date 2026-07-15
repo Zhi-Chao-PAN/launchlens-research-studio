@@ -4,9 +4,12 @@ import {
   HEARTBEAT_KEY,
   HEARTBEAT_LOCK_KEY,
   HEARTBEAT_META_KEY,
+  RECOVERY_HISTORY_KEY,
   acquireRecoveryLock,
+  appendRecoveryHistoryEntry,
   emptyHeartbeat,
   readRecoveryHeartbeat,
+  readRecoveryHistory,
   releaseRecoveryLock,
   writeRecoveryHeartbeat,
 } from "./recovery-heartbeat";
@@ -15,10 +18,12 @@ import {
 function makeFakeRedis() {
   const store = new Map<string, string>();
   const hashStore = new Map<string, Record<string, string>>();
+  const lists = new Map<string, string[]>();
   const expirations = new Map<string, number>();
   return {
     store,
     hashStore,
+    lists,
     expirations,
     async get<T = string>(key: string): Promise<T | null> {
       const raw = store.get(key);
@@ -51,6 +56,7 @@ function makeFakeRedis() {
     async del(key: string): Promise<unknown> {
       store.delete(key);
       hashStore.delete(key);
+      lists.delete(key);
       expirations.delete(key);
       return 1;
     },
@@ -60,6 +66,35 @@ function makeFakeRedis() {
       const v = hashStore.get(key);
       if (!v) return null;
       return { ...v } as unknown as T;
+    },
+    async lpush(key: string, ...values: string[]): Promise<unknown> {
+      const arr = lists.get(key) ?? [];
+      // Upstash LPUSH inserts at the head, in order. Iterating in arg
+      // order matches the real semantics: the last argument ends up at
+      // the leftmost position.
+      for (let i = values.length - 1; i >= 0; i--) {
+        arr.unshift(values[i]);
+      }
+      lists.set(key, arr);
+      return arr.length;
+    },
+    async ltrim(key: string, start: number, stop: number): Promise<unknown> {
+      const arr = lists.get(key);
+      if (!arr) return 0;
+      // Negative indices are interpreted from the tail.
+      const len = arr.length;
+      const normStart = start < 0 ? Math.max(len + start, 0) : start;
+      const normStop = stop < 0 ? len + stop : stop;
+      lists.set(key, arr.slice(normStart, normStop + 1));
+      return 1;
+    },
+    async lrange<T = string>(key: string, start: number, stop: number): Promise<T[] | null> {
+      const arr = lists.get(key);
+      if (!arr) return [];
+      const len = arr.length;
+      const normStart = start < 0 ? Math.max(len + start, 0) : start;
+      const normStop = stop < 0 ? len + stop : stop;
+      return arr.slice(normStart, normStop + 1) as unknown as T[];
     },
   };
 }
@@ -263,5 +298,162 @@ describe("interruption drill", () => {
       redis: fake as never,
     });
     expect(fourth.acquired).toBe(true);
+  });
+});
+
+/**
+ * Phase 1C: the recovery heartbeat now also records a bounded, ordered
+ * series of recent ticks so the capability gate can require a *series*
+ * of consecutive successful ticks before declaring healthy. Single-sample
+ * heuristics are explicitly forbidden -- one cold deploy tick is not
+ * evidence that the cron source actually meets its cadence.
+ */
+describe("recovery history series", () => {
+  it("readRecoveryHistory returns [] when Redis is missing", async () => {
+    const history = await readRecoveryHistory({ redis: null });
+    expect(history).toEqual([]);
+  });
+
+  it("readRecoveryHistory returns [] when no entries have been written", async () => {
+    const fake = makeFakeRedis();
+    expect(await readRecoveryHistory({ redis: fake as never })).toEqual([]);
+  });
+
+  it("appendRecoveryHistoryEntry writes JSON-serializable entries", async () => {
+    const fake = makeFakeRedis();
+    await appendRecoveryHistoryEntry(
+      {
+        ok: true,
+        at: "2026-07-13T05:00:00.000Z",
+        durationMs: 200,
+        dispatched: 4,
+        failed: 0,
+        errorCode: null,
+        requestId: "tick-A",
+      },
+      { redis: fake as never, maxEntries: 16, ttlSeconds: 3600 },
+    );
+    const stored = fake.lists.get(RECOVERY_HISTORY_KEY)!;
+    expect(stored).toHaveLength(1);
+    expect(JSON.parse(stored[0])).toMatchObject({
+      ok: true,
+      requestId: "tick-A",
+      dispatched: 4,
+    });
+    expect(fake.expirations.get(RECOVERY_HISTORY_KEY)).toBe(3600);
+  });
+
+  it("readRecoveryHistory returns entries oldest-first even though Redis stores newest-first", async () => {
+    const fake = makeFakeRedis();
+    // Push three entries; LPUSH semantics put the last arg at index 0.
+    await appendRecoveryHistoryEntry(
+      { ok: true, at: "2026-07-13T05:00:00.000Z", durationMs: 1, dispatched: 0, failed: 0, errorCode: null, requestId: "a" },
+      { redis: fake as never },
+    );
+    await appendRecoveryHistoryEntry(
+      { ok: true, at: "2026-07-13T05:05:00.000Z", durationMs: 1, dispatched: 0, failed: 0, errorCode: null, requestId: "b" },
+      { redis: fake as never },
+    );
+    await appendRecoveryHistoryEntry(
+      { ok: false, at: "2026-07-13T05:10:00.000Z", durationMs: 1, dispatched: 0, failed: 1, errorCode: "X", requestId: "c" },
+      { redis: fake as never },
+    );
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history.map((e) => e.requestId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("history is bounded by maxEntries via LTRIM", async () => {
+    const fake = makeFakeRedis();
+    for (let i = 0; i < 8; i++) {
+      await appendRecoveryHistoryEntry(
+        {
+          ok: true,
+          at: `2026-07-13T05:0${i}:00.000Z`,
+          durationMs: i,
+          dispatched: 0,
+          failed: 0,
+          errorCode: null,
+          requestId: `tick-${i}`,
+        },
+        { redis: fake as never, maxEntries: 5 },
+      );
+    }
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history).toHaveLength(5);
+    // Newest 5 should be tick-3..tick-7 (oldest at index 0).
+    expect(history.map((e) => e.requestId)).toEqual([
+      "tick-3",
+      "tick-4",
+      "tick-5",
+      "tick-6",
+      "tick-7",
+    ]);
+  });
+
+  it("writeRecoveryHeartbeat also pushes to the history list", async () => {
+    const fake = makeFakeRedis();
+    await writeRecoveryHeartbeat({
+      ok: true,
+      requestId: "tick-w",
+      durationMs: 250,
+      dispatched: 4,
+      failed: 0,
+      redis: fake as never,
+      now: () => new Date("2026-07-13T05:00:00.000Z"),
+    });
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      ok: true,
+      requestId: "tick-w",
+      at: "2026-07-13T05:00:00.000Z",
+    });
+  });
+
+  it("writeRecoveryHeartbeat records an ok=false entry when the tick failed", async () => {
+    const fake = makeFakeRedis();
+    await writeRecoveryHeartbeat({
+      ok: false,
+      requestId: "tick-f",
+      durationMs: 100,
+      errorCode: "ECONNRESET",
+      redis: fake as never,
+      now: () => new Date("2026-07-13T06:00:00.000Z"),
+    });
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ ok: false, errorCode: "ECONNRESET" });
+  });
+
+  it("writeRecoveryHeartbeat still records history when Redis meta write throws", async () => {
+    // If the heartbeat meta write fails we must still update the series,
+    // otherwise the gate would silently miss the tick.
+    const partialRedis = {
+      ...makeFakeRedis(),
+      hset: vi.fn(async () => {
+        throw new Error("meta-bucket offline");
+      }),
+    };
+    await writeRecoveryHeartbeat({
+      ok: true,
+      requestId: "tick-x",
+      durationMs: 10,
+      redis: partialRedis as never,
+      now: () => new Date("2026-07-13T07:00:00.000Z"),
+    });
+    const history = await readRecoveryHistory({ redis: partialRedis as never });
+    expect(history).toHaveLength(1);
+    expect(history[0].requestId).toBe("tick-x");
+  });
+
+  it("readRecoveryHistory swallows malformed entries without throwing", async () => {
+    const fake = makeFakeRedis();
+    fake.lists.set(RECOVERY_HISTORY_KEY, [
+      JSON.stringify({ ok: true, at: "2026-07-13T05:00:00.000Z", durationMs: 1, dispatched: 0, failed: 0, errorCode: null, requestId: "ok" }),
+      "not json {{{",
+      JSON.stringify({ ok: false /* missing at */, durationMs: 1, dispatched: 0, failed: 0, errorCode: "x", requestId: "bad" }),
+    ]);
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history.map((e) => e.requestId)).toEqual(["ok"]);
   });
 });
