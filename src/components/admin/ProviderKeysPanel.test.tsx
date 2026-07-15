@@ -46,6 +46,8 @@ const snapshot: ProviderCredentialsSnapshot = {
   version: 1,
   revision: 4,
   runtimeProvider: "openai",
+  targetProvider: "openai",
+  keyringEnabled: true,
   slots: [
     {
       slot: 1,
@@ -89,7 +91,7 @@ describe("ProviderKeysPanel", () => {
 
   afterEach(cleanup);
 
-  it("renders the runtime provider as read-only and saves fallback slot 2 with the current CAS revision", async () => {
+  it("renders the target provider as read-only and saves fallback slot 2 with the current CAS revision", async () => {
     render(
       <ToastProvider>
         <ProviderKeysPanel
@@ -104,7 +106,7 @@ describe("ProviderKeysPanel", () => {
     await screen.findByText("Priority 1");
     expect(screen.getByText("Priority 2")).toBeTruthy();
     expect(screen.getByText("Priority 3")).toBeTruthy();
-    expect(screen.getByLabelText("providers.activeProvider").textContent).toBe("OpenAI compatible");
+    expect(screen.getByLabelText("providers.targetProvider").textContent).toBe("OpenAI compatible");
     expect(screen.queryByRole("combobox")).toBeNull();
 
     const keyInputs = screen.getAllByLabelText("providers.key") as HTMLInputElement[];
@@ -123,11 +125,12 @@ describe("ProviderKeysPanel", () => {
     });
   });
 
-  it("uses the runtime provider for an empty vault", async () => {
+  it("uses the target provider for an empty vault", async () => {
     const emptySnapshot: ProviderCredentialsSnapshot = {
       ...snapshot,
       revision: 0,
       runtimeProvider: "anthropic",
+      targetProvider: "anthropic",
       slots: snapshot.slots.map((slot) => ({
         ...slot,
         isConfigured: false,
@@ -151,7 +154,7 @@ describe("ProviderKeysPanel", () => {
     );
 
     await screen.findByText("Priority 1");
-    expect(screen.getByLabelText("providers.activeProvider").textContent).toBe("Anthropic");
+    expect(screen.getByLabelText("providers.targetProvider").textContent).toBe("Anthropic");
     const keyInputs = screen.getAllByLabelText("providers.key") as HTMLInputElement[];
     fireEvent.change(keyInputs[0], { target: { value: "sk-ant-primary-runtime-secret" } });
     fireEvent.click(screen.getAllByRole("button", { name: /providers.add/ })[0]);
@@ -167,10 +170,56 @@ describe("ProviderKeysPanel", () => {
     });
   });
 
+  it("keeps staged credentials writable while clearly marking them as inactive", async () => {
+    const stagedSnapshot: ProviderCredentialsSnapshot = {
+      ...snapshot,
+      runtimeProvider: null,
+      targetProvider: "openai",
+      keyringEnabled: false,
+    };
+    getSnapshotMock.mockResolvedValue(stagedSnapshot);
+    saveCredentialMock.mockResolvedValue({ ...stagedSnapshot, revision: 5 });
+
+    render(
+      <ToastProvider>
+        <ProviderKeysPanel
+          locale="en"
+          t={t}
+          onUnauthorized={vi.fn()}
+          onUpdated={vi.fn()}
+        />
+      </ToastProvider>,
+    );
+
+    await screen.findByText("providers.stagedTitle");
+    expect(screen.getByText("providers.stagedBody")).toBeTruthy();
+    expect(screen.getByLabelText("providers.targetProvider").textContent).toBe(
+      "OpenAI compatible",
+    );
+
+    const keyInputs = screen.getAllByLabelText("providers.key") as HTMLInputElement[];
+    expect(keyInputs[1].disabled).toBe(false);
+    fireEvent.change(keyInputs[1], {
+      target: { value: "sk-staged-second-fallback-secret" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /providers.add/ })[0]);
+
+    await waitFor(() => {
+      expect(saveCredentialMock).toHaveBeenCalledWith({
+        provider: "openai",
+        slot: 2,
+        expectedRevision: 4,
+        apiKey: "sk-staged-second-fallback-secret",
+        enabled: true,
+      });
+    });
+  });
+
   it("locks writes for historical provider mismatches but still permits cleanup", async () => {
     const mismatchedSnapshot: ProviderCredentialsSnapshot = {
       ...snapshot,
       runtimeProvider: "anthropic",
+      targetProvider: "anthropic",
     };
     getSnapshotMock.mockResolvedValue(mismatchedSnapshot);
     removeCredentialMock.mockResolvedValue({

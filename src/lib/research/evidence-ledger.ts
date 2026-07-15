@@ -14,6 +14,9 @@ import {
 
 const ALL_AGENTS: readonly AgentId[] = [...RESEARCH_AGENTS, "synthesis"];
 const FOCUSED_QUERY_MAX_CHARS = 280;
+const DEEP_QUERY_MAX_CHARS = 200;
+const DEEP_QUERY_SUBJECT_MAX_CHARS = 96;
+const MAX_DEEP_QUERY_KEYWORDS = 2;
 
 const AGENT_RETRIEVAL_FOCUS: Record<Exclude<AgentId, "synthesis">, string> = {
   "market-sizer": "market size TAM SAM SOM CAGR forecasts industry reports",
@@ -129,15 +132,13 @@ export function buildFocusedRetrievalQuery(
 export function buildDeepRetrievalQueries(
   query: string,
   agentId: Exclude<AgentId, "synthesis">,
+  keywords: readonly string[] = [],
 ): string[] {
-  const base = query.replace(/\s+/g, " ").trim();
-  const productContext = base
-    ? truncateAtWordBoundary(base, 170)
-    : AGENT_RETRIEVAL_FOCUS[agentId];
+  const subject = buildDeepQuerySubject(query, keywords, agentId);
   return DEEP_RETRIEVAL_INTENTS[agentId].map((intent) =>
     truncateAtWordBoundary(
-      `${intent}. Product context: ${productContext}`,
-      FOCUSED_QUERY_MAX_CHARS,
+      `${subject}. ${intent}`,
+      DEEP_QUERY_MAX_CHARS,
     ),
   );
 }
@@ -145,26 +146,111 @@ export function buildDeepRetrievalQueries(
 /**
  * Bounded rescue queries for Deep runs whose initial fan-out is too narrow.
  * These deliberately ask for additional publishers and named primary evidence;
- * the caller also excludes already-admitted hosts at the provider boundary.
+ * the caller executes them sequentially and excludes all publishers admitted so far.
  */
 export function buildDeepRetrievalRescueQueries(
   query: string,
   agentId: Exclude<AgentId, "synthesis">,
+  keywords: readonly string[] = [],
 ): string[] {
-  const base = query.replace(/\s+/g, " ").trim();
-  const productContext = base
-    ? truncateAtWordBoundary(base, 150)
-    : AGENT_RETRIEVAL_FOCUS[agentId];
+  const subject = buildDeepQuerySubject(query, keywords, agentId);
   const focus = AGENT_RETRIEVAL_FOCUS[agentId];
   return [
     `Independent evidence from additional publishers for ${focus}`,
     `Dated primary, official, and analyst sources naming products or buyer benchmarks for ${focus}`,
   ].map((intent) =>
     truncateAtWordBoundary(
-      `${intent}. Product context: ${productContext}`,
-      FOCUSED_QUERY_MAX_CHARS,
+      `${subject}. ${intent}`,
+      DEEP_QUERY_MAX_CHARS,
     ),
   );
+}
+
+function buildDeepQuerySubject(
+  query: string,
+  keywords: readonly string[],
+  agentId: Exclude<AgentId, "synthesis">,
+): string {
+  const sanitizedKeywords: string[] = [];
+  const seen = new Set<string>();
+  for (const value of keywords) {
+    const normalized = normalizeDeepQueryFragment(value, 40);
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    sanitizedKeywords.push(normalized);
+  }
+
+  const querySubject = extractDeepQuerySubject(query);
+  if (!querySubject) {
+    const keywordFallback = sanitizedKeywords
+      .slice(0, MAX_DEEP_QUERY_KEYWORDS)
+      .join(" ");
+    return truncateAtWordBoundary(
+      keywordFallback || AGENT_RETRIEVAL_FOCUS[agentId],
+      DEEP_QUERY_SUBJECT_MAX_CHARS,
+    );
+  }
+
+  let subject = truncateAtWordBoundary(
+    querySubject,
+    DEEP_QUERY_SUBJECT_MAX_CHARS,
+  );
+  let appendedKeywords = 0;
+  for (const keyword of sanitizedKeywords) {
+    const addition = missingDeepQueryKeywordFragment(subject, keyword);
+    if (!addition) continue;
+    const candidate = `${subject} ${addition}`;
+    if (candidate.length > DEEP_QUERY_SUBJECT_MAX_CHARS) continue;
+    subject = candidate;
+    appendedKeywords += 1;
+    if (appendedKeywords === MAX_DEEP_QUERY_KEYWORDS) break;
+  }
+  return subject;
+}
+
+function extractDeepQuerySubject(query: string): string {
+  const base = normalizeDeepQueryFragment(query, 400)
+    .replace(
+      /^(?:please\s+)?(?:evaluate|assess|analy[sz]e|research|investigate|explore|estimate)\s+(?:the\s+)?(?:market\s+opportunity\s+for\s+)?/i,
+      "",
+    )
+    .replace(/^(?:the\s+)?market\s+opportunity\s+for\s+/i, "")
+    .replace(/^(?:an?|the)\s+/i, "")
+    .replace(/^(?:请)?(?:评估|分析|研究|调查|探索|估算)(?:一下)?(?:关于)?/, "");
+  return (base.split(/[,;，；。]/, 1)[0]?.trim() ?? "")
+    .replace(/的?市场机会(?:如何)?$/, "")
+    .trim();
+}
+
+function missingDeepQueryKeywordFragment(subject: string, keyword: string): string {
+  const normalizedSubject = normalizeDeepQueryComparison(subject);
+  const normalizedKeyword = normalizeDeepQueryComparison(keyword);
+  if (normalizedKeyword && normalizedSubject.includes(normalizedKeyword)) return "";
+  if (/[+&#./_-]/u.test(keyword)) return keyword;
+
+  const subjectTokens = new Set(
+    subject.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
+  );
+  const keywordTokens = keyword.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const missingTokens = keywordTokens
+    .filter((token) => !subjectTokens.has(token.toLowerCase()))
+  const overlappingTokenCount = keywordTokens.length - missingTokens.length;
+  if (overlappingTokenCount === 0) return keyword;
+  return missingTokens.join(" ");
+}
+
+function normalizeDeepQueryComparison(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizeDeepQueryFragment(value: unknown, maxChars: number): string {
+  if (typeof value !== "string") return "";
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return truncateAtWordBoundary(normalized, maxChars);
 }
 
 /**

@@ -112,6 +112,29 @@ describe("probeDeepResearchCapability", () => {
     expect(capability.requirements.find((item) => item.id === "semantic_reviewer")?.ready).toBe(true);
   });
 
+  it("keeps legacy Deep provider gates ready while managed credentials are only staged", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...readyEnv,
+        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "0",
+        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
+      },
+      probeRedis: async () => true,
+      resolveManagedCredentials: async () => {
+        throw new Error("disabled keyrings must not replace legacy credentials");
+      },
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => healthyHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.requirements.find((item) => item.id === "generation_provider")?.ready).toBe(true);
+    expect(capability.requirements.find((item) => item.id === "semantic_reviewer")?.ready).toBe(true);
+    expect(capability.blockers).not.toContain("generation_provider");
+    expect(capability.blockers).not.toContain("semantic_reviewer");
+  });
+
   it("fails the model gates closed when the managed keyring is empty or unreadable", async () => {
     const now = new Date("2026-07-13T00:00:00.000Z");
     const capability = await probeDeepResearchCapability({

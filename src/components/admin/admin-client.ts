@@ -128,14 +128,23 @@ export interface ProviderCredentialSlot {
 export interface ProviderCredentialsSnapshot {
   version: 1;
   revision: number;
-  /** Non-sensitive provider selected by the server runtime configuration. */
+  /** Non-sensitive active managed-keyring provider, or null while staged. */
   runtimeProvider: ProviderName | null;
+  /** Non-sensitive provider whose slots may be provisioned before activation. */
+  targetProvider: ProviderName | null;
+  /** Whether the managed vault currently owns runtime provider traffic. */
+  keyringEnabled: boolean;
   slots: ProviderCredentialSlot[];
 }
 
 interface ProviderCredentialsApiResponse {
-  data: Omit<ProviderCredentialsSnapshot, "runtimeProvider">;
+  data: Omit<
+    ProviderCredentialsSnapshot,
+    "runtimeProvider" | "targetProvider" | "keyringEnabled"
+  >;
   runtimeProvider?: ProviderName | null;
+  targetProvider?: ProviderName | null;
+  keyringEnabled?: boolean;
 }
 
 interface ErrorPayload {
@@ -367,9 +376,14 @@ export async function removeProviderCredential(input: {
 function toProviderCredentialsSnapshot(
   payload: ProviderCredentialsApiResponse,
 ): ProviderCredentialsSnapshot {
+  const runtimeProvider = payload.runtimeProvider ?? null;
   return {
     ...payload.data,
-    runtimeProvider: payload.runtimeProvider ?? null,
+    runtimeProvider,
+    // Backwards compatibility keeps a mixed-version client usable while a
+    // newly deployed API rolls out across serverless instances.
+    targetProvider: payload.targetProvider ?? runtimeProvider,
+    keyringEnabled: payload.keyringEnabled ?? runtimeProvider !== null,
   };
 }
 

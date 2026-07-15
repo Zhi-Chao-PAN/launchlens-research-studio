@@ -69,19 +69,76 @@ describe("admin-client", () => {
     };
     fetchWithCsrfMock.mockResolvedValue(
       new Response(
-        JSON.stringify({ data: snapshot, runtimeProvider: "openai" }),
+        JSON.stringify({
+          data: snapshot,
+          runtimeProvider: "openai",
+          targetProvider: "openai",
+          keyringEnabled: true,
+        }),
         { status: 200 },
       ),
     );
 
     const result = await getProviderCredentials();
 
-    expect(result).toEqual({ ...snapshot, runtimeProvider: "openai" });
+    expect(result).toEqual({
+      ...snapshot,
+      runtimeProvider: "openai",
+      targetProvider: "openai",
+      keyringEnabled: true,
+    });
     expect(JSON.stringify(result)).not.toContain("apiKey");
     expect(fetchWithCsrfMock).toHaveBeenCalledWith(
       "/api/admin/provider-credentials",
       expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
     );
+  });
+
+  it("preserves a writable target while the managed keyring is staged", async () => {
+    const data = {
+      version: 1 as const,
+      revision: 0,
+      slots: [],
+    };
+    fetchWithCsrfMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data,
+          runtimeProvider: null,
+          targetProvider: "openai",
+          keyringEnabled: false,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(getProviderCredentials()).resolves.toEqual({
+      ...data,
+      runtimeProvider: null,
+      targetProvider: "openai",
+      keyringEnabled: false,
+    });
+  });
+
+  it("derives activation fields from the legacy API payload during a mixed-version rollout", async () => {
+    const data = {
+      version: 1 as const,
+      revision: 3,
+      slots: [],
+    };
+    fetchWithCsrfMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ data, runtimeProvider: "anthropic" }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(getProviderCredentials()).resolves.toEqual({
+      ...data,
+      runtimeProvider: "anthropic",
+      targetProvider: "anthropic",
+      keyringEnabled: true,
+    });
   });
 
   it("surfaces revision conflicts so the provider view can reload before retrying", async () => {

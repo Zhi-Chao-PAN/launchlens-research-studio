@@ -719,6 +719,7 @@ interface AgentEvidenceInput {
     retryable: boolean;
   };
   deepCoverage?: {
+    admittedPerQuery: number[];
     coveredQueries: number;
     distinctHosts: number;
     queryCount: number;
@@ -788,7 +789,7 @@ async function prepareAgentEvidence(
 
   const deepRetrieval = session.mode === "deep";
   const focusedQueries = deepRetrieval
-    ? buildDeepRetrievalQueries(session.query, agentId)
+    ? buildDeepRetrievalQueries(session.query, agentId, session.keywords)
     : [buildFocusedRetrievalQuery(session.query, agentId)];
   const executedQueries = [...focusedQueries];
   const focusedQuery = focusedQueries[0];
@@ -826,6 +827,9 @@ async function prepareAgentEvidence(
         ? (deepRetrieval ? admitDeepSourceCandidates(result.value) : result.value)
         : [],
     );
+    const admittedPerQuery = deepRetrieval
+      ? resultSets.map((sources) => sources.length)
+      : [];
     let deepSelection = deepRetrieval
       ? selectDeepRetrievedSources(resultSets, 8)
       : undefined;
@@ -835,12 +839,17 @@ async function prepareAgentEvidence(
       deepSelection &&
       needsDeepRetrievalRescue(deepSelection, minimumSources)
     ) {
-      const rescueQueries = buildDeepRetrievalRescueQueries(session.query, agentId);
-      const excludedDomains = sourcePublisherDomains(deepSelection.sources);
-      executedQueries.push(...rescueQueries);
-      const rescueSettled = await Promise.allSettled(
-        rescueQueries.map((query) =>
-          retrievalProvider.search({
+      const rescueQueries = buildDeepRetrievalRescueQueries(
+        session.query,
+        agentId,
+        session.keywords,
+      );
+      for (const query of rescueQueries) {
+        if (!needsDeepRetrievalRescue(deepSelection, minimumSources)) break;
+        const excludedDomains = sourcePublisherDomains(deepSelection.sources);
+        executedQueries.push(query);
+        try {
+          const rescueSources = await retrievalProvider.search({
             query,
             agentId,
             maxResults: 8,
@@ -848,15 +857,18 @@ async function prepareAgentEvidence(
             minScore: DEEP_MIN_RETRIEVAL_SCORE,
             excludeDomains: excludedDomains,
             signal,
-          }),
-        ),
-      );
-      failures.push(...rejectedReasons(rescueSettled));
-      const rescueSets = rescueSettled.map((result) =>
-        result.status === "fulfilled" ? admitDeepSourceCandidates(result.value) : [],
-      );
-      resultSets.push(...rescueSets);
-      deepSelection = selectDeepRetrievedSources(resultSets, 8);
+          });
+          const admittedSources = admitDeepSourceCandidates(rescueSources);
+          resultSets.push(admittedSources);
+          admittedPerQuery.push(admittedSources.length);
+        } catch (error) {
+          failures.push(error);
+          resultSets.push([]);
+          admittedPerQuery.push(0);
+          if (signal?.aborted) throw error;
+        }
+        deepSelection = selectDeepRetrievedSources(resultSets, 8);
+      }
     }
 
     if (
@@ -891,6 +903,7 @@ async function prepareAgentEvidence(
       ...(deepSelection
         ? {
             deepCoverage: {
+              admittedPerQuery,
               coveredQueries: deepSelection.coveredQueries,
               distinctHosts: deepSelection.distinctHosts,
               queryCount: executedQueries.length,
@@ -1190,7 +1203,7 @@ async function runAgent(
       ) {
         throw new ResearchAgentStageError(
           "retrieval_insufficient",
-          `Deep retrieval admitted ${evidenceInput.retrievedSources.length}/${minimumRetrievedSources} usable sources from ${evidenceInput.deepCoverage.coveredQueries}/${evidenceInput.deepCoverage.queryCount} queries across ${evidenceInput.deepCoverage.distinctHosts}/3 publisher domains after bounded diversity rescue.`,
+          `Deep retrieval admitted ${evidenceInput.retrievedSources.length}/${minimumRetrievedSources} usable sources from ${evidenceInput.deepCoverage.coveredQueries}/${evidenceInput.deepCoverage.queryCount} queries across ${evidenceInput.deepCoverage.distinctHosts}/3 publisher domains after bounded diversity rescue; per-query admitted counts [${evidenceInput.deepCoverage.admittedPerQuery.join(",")}].`,
           undefined,
           false,
         );
