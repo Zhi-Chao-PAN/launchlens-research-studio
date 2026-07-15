@@ -161,6 +161,94 @@ it("fetchWithCsrf passes non-GET methods through with token header", async () =>
 });
 
 
+describe("fetchWithCsrf csrf_failed recovery", () => {
+  it("refreshes the token and retries exactly once for an explicit csrf_failed response", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const responses = [
+      new Response(JSON.stringify({ csrfToken: "stale-token" }), { status: 200 }),
+      new Response(JSON.stringify({ error: "csrf_failed", reason: "csrf-token-mismatch" }), { status: 403 }),
+      new Response(JSON.stringify({ csrfToken: "fresh-token" }), { status: 200 }),
+      new Response(null, { status: 204 }),
+    ];
+    invalidateCsrfToken();
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected fetch");
+      return response;
+    }) as typeof fetch;
+    try {
+      const response = await fetchWithCsrf("/api/admin/provider-credentials", { method: "POST" });
+
+      expect(response.status).toBe(204);
+      expect(calls.map((call) => call.url)).toEqual([
+        "/api/csrf",
+        "/api/admin/provider-credentials",
+        "/api/csrf",
+        "/api/admin/provider-credentials",
+      ]);
+      expect(new Headers(calls[1].init?.headers).get(CSRF_HEADER)).toBe("stale-token");
+      expect(new Headers(calls[3].init?.headers).get(CSRF_HEADER)).toBe("fresh-token");
+    } finally {
+      globalThis.fetch = originalFetch;
+      invalidateCsrfToken();
+    }
+  });
+
+  it("does not refresh or retry an unrelated 403 response", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const responses = [
+      new Response(JSON.stringify({ csrfToken: "current-token" }), { status: 200 }),
+      new Response(JSON.stringify({ error: "forbidden" }), { status: 403 }),
+    ];
+    invalidateCsrfToken();
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected fetch");
+      return response;
+    }) as typeof fetch;
+    try {
+      const response = await fetchWithCsrf("/api/admin/provider-credentials", { method: "DELETE" });
+
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      invalidateCsrfToken();
+    }
+  });
+
+  it("returns a second csrf_failed response without entering a retry loop", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const responses = [
+      new Response(JSON.stringify({ csrfToken: "stale-token" }), { status: 200 }),
+      new Response(JSON.stringify({ error: "csrf_failed" }), { status: 403 }),
+      new Response(JSON.stringify({ csrfToken: "fresh-token" }), { status: 200 }),
+      new Response(JSON.stringify({ error: "csrf_failed" }), { status: 403 }),
+    ];
+    invalidateCsrfToken();
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const response = responses.shift();
+      if (!response) throw new Error("unexpected fetch");
+      return response;
+    }) as typeof fetch;
+    try {
+      const response = await fetchWithCsrf("/api/admin/provider-credentials", { method: "PATCH" });
+
+      expect(response.status).toBe(403);
+      expect(calls).toHaveLength(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      invalidateCsrfToken();
+    }
+  });
+});
+
 describe("formatApiError (round 188/189)", () => {
   it("returns user-friendly message for RateLimitError with seconds rounded up", () => {
     const msg = formatApiError(new RateLimitError("x", 2500));

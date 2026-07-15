@@ -18,7 +18,11 @@ export function createDeepResearchService(): DeepResearchService {
   const secret = process.env.LAUNCHLENS_DEEP_WORKER_SECRET || "";
   const dispatcher =
     origin && secret.length >= 24
-      ? new HttpDeepWakeDispatcher({ origin, secret })
+      ? new HttpDeepWakeDispatcher({
+          origin,
+          secret,
+          protectionBypassSecret: process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+        })
       : undefined;
   return new DeepResearchService({
     repository: new RedisDeepRunRepository(),

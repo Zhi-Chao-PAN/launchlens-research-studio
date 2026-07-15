@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NextRequest } from "next/server";
-import { middleware, safeEqual } from "./middleware";
+import { proxy, safeEqual } from "./proxy";
 
 type NextRequestInit = ConstructorParameters<typeof NextRequest>[1];
 
@@ -47,16 +47,16 @@ describe("safeEqual", () => {
   });
 });
 
-describe("middleware CSRF exemptions", () => {
+describe("proxy CSRF exemptions", () => {
   it("allows the web-vitals beacon endpoint without a CSRF header", () => {
-    const response = middleware(makeRequest("/api/vitals", { method: "POST" }));
+    const response = proxy(makeRequest("/api/vitals", { method: "POST" }));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("lets the exact cron endpoint reach its route-level shared-secret verifier", () => {
-    const response = middleware(makeRequest("/api/cron/scheduler", {
+    const response = proxy(makeRequest("/api/cron/scheduler", {
       method: "POST",
       headers: { "x-cron-secret": "candidate-secret" },
     }));
@@ -69,7 +69,7 @@ describe("middleware CSRF exemptions", () => {
     const previousStrict = process.env.LAUNCHLENS_CSRF_STRICT;
     process.env.LAUNCHLENS_CSRF_STRICT = "1";
     try {
-      const response = middleware(makeRequest("/api/research", { method: "POST" }));
+      const response = proxy(makeRequest("/api/research", { method: "POST" }));
 
       expect(response.status).toBe(403);
       await expect(response.json()).resolves.toMatchObject({

@@ -23,6 +23,7 @@ import type { ResearchRun } from "./storage";
 import type { ResearchNotes } from "./notes";
 import type { ResearchFolder } from "./folders";
 import type { ResearchTemplate } from "./templates";
+import { isValidResearchRunId } from "./run-id-validation";
 
 export const DATA_PACKAGE_VERSION = 1;
 export const DATA_PACKAGE_SOURCE = "launchlens-research-studio";
@@ -129,6 +130,8 @@ export function validateDataPackage(pkg: unknown): string[] {
       const run = data.runs[i] as Record<string, unknown>;
       if (!run.id || typeof run.id !== "string") {
         errors.push(`runs[${i}]: missing id`);
+      } else if (!isValidResearchRunId(run.id)) {
+        errors.push(`runs[${i}]: invalid id`);
       }
     }
   }

@@ -6,9 +6,9 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 
 [🚀 Quick Start](#-quick-start) · [🧠 The Agents](#-the-agents) · [📦 Exports](#-exports) · [🎨 Features](#-features) · [🏗 Architecture](#-architecture) · [🧪 Testing](#-testing) · [🤝 Contributing](CONTRIBUTING.md)
 
-![CI](https://img.shields.io/badge/CI-passing-brightgreen)
+![CI](https://github.com/Zhi-Chao-PAN/launchlens-research-studio/actions/workflows/ci.yml/badge.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
-![Tests](https://img.shields.io/badge/tests-1423%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-2%2C200%2B%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 ---
@@ -33,7 +33,7 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 - **📱 Responsive** — Works on mobile, tablet, and desktop
 
 ### Developer Experience
-- **🧪 Tested** — 73 unit tests across validation, formatters, and runtime utilities
+- **🧪 Tested** — More than 2,200 unit and integration tests, plus production-browser E2E coverage
 - **🔍 TypeScript strict** — Zero `any` in business logic
 - **📦 Rich exports** — Markdown, JSON, CSV, per-agent copy, launchlens-ai brief
 - **🎨 Themed** — Indigo/violet gradient system with full dark mode support
@@ -195,7 +195,7 @@ Production journey measurement is documented in
 [`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
 privacy-minimized, server-confirmed Redis funnel milestones.
 
-A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. `.github/workflows/deep-recovery.yml` POSTs to `/api/cron/scheduler` every five minutes to recover due work independently of browser connections and fast self-dispatch. The Vercel Hobby-compatible daily cron remains a second recovery path.
+A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. Production Deep additionally needs one independent scheduler that POSTs to `/api/cron/scheduler` at an observed cadence of five minutes or less. The checked-in GitHub workflow is intentionally manual-only and is an emergency trigger, not cadence evidence.
 
 **One-time setup**
 
@@ -204,13 +204,19 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 
    | Variable | Why |
    |----------|-----|
-   | `OPENAI_API_KEY` *(or* `ANTHROPIC_API_KEY`*)* | Real LLM provider (otherwise the mock provider runs). At least one of the two is required for non-mock research. |
-   | `CRON_SECRET` | Required for `POST /api/cron/scheduler` and injected automatically by Vercel Cron. Store the same value as the GitHub repository secret `LAUNCHLENS_CRON_SECRET` for the five-minute recovery workflow. The endpoint refuses every call when this and the legacy environment alias are unset. Generate one with `openssl rand -hex 32`. |
+   | `OPENAI_API_KEY` *(or* `ANTHROPIC_API_KEY`*)* | Legacy single-key provider configuration. For the managed three-key path, enable the keyring and add keys from `/admin` instead. |
+   | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` *(or the `KV_REST_API_*` pair)* | Production persistence for the managed key vault, Standard run mirrors, and authoritative Deep state. Both values in one pair are required. |
+   | `LAUNCHLENS_ADMIN_TOKENS` | Bootstraps access to `/admin`. Use long, rotatable server-side tokens; never place them in URLs or browser storage. |
+   | `LAUNCHLENS_PROVIDER_KEYRING_*` | Enables the Redis-backed three-slot provider vault and declares its single runtime provider. `/admin` treats that provider as read-only; slots are tried strictly 1 → 2 → 3 and legacy env keys are not a hidden fourth key. |
+   | `LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET` | Canonical Base64 encoding of exactly 32 random bytes used for AES-256-GCM encryption. Generate with `openssl rand -base64 32`. |
+   | `LAUNCHLENS_ADMIN_SESSION_SECRET` | Signs short-lived HttpOnly administrator sessions. Use a distinct secret of at least 32 random bytes. |
+   | `CRON_SECRET` | Authenticates `POST /api/cron/scheduler`. Configure the same value in the one external scheduler selected for production. Generate with `openssl rand -hex 32`. |
    | `TAVILY_API_KEY` *(optional for Standard; required for Deep)* | Enables Tavily-backed retrieval. Deep fails closed rather than falling back to mock retrieval. |
    | `LAUNCHLENS_DEEP_*` | Deep opt-in, authenticated worker wake, and recovery declarations. See [`.env.example`](./.env.example) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md). |
 
    A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
-3. Add the repository secret `LAUNCHLENS_CRON_SECRET`, then deploy. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`), bind the daily fallback cron, and expose the production URL. GitHub Actions owns the five-minute recovery cadence on Hobby.
+   For a protected Preview deployment, enable Vercel **Protection Bypass for Automation**. Vercel injects `VERCEL_AUTOMATION_BYPASS_SECRET`; the Deep dispatcher sends it only as a request header. Preview defaults to its own `VERCEL_URL`, while `VERCEL_PROJECT_PRODUCTION_URL` is preferred only in Production. Set `LAUNCHLENS_DEEP_WORKER_BASE_URL` when an explicit worker origin is required.
+3. Deploy, configure exactly one independent recovery scheduler at a cadence of at most 300 seconds, and let it accumulate a real chronological heartbeat history. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`) and expose the production URL. The manual GitHub workflow can be given `LAUNCHLENS_CRON_SECRET` for emergency operation but must not be described as the production clock.
 
 **Post-deploy verification checklist**
 
@@ -228,7 +234,7 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 
 **Deep production gate**
 
-`GET /api/research/capabilities` checks seven Deep requirements: explicit opt-in, reachable Redis, real generation/retrieval/reviewer providers, authenticated worker wake, and independent recovery. The UI and `POST /api/research` keep Deep in Preview until all seven pass. The repository declares a five-minute GitHub Actions recovery workflow plus a daily Vercel fallback; do not enable Deep until the workflow, its distinct cron secret, and every other capability requirement are verified in the deployed environment.
+`GET /api/research/capabilities` checks eight Deep requirements: explicit opt-in, reachable Redis, a real generation provider, real retrieval, a strict semantic reviewer, authenticated worker wake, declared independent recovery, and a fresh multi-tick recovery cadence. With the managed keyring enabled, the model gates also verify that at least one enabled credential can actually be decrypted. The UI and `POST /api/research` keep Deep in Preview until every requirement passes.
 
 See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md) for the protocol and deployment contract.
 
@@ -244,7 +250,9 @@ cp .env.example .env.local
 npm run dev
 ```
 
-With a key set, [`provider-registry.ts`](./src/lib/providers/provider-registry.ts) auto-selects the real provider (Anthropic preferred, then OpenAI, then mock). Set `LAUNCHLENS_PROVIDER` to force a specific one. Each provider sends a schema-aware prompt ([`agent-prompts.ts`](./src/lib/providers/agent-prompts.ts)) so the LLM returns the exact structured output the validators expect, and falls back to mock per-agent on any failure so sessions always complete.
+With a legacy env key set, [`provider-registry.ts`](./src/lib/providers/provider-registry.ts) auto-selects the real provider (Anthropic preferred, then OpenAI, then mock). Set `LAUNCHLENS_PROVIDER` to force a specific one. For production, the admin vault can instead hold three encrypted keys for the provider declared by `LAUNCHLENS_PROVIDER_KEYRING_PROVIDER`. That deployment setting is the runtime authority and is read-only in `/admin`, preventing a stored key from silently targeting a different adapter. Retryable upstream, quota, authentication, and rate-limit failures advance from slot 1 to 2 to 3; schema/configuration errors stop without burning another key. Standard may perform one explicit mock fallback after all slots fail, while Deep and semantic review fail closed.
+
+The administrator console lives at `/admin`. An admin-scoped token is exchanged once for a signed HttpOnly browser session; the plaintext token is not stored by the console. The console supports English and Simplified Chinese, operational telemetry, audit exports, access-token management, and write-only provider-key configuration.
 
 See [`docs/PROVIDERS.md`](./docs/PROVIDERS.md) for the full configuration guide, gateway setup, and troubleshooting.
 
@@ -274,7 +282,7 @@ User enters query → POST /api/research → sessionId returned
 
 ## 🧪 Testing
 
-A built-in Vitest suite (73 tests) covers core logic:
+A Vitest suite of more than 2,200 tests covers provider failover, Deep evidence boundaries, recovery, API security, exports, and UI behavior:
 
 ```bash
 npm test                  # One-shot run
@@ -288,6 +296,7 @@ npm run test:ui           # Browser UI
 ```bash
 npm run build
 SMOKE_TEST_PORT=3010 node scripts/smoke-test.js
+node e2e/admin-ui-e2e.js      # bilingual admin, secure session, 3-key flow, responsive UI
 ```
 
 The script starts the production server, then validates:

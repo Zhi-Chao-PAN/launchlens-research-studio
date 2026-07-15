@@ -48,6 +48,35 @@ describe("selectProvider", () => {
     expect(selectProvider(env).id).toBe("openai");
   });
 
+  it("selects the managed keyring without requiring a legacy environment key", () => {
+    env.LAUNCHLENS_PROVIDER = "openai";
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
+    expect(selectProvider(env).id).toBe("openai-keyring");
+  });
+
+  it("never treats legacy env keys as a fourth key when the keyring is enabled", () => {
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
+    env.OPENAI_API_KEY = "legacy-key";
+    expect(selectProvider(env).id).toBe("mock");
+  });
+
+  it("normalizes managed configuration and fails closed when its provider is invalid", () => {
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = " 1 ";
+    env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = " AnThRoPiC ";
+    expect(selectProvider(env).id).toBe("anthropic-keyring");
+
+    env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "gemini";
+    env.OPENAI_API_KEY = "must-not-become-a-fourth-key";
+    expect(selectProvider(env).id).toBe("mock");
+  });
+
+  it("preserves explicit mock as the highest-priority override", () => {
+    env.LAUNCHLENS_PROVIDER = "mock";
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
+    env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "openai";
+    expect(selectProvider(env).id).toBe("mock");
+  });
+
   it("mock provider returns valid AgentOutput", async () => {
     const out = await mockResearchProvider.generate("market-sizer", {
       query: "AI tutor",

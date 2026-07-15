@@ -613,13 +613,25 @@ function sanitizeFindings(
     const reviewer = normalizeReviewer(value.reviewer);
     if (!reviewer || !isConfidence(value.confidence) || !REVIEW_VERDICTS[pass].has(value.verdict as ClaimReviewVerdict)) continue;
 
+    // R2A: tighten the claim/source binding so Pass 2 (claim
+    // entailment) can only cite sources that were *actually* retrieved
+    // for *this* claim. The previous filter only required
+    // `source.origin === "independent_retrieval"` and
+    // `source.agent === claim.agentId` -- a source could be cited by
+    // a different claim's review even though it was retrieved for a
+    // sibling claim. `claimIds` is populated by the sanitizer at line
+    // 850 from the retrieval payload, so requiring it here grounds the
+    // reviewer's citation to the source's actual claim set.
     const allowedSources = pass === "claim_source_entailment"
       ? new Set(claim.sourceIds.filter((sourceId) => reviewSources.has(sourceId)))
       : new Set(
           ledger.reviewSources
             .filter(
               (source) =>
-                source.origin === "independent_retrieval" && source.agent === claim.agentId,
+                source.origin === "independent_retrieval" &&
+                source.agent === claim.agentId &&
+                Array.isArray(source.claimIds) &&
+                source.claimIds.includes(claim.id),
             )
             .map((source) => source.id),
         );

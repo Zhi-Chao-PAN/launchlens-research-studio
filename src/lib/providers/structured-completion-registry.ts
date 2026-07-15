@@ -1,6 +1,11 @@
 import type { StructuredCompletionProvider } from "./structured-completion";
 import { createAnthropicStructuredCompletionProvider } from "./anthropic-structured-completion";
 import { createOpenAIStructuredCompletionProvider } from "./openai-structured-completion";
+import { createManagedStructuredCompletionProvider } from "./managed-provider";
+import {
+  isManagedKeyringEnabled,
+  resolveManagedKeyringProvider,
+} from "./managed-keyring-config";
 import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -26,7 +31,9 @@ export function selectStructuredCompletionProvider(
   env: Readonly<Record<string, string | undefined>> = process.env,
   fetchImpl: typeof fetch = globalThis.fetch,
 ): StructuredCompletionSelection {
-  const forced = (env.LAUNCHLENS_REVIEW_PROVIDER || env.LAUNCHLENS_PROVIDER)?.toLowerCase();
+  const forced = (env.LAUNCHLENS_REVIEW_PROVIDER || env.LAUNCHLENS_PROVIDER)
+    ?.trim()
+    .toLowerCase();
   const openAIKey =
     env.LAUNCHLENS_REVIEW_OPENAI_KEY || env.OPENAI_API_KEY || env.LAUNCHLENS_OPENAI_KEY;
   const anthropicKey = env.LAUNCHLENS_REVIEW_ANTHROPIC_KEY || env.ANTHROPIC_API_KEY;
@@ -46,6 +53,29 @@ export function selectStructuredCompletionProvider(
     );
 
   if (forced === "mock") return { kind: "unavailable", reason: "mock_selected" };
+  if (isManagedKeyringEnabled(env)) {
+    const keyringProvider = resolveManagedKeyringProvider(env);
+    if (!keyringProvider) {
+      return { kind: "unavailable", reason: "provider_not_configured" };
+    }
+    const reviewProvider = env.LAUNCHLENS_REVIEW_PROVIDER?.trim().toLowerCase();
+    if (
+      reviewProvider &&
+      reviewProvider !== keyringProvider
+    ) {
+      return { kind: "unavailable", reason: "forced_provider_missing_key" };
+    }
+    const safe = keyringProvider === "openai" ? safeOpenAIUrl() : safeAnthropicUrl();
+    if (!safe) return { kind: "unavailable", reason: "invalid_provider_url" };
+    return {
+      kind: "configured",
+      provider: createManagedStructuredCompletionProvider({
+        provider: keyringProvider,
+        env,
+        fetchImpl,
+      }),
+    };
+  }
   if (forced === "openai") {
     if (!openAIKey) return { kind: "unavailable", reason: "forced_provider_missing_key" };
     if (!safeOpenAIUrl()) return { kind: "unavailable", reason: "invalid_provider_url" };

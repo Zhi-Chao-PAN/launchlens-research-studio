@@ -32,6 +32,10 @@ export interface AnthropicProviderConfig {
   baseUrl?: string;
   model?: string;
   fetchImpl?: typeof fetch;
+  /** Default keeps the resilient Standard behaviour; managed keyrings use throw. */
+  failureMode?: "fallback" | "throw";
+  /** Bound transport retries. Managed keyrings set this to one per slot. */
+  maxAttempts?: number;
 }
 
 function extractJsonFromMessages(json: any): string {
@@ -51,6 +55,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
   );
   const model = config.model || "claude-3-5-sonnet-latest";
   const fetchImpl = config.fetchImpl || globalThis.fetch;
+  const maxAttempts = Math.max(1, Math.min(3, Math.floor(config.maxAttempts ?? 3)));
 
   return {
     id: "anthropic",
@@ -125,7 +130,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
               },
               parseAnthropicSse,
               {
-                maxAttempts: 3,
+                maxAttempts,
                 baseDelayMs: 300,
                 maxDelayMs: 2000,
                 signal: ctx.signal,
@@ -151,7 +156,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           let res: Response;
           try {
             res = await retryWithBackoff(doFetch, {
-              maxAttempts: 3,
+              maxAttempts,
               baseDelayMs: 200,
               maxDelayMs: 2000,
               signal: ctx.signal,
@@ -172,7 +177,11 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
               status: res.status,
               message: "anthropic HTTP " + res.status,
             });
-            throw new Error("anthropic HTTP " + res.status);
+            throw new ProviderRequestError(
+              "http",
+              "anthropic HTTP " + res.status,
+              { status: res.status },
+            );
           }
           const json: any = await res.json();
           text = extractJsonFromMessages(json);
@@ -201,7 +210,8 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           reportFallback("validation_error", { message: "provider output failed schema validation" });
           throw new Error("provider output failed schema validation");
         }
-      } catch {
+      } catch (error) {
+        if (config.failureMode === "throw") throw error;
         return mockResearchProvider.generate(agentId, ctx);
       }
     },

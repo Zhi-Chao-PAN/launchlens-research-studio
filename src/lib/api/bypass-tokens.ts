@@ -17,6 +17,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { getBackend } from "@/lib/storage/storage";
 import { checkRateLimit } from "@/lib/api/rate-limit";
 import { recordAuthAudit } from "@/lib/api/auth-audit";
+import { hashIp } from "@/lib/telemetry/request-log";
 
 const STORAGE_KEY = "bypassTokens";
 const ENV_BYPASS_TOKENS = process.env.LAUNCHLENS_BYPASS_TOKENS || "";
@@ -145,6 +146,43 @@ export function getTokenInfo(token: string): BypassTokenInfo | null {
 }
 
 /**
+ * Resolve a token by its already-hashed identifier. This exists for signed
+ * admin sessions: the browser never keeps the plaintext admin token after
+ * login, while revocation and expiry must still take effect immediately.
+ */
+export function getTokenInfoByHash(tokenHash: string): BypassTokenInfo | null {
+  if (!/^[a-f0-9]{64}$/.test(tokenHash)) return null;
+  const tokens = pruneExpired(load());
+  return tokens[tokenHash] || null;
+}
+
+/**
+ * Record admin-token usage when authentication was established by a signed
+ * session cookie rather than by presenting the plaintext bearer token.
+ */
+export function recordAdminTokenHashUsage(tokenHash: string, ip?: string): boolean {
+  const tokens = pruneExpired(load());
+  const entry = tokens[tokenHash];
+  if (!entry || entry.scope !== "admin" || isExpired(entry)) return false;
+
+  recordAuthAudit("auth_success", {
+    ipHash: ip ? hashIp(ip) : undefined,
+    tokenHash,
+    scope: "admin",
+    detail: "admin session",
+  });
+  tokens[tokenHash] = {
+    ...entry,
+    lastUsedAt: Date.now(),
+    usageCount: entry.usageCount + 1,
+    ...(ip ? { lastIp: ip } : {}),
+  };
+  cached = tokens;
+  persist(tokens);
+  return true;
+}
+
+/**
  * Check if a token is valid (any scope) and record usage.
  * Use this for rate-limit bypass — any valid token counts.
  */
@@ -155,7 +193,7 @@ export function isBypassToken(token: string, ip?: string): boolean {
   const entry = tokens[h];
   if (!entry) {
     if (token && ip) {
-      recordAuthAudit("auth_failed", { ipHash: ip, detail: "invalid token" });
+      recordAuthAudit("auth_failed", { ipHash: hashIp(ip), detail: "invalid token" });
     }
     return false;
   }
@@ -166,14 +204,14 @@ export function isBypassToken(token: string, ip?: string): boolean {
     cached = tokens;
     persist(tokens);
     if (ip) {
-      recordAuthAudit("auth_failed", { ipHash: ip, tokenHash: h, detail: "expired token" });
+      recordAuthAudit("auth_failed", { ipHash: hashIp(ip), tokenHash: h, detail: "expired token" });
     }
     return false;
   }
 
   // Record usage and audit
   recordAuthAudit("auth_success", {
-    ipHash: ip,
+    ipHash: ip ? hashIp(ip) : undefined,
     tokenHash: h,
     scope: entry.scope,
     detail: "bypass token",
@@ -277,18 +315,28 @@ export function revokeBypassToken(tokenHash: string): boolean {
  */
 export function checkAdminRateLimit(ip: string, tokenHash?: string) {
   // Rate limit by IP AND by token hash (the stricter one wins)
-  const ipLimit = checkRateLimit("admin:ip:" + ip, {
-    capacity: 30,
-    refillIntervalMs: 60_000,
-  });
+  const ipLimit = checkAdminIpRateLimit(ip);
   if (tokenHash) {
-    const tokenLimit = checkRateLimit("admin:token:" + tokenHash, {
-      capacity: 100,
-      refillIntervalMs: 60_000,
-    });
+    const tokenLimit = checkAdminTokenRateLimit(tokenHash);
     return tokenLimit.remaining < ipLimit.remaining ? tokenLimit : ipLimit;
   }
   return ipLimit;
+}
+
+/** Consume the anonymous/pre-authentication admin bucket exactly once. */
+export function checkAdminIpRateLimit(ip: string) {
+  return checkRateLimit("admin:ip:" + ip, {
+    capacity: 30,
+    refillIntervalMs: 60_000,
+  });
+}
+
+/** Consume a token bucket only after the admin credential was accepted. */
+export function checkAdminTokenRateLimit(tokenHash: string) {
+  return checkRateLimit("admin:token:" + tokenHash, {
+    capacity: 100,
+    refillIntervalMs: 60_000,
+  });
 }
 
 /**

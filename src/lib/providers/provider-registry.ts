@@ -9,6 +9,11 @@ import type { ResearchProvider } from "@/lib/providers/provider.types";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { createOpenAIProvider } from "@/lib/providers/openai-provider";
 import { createAnthropicProvider } from "@/lib/providers/anthropic-provider";
+import { createManagedResearchProvider } from "@/lib/providers/managed-provider";
+import {
+  isManagedKeyringEnabled,
+  resolveManagedKeyringProvider,
+} from "@/lib/providers/managed-keyring-config";
 import { isSafeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -42,12 +47,38 @@ function makeAnthropic(env: NodeJS.ProcessEnv, apiKey: string): ResearchProvider
   });
 }
 
-export function selectProvider(env: NodeJS.ProcessEnv = process.env): ResearchProvider {
-  const forced = env.LAUNCHLENS_PROVIDER;
+export interface SelectProviderOptions {
+  failureMode?: "fallback" | "throw";
+  fetchImpl?: typeof fetch;
+}
+
+export function selectProvider(
+  env: NodeJS.ProcessEnv = process.env,
+  options: SelectProviderOptions = {},
+): ResearchProvider {
+  const forced = env.LAUNCHLENS_PROVIDER?.trim().toLowerCase();
   const openAIKey = env.OPENAI_API_KEY || env.LAUNCHLENS_OPENAI_KEY;
   const anthropicKey = env.ANTHROPIC_API_KEY;
 
   if (forced === "mock") return mockResearchProvider;
+  if (isManagedKeyringEnabled(env)) {
+    const managedProvider = resolveManagedKeyringProvider(env);
+    if (!managedProvider) return mockResearchProvider;
+    const safe = managedProvider === "openai"
+      ? isSafeProviderBaseUrl(env.OPENAI_BASE_URL, DEFAULT_OPENAI_BASE_URL, {
+          nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
+        })
+      : isSafeProviderBaseUrl(env.ANTHROPIC_BASE_URL, DEFAULT_ANTHROPIC_BASE_URL, {
+          nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
+        });
+    if (!safe) return mockResearchProvider;
+    return createManagedResearchProvider({
+      provider: managedProvider,
+      failureMode: options.failureMode ?? "fallback",
+      env,
+      fetchImpl: options.fetchImpl,
+    });
+  }
   if (forced === "openai" && openAIKey) return makeOpenAI(env, openAIKey);
   if (forced === "anthropic" && anthropicKey) return makeAnthropic(env, anthropicKey);
 

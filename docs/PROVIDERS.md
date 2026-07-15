@@ -1,149 +1,137 @@
-# Configuring Real LLM Providers
+# Provider configuration
 
-LaunchLens Research Studio ships with a deterministic **mock provider** so the product works out of the box with no configuration. To run real market-intelligence research with a live LLM, configure one of the real providers via environment variables.
+LaunchLens Research Studio supports a deterministic mock provider, legacy
+single-key environment configuration, and a production-oriented managed
+three-slot keyring. Provider selection is implemented in
+[`provider-registry.ts`](../src/lib/providers/provider-registry.ts); the managed
+contract is recorded in
+[`ADR-002`](./decisions/ADR-002-managed-provider-keyring.md).
 
-This document is the single source of truth for provider configuration. The selection rules live in [`src/lib/providers/provider-registry.ts`](../src/lib/providers/provider-registry.ts).
+## Choose one credential authority
 
----
+| Mode | Intended use | Credential source | Failure contract |
+| --- | --- | --- | --- |
+| Mock | Demo, local UI work, CI | None | Deterministic synthetic output |
+| Legacy environment key | Local development and compatibility | One OpenAI or Anthropic key in the deployment environment | Standard can degrade to mock; Deep remains strict |
+| Managed keyring | Production | Three encrypted Redis slots managed from `/admin` | Ordered slot failover; Standard may explicitly degrade once, while Deep and semantic review fail closed |
 
-## Quick start
+Do not configure the managed keyring as if environment keys were additional
+capacity. When `LAUNCHLENS_PROVIDER_KEYRING_ENABLED=1`, the keyring is the
+credential authority and legacy provider-key variables are not a hidden fourth
+slot.
 
-1. Copy the template and edit it:
+## Managed three-slot keyring
 
-   ```bash
-   cp .env.example .env.local
-   ```
+The recommended production setup requires all of the following:
 
-2. Add **one** API key (and optionally a base URL / model override):
+| Variable | Requirement |
+| --- | --- |
+| `LAUNCHLENS_PROVIDER_KEYRING_ENABLED` | Set to `1`. |
+| `LAUNCHLENS_PROVIDER_KEYRING_PROVIDER` | Exactly `openai` or `anthropic`. This deployment value is read-only in `/admin`, and every slot must match it. |
+| `LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET` | Canonical Base64 encoding of exactly 32 random bytes, used for AES-256-GCM. Generate with `openssl rand -base64 32`. |
+| `LAUNCHLENS_ADMIN_TOKENS` | Comma-separated administrator bootstrap tokens. Use long random values and rotate them through deployment configuration. |
+| `LAUNCHLENS_ADMIN_SESSION_SECRET` | Distinct secret containing at least 32 random bytes for signed, short-lived HttpOnly sessions. |
+| Redis | Configure either `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` + `KV_REST_API_TOKEN`. |
 
-   ```bash
-   # .env.local
-   ANTHROPIC_API_KEY=sk-ant-...
-   # or
-   OPENAI_API_KEY=sk-...
-   ```
+After deployment, exchange an administrator token at `/admin` and write keys to
+slots 1, 2, and 3 in priority order. Secret material is write-only: API
+responses and the browser expose configuration state, provider, opaque
+credential identity, and health metadata, but never an API key, suffix, or
+fingerprint. Keys and bootstrap tokens must not be placed in URLs, browser
+storage, screenshots, or logs.
 
-3. Restart the dev server:
+Changing providers is a deployment operation: clear the existing slots, change
+`LAUNCHLENS_PROVIDER_KEYRING_PROVIDER`, redeploy, and then add matching keys.
+The console intentionally cannot switch the runtime provider.
 
-   ```bash
-   npm run dev
-   ```
+### Ordered failover
 
-With a key set and no explicit override, the app uses the real provider automatically. With no key set, it silently falls back to the mock — the demo path is always intact.
+Managed calls try enabled, admissible slots strictly in the order `1 -> 2 -> 3`.
+Each logical operation makes at most one upstream request per slot.
 
----
+- Authentication, quota, rate-limit, network, timeout-response, and upstream
+  5xx failures may advance to the next slot and update credential health.
+- Abort signals stop immediately.
+- Request, configuration, schema, empty-response, JSON parsing, and validation
+  failures stop immediately so another key is not charged for the same invalid
+  operation.
+- Cooldowns are credential-bound. Replacing a key creates a new opaque identity
+  so stale health cannot contaminate the replacement.
+- Standard research may invoke the deterministic mock once after the managed
+  path is exhausted, and must record explicit fallback provenance.
+- Deep generation, Deep synthesis, and structured semantic review never convert
+  provider failure into apparently verified mock work; they fail closed.
 
-## Environment variables
+## Legacy single-key mode
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `LAUNCHLENS_PROVIDER` | Force a provider: `mock` / `openai` / `anthropic`. | _(unset → auto-select)_ |
-| `OPENAI_API_KEY` | OpenAI API key. | — |
-| `LAUNCHLENS_OPENAI_KEY` | Alias for `OPENAI_API_KEY` (takes precedence if both are set). | — |
-| `OPENAI_BASE_URL` | Custom base URL for OpenAI-compatible gateways. | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | Model name. | `gpt-4o-mini` |
-| `ANTHROPIC_API_KEY` | Anthropic API key. | — |
-| `ANTHROPIC_BASE_URL` | Custom base URL for Anthropic-compatible gateways. | `https://api.anthropic.com` |
-| `ANTHROPIC_MODEL` | Model name. | `claude-3-5-sonnet-latest` |
+For local development, leave the keyring disabled and configure one provider:
 
-Provider and retrieval base URLs must use HTTPS in production. Plain HTTP is
-accepted only for loopback development endpoints (`localhost`, `127.0.0.0/8`,
-or `::1`), and URLs containing embedded credentials, query strings, or
-fragments are rejected before an API secret can be attached to a request.
+```dotenv
+# OpenAI
+LAUNCHLENS_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+# OPENAI_BASE_URL=https://api.openai.com/v1
 
----
+# Or Anthropic
+# LAUNCHLENS_PROVIDER=anthropic
+# ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_MODEL=claude-3-5-sonnet-latest
+# ANTHROPIC_BASE_URL=https://api.anthropic.com
+```
 
-## Selection rules
+`LAUNCHLENS_OPENAI_KEY` is a supported alias that takes precedence over
+`OPENAI_API_KEY`. With no forced provider, the registry auto-selects Anthropic,
+then OpenAI, then mock. `LAUNCHLENS_PROVIDER=mock` always selects the
+deterministic provider.
 
-`selectProvider()` in `provider-registry.ts` picks the provider in this priority order:
+Legacy adapters retain their compatibility retry/degradation behavior for
+Standard research. The Deep execution profile selects strict adapters and does
+not inherit Standard's mock fallback.
 
-1. `LAUNCHLENS_PROVIDER=mock` → mock, even if keys are set (useful for demos/CI).
-2. `LAUNCHLENS_PROVIDER=openai` + an OpenAI key → OpenAI.
-3. `LAUNCHLENS_PROVIDER=anthropic` + an Anthropic key → Anthropic.
-4. No override, but an Anthropic key is set → Anthropic.
-5. No override, but an OpenAI key is set → OpenAI.
-6. Nothing set → mock.
+OpenAI-compatible gateways can be used through `OPENAI_BASE_URL` and
+`OPENAI_MODEL`. Provider and retrieval base URLs must use HTTPS in production;
+plain HTTP is accepted only for loopback development. URLs with embedded
+credentials, query strings, or fragments are rejected before a secret is
+attached.
 
-Anthropic is preferred over OpenAI by default because its longer context window suits the synthesis agent, which ingests all five upstream outputs. Set `LAUNCHLENS_PROVIDER=openai` to force OpenAI instead.
+## Retrieval and evidence grounding
 
----
+Configure Tavily to ground generated claims in retrieved sources:
 
-## How real calls produce structured output
+```dotenv
+TAVILY_API_KEY=tvly-...
+# LAUNCHLENS_SEARCH_PROVIDER=tavily
+# TAVILY_BASE_URL=https://api.tavily.com
+```
 
-Each provider sends a **schema-aware system prompt** (built by [`agent-prompts.ts`](../src/lib/providers/agent-prompts.ts)) that shows the LLM the exact TypeScript shape it must return — required fields, allowed enum values, and per-agent coaching (e.g. "SAM ≤ TAM", "score every player on every dimension 0–100"). The model's response is then parsed and run through [`output-validator.ts`](../src/lib/providers/output-validator.ts).
+Standard research may continue with clearly labelled degraded/mock provenance
+when retrieval is unavailable. Deep Research requires a real, safe Tavily
+configuration and fails closed without it. Retrieved sources are loaded at the
+claim boundary, and emitted citation URLs must come from the retrieval
+allowlist.
 
-If a real call fails — network error, malformed JSON, or validation failure — the provider **falls back to the mock for that agent** so the session still completes. This means a misconfigured key degrades gracefully to demo data rather than crashing, but it also means a bad key can be hard to notice. To verify your real provider is wired up:
+## Protected Vercel Preview deployments
 
-- Check the server logs (`npm run dev`) — real provider calls log the model and base URL.
-- Set `LAUNCHLENS_PROVIDER=openai` (or `anthropic`) explicitly to bypass the auto-select and confirm the forced path is taken.
+An authenticated Deep worker wake and Vercel Deployment Protection are separate
+controls. If a Preview deployment is protected, enable **Protection Bypass for
+Automation** in Vercel. Vercel injects
+`VERCEL_AUTOMATION_BYPASS_SECRET`; the dispatcher sends it only as the
+`x-vercel-protection-bypass` request header and never includes it in errors or
+logs.
 
----
-
-## OpenAI-compatible gateways
-
-Because the OpenAI adapter targets `{baseUrl}/chat/completions` with a bearer token, it works with any OpenAI-compatible endpoint:
-
-- **MiniMax** *(verified end-to-end, round 209)* — set `OPENAI_BASE_URL=https://api.minimaxi.com/v1`, `OPENAI_MODEL=MiniMax-M3`, and your MiniMax key as `OPENAI_API_KEY`. MiniMax-M3 is a reasoning model that wraps its JSON in `<think>…</think>` blocks; the adapter's `extractJsonObject` strips these automatically, so structured output validates cleanly. MiniMax also offers an Anthropic-compatible gateway at `https://api.minimaxi.com/anthropic` (set `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY`) if you prefer that path.
-- **Azure OpenAI** — set `OPENAI_BASE_URL` to your deployment endpoint and `OPENAI_MODEL` to the deployment name.
-- **Local models** (Ollama, LM Studio, vLLM) — set `OPENAI_BASE_URL=http://localhost:11434/v1` (for Ollama) and any non-empty `OPENAI_API_KEY`.
-
-Note: local models that ignore `response_format: json_object` may still produce fenced output; the adapter strips fences before parsing, but weaker models are more likely to fail validation and fall back to mock.
-
----
+Set `LAUNCHLENS_DEEP_WORKER_BASE_URL` when an explicit worker origin is desired.
+Otherwise Preview uses its own `VERCEL_URL`; only a Production deployment may
+prefer `VERCEL_PROJECT_PRODUCTION_URL`. This prevents Preview work from
+silently dispatching into Production.
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Output looks like demo data even with a key set | Validation failing → silent mock fallback | Check server logs; set `LAUNCHLENS_PROVIDER` explicitly; verify the model name. |
-| `401 Unauthorized` | Wrong key or base URL | Confirm the key is valid for the configured base URL. |
-| `429 Too Many Requests` | Rate limit | The adapter retries 429 with backoff; reduce concurrency or upgrade tier. |
-| Research hangs then completes with mock | Network drop mid-stream | The adapter reconnects; if all retries fail it falls back to mock. |
-
----
-
-## Security
-
-- Provider keys are read **server-side only** (in API routes and the research engine). They are never bundled into the client.
-- The mock fallback is a feature for demos, not a security control. In production, set `LAUNCHLENS_PROVIDER` explicitly and monitor for unexpected fallbacks if you require real data.
-
----
-
-## Web retrieval (RAG grounding)
-
-LLM providers generate citation URLs from parametric memory alone. To ground citations in real, retrieved web sources, configure a retrieval provider. The engine then injects up to 6 verified sources into each agent's prompt and filters out any citation whose URL was not retrieved.
-
-### Tavily (default adapter)
-
-Get a free-tier key at [tavily.com](https://tavily.com). Add to `.env.local`:
-
-```bash
-TAVILY_API_KEY=tvly-...
-```
-
-That's it. The next research run will:
-
-1. POST `https://api.tavily.com/search` with the product query + keywords.
-2. Receive up to 6 results (`title`, `url`, `content`).
-3. Prepend them to each agent's user prompt as a "Verified web sources" section.
-4. After the LLM responds, drop any emitted citation whose URL was not in the retrieved set.
-5. If Tavily returns 0 results, fails, or times out (12s), the engine falls back to LLM-only generation — no run ever blocks on retrieval.
-
-Optional overrides:
-
-```bash
-# Force a specific adapter (default: auto-pick when key is set)
-LAUNCHLENS_SEARCH_PROVIDER=tavily
-# Or force retrieval off even with a key present
-LAUNCHLENS_SEARCH_PROVIDER=mock
-# Self-hosted / proxy endpoint
-TAVILY_BASE_URL=https://your-tavily-proxy.example.com
-```
-
-Selection rules live in [`src/lib/providers/retrieval-registry.ts`](../src/lib/providers/retrieval-registry.ts). The adapter contract is [`RetrievalProvider`](../src/lib/providers/retrieval.types.ts); adding Serper, Brave Search, or a crawler is a new ~150-line module plus a registry branch.
-
-### What grounding actually buys you
-
-Without retrieval: the LLM fabricates plausible-looking URLs (e.g. `https://example.com/2024-report`). The validator does not check reachability, so these pass through to the user.
-
-With Tavily retrieval: every emitted citation must match a URL the search backend actually returned. The deterministic FNV-1a hash in `TavilyRetrievalProvider` makes citation IDs stable across runs. URLs missing from the retrieved set are silently dropped by `filterCitationsAgainstRetrieved()` — never inflated with synthetic data.
+| Symptom | Check |
+| --- | --- |
+| `/admin` cannot save a key | Verify Redis, the canonical 32-byte encryption secret, administrator session setup, and that the submitted provider matches the deployment provider. |
+| Slot 2 or 3 is never tried | Inspect the first failure category. Schema/configuration/parsing/validation errors intentionally stop instead of rotating keys. |
+| Output is marked mock/degraded | Inspect fallback provenance and credential health. Standard can explicitly degrade; Deep cannot. |
+| Deep is unavailable | Inspect `GET /api/research/capabilities`; provider configuration alone is only one of the eight production requirements. |
+| Preview worker wake returns a redirect or 401 | Verify the explicit/Preview worker origin, Deep worker secret, and Vercel Protection Bypass for Automation. Never print either secret while diagnosing. |
+| Retrieval is unavailable | Verify `TAVILY_API_KEY`, `LAUNCHLENS_SEARCH_PROVIDER`, and that `TAVILY_BASE_URL` passes the HTTPS safety rules. |

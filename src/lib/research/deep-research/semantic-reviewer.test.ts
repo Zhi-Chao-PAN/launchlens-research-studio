@@ -17,6 +17,7 @@ import {
   assertAllClaimsHaveAtLeastOneSource,
   buildClaimEvidenceSlices,
   findingsForPass,
+  uniqueSourcesFromSlices,
 } from "./semantic-reviewer";
 import { initializeDeepValidation } from "@/lib/research/deep-validation";
 
@@ -209,6 +210,25 @@ describe("DeepSemanticReviewer", () => {
         reviewerId: "deep-entailment-reviewer",
         providerId: "review-provider",
         model: "review-model",
+      });
+  });
+
+  it("rejects a resumed ledger whose claim-to-source binding is non-canonical", async () => {
+    const session = await fixtureSession();
+    const ledger = initializeDeepValidation(session, { maxClaims: 6, maxClaimsPerAgent: 6 });
+    const claim = ledger.claims[0];
+    if (!claim) throw new Error("fixture requires a claim");
+    claim.sourceIds = ["missing-source-binding"];
+    session.validation = ledger;
+    const reviewer = new DeepSemanticReviewer({
+      provider: successfulProvider(),
+      retrieval: liveRetrieval(),
+    });
+
+    await expect(reviewer.runPass(session, "claim_source_entailment"))
+      .rejects.toMatchObject({
+        code: "validation_protocol_out_of_order",
+        retryable: false,
       });
   });
 
@@ -528,5 +548,179 @@ describe("buildClaimEvidenceSlices", () => {
     expect(() =>
       assertAllClaimsHaveAtLeastOneSource(slices, "claim_source_entailment"),
     ).toThrowError(/zero sources in the prompt context/);
+  });
+
+  /**
+   * R2B (per-claim cap on the reserved set): a single claim with an
+   * excessive number of `sourceIds` must NOT be allowed to exhaust the
+   * global `maxTotalSources` budget before other claims get any sources.
+   * The pre-R2B code reserved ALL of `claim.sourceIds` regardless of
+   * the global cap, which would blow past 80 and starve sibling claims.
+   */
+  it("caps a single claim's reserved sources at maxSourcesPerClaim, not the full sourceIds", () => {
+    const heavy = makeClaim({
+      id: "heavy",
+      valueHash: "h_h",
+      // 50 of its own sources — must be capped, not all reserved.
+      sourceIds: Array.from({ length: 50 }, (_, i) => `own_${i}`),
+    });
+    const light = makeClaim({ id: "light", valueHash: "h_l", sourceIds: ["own_light"] });
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 50; i += 1) {
+      sources.push(makeSource({ id: `own_${i}`, title: `Heavy source ${i}`, agent: baseAgentId }));
+    }
+    sources.push(makeSource({ id: "own_light", title: "Light source", agent: baseAgentId }));
+    const ledger = makeLedger([heavy, light], sources);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+      maxSourcesPerClaim: 6,
+    });
+
+    const heavySlice = slices.find((entry) => entry.claim.id === "heavy");
+    const lightSlice = slices.find((entry) => entry.claim.id === "light");
+    // Heavy claim: capped at 6, not 50.
+    expect(heavySlice?.sources.length).toBe(6);
+    // Light claim: still got its own source — not starved.
+    expect(lightSlice?.sources.map((s) => s.id)).toContain("own_light");
+    // Global total stays inside the cap.
+    const total = slices.reduce((acc, slice) => acc + slice.sources.length, 0);
+    expect(total).toBeLessThanOrEqual(80);
+  });
+
+  /**
+   * R2B (hard global cap): the union of reserved + filler must NEVER
+   * exceed `maxTotalSources` even when the ledger contains >80 sources.
+   * The pre-R2B code reserved every claim.sourceIds entry, then ran
+   * the filler until `reserved.size >= maxTotalSources`. The filler
+   * break was the only global guard; a heavy reserved set bypassed it.
+   */
+  it("fails closed when the required floor itself exceeds maxTotalSources", () => {
+    // 100 claims each with 1 own source + a giant pool of filler.
+    const claims: ResearchClaim[] = [];
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 100; i += 1) {
+      const claimId = `claim_${i}`;
+      const sourceId = `own_${i}`;
+      claims.push(makeClaim({ id: claimId, valueHash: `h_${i}`, sourceIds: [sourceId] }));
+      sources.push(makeSource({ id: sourceId, title: `Own ${i}`, agent: baseAgentId }));
+    }
+    for (let i = 0; i < 400; i += 1) {
+      sources.push(makeSource({ id: `filler_${i}`, title: `Filler ${i}`, agent: baseAgentId }));
+    }
+    const ledger = makeLedger(claims, sources);
+
+    expect(() => buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+      maxSourcesPerClaim: 4,
+    })).toThrowError(/cannot admit the required per-claim evidence floor/);
+  });
+
+  it("allocates a complete minimum round before fair filler and de-duplicates the catalog", () => {
+    const claims: ResearchClaim[] = [];
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const ownIds = Array.from({ length: 6 }, (_, sourceIndex) => `own_${i}_${sourceIndex}`);
+      claims.push(makeClaim({ id: `claim_${i}`, valueHash: `h_${i}`, sourceIds: ownIds }));
+      ownIds.forEach((id) => sources.push(makeSource({ id, agent: baseAgentId })));
+    }
+    const ledger = makeLedger(claims, sources);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+      maxSourcesPerClaim: 6,
+    });
+
+    expect(slices).toHaveLength(25);
+    expect(slices.every((slice) => slice.sources.length >= 1)).toBe(true);
+    expect(slices.at(-1)?.sources[0]?.id).toBe("own_24_0");
+    expect(uniqueSourcesFromSlices(slices)).toHaveLength(80);
+    expect(Math.max(...slices.map((slice) => slice.sources.length)) - Math.min(...slices.map((slice) => slice.sources.length))).toBeLessThanOrEqual(1);
+
+    const shared = makeSource({ id: "shared", agent: baseAgentId });
+    const sharedLedger = makeLedger(
+      [
+        makeClaim({ id: "shared_a", valueHash: "h_a", sourceIds: ["shared"] }),
+        makeClaim({ id: "shared_b", valueHash: "h_b", sourceIds: ["shared"] }),
+      ],
+      [shared],
+    );
+    const sharedSlices = buildClaimEvidenceSlices(sharedLedger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 1,
+      minSourcesPerClaim: 1,
+    });
+    expect(sharedSlices.every((slice) => slice.sources[0]?.id === "shared")).toBe(true);
+    expect(uniqueSourcesFromSlices(sharedSlices)).toEqual([shared]);
+  });
+
+  /**
+   * R2B (minSourcesPerClaim floor): a claim that has zero of its own
+   * `sourceIds` AND no independent source bound to it would otherwise
+   * land in the prompt with 0 sources, which fails the readiness
+   * check. The pre-R2B code only enforced the floor indirectly via
+   * filler. We now explicitly look up an independent source whose
+   * `claimIds` includes the claim so the floor is met before filler.
+   */
+  it("satisfies minSourcesPerClaim from independent sources when own sourceIds is empty", () => {
+    const claim = makeClaim({ id: "claim_orphan", valueHash: "h_o", sourceIds: [] });
+    const indep = makeSource({
+      id: "indep_for_orphan",
+      title: "Independent evidence for the orphan",
+      origin: "independent_retrieval",
+      agent: baseAgentId,
+      claimIds: ["claim_orphan"],
+    });
+    const ledger = makeLedger([claim], [indep]);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "independent_corroboration_conflict",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+
+    const slice = slices.find((entry) => entry.claim.id === "claim_orphan");
+    // The min-1 floor was satisfied by the independent source whose
+    // claimIds binding includes this claim.
+    expect(slice?.sources.map((s) => s.id)).toContain("indep_for_orphan");
+  });
+
+  it("floor pass does not use an unrelated independent source", () => {
+    // The R2B floor pass must require `source.claimIds` to include the
+    // claim under review — otherwise a claim with empty `sourceIds`
+    // could be satisfied by any leftover independent source, breaking
+    // the Phase 2A claim/source binding. We assert this by giving the
+    // ledger TWO claims: a target whose `sourceIds` is empty AND a
+    // sibling claim that owns a bound independent source. The floor
+    // pass must NOT lift the sibling's source into the target's slice.
+    const target = makeClaim({ id: "claim_target", valueHash: "h_t", sourceIds: [] });
+    const sibling = makeClaim({ id: "claim_sibling", valueHash: "h_s", sourceIds: [] });
+    const siblingBound = makeSource({
+      id: "indep_for_sibling",
+      title: "Bound to sibling claim only",
+      origin: "independent_retrieval",
+      agent: baseAgentId,
+      claimIds: ["claim_sibling"],
+    });
+    const ledger = makeLedger([target, sibling], [siblingBound]);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "independent_corroboration_conflict",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+
+    const targetSlice = slices.find((entry) => entry.claim.id === "claim_target");
+    const siblingSlice = slices.find((entry) => entry.claim.id === "claim_sibling");
+    // The sibling's bound source belongs to the sibling's slice, not
+    // the target's, even though the target has no own sources.
+    expect(siblingSlice?.sources.map((s) => s.id)).toContain("indep_for_sibling");
+    expect(targetSlice?.sources.map((s) => s.id)).not.toContain("indep_for_sibling");
   });
 });

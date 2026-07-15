@@ -33,6 +33,12 @@ export interface OpenAIProviderConfig {
   baseUrl?: string;
   model?: string;
   fetchImpl?: typeof fetch;
+  /** Default keeps the resilient Standard behaviour; managed keyrings use throw. */
+  failureMode?: "fallback" | "throw";
+  /** Bound transport retries. Managed keyrings set this to one per slot. */
+  maxAttempts?: number;
+  /** Disable the streaming repair call when a global keyring budget owns retries. */
+  allowStructuredRepair?: boolean;
 }
 
 export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProvider {
@@ -42,6 +48,8 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
   );
   const model = config.model || "gpt-4o-mini";
   const fetchImpl = config.fetchImpl || globalThis.fetch;
+  const maxAttempts = Math.max(1, Math.min(3, Math.floor(config.maxAttempts ?? 3)));
+  const allowStructuredRepair = config.allowStructuredRepair !== false;
 
   return {
     id: "openai",
@@ -114,7 +122,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           let res: Response;
           try {
             res = await retryWithBackoff(() => doFetch(false), {
-              maxAttempts: 3,
+              maxAttempts,
               baseDelayMs: 200,
               maxDelayMs: 2000,
               signal: ctx.signal,
@@ -135,7 +143,11 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               status: res.status,
               message: "provider HTTP " + res.status,
             });
-            throw new Error("provider HTTP " + res.status);
+            throw new ProviderRequestError(
+              "http",
+              "provider HTTP " + res.status,
+              { status: res.status },
+            );
           }
           const json: any = await res.json();
           return json?.choices?.[0]?.message?.content || "";
@@ -155,7 +167,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               },
               parseOpenAiSse,
               {
-                maxAttempts: 3,
+                maxAttempts,
                 baseDelayMs: 300,
                 maxDelayMs: 2000,
                 signal: ctx.signal,
@@ -192,7 +204,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           // would fail on that scaffolding and silently degrade to mock.
           parsed = extractJsonObject(text);
         } catch {
-          if (wantsStream) {
+          if (wantsStream && allowStructuredRepair) {
             try {
               ctx.onProgress?.({ fraction: 0.98, step: "Retrying structured response" });
               usedStructuredRetry = true;
@@ -221,7 +233,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           // incomplete. Give the provider one non-streaming repair attempt,
           // just as we already do for a malformed streaming envelope. This is
           // bounded to one extra call and remains inside the stage deadline.
-          if (wantsStream && !usedStructuredRetry) {
+          if (wantsStream && allowStructuredRepair && !usedStructuredRetry) {
             ctx.onProgress?.({ fraction: 0.98, step: "Retrying schema-valid response" });
             let retryText: string;
             try {
@@ -253,7 +265,8 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           reportFallback("validation_error", { message: "provider output failed schema validation" });
           throw new Error("provider output failed schema validation");
         }
-      } catch {
+      } catch (error) {
+        if (config.failureMode === "throw") throw error;
         return mockResearchProvider.generate(agentId, ctx);
       }
     },

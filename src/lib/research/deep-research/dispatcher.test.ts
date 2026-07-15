@@ -7,6 +7,7 @@ describe("HttpDeepWakeDispatcher", () => {
     const dispatcher = new HttpDeepWakeDispatcher({
       origin: "https://studio.example/path",
       secret: "worker-secret-at-least-24-characters",
+      protectionBypassSecret: "vercel-automation-bypass-secret",
       fetchImpl: fetchImpl as typeof fetch,
     });
     await dispatcher.dispatch("abc123");
@@ -20,6 +21,27 @@ describe("HttpDeepWakeDispatcher", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer worker-secret-at-least-24-characters",
           "x-launchlens-deep-worker-secret": "worker-secret-at-least-24-characters",
+          "x-vercel-protection-bypass": "vercel-automation-bypass-secret",
+        }),
+      }),
+    );
+  });
+
+  it("omits the Vercel protection bypass header when it is not configured", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
+    const dispatcher = new HttpDeepWakeDispatcher({
+      origin: "https://studio.example",
+      secret: "worker-secret-at-least-24-characters",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    await dispatcher.dispatch("abc123");
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://studio.example/api/internal/deep-research/continue",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({
+          "x-vercel-protection-bypass": expect.anything(),
         }),
       }),
     );
@@ -35,8 +57,12 @@ describe("HttpDeepWakeDispatcher", () => {
     const dispatcher = new HttpDeepWakeDispatcher({
       origin: "https://studio.example",
       secret: "x".repeat(24),
+      protectionBypassSecret: "must-not-appear-in-errors",
       fetchImpl: vi.fn(async () => new Response(null, { status: 503 })) as unknown as typeof fetch,
     });
-    await expect(dispatcher.dispatch("abc123")).rejects.toThrow("HTTP 503");
+    const wakeError = await dispatcher.dispatch("abc123").catch((error: unknown) => error);
+    expect(wakeError).toBeInstanceOf(Error);
+    expect((wakeError as Error).message).toContain("HTTP 503");
+    expect((wakeError as Error).message).not.toContain("must-not-appear-in-errors");
   });
 });

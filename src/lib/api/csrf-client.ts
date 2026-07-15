@@ -51,6 +51,22 @@ export async function fetchWithCsrf(
   }
 
   const token = await getCsrfToken();
+  const firstResponse = await csrfFetchAttempt(url, options, token);
+  if (!(await isExplicitCsrfFailure(firstResponse))) return firstResponse;
+
+  // Another tab may have rotated the shared HttpOnly cookie while this tab
+  // still held the previous token in module memory. Self-heal only for the
+  // server's explicit CSRF contract and replay the mutation at most once.
+  invalidateCsrfToken();
+  const refreshedToken = await getCsrfToken();
+  return csrfFetchAttempt(url, options, refreshedToken);
+}
+
+async function csrfFetchAttempt(
+  url: string,
+  options: CsrfFetchOptions,
+  token: string,
+): Promise<Response> {
   const headers = new Headers(options.headers as HeadersInit || {});
   if (token) {
     headers.set("X-CSRF-Token", token);
@@ -64,6 +80,21 @@ export async function fetchWithCsrf(
   const rotated = res.headers.get(CSRF_HEADER);
   if (rotated) cachedToken = rotated;
   return res;
+}
+
+async function isExplicitCsrfFailure(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  try {
+    const body: unknown = await response.clone().json();
+    return Boolean(
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      (body as Record<string, unknown>).error === "csrf_failed",
+    );
+  } catch {
+    return false;
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -56,6 +56,21 @@ function deepCapability(
     maxSynchronousDurationSec: 300,
     lastRecoveryAt: NOW,
     lastRecoveryAgeMs: 0,
+    recoveryState: "healthy",
+    recoveryObservation: {
+      state: "healthy",
+      consecutiveOk: 3,
+      requiredForHealthy: 3,
+      lastTickAt: NOW,
+      lastTickAgeMs: 0,
+      lastTickOk: true,
+      detail: "Recovery is healthy",
+    observedTicks: 3,
+    observedFailures: 0,
+    minObservedIntervalMs: 300_000,
+    maxObservedIntervalMs: 300_000,
+    cadenceSpanMs: 600_000,
+    },
   };
 }
 

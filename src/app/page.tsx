@@ -281,22 +281,21 @@ export default function Home() {
       }
     };
     void loadStats();
-
-    // Generate suggestions
-    const loadSuggestions = async () => {
-      try {
-        const res = await fetch("/api/research/runs?limit=100");
-        if (res.ok) {
-          const data = await res.json();
-          const recs = generateSuggestions(data.runs || [], 4);
-          setSuggestions(recs);
-        }
-      } catch {
-        // Suggestions are optional
-      }
-    };
-    void loadSuggestions();
   }, []);
+
+  // Suggestions are derived only from the current browser's recoverable
+  // history; the public workspace must not enumerate the admin run store.
+  useEffect(() => {
+    setSuggestions(generateSuggestions(
+      history.map((entry) => ({
+        id: entry.id,
+        query: entry.query,
+        keywords: entry.keywords,
+        createdAt: new Date(entry.createdAt).getTime() || Date.now(),
+      })),
+      4,
+    ));
+  }, [history]);
 
   // Persist a history entry with the real session id so local recovery links
   // point at /research/<sessionId> instead of a random browser-only id.

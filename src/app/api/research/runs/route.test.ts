@@ -4,15 +4,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // We need the NextRequest constructor shim from the global setup.
 import { NextRequest } from "next/server";
 
-const { verifyCsrf, rotateCsrf, checkRateLimitForIp } = vi.hoisted(() => ({
+const { verifyCsrf, rotateCsrf, checkRateLimit, checkRateLimitForIp } = vi.hoisted(() => ({
   verifyCsrf: vi.fn(() => null as Response | null),
   rotateCsrf: vi.fn((response: Response) => response),
+  checkRateLimit: vi.fn(() => ({ allowed: true, remaining: 10, resetMs: 0 })),
   checkRateLimitForIp: vi.fn(() => ({ allowed: true, remaining: 10, resetMs: 0 })),
 }));
 
 vi.mock("@/lib/api/csrf-guard", () => ({ verifyCsrf }));
 vi.mock("@/lib/api/csrf-rotate", () => ({ rotateCsrf }));
-vi.mock("@/lib/api/rate-limit", () => ({ checkRateLimitForIp }));
+vi.mock("@/lib/api/rate-limit", () => ({ checkRateLimit, checkRateLimitForIp }));
 
 // Exercise the real requireAdmin() helper against a deterministic token
 // registry: a bypass-only credential must not authorize collection access.
@@ -113,6 +114,19 @@ describe("/api/research/runs GET", () => {
   it("rejects an arbitrary bearer string", async () => {
     const res = await GET(makeRequest("/api/research/runs", { auth: "not-a-registered-token" }));
     expect(res.status).toBe(401);
+  });
+
+  it("does not let a valid admin token bypass the pre-authentication IP limit", async () => {
+    checkRateLimit.mockReturnValueOnce({ allowed: false, remaining: 0, resetMs: 30_000 });
+
+    const res = await GET(makeRequest("/api/research/runs", { auth: "runs-admin" }));
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("30");
+    expect(checkRateLimit).toHaveBeenCalledWith(
+      "admin:ip:anonymous",
+      { capacity: 30, refillIntervalMs: 60_000 },
+    );
   });
 
   it("returns summary list with an admin token", async () => {

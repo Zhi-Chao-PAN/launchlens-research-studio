@@ -16,6 +16,7 @@ import type {
   SynthesisOutput,
 } from "@/lib/schema/research-schema";
 import { isResearchModeId } from "@/lib/research/research-modes";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 
 /** Schema version for the importable brief envelope. Bump when the shape changes
  *  so the downstream importer can migrate older exports. */
@@ -310,7 +311,11 @@ interface DeepBriefEvidence {
 
 function deepBriefEvidence(session: ResearchSession): DeepBriefEvidence | null {
   const validation = session.validation;
-  if (!validation || validation.version !== 2) return null;
+  // R2C: full ledger guard, not just `version === 2`. The V2 shape can
+  // be tampered with or partially hydrated, so we re-run the canonical
+  // shape predicate. A ledger that fails the full predicate is treated
+  // as absent -- the brief fails closed.
+  if (!validation || !isValidationLedgerV2(validation)) return null;
   const claimsById = new Map(validation.claims.map((claim) => [claim.id, claim]));
   const complete =
     validation.protocol.executedPasses === 3 &&
@@ -412,25 +417,17 @@ function buildDeepMarket(evidence: DeepBriefEvidence): string {
     : "TAM, growth, pricing, and competitor claims remain unverified.";
 }
 
-function buildDeepConstraints(
-  synthesis: SynthesisOutput | null,
-  evidence: DeepBriefEvidence,
-): string {
+function buildDeepConstraints(evidence: DeepBriefEvidence): string {
   const parts = [
     `Evidence gate: ${evidence.fullySupported.length}/${evidence.totalClaims} fully supported` +
       (evidence.partiallySupportedCount > 0
         ? `, ${evidence.partiallySupportedCount} partially supported`
         : ""),
   ];
-  // P1-2: only reuse the synthesis next-step when evidence is sufficient.
-  // Otherwise the unverified synthesis recommendation leaks into the brief.
-  if (synthesis && hasSufficientDeepBriefEvidence(evidence)) {
-    parts.push(synthesis.recommendedNextStep
-      ? `Next: ${compactWords(synthesis.recommendedNextStep, 190)}`
-      : "Next: collect primary evidence before launch commitments");
-  } else {
-    parts.push("Next: collect primary evidence before launch commitments");
-  }
+  // A raw synthesis recommendation is not a separately adjudicated claim.
+  // Even many supported specialist claims cannot establish that this exact
+  // next step is correct, so Deep exports use conservative fixed guidance.
+  parts.push("Next: collect primary evidence before launch commitments");
   return finishCompactSentence(parts.join("; "), FIELD_ADVISORY_LIMITS.constraints);
 }
 
@@ -511,7 +508,7 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
         market: clampField(buildDeepMarket(deepEvidence), "market", truncated),
         tone: DEFAULT_TONE,
         constraints: clampField(
-          buildDeepConstraints(synthesis, deepEvidence),
+          buildDeepConstraints(deepEvidence),
           "constraints",
           truncated,
         ),
@@ -547,22 +544,11 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
       // AND (b) for Deep sessions, the V2 ledger exists and evidence is
       // sufficient. Fail-closed Deep sessions and insufficient-evidence
       // Deep sessions both yield null scores.
-      opportunityScore:
-        synthesis && deepEvidence && hasSufficientDeepBriefEvidence(deepEvidence)
-          ? synthesis.opportunityScore
-          : isDeepMode
-            ? null
-            : synthesis
-              ? synthesis.opportunityScore
-              : null,
-      riskScore:
-        synthesis && deepEvidence && hasSufficientDeepBriefEvidence(deepEvidence)
-          ? synthesis.riskScore
-          : isDeepMode
-            ? null
-            : synthesis
-              ? synthesis.riskScore
-              : null,
+      // Deep currently has no separately extracted/adjudicated score claims.
+      // A claim-count threshold therefore cannot validate raw synthesis
+      // opportunity/risk numbers; keep them null until score claims exist.
+      opportunityScore: isDeepMode ? null : synthesis?.opportunityScore ?? null,
+      riskScore: isDeepMode ? null : synthesis?.riskScore ?? null,
       completedAgents,
       truncated,
       // R254: tone is the fixed default, not a researched recommendation —
@@ -572,10 +558,22 @@ export function toLaunchLensBrief(session: ResearchSession): LaunchLensImportBri
   };
 }
 
-function hasSufficientDeepBriefEvidence(evidence: DeepBriefEvidence): boolean {
+/**
+ * R2C: the "sufficient evidence" gate decides when synthesis prose,
+ * scores, and `recommendedNextStep` may enter the brief. The shape is
+ * unchanged: at least the larger of {3 absolute, 20% of total} fully
+ * supported claims, spread across at least 2 distinct agents, with the
+ * run marked `complete` (3/3 passes + semanticValidation completed).
+ *
+ * The fail-closed part of the contract is upstream: `deepBriefEvidence`
+ * already returns `null` whenever the V2 ledger is absent or fails the
+ * full `isValidationLedgerV2` predicate, so the brief falls back to
+ * the fail-closed input.
+ */
+export function hasSufficientDeepBriefEvidence(evidence: DeepBriefEvidence): boolean {
+  if (!evidence.complete) return false;
   const supportedAgentCount = new Set(evidence.fullySupported.map((claim) => claim.agentId)).size;
   return (
-    evidence.complete &&
     evidence.fullySupported.length >= Math.max(3, Math.ceil(evidence.totalClaims * 0.2)) &&
     supportedAgentCount >= 2
   );

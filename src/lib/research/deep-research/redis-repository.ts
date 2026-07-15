@@ -1,4 +1,5 @@
 import { getRedis } from "@/lib/research/redis-client";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import type { ResearchSession } from "@/lib/schema/research-schema";
 import type { DeepRunLease, DeepRunRecordV1 } from "./model";
 import {
@@ -168,6 +169,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
 
   async create(record: DeepRunRecordV1): Promise<"created" | "exists"> {
     try {
+      assertCanonicalDeepValidation(record);
       const created = await this.redis().eval<
         [string, string, string, string, string],
         number
@@ -229,6 +231,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
     next: DeepRunRecordV1;
   }): Promise<DeepRunCommitResult> {
     try {
+      assertCanonicalDeepValidation(input.next);
       const raw = await this.redis().eval<
         [string, string, string, string, string, string, string, string],
         unknown
@@ -323,7 +326,7 @@ export class RedisDeepRunRepository implements DeepRunRepository {
 function parseRecord(raw: unknown): DeepRunRecordV1 | null {
   if (!raw) return null;
   const value = typeof raw === "string" ? JSON.parse(raw) : raw;
-  return value as DeepRunRecordV1;
+  return parseDeepRunRecord(value);
 }
 
 function parseClaimResult(raw: unknown): DeepRunClaimResult {
@@ -340,7 +343,35 @@ function parseCommitResult(raw: unknown): DeepRunCommitResult {
  * return the cjson string unchanged.
  */
 function parseEvalJsonResult<T>(raw: unknown): T {
-  return (typeof raw === "string" ? JSON.parse(raw) : raw) as T;
+  const value = typeof raw === "string" ? JSON.parse(raw) : raw;
+  if (isRecord(value) && value.record !== undefined && value.record !== null) {
+    parseDeepRunRecord(value.record);
+  }
+  return value as T;
+}
+
+function parseDeepRunRecord(value: unknown): DeepRunRecordV1 {
+  if (!isRecord(value) || !isRecord(value.session)) {
+    throw new DeepRunRepositoryUnavailableError(
+      "Durable Deep Research state failed its record integrity check.",
+    );
+  }
+  const record = value as unknown as DeepRunRecordV1;
+  assertCanonicalDeepValidation(record);
+  return record;
+}
+
+function assertCanonicalDeepValidation(record: DeepRunRecordV1): void {
+  const validation = record.session?.validation;
+  if (validation !== undefined && !isValidationLedgerV2(validation)) {
+    throw new DeepRunRepositoryUnavailableError(
+      "Durable Deep Research validation ledger failed its integrity check.",
+    );
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Compile-time assertion that the projection remains a ResearchSession. */

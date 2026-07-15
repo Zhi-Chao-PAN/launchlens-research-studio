@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. The repository declares five-minute independent recovery through GitHub Actions, with a daily Vercel Hobby fallback; production launch remains capability-gated until the deployed workflow and all other dependencies are verified.
+Accepted. Production requires one independently operated recovery scheduler with an observed cadence of five minutes or less. The repository keeps only a manual GitHub emergency trigger; launch remains capability-gated until real heartbeat history and all other dependencies are verified.
 
 ## Date
 
@@ -38,7 +38,7 @@ Deep Research uses a fixed, durable eleven-unit graph:
 
 Fast authenticated self-dispatch is an optimization. The due index plus an independently scheduled recovery trigger is the durability mechanism. SSE and polling are observer channels only; opening or reconnecting a stream never starts Deep work.
 
-Deep is exposed as `available` only when the runtime probe confirms all seven controls:
+Deep is exposed as `available` only when the runtime probe confirms all eight controls:
 
 - explicit operator opt-in;
 - reachable durable Redis state;
@@ -46,7 +46,10 @@ Deep is exposed as `available` only when the runtime probe confirms all seven co
 - real Tavily retrieval;
 - real structured semantic reviewer;
 - authenticated worker wake;
-- independent recovery with a declared maximum delay of 300 seconds.
+- independent recovery with a declared maximum delay of 300 seconds;
+- a fresh chronological recovery series whose observed cadence meets that budget.
+
+When the managed provider keyring is enabled, the generation and reviewer controls require at least one enabled, decryptable credential that is not in an active cooldown. The existence of encrypted records alone is not enough to unlock Deep.
 
 Terminal history persistence is a derived, idempotent observer that runs only after a fenced terminal commit. Active Deep live-state cannot be deleted; callers must cancel first.
 
@@ -80,7 +83,7 @@ Terminal history persistence is a derived, idempotent observer that runs only af
 - Provider configuration is locked for the lifetime of a run; drift fails the stage instead of silently changing provenance.
 - Three semantic passes are explicit, ordered, and idempotent. The ledger still reports factual accuracy as `not_established`; semantic review is not a guarantee of truth.
 - History may be rebuilt idempotently from a terminal Deep record without changing its lifecycle.
-- The repository now declares a five-minute GitHub Actions recovery workflow and a daily Vercel Hobby fallback. Deep remains Preview until the primary workflow, distinct secret, and due-work recovery behavior are verified, or an approved managed runner replaces it.
+- The repository does not claim a platform cron that it cannot prove. Deep remains Preview until one external scheduler, its distinct secret, realistic multi-tick cadence, and due-work recovery behavior are verified.
 
 ## Operational Invariants
 

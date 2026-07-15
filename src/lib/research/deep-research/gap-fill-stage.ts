@@ -35,6 +35,7 @@ import {
 } from "@/lib/security/safe-external-url";
 import { buildGapFillQuery } from "@/lib/research/evidence-ledger";
 import { registerTrustedReviewSources } from "@/lib/research/deep-validation";
+import { isValidationLedgerV2 } from "@/lib/research/ledger-guards";
 import type {
   AgentId,
   ClaimReviewSource,
@@ -206,11 +207,11 @@ function clampTimeout(ms: number): number {
 function requirePassOneCompleted(
   validation: ResearchSession["validation"],
 ): ValidationLedgerV2 {
-  if (!validation || validation.version !== 2) {
+  if (!isValidationLedgerV2(validation)) {
     throw new DeepWorkExecutionError(
       "validation_protocol_out_of_order",
       false,
-      "Gap-fill requires a completed Deep semantic_pass_1.",
+      "Gap-fill requires a canonical V2 validation ledger with a completed Deep semantic_pass_1.",
     );
   }
   const completed = validation.protocol.completedPassKinds;

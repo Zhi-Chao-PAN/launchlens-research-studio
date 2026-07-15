@@ -139,6 +139,20 @@ describe("identifyGapClaims", () => {
 });
 
 describe("runGapFillStage", () => {
+  it("rejects a resumed ledger whose claim valueHash binding is corrupted", async () => {
+    const seed = buildSeedSession();
+    const { session } = await sessionAfterPassOne(seed);
+    const ledger = v2(session);
+    const claim = ledger.claims[0];
+    if (!claim) throw new Error("fixture requires a claim");
+    claim.valueHash = `tampered_${claim.valueHash}`;
+
+    await expect(runGapFillStage(session, stubRetrieval([]))).rejects.toMatchObject({
+      code: "validation_protocol_out_of_order",
+      retryable: false,
+    });
+  });
+
   it("is a no-op when no claims are flagged as gaps", async () => {
     const seed = buildSeedSession();
     // Seed review sources so claim.sourceIds is populated and the

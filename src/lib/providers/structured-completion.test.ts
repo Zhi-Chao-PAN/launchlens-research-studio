@@ -173,6 +173,41 @@ describe("structured completion registry", () => {
     });
   });
 
+  it("selects the managed reviewer without a plaintext environment key", () => {
+    const selected = selectStructuredCompletionProvider({
+      LAUNCHLENS_PROVIDER: "openai",
+      LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+    });
+    expect(selected).toMatchObject({
+      kind: "configured",
+      provider: { id: "openai-keyring", isMock: false },
+    });
+  });
+
+  it("normalizes the managed reviewer provider and rejects conflicting overrides", () => {
+    expect(
+      selectStructuredCompletionProvider({
+        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: " 1 ",
+        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: " OPENAI ",
+        LAUNCHLENS_REVIEW_PROVIDER: " openai ",
+      }),
+    ).toMatchObject({
+      kind: "configured",
+      provider: { id: "openai-keyring" },
+    });
+
+    expect(
+      selectStructuredCompletionProvider({
+        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
+        LAUNCHLENS_REVIEW_PROVIDER: "anthropic",
+      }),
+    ).toEqual({
+      kind: "unavailable",
+      reason: "forced_provider_missing_key",
+    });
+  });
+
   it("keeps the deterministic adapter explicit and runtime-validated", async () => {
     const provider = createDeterministicStructuredCompletionProvider({ respond: () => ({ ok: true }) });
     expect(provider.isMock).toBe(true);

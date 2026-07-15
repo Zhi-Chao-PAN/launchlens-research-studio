@@ -957,7 +957,9 @@ async function runAgent(
   });
 
   try {
-    const selected = selectProvider();
+    const selected = selectProvider(process.env, {
+      failureMode: strict ? "throw" : "fallback",
+    });
     const breakerOpen = !selected.isMock && breakerIsOpen("provider:" + selected.id);
     if (strict && selected.isMock) {
       throw new ResearchAgentStageError(
