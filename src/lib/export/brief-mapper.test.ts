@@ -10,7 +10,18 @@ import {
   LAUNCHLENS_IDEA_MIN,
 } from "@/lib/export/brief-mapper";
 import { briefHashFor, encodeBase64UrlUtf8, BRIEF_HASH_PREFIX } from "@/lib/export/base64url";
-import type { AgentId, AgentOutput, ResearchSession, SynthesisOutput } from "@/lib/schema/research-schema";
+import type {
+  AgentId,
+  AgentOutput,
+  ClaimReviewerIdentity,
+  ResearchSession,
+  SynthesisOutput,
+} from "@/lib/schema/research-schema";
+import {
+  initializeDeepValidation,
+  applyClaimAdjudicationPass,
+  applyClaimReviewPass,
+} from "@/lib/research/deep-validation";
 
 // A fully-populated session fixture mirroring the shape research-engine leaves
 // behind after a successful 6-agent run. Built once, reused with overrides.
@@ -166,33 +177,199 @@ describe("toLaunchLensBrief — field mapping", () => {
   });
 });
 
+// ISO timestamp for deterministic test fixtures.
+const NOW = "2026-07-13T00:00:00.000Z";
+const REVIEWER: ClaimReviewerIdentity = {
+  reviewerId: "brief-mapper-reviewer",
+  providerId: "test-provider",
+  model: "test-model",
+  promptVersion: "brief-mapper-v1",
+};
+
 describe("toLaunchLensBrief — Deep validation boundary", () => {
+  /**
+   * R2C: build a real V2-shaped ledger via the production flow so it
+   * passes the full `isValidationLedgerV2` predicate. The pre-R2C
+   * version of this helper hand-rolled a V2-shaped object that the
+   * canonical predicate would now reject.
+   *
+   * The simplest production path is:
+   *   1) initialize with N claims, M admitted sources per claim
+   *   2) run Pass 1 with each finding citing an admitted source
+   *   3) register one independent source per claim
+   *   4) run Pass 2 with each finding citing the bound independent source
+   *   5) run the adjudication pass
+   *
+   * To get a specific disposition matrix (e.g. "1 supported, 2 unsupported"),
+   * we drive each Pass-1 verdict to the value that yields the wanted
+   * Pass-2 / adjudication outcome. A claim is `unsupported` when Pass 1
+   * reports "not_entailed" and Pass 2 reports "insufficient_evidence";
+   * `supported` when Pass 1 says "entailed" and Pass 2 says
+   * "corroborated".
+   */
   function deepValidation(
     dispositions: Array<{
       id: string;
-      agentId: "market-sizer" | "pain-detective" | "pricing-scout";
+      agentId: Exclude<AgentId, "synthesis">;
       fieldPath: string;
       text: string;
       disposition: "supported" | "partially_supported" | "unsupported";
     }>,
   ): NonNullable<ResearchSession["validation"]> {
-    return {
-      version: 2,
-      protocol: { executedPasses: 3 },
-      semanticValidation: { status: "completed" },
-      claims: dispositions.map((item) => ({
-        id: item.id,
-        agentId: item.agentId,
-        fieldPath: item.fieldPath,
-        text: item.text,
-      })),
-      adjudications: dispositions.map((item) => ({
-        claimId: item.id,
-        disposition: item.disposition,
+    const session = buildSession({ mode: "deep" });
+    const initial = initializeDeepValidation(session, {
+      maxClaims: dispositions.length,
+      maxClaimsPerAgent: dispositions.length,
+    });
+    // Re-key the bounded claims for the assertion and attach one trusted,
+    // same-agent admitted source per claim. The production sanitizer owns
+    // all later evidence bindings; tests never hand-roll a finished ledger.
+    const claims = initial.claims.map((claim, index) => {
+      const intent = dispositions[index]!;
+      return {
+        ...claim,
+        id: intent.id,
+        agentId: intent.agentId,
+        fieldPath: intent.fieldPath,
+        text: intent.text,
+        sourceIds: [`admitted-${intent.id}`],
+      };
+    });
+    const admittedSources = claims.map((claim) => ({
+      id: `admitted-${claim.id}`,
+      title: `Admitted evidence for ${claim.id}`,
+      url: `https://admitted.example/${claim.id}`,
+      snippet: `Admitted evidence for ${claim.id}.`,
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: claim.agentId,
+      origin: "retrieved_evidence" as const,
+    }));
+    const ledgerWithAdaptedClaims = {
+      ...initial,
+      claims,
+      reviewSources: admittedSources,
+    };
+
+    const sourceFor = (claimId: string) =>
+      claims.find((c) => c.id === claimId)?.sourceIds[0];
+
+    // Build per-disposition Pass 1 findings.
+    const pass1Findings = claims.map((claim, index) => {
+      const intent = dispositions[index]!;
+      const isUnsupported = intent.disposition === "unsupported";
+      const isPartial = intent.disposition === "partially_supported";
+      return {
+        claimId: claim.id,
+        claimValueHash: claim.valueHash,
+        pass: "claim_source_entailment" as const,
+        reviewer: REVIEWER,
+        verdict: (isUnsupported
+          ? "not_entailed"
+          : isPartial
+            ? "partially_entailed"
+            : "entailed") as
+          | "not_entailed"
+          | "partially_entailed"
+          | "entailed",
+        confidence: (isUnsupported ? "low" : "medium") as "low" | "medium",
+        supportingSourceIds: isUnsupported ? [] : [sourceFor(claim.id)!],
+        contradictingSourceIds: [],
+        rationale: isUnsupported
+          ? "Source does not entail the claim."
+          : "Source entails the claim.",
+      };
+    });
+
+    const pass1 = applyClaimReviewPass(
+      ledgerWithAdaptedClaims,
+      "claim_source_entailment",
+      pass1Findings,
+      NOW,
+    );
+
+    // Register an independent source per claim, bound by claimIds.
+    const independentSources = claims.map((claim) => ({
+      id: `indep-${claim.id}`,
+      title: `Independent evidence for ${claim.id}`,
+      url: `https://independent.example/${claim.id}`,
+      snippet: `Independent corroboration of ${claim.id}.`,
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: claim.agentId,
+      origin: "independent_retrieval" as const,
+      claimIds: [claim.id],
+    }));
+    const pass1WithIndep = {
+      ...pass1,
+      reviewSources: [...pass1.reviewSources, ...independentSources],
+    };
+
+    // Build Pass 2 findings.
+    const pass2Findings = claims.map((claim, index) => {
+      const intent = dispositions[index]!;
+      const indepId = independentSources.find((s) => s.claimIds.includes(claim.id))!.id;
+      if (intent.disposition === "unsupported") {
+        return {
+          claimId: claim.id,
+          claimValueHash: claim.valueHash,
+          pass: "independent_corroboration_conflict" as const,
+          reviewer: REVIEWER,
+          verdict: "insufficient_evidence" as const,
+          confidence: "low" as const,
+          supportingSourceIds: [],
+          contradictingSourceIds: [],
+          rationale: "No independent source corroborates the claim.",
+        };
+      }
+      return {
+        claimId: claim.id,
+        claimValueHash: claim.valueHash,
+        pass: "independent_corroboration_conflict" as const,
+        reviewer: REVIEWER,
+        verdict: "corroborated" as const,
+        confidence: "high" as const,
+        supportingSourceIds: [indepId],
+        contradictingSourceIds: [],
+        rationale: "Independent source corroborates the claim.",
+      };
+    });
+    const pass2 = applyClaimReviewPass(
+      pass1WithIndep,
+      "independent_corroboration_conflict",
+      pass2Findings,
+      NOW,
+    );
+
+    // Adjudication pass: the test's intent is the per-claim disposition.
+    const adjudications = claims.map((claim, index) => {
+      const intent = dispositions[index]!;
+      const indepId = independentSources.find((s) => s.claimIds.includes(claim.id))!.id;
+      return {
+        claimId: claim.id,
+        claimValueHash: claim.valueHash,
+        reviewer: REVIEWER,
+        disposition: intent.disposition,
+        confidence: (intent.disposition === "unsupported" ? "low" : "medium") as
+          | "low"
+          | "medium",
+        supportingSourceIds:
+          intent.disposition === "unsupported" ? [] : [indepId],
+        contradictingSourceIds: [],
+        reviewedPasses: [
+          "claim_source_entailment",
+          "independent_corroboration_conflict",
+        ] as const,
         synthesisEligible:
-          item.disposition === "supported" || item.disposition === "partially_supported",
-      })),
-    } as unknown as NonNullable<ResearchSession["validation"]>;
+          intent.disposition === "supported" || intent.disposition === "partially_supported",
+        limitations:
+          intent.disposition === "partially_supported"
+            ? ["Only partial entailment was established."]
+            : [],
+      };
+    });
+    const finalLedger = applyClaimAdjudicationPass(pass2, adjudications, NOW);
+    return finalLedger as unknown as NonNullable<ResearchSession["validation"]>;
   }
 
   it("does not re-export rejected TAM, growth, or pricing from raw specialist outputs", () => {
@@ -237,28 +414,220 @@ describe("toLaunchLensBrief — Deep validation boundary", () => {
   });
 
   it("admits a fully supported Deep claim without reviving adjacent rejected fields", () => {
+    // R2C: this test now drives the deterministic adjudicator via the
+    // production pipeline (initializeDeepValidation -> Pass 1 -> Pass 2
+    // -> adjudication). The pre-R2C version hand-rolled a V2 ledger
+    // and trusted the test's `disposition`; the new contract uses the
+    // canonical adjudicator to derive the disposition, so we drive
+    // the policy through the findings.
+    const session = buildSession({ mode: "deep" });
+    const initial = initializeDeepValidation(session, { maxClaims: 2, maxClaimsPerAgent: 2 });
+    // Re-key the initial claims to TAM + pricing with intent matching
+    // the test's expectations. valueHash is preserved from the
+    // initializer so the claimValueHash bindings stay valid.
+    const adaptedClaims = initial.claims.map((claim, index) =>
+      index === 0
+        ? {
+            ...claim,
+            id: "tam",
+            agentId: "market-sizer" as const,
+            fieldPath: "/marketSize/tam",
+            text: "TAM is 5000000000 USD from the cited category report.",
+          }
+        : {
+            ...claim,
+            id: "pricing",
+            agentId: "pricing-scout" as const,
+            fieldPath: "/recommendations/0",
+            text: "Recommended Starter price is 29 USD.",
+          },
+    );
+    const ledgerWithAdaptedClaims = { ...initial, claims: adaptedClaims };
+    // The V2 ledger needs admitted sources for the supported claim
+    // and an independent source bound to each claim. We register
+    // them as `retrieved_evidence` and `independent_retrieval`
+    // directly so the test doesn't depend on a populated
+    // session.evidence.agents.
+    const admittedSource = {
+      id: "src-tam",
+      title: "TAM source",
+      url: "https://e.example/tam",
+      snippet: "TAM is 5000000000 USD.",
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: "market-sizer" as const,
+      origin: "retrieved_evidence" as const,
+    };
+    const tamClaim = adaptedClaims[0]!;
+    const pricingClaim = adaptedClaims[1]!;
+    const tamClaimWithSource = { ...tamClaim, sourceIds: [admittedSource.id] };
+    const ledgerWithSource = {
+      ...ledgerWithAdaptedClaims,
+      claims: [tamClaimWithSource, pricingClaim],
+      reviewSources: [admittedSource],
+    };
+    // Register one independent source per claim.
+    const indepTam = {
+      id: "indep-tam",
+      title: "Independent TAM",
+      url: "https://e.example/indep-tam",
+      snippet: "Independent corroboration of TAM.",
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: "market-sizer" as const,
+      origin: "independent_retrieval" as const,
+      claimIds: ["tam"],
+    };
+    const indepPricing = {
+      id: "indep-pricing",
+      title: "Independent Pricing",
+      url: "https://e.example/indep-pricing",
+      snippet: "No independent corroboration of pricing.",
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: "pricing-scout" as const,
+      origin: "independent_retrieval" as const,
+      claimIds: ["pricing"],
+    };
+    const ledgerWithIndep = {
+      ...ledgerWithSource,
+      reviewSources: [admittedSource, indepTam, indepPricing],
+    };
+    // Pass 1: TAM entailed, pricing not_entailed.
+    const pass1 = applyClaimReviewPass(ledgerWithIndep, "claim_source_entailment", [
+      {
+        claimId: "tam",
+        claimValueHash: tamClaimWithSource.valueHash,
+        pass: "claim_source_entailment" as const,
+        reviewer: REVIEWER,
+        verdict: "entailed" as const,
+        confidence: "medium" as const,
+        supportingSourceIds: [admittedSource.id],
+        contradictingSourceIds: [],
+        rationale: "Source entails the TAM claim.",
+      },
+      {
+        claimId: "pricing",
+        claimValueHash: pricingClaim.valueHash,
+        pass: "claim_source_entailment" as const,
+        reviewer: REVIEWER,
+        verdict: "not_entailed" as const,
+        confidence: "low" as const,
+        supportingSourceIds: [],
+        contradictingSourceIds: [],
+        rationale: "No admitted source entails the pricing claim.",
+      },
+    ], NOW);
+    // Pass 2: TAM corroborated, pricing insufficient_evidence.
+    const pass2 = applyClaimReviewPass(pass1, "independent_corroboration_conflict", [
+      {
+        claimId: "tam",
+        claimValueHash: tamClaimWithSource.valueHash,
+        pass: "independent_corroboration_conflict" as const,
+        reviewer: REVIEWER,
+        verdict: "corroborated" as const,
+        confidence: "high" as const,
+        supportingSourceIds: [indepTam.id],
+        contradictingSourceIds: [],
+        rationale: "Independent corroboration of TAM.",
+      },
+      {
+        claimId: "pricing",
+        claimValueHash: pricingClaim.valueHash,
+        pass: "independent_corroboration_conflict" as const,
+        reviewer: REVIEWER,
+        verdict: "insufficient_evidence" as const,
+        confidence: "low" as const,
+        supportingSourceIds: [],
+        contradictingSourceIds: [],
+        rationale: "No independent corroboration of pricing.",
+      },
+    ], NOW);
+    // The third pass still requires one bounded reviewer record per claim;
+    // the application then derives the authoritative dispositions.
+    const finalLedger = applyClaimAdjudicationPass(pass2, [
+      {
+        claimId: "tam",
+        claimValueHash: tamClaimWithSource.valueHash,
+        reviewer: REVIEWER,
+        disposition: "supported",
+        confidence: "high",
+        limitations: [],
+      },
+      {
+        claimId: "pricing",
+        claimValueHash: pricingClaim.valueHash,
+        reviewer: REVIEWER,
+        disposition: "insufficient_evidence",
+        confidence: "low",
+        limitations: [],
+      },
+    ], NOW);
     const brief = toLaunchLensBrief(buildSession({
+      mode: "deep",
+      validation: finalLedger as unknown as NonNullable<ResearchSession["validation"]>,
+    }));
+    // R2C: the supported TAM claim is now admitted (per the
+    // deterministic adjudicator); the unsupported pricing claim is
+    // rejected from the brief.
+    expect(brief.input.market).toContain("TAM is 5000000000 USD");
+    expect(brief.input.constraints).not.toContain("Starter");
+  });
+
+  it("never imports raw synthesis scores or next-step even after the claim threshold is met", () => {
+    const session = buildSession({
       mode: "deep",
       validation: deepValidation([
         {
           id: "tam",
           agentId: "market-sizer",
           fieldPath: "/marketSize/tam",
-          text: "TAM is 5000000000 USD from the cited category report.",
+          text: "TAM is 5000000000 USD.",
           disposition: "supported",
         },
         {
-          id: "pricing",
-          agentId: "pricing-scout",
-          fieldPath: "/recommendations/0",
-          text: "Recommended Starter price is 29 USD.",
-          disposition: "unsupported",
+          id: "competitor",
+          agentId: "competitor-analyst",
+          fieldPath: "/competitors/0",
+          text: "A direct competitor serves the mid-market segment.",
+          disposition: "supported",
+        },
+        {
+          id: "pain",
+          agentId: "pain-detective",
+          fieldPath: "/unmetNeeds/0",
+          text: "Users need real-time churn signals.",
+          disposition: "supported",
         },
       ]),
-    }));
+    });
+    session.agents.synthesis = {
+      id: "synthesis",
+      status: "done",
+      progress: 100,
+      currentStep: "Done",
+      output: {
+        agent: "synthesis",
+        execSummary: "POISON_THRESHOLD_EXEC_SUMMARY",
+        opportunityScore: 99,
+        riskScore: 1,
+        keyInsights: [],
+        topThreeOpportunities: [],
+        topThreeRisks: [],
+        recommendedNextStep: "POISON_THRESHOLD_NEXT_STEP",
+        launchlensBrief: "",
+        citations: [],
+      },
+    };
 
-    expect(brief.input.market).toContain("TAM is 5000000000 USD");
-    expect(brief.input.constraints).not.toContain("Starter");
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    expect(serialized).not.toContain("POISON_THRESHOLD_EXEC_SUMMARY");
+    expect(serialized).not.toContain("POISON_THRESHOLD_NEXT_STEP");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    expect(brief.input.constraints).toContain("collect primary evidence");
   });
 
   // P1-1 regression: Deep mode with NO validation ledger must fail-closed.
@@ -905,6 +1274,12 @@ describe("toLaunchLensBrief — Deep evidence boundary poison tests", () => {
       };
     }> = {},
   ): NonNullable<ResearchSession["validation"]> {
+    // R2C: a hand-rolled V2 ledger is no longer accepted by the brief
+    // mapper -- the canonical `isValidationLedgerV2` predicate must
+    // pass. For tests that need a *forged* ledger (to verify the
+    // mapper rejects it), this helper intentionally returns an
+    // invalid ledger. Tests that need a *valid* ledger should use
+    // `buildSupportedLedger` (below).
     return {
       version: 2,
       protocol: { executedPasses: 3 },
@@ -913,6 +1288,87 @@ describe("toLaunchLensBrief — Deep evidence boundary poison tests", () => {
       adjudications,
       ...extras,
     } as unknown as NonNullable<ResearchSession["validation"]>;
+  }
+
+  /**
+   * R2C: build a V2 ledger via the production pipeline that
+   * `isValidationLedgerV2` accepts. The single claim is set up to
+   * receive "entailed" Pass 1 + "corroborated" Pass 2 so the
+   * deterministic adjudicator marks it `supported` and
+   * `synthesisEligible`. This is the canonical way to build a
+   * "positive" Deep session for the brief-mapper tests.
+   */
+  function buildSupportedLedger(): NonNullable<ResearchSession["validation"]> {
+    const session = buildSession({ mode: "deep" });
+    const initial = initializeDeepValidation(session, { maxClaims: 1, maxClaimsPerAgent: 1 });
+    const claim = initial.claims[0]!;
+    const adapted = {
+      ...claim,
+      id: "tam",
+      agentId: "market-sizer" as const,
+      fieldPath: "/marketSize/tam",
+      text: "TAM is $5B.",
+    };
+    const admitted = {
+      id: "src-tam",
+      title: "TAM source",
+      url: "https://e.example/tam",
+      snippet: "TAM is $5B.",
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: "market-sizer" as const,
+      origin: "retrieved_evidence" as const,
+    };
+    const ledgerWithSource = {
+      ...initial,
+      claims: [{ ...adapted, sourceIds: [admitted.id] }],
+      reviewSources: [admitted],
+    };
+    const indep = {
+      id: "indep-tam",
+      title: "Independent TAM",
+      url: "https://e.example/indep-tam",
+      snippet: "Independent corroboration of TAM.",
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: "market-sizer" as const,
+      origin: "independent_retrieval" as const,
+      claimIds: ["tam"],
+    };
+    const ledgerWithIndep = {
+      ...ledgerWithSource,
+      reviewSources: [admitted, indep],
+    };
+    const pass1 = applyClaimReviewPass(ledgerWithIndep, "claim_source_entailment", [{
+      claimId: "tam",
+      claimValueHash: adapted.valueHash,
+      pass: "claim_source_entailment" as const,
+      reviewer: REVIEWER,
+      verdict: "entailed" as const,
+      confidence: "medium" as const,
+      supportingSourceIds: [admitted.id],
+      contradictingSourceIds: [],
+      rationale: "Source entails the TAM claim.",
+    }], NOW);
+    const pass2 = applyClaimReviewPass(pass1, "independent_corroboration_conflict", [{
+      claimId: "tam",
+      claimValueHash: adapted.valueHash,
+      pass: "independent_corroboration_conflict" as const,
+      reviewer: REVIEWER,
+      verdict: "corroborated" as const,
+      confidence: "high" as const,
+      supportingSourceIds: [indep.id],
+      contradictingSourceIds: [],
+      rationale: "Independent corroboration of TAM.",
+    }], NOW);
+    return applyClaimAdjudicationPass(pass2, [{
+      claimId: "tam",
+      claimValueHash: adapted.valueHash,
+      reviewer: REVIEWER,
+      disposition: "supported",
+      confidence: "high",
+      limitations: [],
+    }], NOW) as unknown as NonNullable<ResearchSession["validation"]>;
   }
 
   it("refuses a forged adjudication whose claimValueHash does not match the claim", () => {
@@ -1073,42 +1529,26 @@ describe("toLaunchLensBrief — Deep evidence boundary poison tests", () => {
     expect(brief.meta.riskScore).toBeNull();
   });
 
-  it("survives a synthetic gapFill whose sourcesAdded does not match the catalog (defensive)", () => {
-    const session = buildSession({
-      mode: "deep",
-      validation: deepWithClaims(
-        [
-          {
-            id: "tam",
-            agentId: "market-sizer",
-            fieldPath: "/marketSize/tam",
-            text: "TAM is $5B.",
-            valueHash: "h-tam",
-          },
-        ],
-        [
-          {
-            claimId: "tam",
-            claimValueHash: "h-tam",
-            disposition: "supported",
-            synthesisEligible: true,
-          },
-        ],
-        {
-          gapFill: {
-            completedAt: new Date().toISOString(),
-            targetedClaimIds: [],
-            sourcesAdded: 99, // poisoned: no gap sources in catalog
-            targetedClaimCount: 0,
-          },
-        },
-      ),
-    });
-    // The Brief mapper never reads gapFill (it does not affect the
-    // evidence boundary), so a forged gapFill must not unlock additional
-    // content beyond what the adjudications allow. The supported TAM
-    // claim legitimately surfaces; nothing else does.
+  it("fails closed when gapFill counters do not match the source catalog", () => {
+    // R2C: build a real V2 ledger via the production pipeline so the
+    // canonical predicate passes, then add forged gapFill metadata.
+    const baseLedger = buildSupportedLedger();
+    const forged = {
+      ...baseLedger,
+      gapFill: {
+        completedAt: new Date().toISOString(),
+        targetedClaimIds: [],
+        sourcesAdded: 99, // poisoned: no gap sources in catalog
+        targetedClaimCount: 0,
+      },
+    } as NonNullable<ResearchSession["validation"]>;
+    const session = buildSession({ mode: "deep", validation: forged });
+    // Full-ledger validation includes gapFill integrity. The forged count
+    // invalidates the ledger, so even the otherwise-supported TAM claim
+    // must not cross the export boundary.
     const brief = toLaunchLensBrief(session);
-    expect(brief.input.market).toContain("$5B");
+    expect(brief.input.market).not.toContain("$5B");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
   });
 });
