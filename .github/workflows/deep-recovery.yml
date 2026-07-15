@@ -1,13 +1,18 @@
-name: Manual Deep Recovery Fallback
+name: Deep Recovery Scheduler
 
 on:
+  schedule:
+    # Offset from the top of the hour, where GitHub documents higher load.
+    # The capability gate allows a bounded 60-second completion jitter on top
+    # of this nominal five-minute schedule and fails closed beyond it.
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: manual-deep-research-recovery
+  group: deep-research-recovery
   cancel-in-progress: false
 
 jobs:
@@ -20,6 +25,7 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.LAUNCHLENS_CRON_SECRET }}
           RECOVERY_URL: https://launchlens-research-studio.vercel.app/api/cron/scheduler
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
         shell: bash
         run: |
           set -euo pipefail
@@ -27,6 +33,8 @@ jobs:
             echo "LAUNCHLENS_CRON_SECRET is missing or too short" >&2
             exit 1
           fi
+
+          echo "Recovery source: ${SCHEDULE_EXPRESSION:-manual}; run ${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
 
           response_file="$(mktemp)"
           status="$(curl \
@@ -37,6 +45,7 @@ jobs:
             --max-time 55 \
             --request POST \
             --header "x-cron-secret: ${CRON_SECRET}" \
+            --header "x-request-id: github-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --output "${response_file}" \
             --write-out "%{http_code}" \
             "${RECOVERY_URL}")"

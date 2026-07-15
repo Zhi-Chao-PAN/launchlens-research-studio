@@ -292,7 +292,6 @@ describe("runResearchAgentStage", () => {
         expect.objectContaining({
           excludeDomains: ["dominant.example"],
           maxResults: 8,
-          minScore: 0.35,
           searchDepth: "advanced",
         }),
       ]),
@@ -302,7 +301,7 @@ describe("runResearchAgentStage", () => {
         status: "retrieved",
         sourceCount: 3,
         focusedQueries: expect.arrayContaining([
-          expect.stringContaining("Independent evidence"),
+          expect.stringContaining("industry revenue forecasts"),
         ]),
       },
       grounding: "grounded",
@@ -314,14 +313,12 @@ describe("runResearchAgentStage", () => {
   it("uses short category-first pricing queries shaped like the production request", async () => {
     const pricingAgent = "pricing-scout" as const;
     mocks.search.mockImplementation(async (retrievalQuery) => {
-      expect(retrievalQuery.query.length).toBeLessThanOrEqual(200);
-      expect(retrievalQuery.query).toMatch(
-        /^bilingual AI research workspace serving APAC SaaS founders/,
-      );
-      if (retrievalQuery.query.includes("Official pricing")) {
+      expect(retrievalQuery.query.length).toBeLessThanOrEqual(120);
+      expect(retrievalQuery.query).toMatch(/^AI market research /);
+      if (retrievalQuery.query.includes("official pricing")) {
         return [source(1, "official-pricing.example")];
       }
-      if (retrievalQuery.query.includes("SaaS price benchmarks")) {
+      if (retrievalQuery.query.includes("packaging benchmarks")) {
         return [source(2, "benchmark.example")];
       }
       return [source(3, "reviews.example")];
@@ -379,7 +376,7 @@ describe("runResearchAgentStage", () => {
     });
     expect(
       mocks.search.mock.calls.every(
-        ([query]) => query.searchDepth === "advanced" && query.minScore === 0.35,
+        ([query]) => query.searchDepth === "advanced" && query.minScore === undefined,
       ),
     ).toBe(true);
     expect(result.session.evidence?.agents[pricingAgent]?.retrieval).toMatchObject({
@@ -389,7 +386,10 @@ describe("runResearchAgentStage", () => {
   });
 
   it("reports safe Deep retrieval coverage diagnostics after diversity rescue is exhausted", async () => {
-    mocks.search.mockResolvedValue([]);
+    mocks.search.mockResolvedValue([
+      { ...source(1, "below-floor-a.example"), score: 0.34 },
+      { ...source(2, "below-floor-b.example"), score: 0.2 },
+    ]);
     const session = createResearchSession(
       "Deep evidence diagnostics for an APAC SaaS product",
       [],
@@ -406,7 +406,7 @@ describe("runResearchAgentStage", () => {
       code: "retrieval_insufficient",
       retryable: false,
       message: expect.stringMatching(
-        /admitted 0\/3 usable sources from 0\/5 queries across 0\/3 publisher domains.*per-query admitted counts \[0,0,0,0,0\]/i,
+        /admitted 0\/3 usable sources from 0\/5 queries across 0\/3 publisher domains.*raw structural counts \[2,2,2,2,2\].*admitted counts \[0,0,0,0,0\].*highest scores \[0\.34,0\.34,0\.34,0\.34,0\.34\]/i,
       ),
     });
     expect(mocks.search).toHaveBeenCalledTimes(5);
@@ -440,10 +440,10 @@ describe("runResearchAgentStage", () => {
 
   it("keeps sufficient later rescue evidence when an earlier rescue request fails", async () => {
     mocks.search.mockImplementation(async (query) => {
-      if (query.query.includes("Independent evidence")) {
+      if (query.query.includes("industry revenue forecasts")) {
         throw new RetrievalError("http_error", true, "transient earlier rescue failure");
       }
-      if (query.query.includes("Dated primary")) {
+      if (query.query.includes("customer and spending benchmarks")) {
         return [
           source(2, "independent-a.example"),
           source(3, "independent-b.example"),
@@ -493,7 +493,7 @@ describe("runResearchAgentStage", () => {
       code: "retrieval_insufficient",
       retryable: false,
       message: expect.stringMatching(
-        /across 1\/3 publisher domains.*per-query admitted counts \[3,3,3,3,3\]/i,
+        /across 1\/3 publisher domains.*admitted counts \[3,3,3,3,3\]/i,
       ),
     });
     const rescueCalls = mocks.search.mock.calls.slice(3).map(([query]) => query);

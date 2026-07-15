@@ -128,7 +128,8 @@ export interface ProbeDeepCapabilityOptions {
   now?: () => Date;
 }
 
-const DEFAULT_MAX_RECOVERY_FRESHNESS_MS = 5 * 60 * 1000; // 5 min
+const MAX_RECOVERY_DELAY_SECONDS = 6 * 60;
+const DEFAULT_MAX_RECOVERY_FRESHNESS_MS = MAX_RECOVERY_DELAY_SECONDS * 1000;
 
 /** Configuration + reachability gate. It never tests capability with paid model calls. */
 export async function probeDeepResearchCapability(
@@ -175,13 +176,13 @@ export async function probeDeepResearchCapability(
   const recoveryReady =
     env.LAUNCHLENS_DEEP_RECOVERY_MODE === "cron" &&
     recoveryDelay !== null &&
-    recoveryDelay <= 300 &&
+    recoveryDelay <= MAX_RECOVERY_DELAY_SECONDS &&
     (recoverySecret?.length ?? 0) >= 24 &&
     recoverySecret !== env.LAUNCHLENS_DEEP_WORKER_SECRET;
 
   // Heartbeat freshness & series: only meaningful when the cron recovery
   // is the declared mechanism. The freshness threshold is the smaller of
-  // the declared max delay and 5 minutes — the system's recovery budget.
+  // the declared max delay and 6 minutes — the system's recovery budget.
   // The state is derived from the rolling history so a single sample
   // cannot unlock the gate.
   const readHb = options.readHeartbeat ?? defaultReadHeartbeat;
@@ -264,7 +265,7 @@ export async function probeDeepResearchCapability(
       label: "Independent recovery",
       detail: recoveryReady
         ? `Cron recovery is declared with a maximum ${recoveryDelay}-second delay.`
-        : "A separately scheduled recovery trigger with a declared maximum delay of 300 seconds is required.",
+        : `A separately scheduled recovery trigger with a declared maximum delay of ${MAX_RECOVERY_DELAY_SECONDS} seconds is required.`,
     },
     {
       id: "recovery_freshness",

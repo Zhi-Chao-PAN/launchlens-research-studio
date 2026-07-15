@@ -14,9 +14,12 @@ import {
 
 const ALL_AGENTS: readonly AgentId[] = [...RESEARCH_AGENTS, "synthesis"];
 const FOCUSED_QUERY_MAX_CHARS = 280;
-const DEEP_QUERY_MAX_CHARS = 200;
-const DEEP_QUERY_SUBJECT_MAX_CHARS = 96;
-const MAX_DEEP_QUERY_KEYWORDS = 2;
+const DEEP_QUERY_MAX_CHARS = 120;
+const DEEP_QUERY_ANCHOR_MAX_CHARS = 64;
+const MAX_DEEP_QUERY_QUALIFIERS = 3;
+const DEEP_CATEGORY_KEYWORD_MIN_SCORE = 2;
+const DEEP_CATEGORY_TERM_PATTERN = /\b(?:analytics?|app(?:lication)?s?|assistant|database|engine|marketplace|platform|product|research|service|software|solution|suite|system|tool(?:ing)?|workspace)\b/giu;
+const DEEP_CATEGORY_CJK_PATTERN = /(?:产品|助手|工具|平台|市场研究|应用|引擎|服务|系统|研究|软件)/gu;
 
 const AGENT_RETRIEVAL_FOCUS: Record<Exclude<AgentId, "synthesis">, string> = {
   "market-sizer": "market size TAM SAM SOM CAGR forecasts industry reports",
@@ -28,30 +31,41 @@ const AGENT_RETRIEVAL_FOCUS: Record<Exclude<AgentId, "synthesis">, string> = {
 
 const DEEP_RETRIEVAL_INTENTS: Record<Exclude<AgentId, "synthesis">, readonly string[]> = {
   "market-sizer": [
-    "Category market size, CAGR, and APAC regional forecasts from dated industry or analyst sources",
-    "Bottom-up customer counts, company counts, and spending inputs for TAM SAM SOM calculations",
-    "Adjacent market benchmarks and transparent sizing assumptions for this product category",
+    "market size CAGR and regional forecasts",
+    "customer counts and spending for TAM SAM SOM",
+    "adjacent market sizing benchmarks",
   ],
   "competitor-analyst": [
-    "Direct and adjacent alternatives with official product features and positioning",
-    "Official competitor pricing pages, plans, tiers, and packaging",
-    "Independent comparisons, customer reviews, and APAC coverage gaps for competing products",
+    "direct alternatives features and positioning",
+    "competitor official pricing pages and plans",
+    "independent comparisons reviews and coverage gaps",
   ],
   "pain-detective": [
-    "Voice-of-customer complaints about this workflow from Reddit, Indie Hackers, G2, and product reviews",
-    "Recurring manual-workflow, trust, citation, and data-quality pains reported by target users",
-    "APAC and cross-border user needs, unmet needs, and bilingual research problems",
+    "complaints from Reddit, Indie Hackers, G2, and product reviews",
+    "manual workflow trust citation and data-quality pain",
+    "cross-border bilingual user needs and unmet needs",
   ],
   "pricing-scout": [
-    "Official pricing pages and current plans for direct and adjacent competitors",
-    "SaaS price benchmarks, packaging, and willingness-to-pay evidence for target buyers",
-    "Customer review evidence about price sensitivity, value metrics, and budget constraints",
+    "software official pricing pages and plans",
+    "SaaS pricing and packaging benchmarks",
+    "customer reviews and price sensitivity",
   ],
   "channel-scout": [
-    "APAC founder and product-team communities, directories, events, and partnership channels",
-    "Early-stage B2B SaaS acquisition benchmarks across content, community, paid, and outbound",
-    "Search demand, content topics, and channel evidence for cross-border China-to-global teams",
+    "founder communities directories events and partnerships",
+    "B2B SaaS acquisition benchmarks content paid and outbound",
+    "search demand content topics and cross-border channels",
   ],
+};
+
+const DEEP_RETRIEVAL_RESCUE_INTENTS: Record<
+  Exclude<AgentId, "synthesis">,
+  readonly [string, string]
+> = {
+  "market-sizer": ["industry revenue forecasts", "customer and spending benchmarks"],
+  "competitor-analyst": ["software alternatives comparison", "product reviews and feature gaps"],
+  "pain-detective": ["user complaints and unmet needs", "workflow reviews and forum discussions"],
+  "pricing-scout": ["software pricing comparison", "buyer budget benchmarks"],
+  "channel-scout": ["customer acquisition benchmarks", "founder communities and partnerships"],
 };
 
 export function createEvidenceLedger(now: string = new Date().toISOString()): EvidenceLedger {
@@ -134,10 +148,10 @@ export function buildDeepRetrievalQueries(
   agentId: Exclude<AgentId, "synthesis">,
   keywords: readonly string[] = [],
 ): string[] {
-  const subject = buildDeepQuerySubject(query, keywords, agentId);
-  return DEEP_RETRIEVAL_INTENTS[agentId].map((intent) =>
+  const plan = buildDeepQueryPlan(query, keywords, agentId);
+  return DEEP_RETRIEVAL_INTENTS[agentId].map((intent, index) =>
     truncateAtWordBoundary(
-      `${subject}. ${intent}`,
+      [plan.anchor, intent, plan.qualifiers[index]].filter(Boolean).join(" "),
       DEEP_QUERY_MAX_CHARS,
     ),
   );
@@ -145,32 +159,29 @@ export function buildDeepRetrievalQueries(
 
 /**
  * Bounded rescue queries for Deep runs whose initial fan-out is too narrow.
- * These deliberately ask for additional publishers and named primary evidence;
- * the caller executes them sequentially and excludes all publishers admitted so far.
+ * The caller executes them sequentially and excludes all publishers admitted
+ * so far. The query itself stays content-focused; publisher diversity belongs
+ * in the structured `excludeDomains` control rather than search prose.
  */
 export function buildDeepRetrievalRescueQueries(
   query: string,
   agentId: Exclude<AgentId, "synthesis">,
   keywords: readonly string[] = [],
 ): string[] {
-  const subject = buildDeepQuerySubject(query, keywords, agentId);
-  const focus = AGENT_RETRIEVAL_FOCUS[agentId];
-  return [
-    `Independent evidence from additional publishers for ${focus}`,
-    `Dated primary, official, and analyst sources naming products or buyer benchmarks for ${focus}`,
-  ].map((intent) =>
+  const plan = buildDeepQueryPlan(query, keywords, agentId);
+  return DEEP_RETRIEVAL_RESCUE_INTENTS[agentId].map((intent) =>
     truncateAtWordBoundary(
-      `${subject}. ${intent}`,
+      `${plan.anchor} ${intent}`,
       DEEP_QUERY_MAX_CHARS,
     ),
   );
 }
 
-function buildDeepQuerySubject(
+function buildDeepQueryPlan(
   query: string,
   keywords: readonly string[],
   agentId: Exclude<AgentId, "synthesis">,
-): string {
+): { anchor: string; qualifiers: string[] } {
   const sanitizedKeywords: string[] = [];
   const seen = new Set<string>();
   for (const value of keywords) {
@@ -182,31 +193,40 @@ function buildDeepQuerySubject(
   }
 
   const querySubject = extractDeepQuerySubject(query);
-  if (!querySubject) {
-    const keywordFallback = sanitizedKeywords
-      .slice(0, MAX_DEEP_QUERY_KEYWORDS)
-      .join(" ");
-    return truncateAtWordBoundary(
-      keywordFallback || AGENT_RETRIEVAL_FOCUS[agentId],
-      DEEP_QUERY_SUBJECT_MAX_CHARS,
-    );
-  }
-
-  let subject = truncateAtWordBoundary(
-    querySubject,
-    DEEP_QUERY_SUBJECT_MAX_CHARS,
+  const categoryKeywordIndex = findDeepCategoryKeywordIndex(sanitizedKeywords);
+  const categoryKeyword = sanitizedKeywords[categoryKeywordIndex];
+  const keywordFallback = sanitizedKeywords.slice(0, 2).join(" ");
+  const anchor = truncateAtWordBoundary(
+    categoryKeyword || querySubject || keywordFallback || AGENT_RETRIEVAL_FOCUS[agentId],
+    DEEP_QUERY_ANCHOR_MAX_CHARS,
   );
-  let appendedKeywords = 0;
-  for (const keyword of sanitizedKeywords) {
-    const addition = missingDeepQueryKeywordFragment(subject, keyword);
-    if (!addition) continue;
-    const candidate = `${subject} ${addition}`;
-    if (candidate.length > DEEP_QUERY_SUBJECT_MAX_CHARS) continue;
-    subject = candidate;
-    appendedKeywords += 1;
-    if (appendedKeywords === MAX_DEEP_QUERY_KEYWORDS) break;
-  }
-  return subject;
+  const normalizedAnchor = normalizeDeepQueryComparison(anchor);
+  const qualifiers = sanitizedKeywords
+    .filter((keyword, index) =>
+      index !== categoryKeywordIndex &&
+      !normalizedAnchor.includes(normalizeDeepQueryComparison(keyword)),
+    )
+    .slice(0, MAX_DEEP_QUERY_QUALIFIERS);
+  return { anchor, qualifiers };
+}
+
+function findDeepCategoryKeywordIndex(keywords: readonly string[]): number {
+  let bestIndex = -1;
+  let bestScore = DEEP_CATEGORY_KEYWORD_MIN_SCORE - 1;
+  keywords.forEach((keyword, index) => {
+    const normalized = normalizeDeepQueryComparison(keyword);
+    const englishTerms = normalized.match(DEEP_CATEGORY_TERM_PATTERN)?.length ?? 0;
+    const cjkTerms = normalized.match(DEEP_CATEGORY_CJK_PATTERN)?.length ?? 0;
+    const marketResearchBonus =
+      (/\bmarket\s+research\b/iu.test(normalized) ? 2 : 0) +
+      (/市场研究/u.test(normalized) ? 2 : 0);
+    const score = englishTerms + cjkTerms + marketResearchBonus;
+    if (score > bestScore) {
+      bestIndex = index;
+      bestScore = score;
+    }
+  });
+  return bestIndex;
 }
 
 function extractDeepQuerySubject(query: string): string {
@@ -221,23 +241,6 @@ function extractDeepQuerySubject(query: string): string {
   return (base.split(/[,;，；。]/, 1)[0]?.trim() ?? "")
     .replace(/的?市场机会(?:如何)?$/, "")
     .trim();
-}
-
-function missingDeepQueryKeywordFragment(subject: string, keyword: string): string {
-  const normalizedSubject = normalizeDeepQueryComparison(subject);
-  const normalizedKeyword = normalizeDeepQueryComparison(keyword);
-  if (normalizedKeyword && normalizedSubject.includes(normalizedKeyword)) return "";
-  if (/[+&#./_-]/u.test(keyword)) return keyword;
-
-  const subjectTokens = new Set(
-    subject.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [],
-  );
-  const keywordTokens = keyword.match(/[\p{L}\p{N}]+/gu) ?? [];
-  const missingTokens = keywordTokens
-    .filter((token) => !subjectTokens.has(token.toLowerCase()))
-  const overlappingTokenCount = keywordTokens.length - missingTokens.length;
-  if (overlappingTokenCount === 0) return keyword;
-  return missingTokens.join(" ");
 }
 
 function normalizeDeepQueryComparison(value: string): string {

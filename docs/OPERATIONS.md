@@ -64,12 +64,22 @@ leave Preview:
 
 At minimum, configure `LAUNCHLENS_DEEP_ENABLED`, a distinct
 `LAUNCHLENS_DEEP_WORKER_SECRET`, `TAVILY_API_KEY`, `CRON_SECRET`, recovery mode
-and maximum delay, plus one independent scheduler that POSTs to
-`/api/cron/scheduler` at an observed cadence of at most 300 seconds. The worker
-secret and cron secret must be different and at least 24 characters.
+and maximum delay. Add the same cron value as the GitHub Actions secret
+`LAUNCHLENS_CRON_SECRET`; the checked-in workflow is the single independent
+scheduler and POSTs to `/api/cron/scheduler` on one off-peak five-minute
+schedule. Configure `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`; the extra
+60 seconds is a bounded observation allowance for scheduling and endpoint
+completion jitter. The worker secret and cron secret must be different and at
+least 24 characters.
 
-The checked-in GitHub recovery workflow is manual emergency tooling. It is not
-the production clock and cannot satisfy cadence freshness by declaration.
+Scheduled workflow runs are only a trigger; they do not satisfy the gate by
+declaration. Deep becomes available only after Redis contains the required
+chronological heartbeat window with observed intervals at or below 360 seconds.
+If GitHub delays, drops, or disables scheduled runs, the gate returns Deep to
+Preview. `workflow_dispatch` remains available for diagnosis. The heartbeat
+rejects rapid manual bursts, but it does not cryptographically distinguish a
+realistically spaced manual run from a scheduled run; production verification
+must therefore also confirm `event=schedule` in GitHub Actions.
 
 ## Failure contracts
 

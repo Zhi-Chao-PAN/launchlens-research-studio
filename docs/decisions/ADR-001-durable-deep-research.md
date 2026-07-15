@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Production requires one independently operated recovery scheduler with an observed cadence of five minutes or less. The repository keeps only a manual GitHub emergency trigger; launch remains capability-gated until real heartbeat history and all other dependencies are verified.
+Accepted. Production requires one independently operated recovery scheduler with a nominal five-minute cadence and an observed completion interval of at most 360 seconds. ADR-003 selects the repository's GitHub Actions schedule for the current Vercel Hobby deployment; launch remains capability-gated until real heartbeat history and all other dependencies are verified.
 
 ## Date
 
@@ -46,7 +46,7 @@ Deep is exposed as `available` only when the runtime probe confirms all eight co
 - real Tavily retrieval;
 - real structured semantic reviewer;
 - authenticated worker wake;
-- independent recovery with a declared maximum delay of 300 seconds;
+- independent recovery with a declared maximum delay of 360 seconds;
 - a fresh chronological recovery series whose observed cadence meets that budget.
 
 When the managed provider keyring is enabled, the generation and reviewer controls require at least one enabled, decryptable credential that is not in an active cooldown. The existence of encrypted records alone is not enough to unlock Deep.
@@ -83,7 +83,7 @@ Terminal history persistence is a derived, idempotent observer that runs only af
 - Provider configuration is locked for the lifetime of a run; drift fails the stage instead of silently changing provenance.
 - Three semantic passes are explicit, ordered, and idempotent. The ledger still reports factual accuracy as `not_established`; semantic review is not a guarantee of truth.
 - History may be rebuilt idempotently from a terminal Deep record without changing its lifecycle.
-- The repository does not claim a platform cron that it cannot prove. Deep remains Preview until one external scheduler, its distinct secret, realistic multi-tick cadence, and due-work recovery behavior are verified.
+- The repository does not claim a platform cron that it cannot prove. The selected GitHub schedule is best-effort, and Deep remains Preview until its distinct secret, realistic multi-tick cadence, and due-work recovery behavior are verified. See ADR-003.
 
 ## Operational Invariants
 

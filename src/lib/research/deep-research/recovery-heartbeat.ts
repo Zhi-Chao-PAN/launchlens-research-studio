@@ -1,6 +1,6 @@
 // R3xx: Redis-backed heartbeat for the Deep Research recovery scheduler.
 //
-// The capability gate used to claim "at most 300s recovery" purely from
+// The capability gate used to claim bounded recovery purely from
 // the LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS env var. That value is
 // declarative; nothing in the runtime actually verified the cron
 // trigger was still firing. This module replaces the declaration with
