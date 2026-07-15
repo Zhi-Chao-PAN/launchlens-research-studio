@@ -159,6 +159,44 @@ describe("ValidationLedger V1 | V2 compatibility", () => {
     expect(deep.citationCoverage).toEqual(structural.citationCoverage);
     expect(deep.provenance).toEqual(structural.provenance);
   });
+
+  it("scopes colliding retrieval IDs to the owning specialist lane", () => {
+    const session = makeSession();
+    const sharedId = "source_shared_url_hash";
+    const market = session.agents["market-sizer"].output!;
+    const competitor = session.agents["competitor-analyst"].output!;
+    if (market.agent !== "market-sizer" || competitor.agent !== "competitor-analyst") {
+      throw new Error("fixture agent discriminators are incomplete");
+    }
+    const marketEvidence = session.evidence!.agents["market-sizer"]!.retrieval.sources[0];
+    const competitorEvidence = session.evidence!.agents["competitor-analyst"]!.retrieval.sources[0];
+
+    market.marketSize.sources = [sharedId];
+    market.citations = [{ ...market.citations[0], id: sharedId, agent: "market-sizer" }];
+    competitor.competitors[0].citations = [sharedId];
+    competitor.citations = [{ ...competitor.citations[0], id: sharedId, agent: "competitor-analyst" }];
+    session.evidence!.agents["market-sizer"]!.retrieval.sources = [
+      { ...marketEvidence, id: sharedId, agent: "market-sizer" },
+    ];
+    session.evidence!.agents["competitor-analyst"]!.retrieval.sources = [
+      { ...competitorEvidence, id: sharedId, agent: "competitor-analyst" },
+    ];
+
+    const ledger = initializeDeepValidation(session, { now: NOW, maxClaims: 10, maxClaimsPerAgent: 1 });
+    expect(isValidationLedgerV2(ledger)).toBe(true);
+    expect(new Set(ledger.reviewSources.map((source) => source.id)).size).toBe(ledger.reviewSources.length);
+    for (const claim of ledger.claims) {
+      for (const sourceId of claim.sourceIds) {
+        expect(ledger.reviewSources.find((source) => source.id === sourceId)?.agent).toBe(claim.agentId);
+      }
+    }
+    expect(ledger.claims.find((claim) => claim.agentId === "market-sizer")?.sourceIds[0]).toBe(
+      `market-sizer::${sharedId}`,
+    );
+    expect(ledger.claims.find((claim) => claim.agentId === "competitor-analyst")?.sourceIds[0]).toBe(
+      `competitor-analyst::${sharedId}`,
+    );
+  });
 });
 
 describe("deep claim extraction and pass reducers", () => {

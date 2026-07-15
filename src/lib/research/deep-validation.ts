@@ -190,7 +190,7 @@ export function collectClaimReviewSources(session: ResearchSession): ClaimReview
   for (const agentId of agentIds) {
     const evidenceSources = session.evidence?.agents[agentId]?.retrieval.sources ?? [];
     for (const source of evidenceSources) {
-      const normalized = normalizeReviewSource(source, "retrieved_evidence");
+      const normalized = normalizeReviewSource(source, "retrieved_evidence", agentId);
       if (normalized && !sources.has(normalized.id)) sources.set(normalized.id, normalized);
     }
   }
@@ -199,7 +199,7 @@ export function collectClaimReviewSources(session: ResearchSession): ClaimReview
     const output = session.agents[agentId]?.output;
     if (!output || output.agent !== agentId) continue;
     for (const citation of output.citations ?? []) {
-      const normalized = normalizeReviewSource(citation, "agent_citation");
+      const normalized = normalizeReviewSource(citation, "agent_citation", agentId);
       if (normalized && !sources.has(normalized.id)) sources.set(normalized.id, normalized);
     }
   }
@@ -593,7 +593,20 @@ function candidate(
   sourceIds: string[],
   criticality: ResearchClaim["criticality"] = "decision_critical",
 ): ClaimCandidate {
-  return { agentId, fieldPath, text, kind, sourceIds, criticality };
+  // Retrieval adapters may derive IDs from canonical URLs, so a shared
+  // publisher can legitimately return the same raw ID in multiple specialist
+  // lanes. Scope the binding before it enters the claim ledger; otherwise one
+  // lane's evidence can be mistaken for another lane's evidence.
+  return {
+    agentId,
+    fieldPath,
+    text,
+    kind,
+    sourceIds: uniqueStrings(sourceIds)
+      .map((sourceId) => scopedReviewSourceId(agentId, sourceId))
+      .filter(Boolean),
+    criticality,
+  };
 }
 
 function sanitizeFindings(
@@ -844,20 +857,32 @@ function mergeReviewSources(
 function normalizeReviewSource(
   value: unknown,
   origin: unknown,
+  scopeAgentId?: AgentId,
 ): ClaimReviewSource | undefined {
   if (!isRecord(value) || !REVIEW_SOURCE_ORIGINS.has(origin as ClaimReviewSource["origin"])) return undefined;
-  const id = safeIdentifier(value.id);
+  const rawId = safeIdentifier(value.id);
   const title = boundedText(value.title, 512);
   const snippet = boundedText(value.snippet, 2_000);
   const accessedAt = boundedText(value.accessedAt, 64);
+  const agent = scopeAgentId ?? (isAgentId(value.agent) ? value.agent : undefined);
   if (
-    !id ||
+    !rawId ||
     !title ||
     !snippet ||
     !accessedAt ||
     !isConfidence(value.confidence) ||
-    !isAgentId(value.agent)
+    !agent
   ) return undefined;
+
+  // `scopeAgentId` is supplied only while collecting the original per-agent
+  // evidence/citation lanes. Callers that register an already-authoritative
+  // review source (for example gap-fill fixtures or independent evidence)
+  // retain its explicit ID so the returned ledger remains referentially
+  // stable.
+  const id = origin === "independent_retrieval" || scopeAgentId === undefined
+    ? rawId
+    : scopedReviewSourceId(agent, rawId);
+  if (!id) return undefined;
 
   const claimIds = origin === "independent_retrieval"
     ? uniqueStrings(value.claimIds).map(safeIdentifier).filter(Boolean).slice(0, 16)
@@ -871,10 +896,25 @@ function normalizeReviewSource(
     snippet,
     accessedAt,
     confidence: value.confidence,
-    agent: value.agent,
+    agent,
     origin: origin as ClaimReviewSource["origin"],
     ...(origin === "independent_retrieval" ? { claimIds } : {}),
   };
+}
+
+/**
+ * Retrieval adapters often hash a canonical URL, so the same source can have
+ * one raw ID in several specialist lanes. Keep those IDs distinct inside the
+ * claim/evidence ledger to preserve the per-agent trust boundary.
+ */
+function scopedReviewSourceId(agentId: AgentId, sourceId: string): string {
+  const normalized = safeIdentifier(sourceId);
+  if (!normalized) return "";
+  const prefix = `${agentId}::`;
+  if (normalized.startsWith(prefix)) return normalized;
+  const scoped = `${prefix}${normalized}`;
+  if (scoped.length <= 160) return scoped;
+  return `${prefix}${stableHash(normalized)}`.slice(0, 160);
 }
 
 function normalizeReviewer(value: unknown): ClaimReviewerIdentity | undefined {
