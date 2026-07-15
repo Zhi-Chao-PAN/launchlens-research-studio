@@ -291,7 +291,7 @@ await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png
 
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
-    await mobilePage.locator('button:has-text("Start Research")').first().click();
+    await mobilePage.locator('button[type="submit"]').first().click();
     await mobilePage.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
     await settle(mobilePage, 500);
 await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
