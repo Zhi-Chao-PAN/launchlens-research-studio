@@ -24,14 +24,15 @@ Adding a managed queue or workflow product would broaden infrastructure and depe
 
 ## Decision
 
-Deep Research uses a fixed, durable ten-unit graph:
+Deep Research uses a fixed, durable eleven-unit graph:
 
 1. Five specialist units, one per research dimension.
 2. Claim-to-source entailment review.
-3. Independent corroboration and conflict review.
-4. Adjudication.
-5. Evidence-constrained synthesis.
-6. Final integrity gate.
+3. Targeted gap-fill retrieval (registered as its own work unit so retries and no-op completion are observable).
+4. Independent corroboration and conflict review.
+5. Adjudication.
+6. Evidence-constrained synthesis.
+7. Final integrity gate.
 
 `DeepRunRecordV1` in Redis is authoritative. Each worker wake may claim and execute exactly one unit. Claims use an expiring lease, monotonically increasing fencing epoch, and expected revision. Commits atomically update both the Deep record and its public `ResearchSession` projection. A stale worker cannot publish output after cancellation or a newer claim.
 
@@ -74,7 +75,7 @@ Terminal history persistence is a derived, idempotent observer that runs only af
 ## Consequences
 
 - Deep work continues after the browser leaves, subject to recovery scheduling.
-- Ten small invocations replace one long request; retries are bounded per unit.
+- Eleven small invocations replace one long request; retries are bounded per unit.
 - Redis is required and Deep fails closed when its authority is unavailable.
 - Provider configuration is locked for the lifetime of a run; drift fails the stage instead of silently changing provenance.
 - Three semantic passes are explicit, ordered, and idempotent. The ledger still reports factual accuracy as `not_established`; semantic review is not a guarantee of truth.

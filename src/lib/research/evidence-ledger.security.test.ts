@@ -4,6 +4,7 @@ import type { AgentOutput } from "@/lib/schema/research-schema";
 import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 import {
   allowlistAgentOutput,
+  buildDeepRetrievalQueries,
   buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
 } from "./evidence-ledger";
@@ -28,6 +29,20 @@ describe("evidence ledger security boundaries", () => {
     expect(query.length).toBeLessThanOrEqual(280);
     expect(query).toMatch(/^pricing pages plans tiers willingness to pay benchmarks\./);
     expect(query).toContain("Product context:");
+  });
+
+  it("fans Deep retrieval into three bounded, specialist-specific intents", () => {
+    const query = "AI-native evidence-backed APAC market research workspace for SaaS founders ".repeat(8);
+    const painQueries = buildDeepRetrievalQueries(query, "pain-detective");
+    const pricingQueries = buildDeepRetrievalQueries(query, "pricing-scout");
+
+    expect(painQueries).toHaveLength(3);
+    expect(new Set(painQueries).size).toBe(3);
+    expect(painQueries.every((item) => item.length <= 280)).toBe(true);
+    expect(painQueries[0]).toMatch(/Reddit, Indie Hackers, G2/i);
+    expect(pricingQueries).toHaveLength(3);
+    expect(pricingQueries[0]).toMatch(/^Official pricing pages/i);
+    expect(pricingQueries[0]).not.toMatch(/^market size TAM SAM SOM/i);
   });
 
   it("persists only canonical public retrieval URLs", () => {

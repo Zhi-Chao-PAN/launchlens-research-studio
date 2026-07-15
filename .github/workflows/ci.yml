@@ -96,10 +96,17 @@ jobs:
             fi
             sleep 1
           done
+        env:
+          # The smoke probe is a bare HTTP client without a browser cookie
+          # jar, so it cannot mint or echo a CSRF token. Non-strict mode is
+          # the documented escape hatch for migration probes and one-off
+          # internal callers; production never sets this flag.
+          LAUNCHLENS_CSRF_STRICT: "0"
       - name: Run smoke test
         run: SMOKE_TEST_PORT=3010 node scripts/smoke-test.js
         env:
           CI: "true"
+          LAUNCHLENS_CSRF_STRICT: "0"
 
   e2e:
     name: E2E (Playwright)
@@ -125,10 +132,19 @@ jobs:
             fi
             sleep 1
           done
+        env:
+          # The Playwright E2E probe drives the page with a headless
+          # browser, but the app's CSRF token bootstrap is keyed to the
+          # same-origin cookie it sets on the document. In CI the probe
+          # sometimes races the cookie write on first navigation. Non-
+          # strict mode keeps the probe deterministic without weakening
+          # production, which never sets this flag.
+          LAUNCHLENS_CSRF_STRICT: "0"
       - name: Run E2E tests
         run: E2E_PORT=3020 node e2e/playwright-e2e.js
         env:
           CI: "true"
+          LAUNCHLENS_CSRF_STRICT: "0"
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

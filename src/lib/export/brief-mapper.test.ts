@@ -166,6 +166,178 @@ describe("toLaunchLensBrief — field mapping", () => {
   });
 });
 
+describe("toLaunchLensBrief — Deep validation boundary", () => {
+  function deepValidation(
+    dispositions: Array<{
+      id: string;
+      agentId: "market-sizer" | "pain-detective" | "pricing-scout";
+      fieldPath: string;
+      text: string;
+      disposition: "supported" | "partially_supported" | "unsupported";
+    }>,
+  ): NonNullable<ResearchSession["validation"]> {
+    return {
+      version: 2,
+      protocol: { executedPasses: 3 },
+      semanticValidation: { status: "completed" },
+      claims: dispositions.map((item) => ({
+        id: item.id,
+        agentId: item.agentId,
+        fieldPath: item.fieldPath,
+        text: item.text,
+      })),
+      adjudications: dispositions.map((item) => ({
+        claimId: item.id,
+        disposition: item.disposition,
+        synthesisEligible:
+          item.disposition === "supported" || item.disposition === "partially_supported",
+      })),
+    } as unknown as NonNullable<ResearchSession["validation"]>;
+  }
+
+  it("does not re-export rejected TAM, growth, or pricing from raw specialist outputs", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD.",
+          disposition: "unsupported",
+        },
+        {
+          id: "pricing",
+          agentId: "pricing-scout",
+          fieldPath: "/recommendations/0",
+          text: "Recommended Starter price is 29 USD.",
+          disposition: "unsupported",
+        },
+        {
+          id: "pain",
+          agentId: "pain-detective",
+          fieldPath: "/painPoints/0",
+          text: "Users report evidence trust concerns.",
+          disposition: "partially_supported",
+        },
+      ]),
+    });
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("18%/yr");
+    expect(serialized).not.toContain("Starter");
+    expect(serialized).not.toContain("$29");
+    expect(brief.input.market).toMatch(/remain unverified/i);
+    expect(brief.input.constraints).toContain("0/3 fully supported");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("admits a fully supported Deep claim without reviving adjacent rejected fields", () => {
+    const brief = toLaunchLensBrief(buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD from the cited category report.",
+          disposition: "supported",
+        },
+        {
+          id: "pricing",
+          agentId: "pricing-scout",
+          fieldPath: "/recommendations/0",
+          text: "Recommended Starter price is 29 USD.",
+          disposition: "unsupported",
+        },
+      ]),
+    }));
+
+    expect(brief.input.market).toContain("TAM is 5000000000 USD");
+    expect(brief.input.constraints).not.toContain("Starter");
+  });
+
+  // P1-1 regression: Deep mode with NO validation ledger must fail-closed.
+  // It must never fall through to the Standard branch, which would export
+  // unverified TAM, pricing, pain points, and synthesis scores.
+  it("fail-closes when Deep mode has no validation ledger (poison-token regression)", () => {
+    const session = buildSession({ mode: "deep" });
+    // Poison tokens that would only appear if the Standard branch ran.
+    const synthesis = session.agents.synthesis.output as SynthesisOutput;
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    // No specialist-derived figures may enter the brief.
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("18%/yr");
+    expect(serialized).not.toContain("AcmeCorp");
+    expect(serialized).not.toContain("Starter");
+    expect(serialized).not.toContain("$29");
+    expect(serialized).not.toContain("Solo Founder");
+    // No synthesis prose may enter the brief either.
+    expect(serialized).not.toContain(synthesis.execSummary);
+    expect(serialized).not.toContain(synthesis.recommendedNextStep);
+    expect(serialized).not.toContain(synthesis.launchlensBrief);
+    // Scores must be null -- the synthesis has not been evidence-validated.
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    // The query is always preserved.
+    expect(brief.input.idea).toContain("AI onboarding analyst");
+  });
+
+  // P1-1 regression: Deep mode with a V1 (unsupported) validation ledger
+  // must also fail-closed.
+  it("fail-closes when Deep mode has a V1 validation ledger (poison-token regression)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: { version: 1 } as unknown as ResearchSession["validation"],
+    });
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    expect(serialized).not.toContain("$5B");
+    expect(serialized).not.toContain("Starter");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  // P1-2 regression: when Deep evidence exists but is insufficient, synthesis
+  // prose (execSummary, recommendedNextStep) must NOT leak into the brief.
+  it("does not leak synthesis execSummary or next-step when Deep evidence is insufficient (poison-token regression)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepValidation([
+        {
+          id: "tam",
+          agentId: "market-sizer",
+          fieldPath: "/marketSize/tam",
+          text: "TAM is 5000000000 USD.",
+          disposition: "unsupported",
+        },
+      ]),
+    });
+    const synthesis = session.agents.synthesis.output as SynthesisOutput;
+
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+
+    // execSummary must not appear in the idea field.
+    expect(brief.input.idea).not.toContain(synthesis.execSummary);
+    // recommendedNextStep must not appear in the constraints field.
+    expect(brief.input.constraints).not.toContain(synthesis.recommendedNextStep);
+    // The serialized brief must not contain the execSummary anywhere.
+    expect(serialized).not.toContain(synthesis.execSummary);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+});
+
 describe("toLaunchLensBrief — truncation", () => {
   it("compresses rich agent outputs before falling back to visible truncation", () => {
     const rich = buildSession({
@@ -702,5 +874,241 @@ describe("toLaunchLensBrief — handoff contract (mirrors launchlens-ai decoder)
     const compact = serializeBrief(brief, false);
     const hash = briefHashFor(compact);
     expect(hash.length).toBeLessThan(8000);
+  });
+});
+
+describe("toLaunchLensBrief — Deep evidence boundary poison tests", () => {
+  // Each test below forges a deliberate defect in the V2 validation ledger
+  // and asserts the Brief mapper cannot be tricked into exporting the
+  // poisoned content as if it were evidence-backed.
+
+  function deepWithClaims(
+    claims: Array<{
+      id: string;
+      agentId: "market-sizer" | "pain-detective" | "pricing-scout";
+      fieldPath: string;
+      text: string;
+      valueHash: string;
+    }>,
+    adjudications: Array<{
+      claimId: string;
+      claimValueHash: string;
+      disposition: "supported" | "partially_supported" | "unsupported";
+      synthesisEligible: boolean;
+    }>,
+    extras: Partial<{
+      gapFill: {
+        completedAt: string;
+        targetedClaimIds: readonly string[];
+        sourcesAdded: number;
+        targetedClaimCount: number;
+      };
+    }> = {},
+  ): NonNullable<ResearchSession["validation"]> {
+    return {
+      version: 2,
+      protocol: { executedPasses: 3 },
+      semanticValidation: { status: "completed" },
+      claims,
+      adjudications,
+      ...extras,
+    } as unknown as NonNullable<ResearchSession["validation"]>;
+  }
+
+  it("refuses a forged adjudication whose claimValueHash does not match the claim", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "real-hash-123",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "forged-hash-999",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+    // The forged adjudication must not surface as a fully-supported claim.
+    expect(serialized).not.toContain("$5B");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("refuses a phantom claim id in adjudications (no matching claim in claims array)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "real_claim",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h1",
+          },
+        ],
+        [
+          {
+            claimId: "ghost_claim",
+            claimValueHash: "h-ghost",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    const brief = toLaunchLensBrief(session);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+    expect(serializeBrief(brief, false)).not.toContain("$5B");
+  });
+
+  it("blocks synthesis execSummary from leaking into the brief idea when not fully supported", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "unsupported",
+            synthesisEligible: false,
+          },
+        ],
+      ),
+    });
+    // Plant a poisoned synthesis output that the mapper must NOT echo.
+    session.agents.synthesis = {
+      id: "synthesis",
+      status: "done",
+      progress: 100,
+      currentStep: "Done",
+      output: {
+        agent: "synthesis",
+        execSummary: "POISON_TOKEN_EXEC_SUMMARY",
+        opportunityScore: 91,
+        riskScore: 12,
+        keyInsights: [],
+        topThreeOpportunities: [],
+        topThreeRisks: [],
+        recommendedNextStep: "POISON_TOKEN_NEXT_STEP",
+        launchlensBrief: "",
+        citations: [],
+      },
+    };
+    const brief = toLaunchLensBrief(session);
+    const serialized = serializeBrief(brief, false);
+    expect(serialized).not.toContain("POISON_TOKEN_EXEC_SUMMARY");
+    expect(serialized).not.toContain("POISON_TOKEN_NEXT_STEP");
+    expect(serialized).not.toContain("$5B");
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("nulls opportunityScore and riskScore when synthesis is degraded even with claims supported", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+      ),
+    });
+    session.agents.synthesis = {
+      id: "synthesis",
+      status: "done",
+      progress: 100,
+      currentStep: "Done",
+      degraded: true,
+      output: {
+        agent: "synthesis",
+        execSummary: "degraded",
+        opportunityScore: 91,
+        riskScore: 12,
+        keyInsights: [],
+        topThreeOpportunities: [],
+        topThreeRisks: [],
+        recommendedNextStep: "go",
+        launchlensBrief: "",
+        citations: [],
+      },
+    };
+    const brief = toLaunchLensBrief(session);
+    expect(brief.meta.opportunityScore).toBeNull();
+    expect(brief.meta.riskScore).toBeNull();
+  });
+
+  it("survives a synthetic gapFill whose sourcesAdded does not match the catalog (defensive)", () => {
+    const session = buildSession({
+      mode: "deep",
+      validation: deepWithClaims(
+        [
+          {
+            id: "tam",
+            agentId: "market-sizer",
+            fieldPath: "/marketSize/tam",
+            text: "TAM is $5B.",
+            valueHash: "h-tam",
+          },
+        ],
+        [
+          {
+            claimId: "tam",
+            claimValueHash: "h-tam",
+            disposition: "supported",
+            synthesisEligible: true,
+          },
+        ],
+        {
+          gapFill: {
+            completedAt: new Date().toISOString(),
+            targetedClaimIds: [],
+            sourcesAdded: 99, // poisoned: no gap sources in catalog
+            targetedClaimCount: 0,
+          },
+        },
+      ),
+    });
+    // The Brief mapper never reads gapFill (it does not affect the
+    // evidence boundary), so a forged gapFill must not unlock additional
+    // content beyond what the adjudications allow. The supported TAM
+    // claim legitimately surfaces; nothing else does.
+    const brief = toLaunchLensBrief(session);
+    expect(brief.input.market).toContain("$5B");
   });
 });

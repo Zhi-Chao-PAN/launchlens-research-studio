@@ -118,6 +118,9 @@ function withIndependentSources(
       confidence: "medium" as const,
       agent: agentId,
       origin: "independent_retrieval" as const,
+      claimIds: ledger.claims
+        .filter((claim) => claim.agentId === agentId)
+        .map((claim) => claim.id),
     })),
   );
 }
@@ -168,6 +171,26 @@ describe("deep claim extraction and pass reducers", () => {
     expect(second).toEqual(first);
     expect(first.every((claim) => claim.id.startsWith("claim_") && claim.valueHash.startsWith("value_"))).toBe(true);
     expect(first.every((claim) => claim.text.length <= 420)).toBe(true);
+  });
+
+  it("round-robins bounded claims across all five specialist agents", () => {
+    const claims = extractDecisionCriticalClaims(makeSession(), {
+      maxClaims: 25,
+      maxClaimsPerAgent: 5,
+    });
+    const agents = new Set(claims.map((claim) => claim.agentId));
+
+    expect(claims).toHaveLength(25);
+    expect(agents).toEqual(new Set([
+      "market-sizer",
+      "competitor-analyst",
+      "pain-detective",
+      "pricing-scout",
+      "channel-scout",
+    ]));
+    for (const agentId of agents) {
+      expect(claims.filter((claim) => claim.agentId === agentId)).toHaveLength(5);
+    }
   });
 
   it("filters invented claim/source IDs and stale claim hashes at the pass boundary", () => {
@@ -294,25 +317,61 @@ describe("deep claim extraction and pass reducers", () => {
 
   it("keeps unsupported and conflicted claims out of synthesis support context", () => {
     const initial = initializeDeepValidation(makeSession(), { now: NOW, maxClaims: 5 });
-    const pass1 = applyClaimReviewPass(initial, "claim_source_entailment", passFindings(initial, "claim_source_entailment"), NOW);
+    const pass1Findings = passFindings(initial, "claim_source_entailment");
+    pass1Findings[1] = {
+      ...pass1Findings[1],
+      verdict: "not_entailed",
+      confidence: "low",
+      supportingSourceIds: [],
+      rationale: "The original source does not entail this bounded claim.",
+    };
+    const pass1 = applyClaimReviewPass(initial, "claim_source_entailment", pass1Findings, NOW);
     const pass1WithIndependentSources = withIndependentSources(pass1);
-    const pass2 = applyClaimReviewPass(pass1WithIndependentSources, "independent_corroboration_conflict", passFindings(pass1WithIndependentSources, "independent_corroboration_conflict"), NOW);
+    const pass2Findings = passFindings(
+      pass1WithIndependentSources,
+      "independent_corroboration_conflict",
+    );
+    pass2Findings[1] = {
+      ...pass2Findings[1],
+      verdict: "insufficient_evidence",
+      confidence: "low",
+      supportingSourceIds: [],
+      rationale: "No independent source corroborates this claim.",
+    };
+    const conflictedClaim = pass1WithIndependentSources.claims[2];
+    const contradictingSourceId = pass1WithIndependentSources.reviewSources.find(
+      (source) =>
+        source.origin === "independent_retrieval" &&
+        source.agent === conflictedClaim.agentId,
+    )?.id;
+    expect(contradictingSourceId).toBeTruthy();
+    pass2Findings[2] = {
+      ...pass2Findings[2],
+      verdict: "contradicted",
+      confidence: "medium",
+      supportingSourceIds: [],
+      contradictingSourceIds: [contradictingSourceId!],
+      rationale: "Independent evidence conflicts with this claim.",
+    };
+    const pass2 = applyClaimReviewPass(
+      pass1WithIndependentSources,
+      "independent_corroboration_conflict",
+      pass2Findings,
+      NOW,
+    );
 
-    const adjudications = pass2.claims.map((claim, index) => {
-      const disposition = index === 1 ? "unsupported" : index === 2 ? "conflicted" : "supported";
-      return {
+    const adjudications = pass2.claims.map((claim) => ({
         claimId: claim.id,
         claimValueHash: claim.valueHash,
         reviewer: REVIEWER,
-        disposition,
+        disposition: "supported" as const,
         confidence: "medium",
-        supportingSourceIds: disposition === "supported" ? claim.sourceIds.slice(0, 1) : [],
-        contradictingSourceIds: disposition === "conflicted" ? claim.sourceIds.slice(0, 1) : [],
+        supportingSourceIds: claim.sourceIds.slice(0, 1),
+        contradictingSourceIds: [],
         reviewedPasses: [],
         synthesisEligible: true,
         limitations: [],
-      };
-    });
+      }));
     const finalLedger = applyClaimAdjudicationPass(pass2, adjudications, NOW);
     const context = buildDeepSynthesisContext(finalLedger);
     const unsupportedId = pass2.claims[1].id;

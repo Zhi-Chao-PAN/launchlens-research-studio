@@ -26,10 +26,20 @@ export type RetrievedSource = SourceCitation & {
 
 /**
  * Query a retrieval provider for sources relevant to an agent's prompt.
- * Providers should be resilient: when the API is unavailable or returns
- * no results, return an empty array rather than throwing, so the engine can
- * record retrieval as unavailable and continue with explicitly ungrounded
- * generation.
+ *
+ * Contract:
+ *   - A successful search that returned zero hits MUST resolve to `[]`. The
+ *     distinction between "search succeeded but found nothing" and "search
+ *     failed" lives in the type system: the former resolves to `[]`, the
+ *     latter rejects with a `RetrievalError`.
+ *   - Transient failures (network, 5xx, 429, parse) MUST throw a
+ *     `RetrievalError` with `retryable: true` so the durable work unit
+ *     can route them through the existing retry/backoff path.
+ *   - Permanent failures (4xx other than 429, invalid key, missing config)
+ *     MUST throw a `RetrievalError` with `retryable: false` so the work
+ *     unit fails closed instead of advancing with phantom evidence.
+ *   - Aborts (caller or deadline) MUST throw a `RetrievalError` with
+ *     `retryable: false` so cancellation wins races.
  */
 export interface RetrievalProvider {
   readonly id: string;
@@ -44,6 +54,31 @@ export interface RetrievalProvider {
   search(opts: RetrievalQuery): Promise<RetrievedSource[]>;
 }
 
+/**
+ * Typed error for retrieval failures. The `retryable` flag is the load-bearing
+ * contract: it tells the durable work unit whether to retry, fail closed, or
+ * surface the abort. Callers should branch on `error.code` first, then
+ * `error.retryable`.
+ */
+export class RetrievalError extends Error {
+  readonly code: RetrievalFallbackReason;
+  readonly retryable: boolean;
+  readonly cause?: unknown;
+
+  constructor(
+    code: RetrievalFallbackReason,
+    retryable: boolean,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "RetrievalError";
+    this.code = code;
+    this.retryable = retryable;
+    this.cause = options?.cause;
+  }
+}
+
 export interface RetrievalQuery {
   /** What the user asked about. Always set. */
   query: string;
@@ -53,6 +88,12 @@ export interface RetrievalQuery {
   agentId?: AgentId;
   /** Hard cap on returned sources; providers should clamp to this. */
   maxResults?: number;
+  /** Retrieval depth requested by evidence-intensive modes. */
+  searchDepth?: "basic" | "advanced";
+  /** Optional relevance floor. This filters topical noise, not reliability. */
+  minScore?: number;
+  /** Optional provider-neutral hostname allowlist for source-type queries. */
+  includeDomains?: string[];
   /** Optional AbortSignal so a cancelled research session stops the search. */
   signal?: AbortSignal;
 }

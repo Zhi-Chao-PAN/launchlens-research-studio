@@ -11,11 +11,13 @@
 // every run behaves identically to R214.
 
 import type { RetrievalProvider, RetrievalQuery, RetrievedSource } from "./retrieval.types";
+import { RetrievalError } from "./retrieval.types";
 import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
 
 const DEFAULT_BASE_URL = "https://api.tavily.com";
 const DEFAULT_MAX_RESULTS = 6;
-const HTTP_TIMEOUT_MS = 12_000;
+const BASIC_HTTP_TIMEOUT_MS = 12_000;
+const ADVANCED_HTTP_TIMEOUT_MS = 25_000;
 // Tavily recommends queries shorter than 400 characters. Enforce the bound at
 // the adapter edge because user briefs plus keywords can exceed it even when
 // upstream callers already compact their focused query.
@@ -61,9 +63,15 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     const maxResults = clampInt(opts.maxResults ?? DEFAULT_MAX_RESULTS, 1, 20);
     const query = buildQueryString(opts.query, opts.keywords);
     if (!query) return [];
+    const searchDepth = opts.searchDepth === "advanced" ? "advanced" : "basic";
+    const minimumScore = clampScore(opts.minScore);
+    const includeDomains = normalizeDomains(opts.includeDomains);
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => controller.abort(),
+      searchDepth === "advanced" ? ADVANCED_HTTP_TIMEOUT_MS : BASIC_HTTP_TIMEOUT_MS,
+    );
     // Wire the caller's AbortSignal to the controller too.
     const onAbort = () => controller.abort();
     if (opts.signal) {
@@ -74,7 +82,12 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
     // Pre-aborted caller signal — short-circuit before doing any I/O.
     if (controller.signal.aborted) {
       clearTimeout(timer);
-      return [];
+      throw new RetrievalError(
+        "network_error",
+        false,
+        "Retrieval aborted before Tavily was contacted.",
+        { cause: controller.signal.reason },
+      );
     }
 
     try {
@@ -86,16 +99,24 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
         },
         body: JSON.stringify({
           query,
-          search_depth: "basic",
+          search_depth: searchDepth,
+          ...(searchDepth === "advanced" ? { chunks_per_source: 3 } : {}),
           max_results: maxResults,
           topic: "general",
           include_answer: false,
+          ...(includeDomains.length > 0 ? { include_domains: includeDomains } : {}),
         }),
         signal: controller.signal,
       });
       if (!res.ok) {
-        // Surface as an empty result; engine falls back to LLM-only.
-        return [];
+        // HTTP failure: 4xx (other than 429) is a permanent config error;
+        // 5xx and 429 are transient and should be retried by the work unit.
+        const retryable = res.status === 429 || res.status >= 500;
+        throw new RetrievalError(
+          "http_error",
+          retryable,
+          `Tavily returned HTTP ${res.status} ${res.statusText || ""}`.trim(),
+        );
       }
       const json = (await res.json()) as TavilyResponse;
       const results = Array.isArray(json.results) ? json.results : [];
@@ -103,11 +124,15 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
       const sources: RetrievedSource[] = [];
       for (const r of results) {
         if (!r.url || !r.title) continue;
+        if (
+          minimumScore !== undefined &&
+          (typeof r.score !== "number" || r.score < minimumScore)
+        ) continue;
         sources.push({
           id: hashUrl(r.url),
           title: String(r.title).slice(0, 200),
           url: r.url,
-          snippet: String(r.content || "").slice(0, 500),
+          snippet: String(r.content || "").slice(0, searchDepth === "advanced" ? 900 : 500),
           accessedAt: retrievedAt,
           // Tavily's score measures query relevance, not source reliability.
           // Keep relevance in `score` and use a conservative neutral
@@ -119,9 +144,25 @@ export class TavilyRetrievalProvider implements RetrievalProvider {
         });
       }
       return sources.slice(0, maxResults);
-    } catch {
-      // Network / abort / JSON parse / any failure — degrade silently.
-      return [];
+    } catch (error) {
+      if (error instanceof RetrievalError) throw error;
+      // Distinguish caller/timeout aborts (non-retryable) from network/parse
+      // failures (retryable). The deadline timer calls controller.abort()
+      // without a reason; pass the reason through when present.
+      if (controller.signal.aborted) {
+        throw new RetrievalError(
+          "network_error",
+          false,
+          "Tavily retrieval was aborted before completion.",
+          { cause: error },
+        );
+      }
+      throw new RetrievalError(
+        "network_error",
+        true,
+        "Tavily retrieval failed with a network or runtime error.",
+        { cause: error },
+      );
     } finally {
       clearTimeout(timer);
       if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
@@ -143,6 +184,23 @@ function buildQueryString(query: string, keywords?: string[]): string {
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, Math.trunc(n)));
+}
+
+function clampScore(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeDomains(values: readonly string[] | undefined): string[] {
+  if (!values) return [];
+  const domains = new Set<string>();
+  for (const value of values.slice(0, 20)) {
+    const domain = String(value).trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
+    if (/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
+      domains.add(domain);
+    }
+  }
+  return [...domains];
 }
 
 function hashUrl(url: string): string {

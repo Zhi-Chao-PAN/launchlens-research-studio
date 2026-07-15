@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
+import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
 import {
   createResearchSession,
   deleteSession,
@@ -33,6 +34,17 @@ function record(workIndex = 0): DeepRunRecordV1 {
   };
 }
 
+function stubRetrieval(): RetrievalProvider {
+  return {
+    id: "search",
+    displayName: "Stub retrieval",
+    isMock: false,
+    async search() {
+      return [];
+    },
+  };
+}
+
 function executor(overrides: Record<string, unknown> = {}) {
   const semanticReviewer = { runPass: vi.fn(async (session) => structuredClone(session)) };
   return {
@@ -42,6 +54,7 @@ function executor(overrides: Record<string, unknown> = {}) {
       retrievalProviderId: "search",
       reviewerProviderId: "reviewer",
       semanticReviewer,
+      retrieval: stubRetrieval(),
       ...overrides,
     }),
   };

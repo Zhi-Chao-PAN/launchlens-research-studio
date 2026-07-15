@@ -15,6 +15,7 @@ const DEEP_REQUIREMENT_IDS = new Set<DeepCapabilityRequirementId>([
   "semantic_reviewer",
   "worker_wake",
   "independent_recovery",
+  "recovery_freshness",
 ]);
 
 interface CapabilityEnvelope {

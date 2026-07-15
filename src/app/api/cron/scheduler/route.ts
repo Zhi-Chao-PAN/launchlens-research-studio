@@ -1,9 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 import { tickSchedules } from "@/lib/research/scheduler";
 import { pruneStaleSessions } from "@/lib/research/research-engine";
 import { jsonErrorLocalized } from "@/lib/api/validation";
 import { probeDeepResearchCapability } from "@/lib/research/deep-research/capability";
 import { createDeepResearchService } from "@/lib/research/deep-research/runtime";
+import {
+  acquireRecoveryLock,
+  releaseRecoveryLock,
+  writeRecoveryHeartbeat,
+} from "@/lib/research/deep-research/recovery-heartbeat";
 
 // R212: serverless-friendly scheduler trigger.
 //
@@ -24,6 +30,11 @@ import { createDeepResearchService } from "@/lib/research/deep-research/runtime"
 // endpoint refuses all calls — there is no implicit "open in dev"
 // mode, because an open cron trigger in production is a privilege-
 // escalation vector.
+//
+// R3xx: the route now acquires a Redis-backed single-flight lock so two
+// cron triggers never run a recovery sweep in parallel, and writes a
+// heartbeat on success/failure so the capability gate can honestly
+// report whether the cron source is still firing.
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
@@ -71,27 +82,77 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const triggered = await tickSchedules();
-    let deepRecovery: unknown = { kind: "disabled" };
-    if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
-      const capability = await probeDeepResearchCapability();
-      deepRecovery = capability.availability === "available"
-        ? await createDeepResearchService().signal({ kind: "recover", limit: 25 })
-        : { kind: "preview", blockers: capability.blockers };
+    const requestId = request.headers.get("x-request-id") || randomUUID();
+    const lock = await acquireRecoveryLock({ requestId });
+    if (!lock.acquired) {
+      return NextResponse.json({
+        ok: true,
+        deduped: true,
+        heldBy: lock.heldBy,
+        timestamp: new Date().toISOString(),
+      });
     }
-    // R217: piggyback session-map eviction on the cron tick so the
-    // in-memory engine state doesn't grow unbounded over the lifetime
-    // of a long-running server. Sessions are also evicted by delete
-    // + pruneStaleSessions on cancel / completion, so this is purely
-    // a safety net for any path that forgot to clean up.
-    const pruned = pruneStaleSessions();
-    return NextResponse.json({
-      ok: true,
-      triggered,
-      pruned,
-      deepRecovery,
-      timestamp: new Date().toISOString(),
-    });
+
+    const startedAt = Date.now();
+    let triggered = 0;
+    let deepRecovery: unknown = { kind: "disabled" };
+    let dispatched = 0;
+    let failed = 0;
+    try {
+      triggered = await tickSchedules();
+      if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
+        const capability = await probeDeepResearchCapability();
+        if (capability.availability === "available") {
+          const result = await createDeepResearchService().signal({
+            kind: "recover",
+            limit: 25,
+          });
+          deepRecovery = { kind: "recovered", result };
+          if (result && typeof result === "object") {
+            const r = result as { dispatched?: unknown; failed?: unknown };
+            if (typeof r.dispatched === "number") dispatched = r.dispatched;
+            if (typeof r.failed === "number") failed = r.failed;
+          }
+        } else {
+          deepRecovery = { kind: "preview", blockers: capability.blockers };
+        }
+      }
+      // R217: piggyback session-map eviction on the cron tick so the
+      // in-memory engine state doesn't grow unbounded over the lifetime
+      // of a long-running server. Sessions are also evicted by delete
+      // + pruneStaleSessions on cancel / completion, so this is purely
+      // a safety net for any path that forgot to clean up.
+      const pruned = pruneStaleSessions();
+      const durationMs = Date.now() - startedAt;
+      await writeRecoveryHeartbeat({
+        ok: true,
+        requestId,
+        durationMs,
+        dispatched,
+        failed,
+      });
+      return NextResponse.json({
+        ok: true,
+        triggered,
+        pruned,
+        deepRecovery,
+        timestamp: new Date().toISOString(),
+        durationMs,
+      });
+    } catch (err) {
+      const errorCode = err instanceof Error ? err.name : "scheduler_tick_failed";
+      await writeRecoveryHeartbeat({
+        ok: false,
+        requestId,
+        durationMs: Date.now() - startedAt,
+        dispatched,
+        failed,
+        errorCode,
+      });
+      throw err;
+    } finally {
+      await releaseRecoveryLock(requestId);
+    }
   } catch (err) {
     return NextResponse.json(
       {

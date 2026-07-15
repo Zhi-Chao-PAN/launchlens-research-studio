@@ -23,6 +23,34 @@ const AGENT_RETRIEVAL_FOCUS: Record<Exclude<AgentId, "synthesis">, string> = {
   "channel-scout": "customer acquisition channels communities SEO paid media partnerships",
 };
 
+const DEEP_RETRIEVAL_INTENTS: Record<Exclude<AgentId, "synthesis">, readonly string[]> = {
+  "market-sizer": [
+    "Category market size, CAGR, and APAC regional forecasts from dated industry or analyst sources",
+    "Bottom-up customer counts, company counts, and spending inputs for TAM SAM SOM calculations",
+    "Adjacent market benchmarks and transparent sizing assumptions for this product category",
+  ],
+  "competitor-analyst": [
+    "Direct and adjacent alternatives with official product features and positioning",
+    "Official competitor pricing pages, plans, tiers, and packaging",
+    "Independent comparisons, customer reviews, and APAC coverage gaps for competing products",
+  ],
+  "pain-detective": [
+    "Voice-of-customer complaints about this workflow from Reddit, Indie Hackers, G2, and product reviews",
+    "Recurring manual-workflow, trust, citation, and data-quality pains reported by target users",
+    "APAC and cross-border user needs, unmet needs, and bilingual research problems",
+  ],
+  "pricing-scout": [
+    "Official pricing pages and current plans for direct and adjacent competitors",
+    "SaaS price benchmarks, packaging, and willingness-to-pay evidence for target buyers",
+    "Customer review evidence about price sensitivity, value metrics, and budget constraints",
+  ],
+  "channel-scout": [
+    "APAC founder and product-team communities, directories, events, and partnership channels",
+    "Early-stage B2B SaaS acquisition benchmarks across content, community, paid, and outbound",
+    "Search demand, content topics, and channel evidence for cross-border China-to-global teams",
+  ],
+};
+
 export function createEvidenceLedger(now: string = new Date().toISOString()): EvidenceLedger {
   const agents: EvidenceLedger["agents"] = {};
   for (const agentId of ALL_AGENTS) {
@@ -90,6 +118,54 @@ export function buildFocusedRetrievalQuery(
   // brief. Put the specialist intent first so truncation cannot discard it.
   return truncateAtWordBoundary(
     `${focus}. Product context: ${base}`,
+    FOCUSED_QUERY_MAX_CHARS,
+  );
+}
+
+/**
+ * Deep mode fans retrieval across complementary evidence intents instead of
+ * asking one overloaded search query to cover an entire specialist schema.
+ */
+export function buildDeepRetrievalQueries(
+  query: string,
+  agentId: Exclude<AgentId, "synthesis">,
+): string[] {
+  const base = query.replace(/\s+/g, " ").trim();
+  const productContext = base
+    ? truncateAtWordBoundary(base, 170)
+    : AGENT_RETRIEVAL_FOCUS[agentId];
+  return DEEP_RETRIEVAL_INTENTS[agentId].map((intent) =>
+    truncateAtWordBoundary(
+      `${intent}. Product context: ${productContext}`,
+      FOCUSED_QUERY_MAX_CHARS,
+    ),
+  );
+}
+
+/**
+ * Build a targeted gap-fill query for a single claim that failed its first
+ * entailment pass. The query is intentionally different from the initial
+ * deep fan-out and from the independent corroboration query: it asks the
+ * provider for a primary source that *states* the bounded claim, rather
+ * than for general category context or for independent corroboration.
+ *
+ * The claim text is included verbatim so the search engine can match the
+ * exact figure the reviewer found unsourced. The product context is
+ * appended at the end so truncation cannot drop the claim itself.
+ */
+export function buildGapFillQuery(
+  query: string,
+  agentId: Exclude<AgentId, "synthesis">,
+  claimText: string,
+): string {
+  const focus = AGENT_RETRIEVAL_FOCUS[agentId];
+  const base = query.replace(/\s+/g, " ").trim();
+  const productContext = base
+    ? truncateAtWordBoundary(base, 140)
+    : focus;
+  const boundedClaim = claimText.replace(/\s+/g, " ").trim().slice(0, 220);
+  return truncateAtWordBoundary(
+    `Primary source stating: ${boundedClaim}. Product context: ${productContext}`,
     FOCUSED_QUERY_MAX_CHARS,
   );
 }

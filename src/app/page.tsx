@@ -785,6 +785,8 @@ export default function Home() {
                   query={state.query}
                   keywords={state.keywords}
                   outputs={state.agentOutputs}
+                  mode={state.mode}
+                  validation={state.validation ?? undefined}
                 />
               )}
 

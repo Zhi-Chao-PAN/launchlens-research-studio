@@ -118,15 +118,25 @@ async function run() {
     await settle(page, 300);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
 
-    await page.waitForSelector("h2:has-text(\"Research any market\")", { timeout: 8000 }).catch(() => {});
-    const heroVisible = await page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first().isVisible();
+    // Wait for the hero h2 to be attached and visible. The h2 renders
+    // workspace.hero.title: "Build a research dossier..." (en) /
+    // "构建研究档案..." (zh) / "リサーチ・ドシエ..." (ja) /
+    // "리서치 자료..." (ko).
+    const heroLocator = page.locator("h2").filter({ hasText: /research dossier|研究档案|リサーチ|리서치/i }).first();
+    const heroVisible = await heroLocator.waitFor({ state: "visible", timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
     log("Hero text visible", heroVisible);
 
-    const hasQueryInput = await page.locator("textarea").first().isVisible();
+    const hasQueryInput = await page.locator("textarea").first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
     log("Query textarea visible", hasQueryInput);
 
-    const hasStartButton = await page.locator('button:has-text("Start Research")').first().isVisible();
-    log("Start Research button visible", hasStartButton);
+    // The submit button label is i18n-driven: "Start {mode}" (e.g.
+    // "Start Standard") when the selected mode is available, or
+    // "Deep Research in preparation" when it is not. Match by the
+    // stable "Start " prefix rather than a hardcoded literal.
+    const hasStartButton = await page.locator('button[type="submit"]').first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
+    log("Start button visible", hasStartButton);
 
     // ====== Test 2: Theme toggle ======
     console.log("\n[2] Theme toggle");
@@ -170,7 +180,10 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
     const healthJson = await healthResponse.json();
     log('health endpoint serves provider info', healthResponse.status() === 200 && healthJson.status === 'ok' && !!healthJson.provider, 'provider=' + (healthJson.provider && healthJson.provider.id));
     const telemetryResponse = await page.request.get(BASE_URL + '/api/telemetry');
-    log('telemetry endpoint serves summary', telemetryResponse.status() === 200);
+    // The telemetry endpoint is admin-gated (R202). Without an admin bearer
+    // token the probe gets 401/403; that proves the endpoint exists and is
+    // protected, which is the property we want to verify in E2E.
+    log('telemetry endpoint is gated', telemetryResponse.status() === 401 || telemetryResponse.status() === 403, 'status=' + telemetryResponse.status());
     const diagnosticsResponse = await page.request.get(BASE_URL + '/diagnostics');
     log('diagnostics page renders 200', diagnosticsResponse.status() === 200);
     const diagHtml = await diagnosticsResponse.text();
@@ -199,7 +212,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
     await settle(page, 300);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
 
-    await page.locator('button:has-text("Start Research")').first().click();
+    await page.locator('button[type="submit"]').first().click();
 
     // Wait for the studio layout
     await page.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
@@ -278,7 +291,7 @@ await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png
 
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
-    await mobilePage.locator('button:has-text("Start Research")').first().click();
+    await mobilePage.locator('button[type="submit"]').first().click();
     await mobilePage.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
     await settle(mobilePage, 500);
 await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });

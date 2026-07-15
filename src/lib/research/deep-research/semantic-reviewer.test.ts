@@ -4,9 +4,21 @@ import { createDeterministicStructuredCompletionProvider } from "@/lib/providers
 import type { StructuredCompletionProvider } from "@/lib/providers/structured-completion";
 import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
 import { createResearchSession, deleteSession } from "@/lib/research/research-engine";
-import type { AgentId, ResearchSession } from "@/lib/schema/research-schema";
+import type {
+  AgentId,
+  ClaimReviewSource,
+  ResearchClaim,
+  ResearchSession,
+  ValidationLedgerV2,
+} from "@/lib/schema/research-schema";
 import { DeepWorkExecutionError } from "./service";
-import { DeepSemanticReviewer, findingsForPass } from "./semantic-reviewer";
+import {
+  DeepSemanticReviewer,
+  assertAllClaimsHaveAtLeastOneSource,
+  buildClaimEvidenceSlices,
+  findingsForPass,
+} from "./semantic-reviewer";
+import { initializeDeepValidation } from "@/lib/research/deep-validation";
 
 const sessions: string[] = [];
 
@@ -69,6 +81,7 @@ function successfulProvider(numericConfidence = false): StructuredCompletionProv
       id: string;
       agent?: AgentId;
       origin?: string;
+      claimIds?: string[];
     }>;
     if (schemaName === "deep_claim_source_entailment") {
       return {
@@ -89,7 +102,9 @@ function successfulProvider(numericConfidence = false): StructuredCompletionProv
         findings: claims.map((claim) => {
           const independent = sources.find(
             (source) =>
-              source.origin === "independent_retrieval" && source.agent === claim.agentId,
+              source.origin === "independent_retrieval" &&
+              source.agent === claim.agentId &&
+              source.claimIds?.includes(claim.id),
           )?.id;
           return {
             claimId: claim.id,
@@ -296,12 +311,14 @@ describe("DeepSemanticReviewer", () => {
     session = await new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() })
       .runPass(session, "claim_source_entailment");
     const queries: string[] = [];
+    const retrievalOptions: Array<{ searchDepth?: string; minScore?: number }> = [];
     const overlappingRetrieval: RetrievalProvider = {
       id: "overlapping-search",
       displayName: "Overlapping search",
       isMock: false,
-      async search({ agentId, query }) {
+      async search({ agentId, query, searchDepth, minScore }) {
         queries.push(query);
+        retrievalOptions.push({ searchDepth, minScore });
         const now = new Date().toISOString();
         return [{
           id: "shared-result",
@@ -319,17 +336,27 @@ describe("DeepSemanticReviewer", () => {
     session = await new DeepSemanticReviewer({ provider, retrieval: overlappingRetrieval })
       .runPass(session, "independent_corroboration_conflict");
 
-    expect(queries).toHaveLength(2);
-    expect(new Set(queries).size).toBe(2);
-    expect(queries.every((query) => query.length <= 280)).toBe(true);
     if (session.validation?.version !== 2) throw new Error("expected V2 ledger");
+    expect(queries).toHaveLength(session.validation.claims.length);
+    expect(new Set(queries).size).toBe(queries.length);
+    expect(queries.every((query) => query.length <= 280)).toBe(true);
+    expect(queries.every((query) => !query.startsWith("Independent evidence"))).toBe(true);
+    expect(retrievalOptions.every((opts) => opts.searchDepth === "advanced")).toBe(true);
+    expect(retrievalOptions.every((opts) => opts.minScore === 0.35)).toBe(true);
     const independent = session.validation.reviewSources.filter(
       (source) => source.origin === "independent_retrieval",
     );
     expect(new Set(independent.map((source) => source.agent))).toEqual(
       new Set(["market-sizer", "competitor-analyst"]),
     );
-    expect(new Set(independent.map((source) => source.id)).size).toBe(2);
+    expect(new Set(independent.map((source) => source.id)).size).toBe(
+      session.validation.claims.length,
+    );
+    expect(
+      session.validation.claims.every((claim) =>
+        independent.some((source) => source.claimIds?.includes(claim.id)),
+      ),
+    ).toBe(true);
   });
 
   it("never treats an explicit mock reviewer as Deep capability", async () => {
@@ -340,5 +367,166 @@ describe("DeepSemanticReviewer", () => {
       .rejects.toBeInstanceOf(DeepWorkExecutionError);
     await expect(reviewer.runPass(session, "claim_source_entailment"))
       .rejects.toMatchObject({ code: "mock_reviewer_forbidden", retryable: false });
+  });
+});
+
+describe("buildClaimEvidenceSlices", () => {
+  const baseAgentId: Exclude<AgentId, "synthesis"> = "market-sizer";
+
+  function makeClaim(overrides: Partial<ResearchClaim>): ResearchClaim {
+    return {
+      id: overrides.id ?? "claim_test",
+      agentId: overrides.agentId ?? baseAgentId,
+      fieldPath: overrides.fieldPath ?? "/marketSize/tam",
+      text: overrides.text ?? "TAM equals $5B",
+      kind: overrides.kind ?? "market_metric",
+      criticality: overrides.criticality ?? "decision_critical",
+      sourceIds: overrides.sourceIds ?? [],
+      valueHash: overrides.valueHash ?? "hash_test",
+    };
+  }
+
+  function makeSource(overrides: Partial<ClaimReviewSource>): ClaimReviewSource {
+    const now = new Date().toISOString();
+    const source: ClaimReviewSource = {
+      id: overrides.id ?? "src_test",
+      title: overrides.title ?? "Test source",
+      url: overrides.url,
+      snippet: overrides.snippet ?? "Test snippet",
+      accessedAt: overrides.accessedAt ?? now,
+      confidence: overrides.confidence ?? "medium",
+      agent: overrides.agent ?? baseAgentId,
+      origin: overrides.origin ?? "agent_citation",
+      claimIds: overrides.claimIds,
+    };
+    return source;
+  }
+
+  function makeLedger(
+    claims: ResearchClaim[],
+    reviewSources: ClaimReviewSource[],
+  ): ValidationLedgerV2 {
+    const session = createResearchSession("AI finance operations platform", ["finance"], undefined, { mode: "deep" });
+    const ledger = initializeDeepValidation(session, { maxClaims: claims.length, maxClaimsPerAgent: claims.length });
+    return { ...ledger, claims, reviewSources };
+  }
+
+  it("guarantees every claim retains its own sourceIds in the prompt context", () => {
+    // 30 claims each citing a unique source; nothing in the first 80 global entries
+    // is allowed for any of them. The legacy global slice would starve every claim.
+    const claims: ResearchClaim[] = [];
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      const id = `claim_${i}`;
+      const sourceId = `own_${i}`;
+      claims.push(makeClaim({ id, valueHash: `hash_${i}`, sourceIds: [sourceId] }));
+      sources.push(makeSource({ id: sourceId, title: `Own source ${i}`, agent: baseAgentId }));
+    }
+    // Add 80 extra shared sources that no claim owns.
+    for (let i = 0; i < 80; i += 1) {
+      sources.push(makeSource({ id: `shared_${i}`, title: `Shared ${i}`, agent: baseAgentId }));
+    }
+    const ledger = makeLedger(claims, sources);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+
+    for (const claim of claims) {
+      const slice = slices.find((entry) => entry.claim.id === claim.id);
+      expect(slice, `slice for ${claim.id} should exist`).toBeDefined();
+      expect(slice?.sources.map((s) => s.id)).toContain(claim.sourceIds[0]);
+    }
+    // Total sources handed to the model never exceed the cap.
+    const total = slices.reduce((acc, slice) => acc + slice.sources.length, 0);
+    expect(total).toBeLessThanOrEqual(80);
+    // Source ids are unique across the whole prompt payload.
+    const seen = new Set<string>();
+    for (const slice of slices) for (const source of slice.sources) {
+      expect(seen.has(source.id), `duplicate source id ${source.id}`).toBe(false);
+      seen.add(source.id);
+    }
+  });
+
+  it("preserves independent_retrieval sources for Pass 2 even when own sources are abundant", () => {
+    const claimA = makeClaim({ id: "claim_a", valueHash: "h_a", sourceIds: ["own_a"] });
+    const claimB = makeClaim({ id: "claim_b", valueHash: "h_b", sourceIds: ["own_b"] });
+    const ownA = makeSource({ id: "own_a", title: "Own A", agent: baseAgentId });
+    const ownB = makeSource({ id: "own_b", title: "Own B", agent: baseAgentId });
+    const independentA = makeSource({
+      id: "indep_a",
+      title: "Independent A",
+      origin: "independent_retrieval",
+      agent: baseAgentId,
+      claimIds: ["claim_a"],
+    });
+    const independentB = makeSource({
+      id: "indep_b",
+      title: "Independent B",
+      origin: "independent_retrieval",
+      agent: baseAgentId,
+      claimIds: ["claim_b"],
+    });
+    const ledger = makeLedger([claimA, claimB], [ownA, ownB, independentA, independentB]);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "independent_corroboration_conflict",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+
+    const a = slices.find((entry) => entry.claim.id === "claim_a");
+    const b = slices.find((entry) => entry.claim.id === "claim_b");
+    expect(a?.sources.map((s) => s.id)).toContain("indep_a");
+    expect(b?.sources.map((s) => s.id)).toContain("indep_b");
+  });
+
+  it("never lets a late claim starve when 100+ sources overflow the cap", () => {
+    const firstClaim = makeClaim({ id: "claim_first", valueHash: "h1", sourceIds: ["src_0", "src_1", "src_2"] });
+    const lastClaim = makeClaim({ id: "claim_last", valueHash: "h2", sourceIds: ["src_99", "src_100", "src_101"] });
+    const sources: ClaimReviewSource[] = [];
+    for (let i = 0; i < 120; i += 1) {
+      sources.push(makeSource({ id: `src_${i}`, title: `Source ${i}`, agent: baseAgentId }));
+    }
+    const ledger = makeLedger([firstClaim, lastClaim], sources);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+
+    const firstSlice = slices.find((entry) => entry.claim.id === "claim_first");
+    const lastSlice = slices.find((entry) => entry.claim.id === "claim_last");
+    expect(firstSlice?.sources.map((s) => s.id)).toEqual(
+      expect.arrayContaining(["src_0", "src_1", "src_2"]),
+    );
+    // The 100+ indexed sources belong to the late claim; the cap must not strip them.
+    expect(lastSlice?.sources.map((s) => s.id)).toEqual(
+      expect.arrayContaining(["src_99", "src_100", "src_101"]),
+    );
+  });
+
+  it("rejects an empty claim context with a fail-closed error", () => {
+    // A claim whose own sourceIds reference nothing and no independent source
+    // is bound to it; the ledger also has zero sources overall, so the prompt
+    // would be empty.
+    const claim = makeClaim({ id: "claim_empty", valueHash: "h_empty", sourceIds: ["ghost"] });
+    const ledger = makeLedger([claim], []);
+
+    const slices = buildClaimEvidenceSlices(ledger, {
+      pass: "claim_source_entailment",
+      maxTotalSources: 80,
+      minSourcesPerClaim: 1,
+    });
+    expect(slices[0]?.sources).toHaveLength(0);
+    expect(() =>
+      assertAllClaimsHaveAtLeastOneSource(slices, "claim_source_entailment"),
+    ).toThrow(DeepWorkExecutionError);
+    expect(() =>
+      assertAllClaimsHaveAtLeastOneSource(slices, "claim_source_entailment"),
+    ).toThrowError(/zero sources in the prompt context/);
   });
 });
