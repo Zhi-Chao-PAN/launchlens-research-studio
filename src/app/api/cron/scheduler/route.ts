@@ -116,26 +116,15 @@ export async function POST(request: NextRequest) {
       if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
         const structural = checkStructuralRecoveryReadiness(process.env);
         if (structural.ready) {
-          try {
-            const result = await createDeepResearchService().signal({
-              kind: "recover",
-              limit: 25,
-            });
-            deepRecovery = { kind: "recovered", result };
-            if (result && typeof result === "object") {
-              const r = result as { dispatched?: unknown; failed?: unknown };
-              if (typeof r.dispatched === "number") dispatched = r.dispatched;
-              if (typeof r.failed === "number") failed = r.failed;
-            }
-          } catch (err) {
-            // R400: do not write a successful heartbeat when the recovery
-            // signal itself failed. The catch handler below will stamp the
-            // failure into the heartbeat metadata.
-            deepRecovery = {
-              kind: "recover-failed",
-              error: err instanceof Error ? err.message : String(err),
-            };
-            throw err;
+          const result = await createDeepResearchService().signal({
+            kind: "recover",
+            limit: 25,
+          });
+          deepRecovery = { kind: "recovered", result };
+          if (result && typeof result === "object") {
+            const r = result as { dispatched?: unknown; failed?: unknown };
+            if (typeof r.dispatched === "number") dispatched = r.dispatched;
+            if (typeof r.failed === "number") failed = r.failed;
           }
         } else {
           deepRecovery = { kind: "structural-blocked", missing: structural.missing };

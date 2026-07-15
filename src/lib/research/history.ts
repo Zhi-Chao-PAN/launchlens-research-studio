@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { translate, type Locale, DEFAULT_LOCALE } from "@/lib/i18n/dictionaries";
+import { isValidResearchRunId } from "@/lib/research/run-id-validation";
 
 const LOCALE_TO_BCP47: Record<Locale, string> = {
   en: "en-US",
@@ -34,7 +35,7 @@ function safeRead(): HistoryEntry[] {
       (e: unknown): e is HistoryEntry =>
         typeof e === "object" &&
         e !== null &&
-        typeof (e as { id?: unknown }).id === "string" &&
+        isValidResearchRunId((e as { id?: unknown }).id) &&
         typeof (e as { query?: unknown }).query === "string",
     );
   } catch {
@@ -65,6 +66,7 @@ export function useResearchHistory() {
     keywords: string[],
     options: { id?: string; status?: HistoryEntry["status"]; createdAt?: string } = {},
   ) => {
+    if (options.id !== undefined && !isValidResearchRunId(options.id.trim())) return;
     const entry = createHistoryEntry(query, keywords, options);
     setHistory((prev) => {
       const next = upsertHistoryEntry(prev, entry);
@@ -94,8 +96,12 @@ export function createHistoryEntry(
   keywords: string[],
   options: { id?: string; status?: HistoryEntry["status"]; createdAt?: string } = {},
 ): HistoryEntry {
+  const requestedId = options.id?.trim();
+  if (requestedId !== undefined && !isValidResearchRunId(requestedId)) {
+    throw new TypeError("Invalid research run id");
+  }
   return {
-    id: options.id?.trim() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: requestedId || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     query: query.trim(),
     keywords: [...keywords],
     createdAt: options.createdAt || new Date().toISOString(),

@@ -1,12 +1,7 @@
 import * as path from "node:path";
+import { isValidResearchRunId } from "./run-id-validation";
 
-// Keep legacy alphanumeric, dash, and underscore IDs readable while excluding
-// every path separator, dot segment, percent-encoded separator, and control.
-const RESEARCH_RUN_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
-
-export function isValidResearchRunId(id: unknown): id is string {
-  return typeof id === "string" && RESEARCH_RUN_ID_PATTERN.test(id);
-}
+export { isValidResearchRunId } from "./run-id-validation";
 
 /** Resolve a run file only when it remains a direct child of `runsDir`. */
 export function resolveResearchRunFilePath(

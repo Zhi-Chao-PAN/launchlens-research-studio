@@ -103,6 +103,11 @@ describe("history utilities (round 139)", () => {
     makeEntry("4", "Distributed ledger adoption", ["ledger", "crypto"], 10),
   ];
 
+  it("rejects an explicit traversal-capable run id", () => {
+    expect(() => createHistoryEntry("unsafe", [], { id: "../../admin" }))
+      .toThrow("Invalid research run id");
+  });
+
   it("searchHistory filters by query", () => {
     const r = searchHistory(entries, "AI");
     expect(r).toHaveLength(2);

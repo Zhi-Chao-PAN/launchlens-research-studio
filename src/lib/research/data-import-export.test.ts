@@ -146,6 +146,13 @@ describe("data-import-export", () => {
       const errors = validateDataPackage(pkg);
       expect(errors.some((e) => e.includes("missing id"))).toBe(true);
     });
+
+    it("rejects runs with traversal-capable ids", () => {
+      const pkg: any = createDataPackage({});
+      pkg.data.runs = [makeRun("../../admin")];
+      const errors = validateDataPackage(pkg);
+      expect(errors.some((e) => e.includes("invalid id"))).toBe(true);
+    });
   });
 
   describe("importDataPackage", () => {

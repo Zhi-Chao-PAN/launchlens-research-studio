@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { useResearchHistory } from "@/lib/research/history";
+import { isValidResearchRunId } from "@/lib/research/run-id-validation";
 import { findRelatedRuns } from "@/lib/research/suggestions";
 
 interface RelatedRunsProps {
@@ -32,10 +33,12 @@ export function RelatedRuns({ runId, keywords, limit = 5 }: RelatedRunsProps) {
     if (!hydrated) return [];
     const stableKeywords = JSON.parse(keywordsKey) as string[];
     const target = { id: runId, keywords: stableKeywords, query: "" };
-    const runs = history.map((entry) => ({
-      ...entry,
-      createdAt: new Date(entry.createdAt).getTime() || 0,
-    }));
+    const runs = history
+      .filter((entry) => isValidResearchRunId(entry.id))
+      .map((entry) => ({
+        ...entry,
+        createdAt: new Date(entry.createdAt).getTime() || 0,
+      }));
     return findRelatedRuns(target, runs, limit);
   }, [history, hydrated, runId, keywordsKey, limit]);
 
@@ -59,23 +62,26 @@ export function RelatedRuns({ runId, keywords, limit = 5 }: RelatedRunsProps) {
         <span className="related-runs-count">{related.length}</span>
       </h4>
       <div className="related-runs-list">
-        {related.map(({ run, similarity, sharedKeywords }) => (
-          <Link key={run.id} href={`/research/${run.id}`} className="related-run-item">
-            <div className="related-run-header">
-              <span className="related-run-query">{run.query}</span>
-              <span className="related-run-similarity">
-                {Math.round(similarity * 100)}%
-              </span>
-            </div>
-            {sharedKeywords.length > 0 ? (
-              <div className="related-run-keywords">
-                {sharedKeywords.map((keyword) => (
-                  <span key={keyword} className="related-kw-tag">{keyword}</span>
-                ))}
+        {related.map(({ run, similarity, sharedKeywords }) => {
+          const safeRunId = encodeURIComponent(run.id);
+          return (
+            <Link key={safeRunId} href={`/research/${safeRunId}`} className="related-run-item">
+              <div className="related-run-header">
+                <span className="related-run-query">{run.query}</span>
+                <span className="related-run-similarity">
+                  {Math.round(similarity * 100)}%
+                </span>
               </div>
-            ) : null}
-          </Link>
-        ))}
+              {sharedKeywords.length > 0 ? (
+                <div className="related-run-keywords">
+                  {sharedKeywords.map((keyword) => (
+                    <span key={keyword} className="related-kw-tag">{keyword}</span>
+                  ))}
+                </div>
+              ) : null}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 // @vitest-environment node
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { isValidResearchRunId, resolveResearchRunFilePath } from "./run-id";
+import { resolveResearchRunFilePath } from "./run-id";
+import { isValidResearchRunId } from "./run-id-validation";
 
 describe("research run id boundary", () => {
   it("keeps existing safe id formats readable", () => {
