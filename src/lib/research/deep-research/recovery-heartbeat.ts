@@ -229,18 +229,24 @@ export async function appendRecoveryHistoryEntry(
 }
 
 function parseHistoryEntry(raw: unknown): RecoveryHistoryEntry | null {
-  if (typeof raw !== "string") return null;
+  let parsed: unknown = raw;
   try {
-    const parsed = JSON.parse(raw) as Partial<RecoveryHistoryEntry>;
-    if (typeof parsed.at !== "string") return null;
+    // Upstash Redis deserializes JSON list members for typed `lrange` calls,
+    // while lightweight adapters and older clients return the raw JSON text.
+    // Accept both shapes at this trust boundary so production history is not
+    // silently discarded just because the client chose a different decode.
+    if (typeof raw === "string") parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const entry = parsed as Partial<RecoveryHistoryEntry>;
+    if (typeof entry.at !== "string") return null;
     return {
-      ok: parsed.ok === true,
-      at: parsed.at,
-      durationMs: typeof parsed.durationMs === "number" ? parsed.durationMs : 0,
-      dispatched: typeof parsed.dispatched === "number" ? parsed.dispatched : 0,
-      failed: typeof parsed.failed === "number" ? parsed.failed : 0,
-      errorCode: typeof parsed.errorCode === "string" ? parsed.errorCode : null,
-      requestId: typeof parsed.requestId === "string" ? parsed.requestId : "",
+      ok: entry.ok === true,
+      at: entry.at,
+      durationMs: typeof entry.durationMs === "number" ? entry.durationMs : 0,
+      dispatched: typeof entry.dispatched === "number" ? entry.dispatched : 0,
+      failed: typeof entry.failed === "number" ? entry.failed : 0,
+      errorCode: typeof entry.errorCode === "string" ? entry.errorCode : null,
+      requestId: typeof entry.requestId === "string" ? entry.requestId : "",
     };
   } catch {
     return null;
