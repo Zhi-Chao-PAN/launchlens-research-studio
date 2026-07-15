@@ -315,7 +315,8 @@ async function run() {
     console.log("\n[2] Ordered three-key provider failover editor");
     await page.locator(".ops-nav button").filter({ hasText: "Provider keys" }).click();
     await page.locator("#main-content h1").filter({ hasText: "API key failover" }).waitFor();
-    const cards = page.locator(".ops-key-card");
+    const cards = page.locator(".ops-key-sequence > li > .ops-key-card");
+    await page.locator("#provider-key-3").waitFor({ state: "visible" });
     check("Exactly three key slots render", (await cards.count()) === 3);
     check("Slot 1 is the primary", await cards.nth(0).getByText("Primary", { exact: true }).isVisible());
     check("Slot 2 is fallback 1", await cards.nth(1).getByText("Fallback 1", { exact: true }).isVisible());
