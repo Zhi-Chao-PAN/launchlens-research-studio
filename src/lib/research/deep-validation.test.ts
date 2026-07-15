@@ -434,4 +434,126 @@ describe("deep claim extraction and pass reducers", () => {
       contradictingSourceIds: [],
     });
   });
+
+  /**
+   * R2A: a Pass 2 finding may only cite sources whose `claimIds`
+   * includes the claim under review. A source that was retrieved for
+   * the same agent but for a *sibling* claim must not be usable as
+   * corroborating evidence for the claim under review. The reviewer
+   * MUST be forced to `insufficient_evidence` if no other admissible
+   * source is provided.
+   *
+   * The setup uses `maxClaimsPerAgent: 2` so the first agent owns
+   * two distinct claims. We bind one source to the first claim and
+   * another to the second, both under the same agent, and prove the
+   * second source cannot corroborate the first.
+   */
+  it("Pass 2 cannot cite a same-agent source that was retrieved for a sibling claim", () => {
+    const initial = initializeDeepValidation(makeSession(), {
+      now: NOW,
+      maxClaims: 6,
+      maxClaimsPerAgent: 2,
+    });
+    const pass1 = applyClaimReviewPass(
+      initial,
+      "claim_source_entailment",
+      passFindings(initial, "claim_source_entailment"),
+      NOW,
+    );
+
+    // Find a pair of claims that share the same agent. The first is
+    // the "target" we will try to corroborate, the second is its
+    // "sibling" -- a different claim from the same agent.
+    const target = initial.claims[0];
+    const sibling = initial.claims.find(
+      (claim) => claim.id !== target.id && claim.agentId === target.agentId,
+    );
+    expect(sibling).toBeTruthy();
+
+    // Build a bound source for the target and a separate bound source
+    // for the sibling, both under the same agent. The sibling source
+    // must NOT be admissible as evidence for the target.
+    const ownSource = {
+      id: `independent-target-${target.id}`,
+      title: `Bound evidence for ${target.id}`,
+      url: `https://independent.example/${target.id}`,
+      snippet: `Fresh evidence that was retrieved specifically for ${target.id}.`,
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: target.agentId,
+      origin: "independent_retrieval" as const,
+      claimIds: [target.id],
+    };
+    const siblingSource = {
+      id: `independent-sibling-${sibling!.id}`,
+      title: `Bound evidence for ${sibling!.id}`,
+      url: `https://independent.example/${sibling!.id}`,
+      snippet: `Fresh evidence that was retrieved specifically for ${sibling!.id}.`,
+      accessedAt: NOW,
+      confidence: "medium" as const,
+      agent: target.agentId,
+      origin: "independent_retrieval" as const,
+      claimIds: [sibling!.id],
+    };
+    const withBoundSources = registerTrustedReviewSources(
+      pass1,
+      [ownSource, siblingSource],
+    );
+
+    // Reviewer tries to cite *only* the sibling source as supporting
+    // evidence. This must be rejected even though the source was
+    // retrieved for the same agent.
+    const pass2 = applyClaimReviewPass(
+      withBoundSources,
+      "independent_corroboration_conflict",
+      [{
+        claimId: target.id,
+        claimValueHash: target.valueHash,
+        pass: "independent_corroboration_conflict",
+        reviewer: REVIEWER,
+        verdict: "corroborated",
+        confidence: "high",
+        supportingSourceIds: [siblingSource.id],
+        contradictingSourceIds: [],
+        rationale: "Sibling evidence is not admissible; the source was not retrieved for this claim.",
+      }],
+      NOW,
+    );
+    const finding = pass2.findings.find(
+      (item) =>
+        item.claimId === target.id && item.pass === "independent_corroboration_conflict",
+    );
+    expect(finding).toMatchObject({
+      verdict: "insufficient_evidence",
+      supportingSourceIds: [],
+      contradictingSourceIds: [],
+    });
+
+    // Citing the bound source IS fine.
+    const pass2Ok = applyClaimReviewPass(
+      withBoundSources,
+      "independent_corroboration_conflict",
+      [{
+        claimId: target.id,
+        claimValueHash: target.valueHash,
+        pass: "independent_corroboration_conflict",
+        reviewer: REVIEWER,
+        verdict: "corroborated",
+        confidence: "high",
+        supportingSourceIds: [ownSource.id],
+        contradictingSourceIds: [],
+        rationale: "This source was retrieved for this exact claim and supports it.",
+      }],
+      NOW,
+    );
+    const findingOk = pass2Ok.findings.find(
+      (item) =>
+        item.claimId === target.id && item.pass === "independent_corroboration_conflict",
+    );
+    expect(findingOk).toMatchObject({
+      verdict: "corroborated",
+      supportingSourceIds: [ownSource.id],
+      contradictingSourceIds: [],
+    });
+  });
 });

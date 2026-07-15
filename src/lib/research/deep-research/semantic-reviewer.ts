@@ -320,8 +320,13 @@ export interface BuildClaimEvidenceSlicesOptions {
  *     of its own `claim.sourceIds` (Pass 1) or its own `claimIds` binding
  *     (Pass 2 / adjudication) so the prompt can never starve a claim because
  *     it happens to sort late in the global source array.
+ *   - The reserved set is itself bounded: no single claim can reserve more
+ *     than `maxSourcesPerClaim` entries; this is what makes the global
+ *     `maxTotalSources` an honest cap. (Before R2B a claim with 50 sources
+ *     would reserve all 50 and bypass the cap entirely.)
  *   - The union of all slices fits inside `maxTotalSources`; the cap is
- *     enforced by trimming the round-robin filler.
+ *     enforced by trimming BOTH the per-claim reserved set and the
+ *     round-robin filler.
  *   - Source ids are unique across the entire prompt payload.
  */
 export function buildClaimEvidenceSlices(
@@ -331,10 +336,18 @@ export function buildClaimEvidenceSlices(
   const sourcesById = new Map(ledger.reviewSources.map((source) => [source.id, source]));
   const slices: ClaimEvidenceSlice[] = [];
   const reserved = new Set<string>();
+  // R2B: per-claim ceiling applies to the reserved set as well as the
+  // filler, so a single heavy claim cannot exhaust the global budget.
+  const perClaimCap = options.maxSourcesPerClaim ?? 6;
+  const minPerClaim = Math.max(0, options.minSourcesPerClaim);
 
-  const reserveForClaim = (claim: ResearchClaim, ids: readonly string[]) => {
+  // 1) Reserved set per claim — every id in claim.sourceIds first, bounded
+  //    by `perClaimCap` and by the remaining global `maxTotalSources` budget.
+  for (const claim of ledger.claims) {
     const slice: ClaimEvidenceSlice = { claim, sources: [] };
-    for (const id of ids) {
+    for (const id of claim.sourceIds) {
+      if (slice.sources.length >= perClaimCap) break;
+      if (reserved.size >= options.maxTotalSources) break;
       const source = sourcesById.get(id);
       if (!source) continue;
       if (reserved.has(source.id)) continue;
@@ -342,22 +355,43 @@ export function buildClaimEvidenceSlices(
       slice.sources.push(source);
     }
     slices.push(slice);
-  };
-
-  // 1) Reserved set per claim — every id in claim.sourceIds first.
-  for (const claim of ledger.claims) {
-    reserveForClaim(claim, claim.sourceIds);
   }
 
   // 2) For Pass 2 (independent_corroboration_conflict) and adjudication, additionally
-  //    reserve per-claim independent sources whose claimIds include the claim.
+  //    reserve per-claim independent sources whose claimIds include the claim,
+  //    subject to the same per-claim and global caps.
   if (options.pass !== "claim_source_entailment") {
     for (const claim of ledger.claims) {
       const slice = slices.find((entry) => entry.claim.id === claim.id);
       if (!slice) continue;
       for (const source of ledger.reviewSources) {
+        if (slice.sources.length >= perClaimCap) break;
+        if (reserved.size >= options.maxTotalSources) break;
         if (source.origin !== "independent_retrieval") continue;
         if (!source.claimIds?.includes(claim.id)) continue;
+        if (reserved.has(source.id)) continue;
+        reserved.add(source.id);
+        slice.sources.push(source);
+      }
+    }
+  }
+
+  // R2B: enforce the `minSourcesPerClaim` floor on the reserved set so
+  // a claim with zero of its own sources is still guaranteed at least
+  // one admissible entry before any filler runs. We pick from the
+  // independent_retrieval pool whose `claimIds` includes the claim
+  // (so a source that wasn't retrieved for the claim cannot be used
+  // to satisfy its floor). If the claim still has zero entries after
+  // that pass, we fall back to the legacy round-robin filler below.
+  if (minPerClaim > 0) {
+    for (const slice of slices) {
+      if (slice.sources.length >= minPerClaim) continue;
+      for (const source of ledger.reviewSources) {
+        if (slice.sources.length >= minPerClaim) break;
+        if (slice.sources.length >= perClaimCap) break;
+        if (reserved.size >= options.maxTotalSources) break;
+        if (source.origin !== "independent_retrieval") continue;
+        if (!source.claimIds?.includes(slice.claim.id)) continue;
         if (reserved.has(source.id)) continue;
         reserved.add(source.id);
         slice.sources.push(source);
@@ -372,15 +406,14 @@ export function buildClaimEvidenceSlices(
   ];
 
   // 4) Distribute filler round-robin across claims (in claim order) up to maxTotalSources.
-  const perClaimCap = options.maxSourcesPerClaim ?? 6;
   let cursor = 0;
   for (const slice of slices) {
     if (reserved.size >= options.maxTotalSources) break;
     while (slice.sources.length < perClaimCap && cursor < filler.length) {
+      if (reserved.size >= options.maxTotalSources) break;
       const next = filler[cursor++];
       if (!next) break;
       if (reserved.has(next.id)) continue;
-      if (reserved.size >= options.maxTotalSources) break;
       reserved.add(next.id);
       slice.sources.push(next);
     }
