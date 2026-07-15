@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { probeDeepResearchCapability, resolveDeepWorkerOrigin } from "./capability";
+import type { RecoveryHeartbeat } from "./recovery-heartbeat";
+
+function staleHeartbeat(now: Date): RecoveryHeartbeat {
+  return {
+    lastOkAt: new Date(now.getTime() - 10 * 60 * 1000).toISOString(),
+    lastErrorAt: null,
+    lastErrorCode: null,
+    lastOkDurationMs: 200,
+    lastDispatched: 0,
+    lastFailed: 0,
+  };
+}
+
+function freshHeartbeat(now: Date): RecoveryHeartbeat {
+  return {
+    lastOkAt: new Date(now.getTime() - 30 * 1000).toISOString(),
+    lastErrorAt: null,
+    lastErrorCode: null,
+    lastOkDurationMs: 200,
+    lastDispatched: 0,
+    lastFailed: 0,
+  };
+}
 
 const readyEnv = {
   LAUNCHLENS_DEEP_ENABLED: "1",
@@ -19,19 +42,83 @@ const readyEnv = {
 
 describe("probeDeepResearchCapability", () => {
   it("is available only when every durable and strict requirement is ready", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
     const capability = await probeDeepResearchCapability({
       env: readyEnv,
       probeRedis: async () => true,
-      now: () => new Date("2026-07-13T00:00:00.000Z"),
+      readHeartbeat: async () => freshHeartbeat(now),
+      now: () => now,
     });
     expect(capability).toMatchObject({
       availability: "available",
       blockers: [],
-      checkedAt: "2026-07-13T00:00:00.000Z",
+      checkedAt: now.toISOString(),
       validationPasses: 3,
       retrieval: "required",
     });
     expect(capability.requirements.every((item) => item.ready)).toBe(true);
+  });
+
+  it("flips to preview with recovery_freshness degradation when the heartbeat is stale", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => staleHeartbeat(now),
+      now: () => now,
+    });
+    expect(capability.availability).toBe("preview");
+    expect(capability.degraded).toBe(true);
+    expect(capability.blockers).toEqual([]);
+    const freshness = capability.requirements.find(
+      (r) => r.id === "recovery_freshness",
+    );
+    expect(freshness?.ready).toBe(false);
+    expect(freshness?.detail).toMatch(/delayed/i);
+    expect(capability.lastRecoveryAt).not.toBeNull();
+    expect(capability.lastRecoveryAgeMs).not.toBeNull();
+    expect(capability.capabilityNotice).toMatch(/Recovery delayed|no fresh heartbeat/);
+  });
+
+  it("treats a never-observed heartbeat as stale and degrades recovery_freshness", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: readyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => ({
+        lastOkAt: null,
+        lastErrorAt: null,
+        lastErrorCode: null,
+        lastOkDurationMs: null,
+        lastDispatched: null,
+        lastFailed: null,
+      }),
+      now: () => now,
+    });
+    expect(capability.availability).toBe("preview");
+    expect(capability.lastRecoveryAt).toBeNull();
+    const freshness = capability.requirements.find(
+      (r) => r.id === "recovery_freshness",
+    );
+    expect(freshness?.ready).toBe(false);
+    expect(freshness?.detail).toMatch(/No successful recovery tick/);
+  });
+
+  it("does not add recovery_freshness as a blocker when independent_recovery is not declared", async () => {
+    const capability = await probeDeepResearchCapability({
+      env: { ...readyEnv, LAUNCHLENS_DEEP_RECOVERY_MODE: "" },
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(new Date()),
+    });
+    const freshness = capability.requirements.find(
+      (r) => r.id === "recovery_freshness",
+    );
+    // When independent_recovery is not declared, recovery_freshness is
+    // intentionally not enforced — it must never add its own blocker.
+    expect(freshness?.detail).toMatch(/Skipped/);
+    expect(capability.blockers).toContain("independent_recovery");
+    expect(capability.blockers).not.toContain("recovery_freshness");
+    expect(capability.degraded).toBe(false);
   });
 
   it("fails closed when recovery is merely daily or not independently declared", async () => {

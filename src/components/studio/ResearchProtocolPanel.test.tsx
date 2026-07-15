@@ -54,6 +54,8 @@ function deepCapability(
     retrieval: "required",
     requiresAsyncExecution: true,
     maxSynchronousDurationSec: 300,
+    lastRecoveryAt: NOW,
+    lastRecoveryAgeMs: 0,
   };
 }
 
