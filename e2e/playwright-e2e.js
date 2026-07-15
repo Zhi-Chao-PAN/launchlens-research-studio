@@ -118,11 +118,11 @@ async function run() {
     await settle(page, 300);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), fullPage: true });
 
-    // Wait for the hero h2 to be attached and visible. The old code used
-    // waitForSelector().catch(() => {}) which swallowed the timeout, then
-    // isChecked isVisible() on a possibly-not-yet-hydrated node. Use
-    // waitFor() which resolves only when the element is visible.
-    const heroLocator = page.locator("h2").filter({ hasText: /Research any market|市场|市場/ }).first();
+    // Wait for the hero h2 to be attached and visible. The h2 renders
+    // workspace.hero.title: "Build a research dossier..." (en) /
+    // "构建研究档案..." (zh) / "リサーチ・ドシエ..." (ja) /
+    // "리서치 자료..." (ko).
+    const heroLocator = page.locator("h2").filter({ hasText: /research dossier|研究档案|リサーチ|리서치/i }).first();
     const heroVisible = await heroLocator.waitFor({ state: "visible", timeout: 10000 })
       .then(() => true)
       .catch(() => false);
@@ -131,8 +131,12 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
     const hasQueryInput = await page.locator("textarea").first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
     log("Query textarea visible", hasQueryInput);
 
-    const hasStartButton = await page.locator('button:has-text("Start Research")').first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
-    log("Start Research button visible", hasStartButton);
+    // The submit button label is i18n-driven: "Start {mode}" (e.g.
+    // "Start Standard") when the selected mode is available, or
+    // "Deep Research in preparation" when it is not. Match by the
+    // stable "Start " prefix rather than a hardcoded literal.
+    const hasStartButton = await page.locator('button[type="submit"]').first().waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
+    log("Start button visible", hasStartButton);
 
     // ====== Test 2: Theme toggle ======
     console.log("\n[2] Theme toggle");
@@ -208,7 +212,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
     await settle(page, 300);
 await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
 
-    await page.locator('button:has-text("Start Research")').first().click();
+    await page.locator('button[type="submit"]').first().click();
 
     // Wait for the studio layout
     await page.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
