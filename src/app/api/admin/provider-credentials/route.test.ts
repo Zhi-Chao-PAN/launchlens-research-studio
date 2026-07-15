@@ -145,9 +145,13 @@ describe("/api/admin/provider-credentials", () => {
     expect(getText).not.toContain(apiKey);
     const getPayload = JSON.parse(getText) as {
       runtimeProvider: string | null;
+      targetProvider: string | null;
+      keyringEnabled: boolean;
       data: { revision: number; slots: Array<Record<string, unknown>> };
     };
     expect(getPayload.runtimeProvider).toBe("openai");
+    expect(getPayload.targetProvider).toBe("openai");
+    expect(getPayload.keyringEnabled).toBe(true);
     expect(getPayload.data.revision).toBe(1);
     expect(getPayload.data.slots).toHaveLength(3);
     expect(getPayload.data.slots[0]).toMatchObject({
@@ -162,6 +166,50 @@ describe("/api/admin/provider-credentials", () => {
     const stored = redisMock.current?.store.get(PROVIDER_CREDENTIALS_KEY);
     expect(stored).not.toContain(apiKey);
     expect(JSON.stringify(snapshotAuthAudit())).not.toContain(apiKey);
+  });
+
+  it("stages credentials for a configured target while runtime activation is disabled", async () => {
+    process.env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "0";
+    process.env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "openai";
+
+    const before = await GET(makeRequest("GET"));
+    expect(before.status).toBe(200);
+    expect(await before.json()).toMatchObject({
+      runtimeProvider: null,
+      targetProvider: "openai",
+      keyringEnabled: false,
+      data: { revision: 0 },
+    });
+
+    const staged = await PUT(
+      makeRequest("PUT", {
+        provider: "openai",
+        slot: 1,
+        expectedRevision: 0,
+        apiKey: "sk-route-staged-before-activation-123456",
+      }),
+    );
+
+    expect(staged.status).toBe(200);
+    const stagedPayload = (await staged.json()) as {
+      runtimeProvider: string | null;
+      targetProvider: string | null;
+      keyringEnabled: boolean;
+      data: {
+        revision: number;
+        slots: Array<{ isConfigured: boolean; provider: string | null }>;
+      };
+    };
+    expect(stagedPayload).toMatchObject({
+      runtimeProvider: null,
+      targetProvider: "openai",
+      keyringEnabled: false,
+      data: { revision: 1 },
+    });
+    expect(stagedPayload.data.slots[0]).toMatchObject({
+      isConfigured: true,
+      provider: "openai",
+    });
   });
 
   it("supports enable/disable updates without accepting an empty mutation", async () => {
@@ -273,7 +321,7 @@ describe("/api/admin/provider-credentials", () => {
     expect(await response.json()).toEqual({
       error: {
         code: "PROVIDER_KEYRING_RUNTIME_PROVIDER_UNAVAILABLE",
-        message: "Managed provider keyring runtime configuration is unavailable.",
+        message: "Managed provider keyring target provider is unavailable.",
       },
     });
     expect(redisMock.current?.store.size).toBe(0);

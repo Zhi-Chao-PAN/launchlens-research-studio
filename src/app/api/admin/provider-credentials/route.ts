@@ -17,7 +17,11 @@ import { checkCors, handleOptions } from "@/lib/api/cors";
 import { verifyCsrf } from "@/lib/api/csrf-guard";
 import { rotateCsrf } from "@/lib/api/csrf-rotate";
 import { requireAdmin, type AdminAuthOk } from "@/lib/api/require-admin";
-import { resolveManagedKeyringProvider } from "@/lib/providers/managed-keyring-config";
+import {
+  isManagedKeyringEnabled,
+  resolveManagedKeyringProvider,
+  resolveManagedKeyringTargetProvider,
+} from "@/lib/providers/managed-keyring-config";
 import { hashIp } from "@/lib/telemetry/request-log";
 
 const MAX_BODY_BYTES = 4_096;
@@ -39,7 +43,7 @@ export async function GET(request: NextRequest) {
   try {
     const data = await getProviderCredentialsSnapshot();
     return NextResponse.json(
-      { data, runtimeProvider: resolveManagedKeyringProvider(process.env) },
+      providerCredentialsPayload(data),
       { headers: cors.headers },
     );
   } catch (error) {
@@ -52,18 +56,18 @@ export async function PUT(request: NextRequest) {
   if (!preflight.ok) return preflight.response;
   const parsed = await readMutationBody(request, true);
   if (!parsed.ok) return applyHeaders(parsed.response, preflight.headers);
-  const runtimeProvider = resolveManagedKeyringProvider(process.env);
-  if (!runtimeProvider) {
+  const targetProvider = resolveManagedKeyringTargetProvider(process.env);
+  if (!targetProvider) {
     return applyHeaders(
       apiError(
         503,
         "PROVIDER_KEYRING_RUNTIME_PROVIDER_UNAVAILABLE",
-        "Managed provider keyring runtime configuration is unavailable.",
+        "Managed provider keyring target provider is unavailable.",
       ),
       preflight.headers,
     );
   }
-  if (parsed.body.provider !== runtimeProvider) {
+  if (parsed.body.provider !== targetProvider) {
     return applyHeaders(
       apiError(
         409,
@@ -89,7 +93,7 @@ export async function PUT(request: NextRequest) {
     auditCredentialMutation(preflight.auth, "updated", parsed.body);
     return rotateCsrf(
       NextResponse.json(
-        { data, runtimeProvider },
+        providerCredentialsPayload(data),
         { headers: preflight.headers },
       ),
     );
@@ -113,10 +117,7 @@ export async function DELETE(request: NextRequest) {
     auditCredentialMutation(preflight.auth, "deleted", parsed.body);
     return rotateCsrf(
       NextResponse.json(
-        {
-          data,
-          runtimeProvider: resolveManagedKeyringProvider(process.env),
-        },
+        providerCredentialsPayload(data),
         { headers: preflight.headers },
       ),
     );
@@ -130,6 +131,17 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export const runtime = "nodejs";
+
+function providerCredentialsPayload(
+  data: Awaited<ReturnType<typeof getProviderCredentialsSnapshot>>,
+) {
+  return {
+    data,
+    runtimeProvider: resolveManagedKeyringProvider(process.env),
+    targetProvider: resolveManagedKeyringTargetProvider(process.env),
+    keyringEnabled: isManagedKeyringEnabled(process.env),
+  };
+}
 
 function authorizeMutation(
   request: NextRequest,

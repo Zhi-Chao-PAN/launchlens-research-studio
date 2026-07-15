@@ -39,11 +39,144 @@ describe("evidence ledger security boundaries", () => {
 
     expect(painQueries).toHaveLength(3);
     expect(new Set(painQueries).size).toBe(3);
-    expect(painQueries.every((item) => item.length <= 280)).toBe(true);
+    expect(painQueries.every((item) => item.length <= 200)).toBe(true);
     expect(painQueries[0]).toMatch(/Reddit, Indie Hackers, G2/i);
     expect(pricingQueries).toHaveLength(3);
-    expect(pricingQueries[0]).toMatch(/^Official pricing pages/i);
+    expect(pricingQueries[0]).toMatch(/Official pricing pages/i);
     expect(pricingQueries[0]).not.toMatch(/^market size TAM SAM SOM/i);
+  });
+
+  it("builds short category-first pricing queries from at most two sanitized keywords", () => {
+    const query =
+      "Evaluate the market opportunity for a bilingual AI research workspace serving APAC SaaS founders, with emphasis on validated willingness to pay.";
+    const keywords = [
+      "  AI\nmarket   research ",
+      "APAC\tSaaS",
+      "bilingual founders",
+    ];
+
+    const primaryQueries = buildDeepRetrievalQueries(
+      query,
+      "pricing-scout",
+      keywords,
+    );
+    const rescueQueries = buildDeepRetrievalRescueQueries(
+      query,
+      "pricing-scout",
+      keywords,
+    );
+
+    expect([...primaryQueries, ...rescueQueries]).toHaveLength(5);
+    expect(
+      [...primaryQueries, ...rescueQueries].every((item) => item.length <= 200),
+    ).toBe(true);
+    expect(
+      [...primaryQueries, ...rescueQueries].every((item) =>
+        item.startsWith(
+          "bilingual AI research workspace serving APAC SaaS founders",
+        ),
+      ),
+    ).toBe(true);
+    expect([...primaryQueries, ...rescueQueries].join(" ")).toContain("founders market");
+    expect([...primaryQueries, ...rescueQueries].join(" ")).not.toContain(
+      "founders AI market research",
+    );
+    expect([...primaryQueries, ...rescueQueries].join(" ")).not.toContain(
+      "Evaluate the market opportunity",
+    );
+    expect([...primaryQueries, ...rescueQueries].join(" ")).not.toContain(
+      "validated willingness to pay",
+    );
+  });
+
+  it("retains product and audience when keywords are broad single terms", () => {
+    const queries = buildDeepRetrievalQueries(
+      "Assess the market opportunity for an AI-powered note-taking app for university students, including adoption barriers, pricing, and a 90-day launch plan.",
+      "pricing-scout",
+      ["AI", "education", "SaaS"],
+    );
+
+    expect(queries).toHaveLength(3);
+    expect(queries.every((item) => item.length <= 200)).toBe(true);
+    expect(
+      queries.every((item) =>
+        item.startsWith(
+          "AI-powered note-taking app for university students education SaaS.",
+        ),
+      ),
+    ).toBe(true);
+    expect(queries.join(" ")).toContain("note-taking app");
+    expect(queries.join(" ")).toContain("university students");
+  });
+
+  it("adds only missing tokens when a keyword partially overlaps the query subject", () => {
+    const queries = buildDeepRetrievalQueries(
+      "Evaluate the market opportunity for a bilingual AI research workspace serving APAC SaaS founders, with emphasis on pricing.",
+      "pricing-scout",
+      ["AI market research"],
+    );
+
+    expect(
+      queries.every((item) =>
+        item.startsWith(
+          "bilingual AI research workspace serving APAC SaaS founders market.",
+        ),
+      ),
+    ).toBe(true);
+    expect(queries.join(" ")).not.toContain("AI research workspace AI market research");
+  });
+
+  it("uses normalized substring coverage to avoid repeating Chinese keywords", () => {
+    const queries = buildDeepRetrievalQueries(
+      "评估面向大学生的人工智能研究平台的市场机会，重点关注定价与采用障碍。",
+      "pricing-scout",
+      ["人工智能"],
+    );
+
+    expect(
+      queries.every((item) => item.startsWith("面向大学生的人工智能研究平台.")),
+    ).toBe(true);
+    expect(queries.every((item) => !item.startsWith("面向大学生的人工智能研究平台 人工智能."))).toBe(
+      true,
+    );
+  });
+
+  it("preserves semantic punctuation when plain keyword tokens overlap", () => {
+    const cAndR = buildDeepRetrievalQueries(
+      "Assess C programming tooling for university programming courses, including pricing.",
+      "pricing-scout",
+      ["C++", "R&D"],
+    );
+    const node = buildDeepRetrievalQueries(
+      "Assess Node developer tooling for university programming courses, including pricing.",
+      "pricing-scout",
+      ["Node.js"],
+    );
+
+    expect(
+      cAndR.every((item) =>
+        item.startsWith("C programming tooling for university programming courses C++ R&D."),
+      ),
+    ).toBe(true);
+    expect(
+      node.every((item) =>
+        item.startsWith("Node developer tooling for university programming courses Node.js."),
+      ),
+    ).toBe(true);
+  });
+
+  it("uses keywords or specialist focus only when the product query is empty", () => {
+    const keywordFallback = buildDeepRetrievalQueries(
+      "",
+      "pricing-scout",
+      ["AI", "education", "SaaS"],
+    );
+    const focusFallback = buildDeepRetrievalQueries("", "pricing-scout");
+
+    expect(keywordFallback.every((item) => item.startsWith("AI education."))).toBe(true);
+    expect(focusFallback[0]).toMatch(
+      /^pricing pages plans tiers willingness to pay benchmarks\./,
+    );
   });
 
   it("builds two bounded diversity-rescue queries without copying an oversized brief", () => {
@@ -54,9 +187,9 @@ describe("evidence ledger security boundaries", () => {
 
     expect(rescueQueries).toHaveLength(2);
     expect(new Set(rescueQueries).size).toBe(2);
-    expect(rescueQueries.every((item) => item.length <= 280)).toBe(true);
-    expect(rescueQueries[0]).toMatch(/^Independent evidence from additional publishers/i);
-    expect(rescueQueries[1]).toMatch(/^Dated primary, official, and analyst sources/i);
+    expect(rescueQueries.every((item) => item.length <= 200)).toBe(true);
+    expect(rescueQueries[0]).toMatch(/Independent evidence from additional publishers/i);
+    expect(rescueQueries[1]).toMatch(/Dated primary, official, and analyst sources/i);
   });
 
   it("persists only canonical public retrieval URLs", () => {

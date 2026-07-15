@@ -46,12 +46,12 @@ export function ProviderKeysPanel({
     resourceKey: "provider-credentials",
   });
   const snapshot = resource.data;
-  const provider = snapshot?.runtimeProvider ?? null;
+  const targetProvider = snapshot?.targetProvider ?? null;
   const providerMismatch = Boolean(
     snapshot?.slots.some(
       (slot) =>
         slot.isConfigured &&
-        (!provider || slot.provider !== provider),
+        (!targetProvider || slot.provider !== targetProvider),
     ),
   );
 
@@ -60,12 +60,12 @@ export function ProviderKeysPanel({
     apiKey: string;
     enabled: boolean;
   }): Promise<boolean> {
-    if (!snapshot || !provider || providerMismatch) return false;
+    if (!snapshot || !targetProvider || providerMismatch) return false;
     setPendingSlot(input.slot);
     setActionError(null);
     try {
       const next = await saveProviderCredential({
-        provider,
+        provider: targetProvider,
         slot: input.slot,
         expectedRevision: snapshot.revision,
         ...(input.apiKey ? { apiKey: input.apiKey } : {}),
@@ -96,7 +96,7 @@ export function ProviderKeysPanel({
         error instanceof AdminApiError &&
         error.code === "PROVIDER_KEYRING_RUNTIME_PROVIDER_UNAVAILABLE"
       ) {
-        setActionError(t("providers.runtimeProviderUnavailable"));
+        setActionError(t("providers.targetProviderUnavailable"));
         await resource.refresh();
       } else if (error instanceof AdminApiError && error.status === 503) {
         setActionError(t("providers.unavailable"));
@@ -189,10 +189,23 @@ export function ProviderKeysPanel({
         </div>
       ) : null}
 
-      {!resource.isLoading && snapshot && !provider && !providerMismatch ? (
+      {!resource.isLoading && snapshot && !targetProvider && !providerMismatch ? (
         <div className="ops-inline-state ops-inline-state-error" role="alert">
           <AdminIcon name="warning" />
-          <span>{t("providers.runtimeProviderUnavailable")}</span>
+          <span>{t("providers.targetProviderUnavailable")}</span>
+        </div>
+      ) : null}
+
+      {!resource.isLoading &&
+      snapshot &&
+      targetProvider &&
+      !snapshot.keyringEnabled ? (
+        <div className="ops-inline-state" role="status">
+          <AdminIcon name="warning" />
+          <div>
+            <strong>{t("providers.stagedTitle")}</strong>
+            <p>{t("providers.stagedBody")}</p>
+          </div>
         </div>
       ) : null}
 
@@ -202,12 +215,22 @@ export function ProviderKeysPanel({
             <div>
               <p className="ops-panel-index">01</p>
               <h2 id="provider-control-title">{t("providers.flow")}</h2>
-              <span>{t("providers.revision", { revision: snapshot.revision })}</span>
+              <span>
+                {t("providers.revision", { revision: snapshot.revision })}
+                {" · "}
+                {t(
+                  snapshot.keyringEnabled
+                    ? "providers.activationActive"
+                    : "providers.activationStaged",
+                )}
+              </span>
             </div>
             <label className="ops-field" htmlFor="provider-name">
-              <span>{t("providers.activeProvider")}</span>
+              <span>{t("providers.targetProvider")}</span>
               <output id="provider-name" className="ops-readonly-value">
-                {provider ? formatProviderName(provider) : t("providers.notConfigured")}
+                {targetProvider
+                  ? formatProviderName(targetProvider)
+                  : t("providers.notConfigured")}
               </output>
             </label>
           </section>
@@ -221,7 +244,7 @@ export function ProviderKeysPanel({
                   t={t}
                   pending={pendingSlot === slot.slot}
                   writeDisabled={
-                    !provider ||
+                    !targetProvider ||
                     providerMismatch ||
                     (pendingSlot !== null && pendingSlot !== slot.slot)
                   }

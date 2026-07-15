@@ -54,6 +54,15 @@ describe("selectProvider", () => {
     expect(selectProvider(env).id).toBe("openai-keyring");
   });
 
+  it("keeps the legacy provider active while managed credentials are staged", () => {
+    env.OPENAI_API_KEY = "legacy-key";
+    env.LAUNCHLENS_PROVIDER = "openai";
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "0";
+    env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "openai";
+
+    expect(selectProvider(env).id).toBe("openai");
+  });
+
   it("never treats legacy env keys as a fourth key when the keyring is enabled", () => {
     env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
     env.OPENAI_API_KEY = "legacy-key";
