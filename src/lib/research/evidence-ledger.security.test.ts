@@ -39,20 +39,21 @@ describe("evidence ledger security boundaries", () => {
 
     expect(painQueries).toHaveLength(3);
     expect(new Set(painQueries).size).toBe(3);
-    expect(painQueries.every((item) => item.length <= 200)).toBe(true);
+    expect(painQueries.every((item) => item.length <= 120)).toBe(true);
     expect(painQueries[0]).toMatch(/Reddit, Indie Hackers, G2/i);
     expect(pricingQueries).toHaveLength(3);
     expect(pricingQueries[0]).toMatch(/Official pricing pages/i);
     expect(pricingQueries[0]).not.toMatch(/^market size TAM SAM SOM/i);
   });
 
-  it("builds short category-first pricing queries from at most two sanitized keywords", () => {
+  it("builds production-shaped pricing queries from a complete category anchor", () => {
     const query =
       "Evaluate the market opportunity for a bilingual AI research workspace serving APAC SaaS founders, with emphasis on validated willingness to pay.";
     const keywords = [
       "  AI\nmarket   research ",
       "APAC\tSaaS",
       "bilingual founders",
+      "willingness to pay",
     ];
 
     const primaryQueries = buildDeepRetrievalQueries(
@@ -66,21 +67,28 @@ describe("evidence ledger security boundaries", () => {
       keywords,
     );
 
+    expect(primaryQueries).toEqual([
+      "AI market research software official pricing pages and plans APAC SaaS",
+      "AI market research SaaS pricing and packaging benchmarks bilingual founders",
+      "AI market research customer reviews and price sensitivity willingness to pay",
+    ]);
+    expect(rescueQueries).toEqual([
+      "AI market research software pricing comparison",
+      "AI market research buyer budget benchmarks",
+    ]);
     expect([...primaryQueries, ...rescueQueries]).toHaveLength(5);
     expect(
-      [...primaryQueries, ...rescueQueries].every((item) => item.length <= 200),
+      [...primaryQueries, ...rescueQueries].every((item) => item.length <= 120),
     ).toBe(true);
     expect(
       [...primaryQueries, ...rescueQueries].every((item) =>
-        item.startsWith(
-          "bilingual AI research workspace serving APAC SaaS founders",
-        ),
+        item.startsWith("AI market research "),
       ),
     ).toBe(true);
-    expect([...primaryQueries, ...rescueQueries].join(" ")).toContain("founders market");
-    expect([...primaryQueries, ...rescueQueries].join(" ")).not.toContain(
-      "founders AI market research",
-    );
+    expect(primaryQueries.filter((item) => item.includes("APAC SaaS"))).toHaveLength(1);
+    expect(primaryQueries.filter((item) => item.includes("bilingual founders"))).toHaveLength(1);
+    expect(primaryQueries.filter((item) => item.includes("willingness to pay"))).toHaveLength(1);
+    expect(rescueQueries.join(" ")).not.toMatch(/additional publishers|dated primary/i);
     expect([...primaryQueries, ...rescueQueries].join(" ")).not.toContain(
       "Evaluate the market opportunity",
     );
@@ -97,19 +105,19 @@ describe("evidence ledger security boundaries", () => {
     );
 
     expect(queries).toHaveLength(3);
-    expect(queries.every((item) => item.length <= 200)).toBe(true);
+    expect(queries.every((item) => item.length <= 120)).toBe(true);
     expect(
       queries.every((item) =>
-        item.startsWith(
-          "AI-powered note-taking app for university students education SaaS.",
-        ),
+        item.startsWith("AI-powered note-taking app for university students "),
       ),
     ).toBe(true);
     expect(queries.join(" ")).toContain("note-taking app");
     expect(queries.join(" ")).toContain("university students");
+    expect(queries.filter((item) => item.includes("education"))).toHaveLength(1);
+    expect(queries.filter((item) => item.includes("SaaS"))).toHaveLength(1);
   });
 
-  it("adds only missing tokens when a keyword partially overlaps the query subject", () => {
+  it("preserves a complete category phrase instead of appending missing tokens", () => {
     const queries = buildDeepRetrievalQueries(
       "Evaluate the market opportunity for a bilingual AI research workspace serving APAC SaaS founders, with emphasis on pricing.",
       "pricing-scout",
@@ -118,12 +126,65 @@ describe("evidence ledger security boundaries", () => {
 
     expect(
       queries.every((item) =>
-        item.startsWith(
-          "bilingual AI research workspace serving APAC SaaS founders market.",
-        ),
+        item.startsWith("AI market research "),
       ),
     ).toBe(true);
-    expect(queries.join(" ")).not.toContain("AI research workspace AI market research");
+    expect(queries.join(" ")).not.toContain("founders market");
+  });
+
+  it("does not let qualifier-only keywords replace the product subject", () => {
+    const queries = buildDeepRetrievalQueries(
+      "Assess the market opportunity for an AI note-taking app for students",
+      "pricing-scout",
+      ["APAC SaaS", "willingness to pay"],
+    );
+
+    expect(
+      queries.every((item) => item.startsWith("AI note-taking app for students ")),
+    ).toBe(true);
+    expect(queries.filter((item) => item.includes("APAC SaaS"))).toHaveLength(1);
+    expect(queries.filter((item) => item.includes("willingness to pay"))).toHaveLength(1);
+  });
+
+  it("selects the category anchor independently of keyword order", () => {
+    const queries = buildDeepRetrievalQueries(
+      "Evaluate the market opportunity for a bilingual AI research workspace serving APAC SaaS founders",
+      "pricing-scout",
+      ["willingness to pay", "APAC SaaS", "AI market research", "bilingual founders"],
+    );
+
+    expect(queries.every((item) => item.startsWith("AI market research "))).toBe(true);
+    expect(queries.join(" ")).not.toMatch(/^willingness to pay|^APAC SaaS/);
+  });
+
+  it("does not replace a complete subject with a generic category token", () => {
+    const keywordSets = [
+      ["software", "APAC"],
+      ["product managers"],
+      ["research budget"],
+      ["软件"],
+    ];
+
+    for (const keywords of keywordSets) {
+      const queries = buildDeepRetrievalQueries(
+        "Assess the market opportunity for an AI note-taking app for students",
+        "pricing-scout",
+        keywords,
+      );
+      expect(
+        queries.every((item) => item.startsWith("AI note-taking app for students ")),
+      ).toBe(true);
+    }
+  });
+
+  it("selects an explicit Chinese market-research category anchor", () => {
+    const queries = buildDeepRetrievalQueries(
+      "请评估这个想法的市场机会",
+      "pricing-scout",
+      ["人工智能市场研究", "亚太软件创始人"],
+    );
+
+    expect(queries.every((item) => item.startsWith("人工智能市场研究 "))).toBe(true);
   });
 
   it("uses normalized substring coverage to avoid repeating Chinese keywords", () => {
@@ -134,9 +195,9 @@ describe("evidence ledger security boundaries", () => {
     );
 
     expect(
-      queries.every((item) => item.startsWith("面向大学生的人工智能研究平台.")),
+      queries.every((item) => item.startsWith("面向大学生的人工智能研究平台 ")),
     ).toBe(true);
-    expect(queries.every((item) => !item.startsWith("面向大学生的人工智能研究平台 人工智能."))).toBe(
+    expect(queries.every((item) => !item.startsWith("面向大学生的人工智能研究平台 人工智能 "))).toBe(
       true,
     );
   });
@@ -155,14 +216,17 @@ describe("evidence ledger security boundaries", () => {
 
     expect(
       cAndR.every((item) =>
-        item.startsWith("C programming tooling for university programming courses C++ R&D."),
+        item.startsWith("C programming tooling for university programming courses "),
       ),
     ).toBe(true);
+    expect(cAndR.filter((item) => item.includes("C++"))).toHaveLength(1);
+    expect(cAndR.filter((item) => item.includes("R&D"))).toHaveLength(1);
     expect(
       node.every((item) =>
-        item.startsWith("Node developer tooling for university programming courses Node.js."),
+        item.startsWith("Node developer tooling for university programming courses "),
       ),
     ).toBe(true);
+    expect(node.filter((item) => item.includes("Node.js"))).toHaveLength(1);
   });
 
   it("uses keywords or specialist focus only when the product query is empty", () => {
@@ -173,9 +237,9 @@ describe("evidence ledger security boundaries", () => {
     );
     const focusFallback = buildDeepRetrievalQueries("", "pricing-scout");
 
-    expect(keywordFallback.every((item) => item.startsWith("AI education."))).toBe(true);
+    expect(keywordFallback.every((item) => item.startsWith("AI education "))).toBe(true);
     expect(focusFallback[0]).toMatch(
-      /^pricing pages plans tiers willingness to pay benchmarks\./,
+      /^pricing pages plans tiers willingness to pay benchmarks /,
     );
   });
 
@@ -187,9 +251,10 @@ describe("evidence ledger security boundaries", () => {
 
     expect(rescueQueries).toHaveLength(2);
     expect(new Set(rescueQueries).size).toBe(2);
-    expect(rescueQueries.every((item) => item.length <= 200)).toBe(true);
-    expect(rescueQueries[0]).toMatch(/Independent evidence from additional publishers/i);
-    expect(rescueQueries[1]).toMatch(/Dated primary, official, and analyst sources/i);
+    expect(rescueQueries.every((item) => item.length <= 120)).toBe(true);
+    expect(rescueQueries.join(" ")).not.toMatch(/additional publishers|dated primary/i);
+    expect(rescueQueries[0]).toMatch(/software pricing comparison/i);
+    expect(rescueQueries[1]).toMatch(/buyer budget benchmarks/i);
   });
 
   it("persists only canonical public retrieval URLs", () => {

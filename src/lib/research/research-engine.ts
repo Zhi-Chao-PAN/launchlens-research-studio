@@ -719,7 +719,9 @@ interface AgentEvidenceInput {
     retryable: boolean;
   };
   deepCoverage?: {
+    rawStructuralPerQuery: number[];
     admittedPerQuery: number[];
+    highestScorePerQuery: Array<number | null>;
     coveredQueries: number;
     distinctHosts: number;
     queryCount: number;
@@ -802,7 +804,6 @@ async function prepareAgentEvidence(
           agentId,
           maxResults: deepRetrieval ? 5 : 6,
           searchDepth: deepRetrieval ? "advanced" : "basic",
-          minScore: deepRetrieval ? DEEP_MIN_RETRIEVAL_SCORE : undefined,
           includeDomains:
             deepRetrieval && agentId === "pain-detective" && queryIndex === 0
               ? DEEP_VOC_DOMAINS
@@ -822,13 +823,22 @@ async function prepareAgentEvidence(
     ) {
       throw preferredRetrievalFailure(failures);
     }
-    const resultSets = primarySettled.map((result) =>
+    const structuralResultSets = primarySettled.map((result) =>
       result.status === "fulfilled"
-        ? (deepRetrieval ? admitDeepSourceCandidates(result.value) : result.value)
+        ? (deepRetrieval ? deepStructuralSourceCandidates(result.value) : result.value)
         : [],
     );
+    const resultSets = deepRetrieval
+      ? structuralResultSets.map(admitDeepSourceCandidates)
+      : structuralResultSets;
+    const rawStructuralPerQuery = deepRetrieval
+      ? structuralResultSets.map((sources) => sources.length)
+      : [];
     const admittedPerQuery = deepRetrieval
       ? resultSets.map((sources) => sources.length)
+      : [];
+    const highestScorePerQuery = deepRetrieval
+      ? structuralResultSets.map(highestDeepCandidateScore)
       : [];
     let deepSelection = deepRetrieval
       ? selectDeepRetrievedSources(resultSets, 8)
@@ -854,17 +864,21 @@ async function prepareAgentEvidence(
             agentId,
             maxResults: 8,
             searchDepth: "advanced",
-            minScore: DEEP_MIN_RETRIEVAL_SCORE,
             excludeDomains: excludedDomains,
             signal,
           });
-          const admittedSources = admitDeepSourceCandidates(rescueSources);
+          const structuralSources = deepStructuralSourceCandidates(rescueSources);
+          const admittedSources = admitDeepSourceCandidates(structuralSources);
           resultSets.push(admittedSources);
+          rawStructuralPerQuery.push(structuralSources.length);
           admittedPerQuery.push(admittedSources.length);
+          highestScorePerQuery.push(highestDeepCandidateScore(structuralSources));
         } catch (error) {
           failures.push(error);
           resultSets.push([]);
+          rawStructuralPerQuery.push(0);
           admittedPerQuery.push(0);
+          highestScorePerQuery.push(null);
           if (signal?.aborted) throw error;
         }
         deepSelection = selectDeepRetrievedSources(resultSets, 8);
@@ -903,7 +917,9 @@ async function prepareAgentEvidence(
       ...(deepSelection
         ? {
             deepCoverage: {
+              rawStructuralPerQuery,
               admittedPerQuery,
+              highestScorePerQuery,
               coveredQueries: deepSelection.coveredQueries,
               distinctHosts: deepSelection.distinctHosts,
               queryCount: executedQueries.length,
@@ -1008,15 +1024,33 @@ function selectDeepRetrievedSources(
 function admitDeepSourceCandidates(
   sources: readonly RetrievedSource[],
 ): RetrievedSource[] {
+  return deepStructuralSourceCandidates(sources).filter((source) =>
+    source.score! >= DEEP_MIN_RETRIEVAL_SCORE,
+  );
+}
+
+function deepStructuralSourceCandidates(
+  sources: readonly RetrievedSource[],
+): RetrievedSource[] {
   return sources.filter((source) =>
+    typeof source.url === "string" &&
+    source.url.trim().length > 0 &&
     typeof source.title === "string" &&
     source.title.trim().length > 0 &&
     typeof source.snippet === "string" &&
     source.snippet.trim().length > 0 &&
     typeof source.score === "number" &&
-    Number.isFinite(source.score) &&
-    source.score >= DEEP_MIN_RETRIEVAL_SCORE,
+    Number.isFinite(source.score),
   );
+}
+
+function highestDeepCandidateScore(
+  sources: readonly RetrievedSource[],
+): number | null {
+  if (sources.length === 0) return null;
+  const highest = Math.max(...sources.map((source) => source.score!));
+  const bounded = Math.max(0, Math.min(1, highest));
+  return Math.round(bounded * 1_000) / 1_000;
 }
 
 function rejectedReasons(
@@ -1203,7 +1237,7 @@ async function runAgent(
       ) {
         throw new ResearchAgentStageError(
           "retrieval_insufficient",
-          `Deep retrieval admitted ${evidenceInput.retrievedSources.length}/${minimumRetrievedSources} usable sources from ${evidenceInput.deepCoverage.coveredQueries}/${evidenceInput.deepCoverage.queryCount} queries across ${evidenceInput.deepCoverage.distinctHosts}/3 publisher domains after bounded diversity rescue; per-query admitted counts [${evidenceInput.deepCoverage.admittedPerQuery.join(",")}].`,
+          `Deep retrieval admitted ${evidenceInput.retrievedSources.length}/${minimumRetrievedSources} usable sources from ${evidenceInput.deepCoverage.coveredQueries}/${evidenceInput.deepCoverage.queryCount} queries across ${evidenceInput.deepCoverage.distinctHosts}/3 publisher domains after bounded diversity rescue; per-query raw structural counts ${JSON.stringify(evidenceInput.deepCoverage.rawStructuralPerQuery)}, admitted counts ${JSON.stringify(evidenceInput.deepCoverage.admittedPerQuery)}, highest scores ${JSON.stringify(evidenceInput.deepCoverage.highestScorePerQuery)}.`,
           undefined,
           false,
         );

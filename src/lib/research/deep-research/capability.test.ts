@@ -61,7 +61,7 @@ const readyEnv = {
   LAUNCHLENS_DEEP_WORKER_BASE_URL: "https://studio.example/path",
   LAUNCHLENS_DEEP_WORKER_SECRET: "worker-secret-at-least-24-characters",
   LAUNCHLENS_DEEP_RECOVERY_MODE: "cron",
-  LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "300",
+  LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "360",
   CRON_SECRET: "cron-secret-at-least-24-characters",
 };
 
@@ -317,7 +317,7 @@ describe("probeDeepResearchCapability", () => {
 
   it("decays from healthy to delayed when the latest tick is older than the budget", async () => {
     const now = new Date("2026-07-13T00:00:00.000Z");
-    // 8 minutes stale == 180s past the 5-min budget. Build a fully healthy
+    // 8 minutes stale == 120s past the 6-min budget. Build a fully healthy
     // series (3 consecutive ticks each 5 min apart ending at "now - 30s"),
     // then push the LAST tick to `now - 8min` so the freshness check fires.
     const baseSeries = healthyHistory(now, 3, 5 * 60 * 1000, 30_000);
@@ -373,6 +373,18 @@ describe("probeDeepResearchCapability", () => {
       env: {
         ...readyEnv,
         LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "86400",
+      },
+      probeRedis: async () => true,
+    });
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toContain("independent_recovery");
+  });
+
+  it("rejects a declared recovery delay above the six-minute budget", async () => {
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...readyEnv,
+        LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "361",
       },
       probeRedis: async () => true,
     });

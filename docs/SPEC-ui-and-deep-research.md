@@ -136,12 +136,12 @@ Deep is `available` only when all eight requirements are ready:
 4. Real Tavily retrieval provider.
 5. Real strict structured-completion reviewer.
 6. Authenticated worker origin and a dedicated secret of at least 24 characters.
-7. Independent cron recovery declared at no more than 300 seconds, with a separate cron secret of at least 24 characters.
+7. Independent cron recovery declared at no more than 360 seconds, with a separate cron secret of at least 24 characters.
 8. Recovery freshness proven by a bounded, chronological series of successful ticks whose observed interval stays within the declared budget. Rapid manual bursts do not count as scheduler cadence.
 
 If any check fails, the API and UI keep Deep in Preview and `POST /api/research` refuses to start it.
 
-Current repository state: the code path and heartbeat proof are implemented. `.github/workflows/deep-recovery.yml` is a manual emergency trigger and `vercel.json` does not claim a misleading daily fallback. Deep remains capability-gated until one external scheduler actually produces the required <=300-second cadence and every other dependency is verified in the deployed environment.
+Current repository state: the code path and heartbeat proof are implemented. `.github/workflows/deep-recovery.yml` is the single production scheduler and retains `workflow_dispatch` for diagnosis. Its one five-minute expression is offset from the top of the hour; a bounded 60-second allowance covers normal scheduling and endpoint-completion jitter, but is not treated as an SLA. `vercel.json` intentionally has no competing cron because Vercel Hobby cannot provide the required frequency. Deep remains capability-gated until scheduled runs actually produce the required <=360-second heartbeat cadence and every other dependency is verified in the deployed environment.
 
 ## Persistence and Lifecycle
 
@@ -175,7 +175,7 @@ Current repository state: the code path and heartbeat proof are implemented. `.g
 
 Ask the owner before:
 
-- changing the accepted five-minute recovery contract or other project settings;
+- changing the accepted 360-second recovery observation budget or other project settings;
 - adding Vercel Queues, Workflow, or another queue/service;
 - adding dependencies or paid providers;
 - adding authentication or multi-tenant ownership.
@@ -195,6 +195,6 @@ Before release:
 
 Verify one recovery path before enabling Deep:
 
-1. Configure exactly one independent scheduler with `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=300` and authenticate its POST to `/api/cron/scheduler` with the distinct cron secret.
-2. Observe at least the required consecutive production ticks at realistic intervals, verify stale-lock self-healing after TTL, and confirm the capability changes from warming to healthy without manual history edits.
-3. Keep the GitHub workflow as a manual emergency trigger. If a managed queue/workflow service later replaces cron, preserve the Redis record and semantic protocol contracts.
+1. Configure `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`, set the distinct production cron value in the repository Actions secret `LAUNCHLENS_CRON_SECRET`, and merge the GitHub recovery workflow to the default branch.
+2. Observe real `event=schedule` Actions runs and at least the required consecutive production heartbeats at realistic intervals. Verify stale-lock self-healing after TTL and confirm the capability changes from warming to healthy without manual history edits.
+3. Treat `workflow_dispatch` as diagnostic tooling. The heartbeat rejects rapid bursts but does not encode the GitHub event type, so Actions event evidence is part of production acceptance. If Vercel Pro or a managed queue/workflow service later replaces GitHub scheduling, first disable the GitHub `schedule` entry and preserve the Redis record and semantic protocol contracts.

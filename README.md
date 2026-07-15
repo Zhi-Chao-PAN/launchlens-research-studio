@@ -195,7 +195,7 @@ Production journey measurement is documented in
 [`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
 privacy-minimized, server-confirmed Redis funnel milestones.
 
-A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. Production Deep additionally needs one independent scheduler that POSTs to `/api/cron/scheduler` at an observed cadence of five minutes or less. The checked-in GitHub workflow is intentionally manual-only and is an emergency trigger, not cadence evidence.
+A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. Production Deep uses the checked-in GitHub Actions workflow as its independent scheduler. One off-peak five-minute schedule POSTs to `/api/cron/scheduler`; the six-minute capability budget allows at most 60 seconds for scheduler and request-completion jitter. Real chronological heartbeat evidence is still mandatory, and Deep automatically returns to Preview when that evidence exceeds 360 seconds.
 
 **One-time setup**
 
@@ -216,7 +216,7 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 
    A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
    For a protected Preview deployment, enable Vercel **Protection Bypass for Automation**. Vercel injects `VERCEL_AUTOMATION_BYPASS_SECRET`; the Deep dispatcher sends it only as a request header. Preview defaults to its own `VERCEL_URL`, while `VERCEL_PROJECT_PRODUCTION_URL` is preferred only in Production. Set `LAUNCHLENS_DEEP_WORKER_BASE_URL` when an explicit worker origin is required.
-3. Deploy, configure exactly one independent recovery scheduler at a cadence of at most 300 seconds, and let it accumulate a real chronological heartbeat history. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`) and expose the production URL. The manual GitHub workflow can be given `LAUNCHLENS_CRON_SECRET` for emergency operation but must not be described as the production clock.
+3. Add the production `CRON_SECRET` value to the GitHub repository Actions secret named `LAUNCHLENS_CRON_SECRET`, deploy, and merge the scheduled workflow to the default branch. Let scheduled (not merely manual) runs accumulate a real chronological heartbeat history. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`) and expose the production URL. Keep `vercel.json` free of a competing cron while the project is on Vercel Hobby.
 
 **Post-deploy verification checklist**
 
@@ -230,13 +230,13 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 - **The local session map is a fast path, not production authority.** Standard sessions are reconciled through Redis mirrors. Deep lifecycle, leases, revisions, fencing, and due work are authoritative in `DeepRunRecordV1`.
 - **Disk writes remain local-only.** `LAUNCHLENS_STORAGE_DIR` is useful for local development; production History is mirrored into the Redis-backed run store.
 - **Standard is still request-bound.** Its SSE route has a 300-second ceiling. Deep avoids this limit by executing one durable work unit per worker invocation; SSE and polling only observe Redis state.
-- **In-process timers are not recovery.** Authenticated self-dispatch is a fast wake only. Deep additionally requires an independently scheduled recovery trigger with a declared delay of at most 300 seconds.
+- **In-process timers are not recovery.** Authenticated self-dispatch is a fast wake only. Deep additionally requires the scheduled GitHub recovery trigger and an observed delay of at most 360 seconds. GitHub scheduling is best-effort, so delayed or disabled Actions correctly return Deep to Preview.
 
 **Deep production gate**
 
 `GET /api/research/capabilities` checks eight Deep requirements: explicit opt-in, reachable Redis, a real generation provider, real retrieval, a strict semantic reviewer, authenticated worker wake, declared independent recovery, and a fresh multi-tick recovery cadence. With the managed keyring enabled, the model gates also verify that at least one enabled credential can actually be decrypted. The UI and `POST /api/research` keep Deep in Preview until every requirement passes.
 
-See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md) for the protocol and deployment contract.
+See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md), [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md), and [ADR-003](./docs/decisions/ADR-003-github-recovery-scheduler.md) for the protocol and deployment contract.
 
 ---
 
