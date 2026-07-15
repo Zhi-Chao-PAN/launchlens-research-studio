@@ -5,6 +5,7 @@ import type { RetrievedSource } from "@/lib/providers/retrieval.types";
 import {
   allowlistAgentOutput,
   buildDeepRetrievalQueries,
+  buildDeepRetrievalRescueQueries,
   buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
 } from "./evidence-ledger";
@@ -45,12 +46,26 @@ describe("evidence ledger security boundaries", () => {
     expect(pricingQueries[0]).not.toMatch(/^market size TAM SAM SOM/i);
   });
 
+  it("builds two bounded diversity-rescue queries without copying an oversized brief", () => {
+    const rescueQueries = buildDeepRetrievalRescueQueries(
+      "bilingual APAC SaaS evidence workspace ".repeat(30),
+      "pricing-scout",
+    );
+
+    expect(rescueQueries).toHaveLength(2);
+    expect(new Set(rescueQueries).size).toBe(2);
+    expect(rescueQueries.every((item) => item.length <= 280)).toBe(true);
+    expect(rescueQueries[0]).toMatch(/^Independent evidence from additional publishers/i);
+    expect(rescueQueries[1]).toMatch(/^Dated primary, official, and analyst sources/i);
+  });
+
   it("persists only canonical public retrieval URLs", () => {
     const result = canonicalizeRetrievedSources(
       [
         source("https://EXAMPLE.com/report/?utm_source=tavily&b=2&a=1#section", "one"),
         source("http://169.254.169.254/latest/meta-data", "metadata"),
         source("https://user:secret@example.com/report", "credentials"),
+        { ...source("https://empty.example/report", "empty"), snippet: "" },
       ],
       "market-sizer",
     );

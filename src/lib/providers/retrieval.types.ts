@@ -38,6 +38,7 @@ export type RetrievedSource = SourceCitation & {
  *   - Permanent failures (4xx other than 429, invalid key, missing config)
  *     MUST throw a `RetrievalError` with `retryable: false` so the work
  *     unit fails closed instead of advancing with phantom evidence.
+ *   - Provider-owned HTTP timeouts are transient and MUST be retryable.
  *   - Aborts (caller or deadline) MUST throw a `RetrievalError` with
  *     `retryable: false` so cancellation wins races.
  */
@@ -94,6 +95,8 @@ export interface RetrievalQuery {
   minScore?: number;
   /** Optional provider-neutral hostname allowlist for source-type queries. */
   includeDomains?: string[];
+  /** Optional provider-neutral hostname denylist for excluding known-noisy sources. */
+  excludeDomains?: string[];
   /** Optional AbortSignal so a cancelled research session stops the search. */
   signal?: AbortSignal;
 }
