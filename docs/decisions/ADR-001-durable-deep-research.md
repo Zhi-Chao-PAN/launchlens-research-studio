@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Production requires one independently operated recovery scheduler with a nominal five-minute cadence and an observed completion interval of at most 360 seconds. ADR-003 selects the repository's GitHub Actions schedule for the current Vercel Hobby deployment; launch remains capability-gated until real heartbeat history and all other dependencies are verified.
+Accepted. Production requires one independently operated recovery scheduler with a nominal five-minute cadence and an observed completion interval of at most 360 seconds. ADR-005 selects Upstash QStash for the current Vercel Hobby deployment and supersedes ADR-003's GitHub schedule; launch remains capability-gated until real heartbeat history and all other dependencies are verified.
 
 ## Date
 

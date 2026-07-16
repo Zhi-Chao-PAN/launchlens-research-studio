@@ -24,17 +24,22 @@
 // hard failure). This keeps the gate honest without making it a
 // single-point-of-failure for the rest of the runtime.
 
+import { createHash } from "node:crypto";
 import { getRedis } from "@/lib/research/redis-client";
 
 export const HEARTBEAT_KEY = "rs:deep:recovery:heartbeat";
 export const HEARTBEAT_META_KEY = "rs:deep:recovery:last_run_meta";
 export const HEARTBEAT_LOCK_KEY = "rs:deep:recovery:tick:lock";
 export const RECOVERY_HISTORY_KEY = "rs:deep:recovery:history";
+export const RECOVERY_SUCCESSFUL_MESSAGE_KEY_PREFIX = "rs:deep:recovery:qstash:success:";
 
 export const DEFAULT_HEARTBEAT_TTL_SECONDS = 35 * 60; // 5x the 5-min cron
 export const DEFAULT_LOCK_TTL_SECONDS = 240; // 4 minutes
 export const DEFAULT_HISTORY_TTL_SECONDS = 24 * 60 * 60; // 24h sliding window
 export const DEFAULT_HISTORY_MAX_ENTRIES = 64; // ~5.3h of 5-min ticks
+export const DEFAULT_SUCCESSFUL_MESSAGE_TTL_SECONDS = 24 * 60 * 60;
+export const MIN_SUCCESSFUL_MESSAGE_TTL_SECONDS = 60;
+export const MAX_SUCCESSFUL_MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 /**
  * Number of consecutive successful ticks required before the capability
  * gate will mark recovery as `healthy`. With a single sample we have no
@@ -50,7 +55,17 @@ end
 return 0
 `;
 
-export interface RecoveryHeartbeat {
+export type RecoveryHeartbeatSource = "qstash" | "legacy";
+
+export interface RecoveryDeliveryMetadata {
+  source?: RecoveryHeartbeatSource;
+  scheduleId?: string | null;
+  destination?: string | null;
+  messageId?: string | null;
+  attempt?: number | null;
+}
+
+export interface RecoveryHeartbeat extends RecoveryDeliveryMetadata {
   lastOkAt: string | null;
   lastErrorAt: string | null;
   lastErrorCode: string | null;
@@ -59,7 +74,7 @@ export interface RecoveryHeartbeat {
   lastFailed: number | null;
 }
 
-export interface RecoveryHistoryEntry {
+export interface RecoveryHistoryEntry extends RecoveryDeliveryMetadata {
   ok: boolean;
   at: string;
   durationMs: number;
@@ -93,6 +108,11 @@ export async function readRecoveryHeartbeat(
       lastOkDurationMs: numberOrNull(meta?.lastOkDurationMs),
       lastDispatched: numberOrNull(meta?.lastDispatched),
       lastFailed: numberOrNull(meta?.lastFailed),
+      source: normalizeHeartbeatSource(meta?.source),
+      scheduleId: stringOrNull(meta?.scheduleId),
+      destination: stringOrNull(meta?.destination),
+      messageId: stringOrNull(meta?.messageId),
+      attempt: nonNegativeIntegerOrNull(meta?.attempt),
     };
   } catch {
     return emptyHeartbeat();
@@ -107,10 +127,15 @@ export function emptyHeartbeat(): RecoveryHeartbeat {
     lastOkDurationMs: null,
     lastDispatched: null,
     lastFailed: null,
+    source: "legacy",
+    scheduleId: null,
+    destination: null,
+    messageId: null,
+    attempt: null,
   };
 }
 
-export interface WriteHeartbeatOptions {
+export interface WriteHeartbeatOptions extends RecoveryDeliveryMetadata {
   ok: boolean;
   requestId: string;
   durationMs: number;
@@ -131,6 +156,7 @@ export async function writeRecoveryHeartbeat(
   if (!redis) return;
   const now = (options.now ?? (() => new Date()))().toISOString();
   const ttl = options.ttlSeconds ?? DEFAULT_HEARTBEAT_TTL_SECONDS;
+  const delivery = normalizeDeliveryMetadata(options);
   try {
     if (options.ok) {
       await redis.set(HEARTBEAT_KEY, now, { ex: ttl });
@@ -140,6 +166,11 @@ export async function writeRecoveryHeartbeat(
       lastDispatched: String(options.dispatched ?? 0),
       lastFailed: String(options.failed ?? 0),
       lastOkDurationMs: String(options.durationMs),
+      source: delivery.source,
+      scheduleId: delivery.scheduleId ?? "",
+      destination: delivery.destination ?? "",
+      messageId: delivery.messageId ?? "",
+      attempt: delivery.attempt === null ? "" : String(delivery.attempt),
     };
     if (options.ok) {
       meta.lastOkAt = now;
@@ -165,6 +196,7 @@ export async function writeRecoveryHeartbeat(
         failed: options.failed ?? 0,
         errorCode: options.ok ? null : options.errorCode ?? "unknown",
         requestId: options.requestId,
+        ...delivery,
       },
       {
         redis,
@@ -216,7 +248,10 @@ export async function appendRecoveryHistoryEntry(
   const ttl = options.ttlSeconds ?? DEFAULT_HISTORY_TTL_SECONDS;
   const max = options.maxEntries ?? DEFAULT_HISTORY_MAX_ENTRIES;
   try {
-    const payload = JSON.stringify(entry);
+    const payload = JSON.stringify({
+      ...entry,
+      ...normalizeDeliveryMetadata(entry),
+    });
     // LPUSH inserts at the head (newest), LTRIM trims to the most recent
     // `max` entries (indices 0..max-1). This is the idiomatic bounded
     // list pattern in Redis.
@@ -247,10 +282,81 @@ function parseHistoryEntry(raw: unknown): RecoveryHistoryEntry | null {
       failed: typeof entry.failed === "number" ? entry.failed : 0,
       errorCode: typeof entry.errorCode === "string" ? entry.errorCode : null,
       requestId: typeof entry.requestId === "string" ? entry.requestId : "",
+      source: normalizeHeartbeatSource(entry.source),
+      scheduleId: stringOrNull(entry.scheduleId),
+      destination: stringOrNull(entry.destination),
+      messageId: stringOrNull(entry.messageId),
+      attempt: nonNegativeIntegerOrNull(entry.attempt),
     };
   } catch {
     return null;
   }
+}
+
+export interface SuccessfulRecoveryMessageOptions {
+  redis?: ReturnType<typeof getRedis>;
+  ttlSeconds?: number;
+}
+
+/**
+ * Return whether a QStash message id has already completed successfully.
+ * Redis failure deliberately fails open: the durable per-session lease is
+ * still authoritative, while rejecting a legitimate recovery tick would
+ * strand work. Message ids are hashed before becoming Redis keys so an
+ * external header cannot control key structure or unbounded key length.
+ */
+export async function hasSuccessfulRecoveryMessageId(
+  messageId: string,
+  options: SuccessfulRecoveryMessageOptions = {},
+): Promise<boolean> {
+  const redis = options.redis ?? getRedis();
+  const key = successfulRecoveryMessageKey(messageId);
+  if (!redis || !key) return false;
+  try {
+    const value = await redis.get<unknown>(key);
+    return value === "1" || value === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mark a message id only after the recovery tick has completed successfully.
+ * Callers must not invoke this on a failed tick; leaving failures unmarked is
+ * what allows QStash redelivery to retry them. The TTL is always bounded.
+ */
+export async function markSuccessfulRecoveryMessageId(
+  messageId: string,
+  options: SuccessfulRecoveryMessageOptions = {},
+): Promise<boolean> {
+  const redis = options.redis ?? getRedis();
+  const key = successfulRecoveryMessageKey(messageId);
+  if (!redis || !key) return false;
+  const ttl = boundedSuccessfulMessageTtl(options.ttlSeconds);
+  try {
+    const result = await redis.set(key, "1", { ex: ttl });
+    return result === "OK";
+  } catch {
+    return false;
+  }
+}
+
+function successfulRecoveryMessageKey(messageId: string): string | null {
+  if (typeof messageId !== "string") return null;
+  const normalized = messageId.trim();
+  if (!normalized || normalized.length > 1024) return null;
+  const digest = createHash("sha256").update(normalized, "utf8").digest("hex");
+  return `${RECOVERY_SUCCESSFUL_MESSAGE_KEY_PREFIX}${digest}`;
+}
+
+function boundedSuccessfulMessageTtl(ttlSeconds: number | undefined): number {
+  const requested = Number.isFinite(ttlSeconds)
+    ? Math.trunc(ttlSeconds as number)
+    : DEFAULT_SUCCESSFUL_MESSAGE_TTL_SECONDS;
+  return Math.min(
+    MAX_SUCCESSFUL_MESSAGE_TTL_SECONDS,
+    Math.max(MIN_SUCCESSFUL_MESSAGE_TTL_SECONDS, requested),
+  );
 }
 
 export interface AcquireLockOptions {
@@ -315,4 +421,31 @@ function numberOrNull(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function nonNegativeIntegerOrNull(value: unknown): number | null {
+  const parsed = numberOrNull(value);
+  return parsed !== null && Number.isSafeInteger(parsed) && parsed >= 0
+    ? parsed
+    : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function normalizeHeartbeatSource(value: unknown): RecoveryHeartbeatSource {
+  return value === "qstash" ? "qstash" : "legacy";
+}
+
+function normalizeDeliveryMetadata(
+  value: RecoveryDeliveryMetadata,
+): Required<RecoveryDeliveryMetadata> {
+  return {
+    source: normalizeHeartbeatSource(value.source),
+    scheduleId: stringOrNull(value.scheduleId),
+    destination: stringOrNull(value.destination),
+    messageId: stringOrNull(value.messageId),
+    attempt: nonNegativeIntegerOrNull(value.attempt),
+  };
 }

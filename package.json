@@ -16,12 +16,15 @@
     "visual:diff": "node scripts/visual-regression.js",
     "visual:update": "node scripts/visual-regression.js update",
     "visual:report": "node scripts/visual-regression.js report",
-    "probe:serverless": "node scripts/vercel-serverless-probe.js"
+    "probe:serverless": "node scripts/vercel-serverless-probe.js",
+    "recovery:qstash:configure": "node scripts/configure-qstash-recovery.mjs",
+    "recovery:qstash:verify": "node scripts/verify-qstash-recovery.mjs"
   },
   "engines": {
     "node": "24.x"
   },
   "dependencies": {
+    "@upstash/qstash": "^2.11.2",
     "@upstash/redis": "^1.38.0",
     "@vercel/analytics": "^2.0.1",
     "jsonrepair": "^3.14.1",

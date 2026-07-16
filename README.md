@@ -195,7 +195,7 @@ Production journey measurement is documented in
 [`docs/ANALYTICS.md`](./docs/ANALYTICS.md). It combines Vercel page views with
 privacy-minimized, server-confirmed Redis funnel milestones.
 
-A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. Production Deep uses the checked-in GitHub Actions workflow as its independent scheduler. One off-peak five-minute schedule POSTs to `/api/cron/scheduler`; the six-minute capability budget allows at most 60 seconds for scheduler and request-completion jitter. Real chronological heartbeat evidence is still mandatory, and Deep automatically returns to Preview when that evidence exceeds 360 seconds.
+A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` observer route is configured for `maxDuration=300s`, while durable Deep work executes one bounded unit per worker invocation. Production Deep uses one Upstash QStash schedule as its independent recovery authority. It POSTs to `/api/cron/scheduler` every five minutes; the six-minute capability budget allows at most 60 seconds for scheduler and request-completion jitter. Real chronological heartbeat evidence is still mandatory, and Deep automatically returns to Preview when that evidence exceeds 360 seconds. The retired GitHub recovery workflow is removed so it cannot manufacture cadence evidence; see [ADR-005](./docs/decisions/ADR-005-qstash-recovery-scheduler.md).
 
 **One-time setup**
 
@@ -210,13 +210,13 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
    | `LAUNCHLENS_PROVIDER_KEYRING_*` | Enables the Redis-backed three-slot provider vault and declares its single runtime provider. `/admin` treats that provider as read-only; slots are tried strictly 1 → 2 → 3 and legacy env keys are not a hidden fourth key. |
    | `LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET` | Canonical Base64 encoding of exactly 32 random bytes used for AES-256-GCM encryption. Generate with `openssl rand -base64 32`. |
    | `LAUNCHLENS_ADMIN_SESSION_SECRET` | Signs short-lived HttpOnly administrator sessions. Use a distinct secret of at least 32 random bytes. |
-   | `CRON_SECRET` | Authenticates `POST /api/cron/scheduler`. Configure the same value in the one external scheduler selected for production. Generate with `openssl rand -hex 32`. |
+   | `LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY` + `LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY` | Verify signed QStash recovery deliveries and support signing-key rotation. Keep the QStash management token out of application runtime. |
    | `TAVILY_API_KEY` *(optional for Standard; required for Deep)* | Enables Tavily-backed retrieval. Deep fails closed rather than falling back to mock retrieval. |
    | `LAUNCHLENS_DEEP_*` | Deep opt-in, authenticated worker wake, and recovery declarations. See [`.env.example`](./.env.example) and [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md). |
 
    A complete reference for every `LAUNCHLENS_*` variable lives in [`.env.example`](./.env.example).
    For a protected Preview deployment, enable Vercel **Protection Bypass for Automation**. Vercel injects `VERCEL_AUTOMATION_BYPASS_SECRET`; the Deep dispatcher sends it only as a request header. Preview defaults to its own `VERCEL_URL`, while `VERCEL_PROJECT_PRODUCTION_URL` is preferred only in Production. Set `LAUNCHLENS_DEEP_WORKER_BASE_URL` when an explicit worker origin is required.
-3. Add the production `CRON_SECRET` value to the GitHub repository Actions secret named `LAUNCHLENS_CRON_SECRET`, deploy, and merge the scheduled workflow to the default branch. Let scheduled (not merely manual) runs accumulate a real chronological heartbeat history. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`) and expose the production URL. Keep `vercel.json` free of a competing cron while the project is on Vercel Hobby.
+3. Run `npm run recovery:qstash:configure` with the QStash control-plane token and URL in the operator shell. The checked-in contract creates or updates one stable schedule with `*/5 * * * *`, `POST https://launchlens-research-studio.vercel.app/api/cron/scheduler`, a versioned JSON body, a `55s` timeout, and two retries. Keep `vercel.json` and GitHub Actions free of competing schedules while the project is on Vercel Hobby. Configure the production app with only QStash's current/next signing keys plus `LAUNCHLENS_DEEP_RECOVERY_SOURCE=qstash`, the expected schedule ID, and exact destination; do not leave the QStash management token in application runtime. Let QStash deliveries accumulate a real chronological heartbeat history, then run `npm run recovery:qstash:verify`. Vercel will run `next build` (the project pins `engines.node = "24.x"` in `package.json`) and expose the production URL.
 
 **Post-deploy verification checklist**
 

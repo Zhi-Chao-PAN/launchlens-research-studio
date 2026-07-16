@@ -53,11 +53,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // External schedulers may use the dedicated x-cron-secret transport. Let
-  // only this exact endpoint reach its route-level constant-time verifier;
-  // an arbitrary or short secret still receives 401/503 from the handler.
-  if (pathname === "/api/cron/scheduler" && request.headers.get("x-cron-secret")) {
-    return NextResponse.next();
+  // QStash signs the exact scheduler endpoint. Keep this exemption
+  // source-bound: legacy shared-secret and generic bearer callers must not
+  // bypass CSRF on this privileged recovery trigger.
+  if (pathname === "/api/cron/scheduler") {
+    if (request.headers.get("upstash-signature")) {
+      return NextResponse.next();
+    }
+    return NextResponse.json(
+      { error: "scheduler_signature_missing" },
+      { status: 403 },
+    );
   }
 
   // Bypass-token callers skip CSRF (and rate limit, which the route applies

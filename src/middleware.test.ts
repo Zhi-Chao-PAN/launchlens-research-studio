@@ -55,14 +55,50 @@ describe("proxy CSRF exemptions", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("lets the exact cron endpoint reach its route-level shared-secret verifier", () => {
+  it("lets the exact cron endpoint reach its route-level QStash verifier", () => {
     const response = proxy(makeRequest("/api/cron/scheduler", {
       method: "POST",
-      headers: { "x-cron-secret": "candidate-secret" },
+      headers: { "upstash-signature": "signed-jwt" },
     }));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("rejects the retired shared-secret scheduler transport", async () => {
+    const response = proxy(makeRequest("/api/cron/scheduler", {
+      method: "POST",
+      headers: { "x-cron-secret": "legacy-secret" },
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "scheduler_signature_missing",
+    });
+  });
+
+  it("rejects an unsigned exact scheduler request even with generic bearer auth", async () => {
+    const response = proxy(makeRequest("/api/cron/scheduler", {
+      method: "POST",
+      headers: { authorization: "Bearer legacy-secret" },
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: "scheduler_signature_missing",
+    });
+  });
+
+  it("does not exempt scheduler-like paths", async () => {
+    const response = proxy(makeRequest("/api/cron/scheduler/extra", {
+      method: "POST",
+      headers: { "upstash-signature": "signed-jwt" },
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "csrf_failed",
+    });
   });
 
   it("still rejects non-exempt mutating API requests without CSRF in strict mode", async () => {

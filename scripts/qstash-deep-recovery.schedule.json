@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "scheduleId": "launchlens-deep-recovery-production-v1",
+  "label": "launchlens-deep-recovery-production",
+  "destination": "https://launchlens-research-studio.vercel.app/api/cron/scheduler",
+  "cron": "*/5 * * * *",
+  "method": "POST",
+  "timeout": "55s",
+  "retries": 2,
+  "contentType": "application/json",
+  "body": {
+    "version": 1,
+    "kind": "deep-recovery"
+  }
+}

@@ -138,12 +138,12 @@ Deep is `available` only when all eight requirements are ready:
 4. Real Tavily retrieval provider.
 5. Real strict structured-completion reviewer.
 6. Authenticated worker origin and a dedicated secret of at least 24 characters.
-7. Independent cron recovery declared at no more than 360 seconds, with a separate cron secret of at least 24 characters.
+7. Independent recovery declared at no more than 360 seconds, source-bound to QStash with both signing keys, the stable schedule ID, and the exact production URL.
 8. Recovery freshness proven by a bounded, chronological series of successful ticks whose observed interval stays within the declared budget. Rapid manual bursts do not count as scheduler cadence.
 
 If any check fails, the API and UI keep Deep in Preview and `POST /api/research` refuses to start it.
 
-Current repository state: the code path and heartbeat proof are implemented. `.github/workflows/deep-recovery.yml` is the single production scheduler and retains `workflow_dispatch` for diagnosis. Its one five-minute expression is offset from the top of the hour; a bounded 60-second allowance covers normal scheduling and endpoint-completion jitter, but is not treated as an SLA. `vercel.json` intentionally has no competing cron because Vercel Hobby cannot provide the required frequency. Deep remains capability-gated until scheduled runs actually produce the required <=360-second heartbeat cadence and every other dependency is verified in the deployed environment.
+Current repository state: the code path and heartbeat proof are implemented. One Upstash QStash schedule is the single production scheduler and POSTs a signed message to `/api/cron/scheduler` every five minutes. The retired GitHub recovery workflow is removed. A bounded 60-second allowance covers normal scheduling and endpoint-completion jitter, but is not treated as an SLA. `vercel.json` intentionally has no competing cron because Vercel Hobby cannot provide the required frequency. Deep remains capability-gated until source-bound QStash deliveries actually produce the required <=360-second heartbeat cadence and every other dependency is verified in the deployed environment.
 
 ## Persistence and Lifecycle
 
@@ -197,6 +197,6 @@ Before release:
 
 Verify one recovery path before enabling Deep:
 
-1. Configure `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`, set the distinct production cron value in the repository Actions secret `LAUNCHLENS_CRON_SECRET`, and merge the GitHub recovery workflow to the default branch.
-2. Observe real `event=schedule` Actions runs and at least the required consecutive production heartbeats at realistic intervals. Verify stale-lock self-healing after TTL and confirm the capability changes from warming to healthy without manual history edits.
-3. Treat `workflow_dispatch` as diagnostic tooling. The heartbeat rejects rapid bursts but does not encode the GitHub event type, so Actions event evidence is part of production acceptance. If Vercel Pro or a managed queue/workflow service later replaces GitHub scheduling, first disable the GitHub `schedule` entry and preserve the Redis record and semantic protocol contracts.
+1. Configure `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`, QStash as the recovery source, both signing keys, the stable schedule ID, and the exact production URL. Create the single QStash production schedule from the checked-in contract: `*/5 * * * *`, POST to `/api/cron/scheduler`, a versioned JSON body, a 55-second timeout, and two retries.
+2. Observe QStash delivery logs and at least the required consecutive production heartbeats at realistic intervals. Verify stale-lock self-healing after TTL and confirm the capability changes from warming to healthy without manual history edits.
+3. Use only read-only capability and QStash delivery diagnostics during cadence acceptance. If Vercel Pro or another managed scheduler later replaces QStash, first pause or delete the QStash schedule and preserve the Redis record and semantic protocol contracts.

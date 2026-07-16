@@ -76,23 +76,25 @@ leave Preview:
 8. fresh, chronological recovery heartbeat evidence.
 
 At minimum, configure `LAUNCHLENS_DEEP_ENABLED`, a distinct
-`LAUNCHLENS_DEEP_WORKER_SECRET`, `TAVILY_API_KEY`, `CRON_SECRET`, recovery mode
-and maximum delay. Add the same cron value as the GitHub Actions secret
-`LAUNCHLENS_CRON_SECRET`; the checked-in workflow is the single independent
-scheduler and POSTs to `/api/cron/scheduler` on one off-peak five-minute
-schedule. Configure `LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`; the extra
-60 seconds is a bounded observation allowance for scheduling and endpoint
-completion jitter. The worker secret and cron secret must be different and at
-least 24 characters.
+`LAUNCHLENS_DEEP_WORKER_SECRET`, `TAVILY_API_KEY`, recovery mode, maximum delay,
+`LAUNCHLENS_DEEP_RECOVERY_SOURCE=qstash`, both QStash signing keys, the stable
+schedule ID, and the exact recovery URL. The single production scheduler is an Upstash QStash
+schedule that POSTs a signed message to `/api/cron/scheduler` every five
+minutes. Configure a 55-second delivery timeout, two retries, a stable schedule
+ID, and the exact production destination. The application verifies QStash's
+current/next signing keys and binds the signature to that schedule and URL; its
+management token is not an application runtime secret. Configure
+`LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS=360`; the extra 60 seconds is a
+bounded observation allowance for scheduling and endpoint completion jitter.
+The worker secret must be at least 24 characters and is never reused for QStash.
 
-Scheduled workflow runs are only a trigger; they do not satisfy the gate by
-declaration. Deep becomes available only after Redis contains the required
-chronological heartbeat window with observed intervals at or below 360 seconds.
-If GitHub delays, drops, or disables scheduled runs, the gate returns Deep to
-Preview. `workflow_dispatch` remains available for diagnosis. The heartbeat
-rejects rapid manual bursts, but it does not cryptographically distinguish a
-realistically spaced manual run from a scheduled run; production verification
-must therefore also confirm `event=schedule` in GitHub Actions.
+The QStash declaration alone does not satisfy the gate. Deep becomes available
+only after Redis contains the required source-bound chronological heartbeat
+window with observed intervals at or below 360 seconds. If QStash pauses or
+stops delivering, the gate returns Deep to Preview. The retired GitHub workflow
+must not write production cadence evidence. Production verification confirms
+the QStash schedule metadata and delivery logs alongside the heartbeat
+observation.
 
 ## Failure contracts
 
@@ -144,7 +146,8 @@ development.
   job.
 
 Never diagnose by printing administrator tokens, provider keys, encryption
-secrets, the Deep worker secret, the cron secret, or the Vercel bypass secret.
+secrets, the Deep worker secret, QStash signing keys, QStash management tokens
+or delivery signatures, or the Vercel bypass secret.
 
 ## Release checklist
 

@@ -1,220 +1,252 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { randomUUID } from "node:crypto";
 import { tickSchedules } from "@/lib/research/scheduler";
 import { pruneStaleSessions } from "@/lib/research/research-engine";
-import { jsonErrorLocalized } from "@/lib/api/validation";
 import { resolveDeepWorkerOrigin } from "@/lib/research/deep-research/capability";
 import { createDeepResearchService } from "@/lib/research/deep-research/runtime";
 import {
   acquireRecoveryLock,
+  hasSuccessfulRecoveryMessageId,
+  markSuccessfulRecoveryMessageId,
   releaseRecoveryLock,
   writeRecoveryHeartbeat,
 } from "@/lib/research/deep-research/recovery-heartbeat";
+import {
+  authenticateQStashRecoveryRequest,
+  QSTASH_RECOVERY_PRODUCTION_URL,
+  QSTASH_RECOVERY_SCHEDULE_ID,
+  QStashRecoveryAuthError,
+  type VerifiedQStashRecoveryContext,
+} from "@/lib/research/deep-research/qstash-recovery-auth";
 import {
   isManagedKeyringEnabled,
   resolveManagedKeyringProvider,
 } from "@/lib/providers/managed-keyring-config";
 
-// R212: serverless-friendly scheduler trigger.
-//
-// The scheduler module's `ensurePollerRunning()` starts a Node.js
-// `setInterval` that depends on the Node process staying resident. On
-// serverless platforms (Vercel, etc.) the function freezes between
-// invocations and that poller never fires, so scheduled runs silently
-// never execute.
-//
-// This endpoint exposes a thin trigger that external cron services
-// (Vercel Cron, GitHub Actions, EasyCron, k8s CronJob) can hit on a
-// fixed cadence. Authorisation is a shared secret compared in constant
-// time, sent as the `x-cron-secret` header (or `authorization: Bearer
-// <secret>` for systems that prefer bearer auth).
-//
-// Configure Vercel's standard `CRON_SECRET`; external schedulers may use the
-// legacy `LAUNCHLENS_CRON_SECRET` alias. If neither is set, the
-// endpoint refuses all calls — there is no implicit "open in dev"
-// mode, because an open cron trigger in production is a privilege-
-// escalation vector.
-//
-// R3xx: the route now acquires a Redis-backed single-flight lock so two
-// cron triggers never run a recovery sweep in parallel, and writes a
-// heartbeat on success/failure so the capability gate can honestly
-// report whether the cron source is still firing.
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
-function isAuthorized(request: NextRequest, cronSecret: string): boolean {
-  if (!cronSecret) return false;
-  const headerSecret = request.headers.get("x-cron-secret") || "";
-  const authHeader = request.headers.get("authorization") || "";
-  const bearer = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7)
-    : "";
-  return (
-    constantTimeEqual(headerSecret, cronSecret) ||
-    constantTimeEqual(bearer, cronSecret)
-  );
-}
+// QStash is the sole production recovery authority. The signature verifier
+// binds each request to the raw body, exact production URL, stable schedule ID,
+// and rotating signing keys. A shared bearer secret is intentionally not an
+// accepted fallback because it cannot prove which scheduler produced a tick.
+const EXPECTED_RECOVERY_BODY = { version: 1, kind: "deep-recovery" } as const;
+const QSTASH_NON_RETRYABLE_STATUS = 489;
 
 export async function POST(request: NextRequest) {
-  // Read the secret on every invocation so test setups that mutate
-  // process.env between cases see the updated value.
-  const cronSecret = resolveCronSecret(process.env);
-
-  if (cronSecret.length < 24) {
-    return jsonErrorLocalized(
-      request,
-      "errors.cronNotConfigured",
-      503,
-      undefined,
-      { hint: "Set CRON_SECRET" },
-    );
-  }
-  if (!isAuthorized(request, cronSecret)) {
-    return jsonErrorLocalized(
-      request,
-      "errors.unauthorized",
-      401,
-      undefined,
-      { scope: "cron" },
-    );
-  }
-
+  let delivery: VerifiedQStashRecoveryContext;
   try {
-    const requestId = request.headers.get("x-request-id") || randomUUID();
-    const lock = await acquireRecoveryLock({ requestId });
-    if (!lock.acquired) {
-      return NextResponse.json({
-        ok: true,
-        deduped: true,
-        heldBy: lock.heldBy,
-        timestamp: new Date().toISOString(),
-      });
+    delivery = await authenticateQStashRecoveryRequest(request, process.env);
+  } catch (error) {
+    if (error instanceof QStashRecoveryAuthError) {
+      return nonRetryableResponse(error.code);
     }
-
-    const startedAt = Date.now();
-    let triggered = 0;
-    let deepRecovery: unknown = { kind: "disabled" };
-    let dispatched = 0;
-    let failed = 0;
-    try {
-      triggered = await tickSchedules();
-      // R400: structural gate only. The cron tick is the producer of the
-      // recovery heartbeat; gating it on the heartbeat freshness (which is
-      // what `probeDeepResearchCapability().availability` does) would be
-      // self-referential and would prevent the first tick after a fresh
-      // deploy from ever running recovery. Instead we verify only the
-      // *structural* prerequisites (opt-in, real providers, redis, secret,
-      // worker origin). `recovery_freshness` is reported back via the
-      // heartbeat itself and surfaced to the UI as an observation, never
-      // used to gate execution here.
-      if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
-        const structural = checkStructuralRecoveryReadiness(process.env);
-        if (structural.ready) {
-          const result = await createDeepResearchService().signal({
-            kind: "recover",
-            limit: 25,
-          });
-          deepRecovery = { kind: "recovered", result };
-          if (result && typeof result === "object") {
-            const r = result as { dispatched?: unknown; failed?: unknown };
-            if (typeof r.dispatched === "number") dispatched = r.dispatched;
-            if (typeof r.failed === "number") failed = r.failed;
-          }
-        } else {
-          deepRecovery = { kind: "structural-blocked", missing: structural.missing };
-        }
-      }
-      // R217: piggyback session-map eviction on the cron tick so the
-      // in-memory engine state doesn't grow unbounded over the lifetime
-      // of a long-running server. Sessions are also evicted by delete
-      // + pruneStaleSessions on cancel / completion, so this is purely
-      // a safety net for any path that forgot to clean up.
-      const pruned = pruneStaleSessions();
-      const durationMs = Date.now() - startedAt;
-      await writeRecoveryHeartbeat({
-        ok: true,
-        requestId,
-        durationMs,
-        dispatched,
-        failed,
-      });
-      return NextResponse.json({
-        ok: true,
-        triggered,
-        pruned,
-        deepRecovery,
-        timestamp: new Date().toISOString(),
-        durationMs,
-      });
-    } catch (err) {
-      const errorCode = err instanceof Error ? err.name : "scheduler_tick_failed";
-      await writeRecoveryHeartbeat({
-        ok: false,
-        requestId,
-        durationMs: Date.now() - startedAt,
-        dispatched,
-        failed,
-        errorCode,
-      });
-      throw err;
-    } finally {
-      await releaseRecoveryLock(requestId);
-    }
-  } catch (err) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: err instanceof Error ? err.message : "tick failed",
-      },
+      { ok: false, error: "scheduler_authentication_failed" },
       { status: 500 },
     );
   }
+
+  if (!isExpectedRecoveryBody(delivery.rawBody)) {
+    return nonRetryableResponse("delivery_contract_invalid");
+  }
+
+  if (await hasSuccessfulRecoveryMessageId(delivery.messageId)) {
+    return NextResponse.json({
+      ok: true,
+      deduped: true,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  const requestId = delivery.messageId;
+  const lock = await acquireRecoveryLock({ requestId });
+  if (!lock.acquired) {
+    // A 5xx asks QStash to retry this delivery after the single-flight owner
+    // exits. Returning 200 here would acknowledge work that never wrote a
+    // source-bound heartbeat.
+    return NextResponse.json(
+      { ok: false, error: "scheduler_busy" },
+      { status: 503 },
+    );
+  }
+
+  const startedAt = Date.now();
+  let dispatched = 0;
+  let failed = 0;
+  try {
+    const triggered = await tickSchedules();
+    let deepRecovery:
+      | { kind: "disabled" }
+      | { kind: "structural-blocked" }
+      | { kind: "recovered"; dispatched: number; failed: number } = {
+        kind: "disabled",
+      };
+
+    if (process.env.LAUNCHLENS_DEEP_ENABLED === "1") {
+      const structural = checkStructuralRecoveryReadiness(process.env);
+      if (structural.ready) {
+        const result = await createDeepResearchService().signal({
+          kind: "recover",
+          limit: 25,
+        });
+        ({ dispatched, failed } = summarizeRecoveryResult(result));
+        deepRecovery = { kind: "recovered", dispatched, failed };
+      } else {
+        // Detailed dependency state is available from the capability endpoint;
+        // do not copy provider configuration into QStash delivery logs.
+        deepRecovery = { kind: "structural-blocked" };
+      }
+    }
+
+    const pruned = pruneStaleSessions();
+    const durationMs = Date.now() - startedAt;
+    await writeRecoveryHeartbeat({
+      ok: true,
+      requestId,
+      durationMs,
+      dispatched,
+      failed,
+      ...heartbeatDeliveryMetadata(delivery),
+    });
+    const committed = await markSuccessfulRecoveryMessageId(delivery.messageId);
+    if (!committed) {
+      const error = new Error("Recovery message completion was not committed");
+      error.name = "RecoveryMessageCommitError";
+      throw error;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      triggered,
+      pruned,
+      deepRecovery,
+      timestamp: new Date().toISOString(),
+      durationMs,
+    });
+  } catch (error) {
+    await writeRecoveryHeartbeat({
+      ok: false,
+      requestId,
+      durationMs: Date.now() - startedAt,
+      dispatched,
+      failed,
+      errorCode: error instanceof Error ? error.name : "SchedulerTickError",
+      ...heartbeatDeliveryMetadata(delivery),
+    });
+    return NextResponse.json(
+      { ok: false, error: "scheduler_tick_failed" },
+      { status: 500 },
+    );
+  } finally {
+    await releaseRecoveryLock(requestId);
+  }
 }
 
-// GET is allowed for platforms that only support GET (e.g. some webhook-
-// style schedulers). Same auth, same response.
-export async function GET(request: NextRequest) {
-  return POST(request);
+// The production schedule is pinned to POST. Keeping an explicit response
+// makes accidental GET probes fail clearly without executing recovery.
+export async function GET() {
+  return NextResponse.json(
+    { ok: false, error: "method_not_allowed" },
+    { status: 405, headers: { Allow: "POST" } },
+  );
 }
 
-export function resolveCronSecret(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string {
-  return env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET || "";
+function nonRetryableResponse(code: string) {
+  return NextResponse.json(
+    { ok: false, error: "scheduler_request_rejected", code },
+    {
+      status: QSTASH_NON_RETRYABLE_STATUS,
+      headers: { "Upstash-NonRetryable-Error": "true" },
+    },
+  );
+}
+
+function isExpectedRecoveryBody(rawBody: string): boolean {
+  try {
+    const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+    return (
+      parsed.version === EXPECTED_RECOVERY_BODY.version &&
+      parsed.kind === EXPECTED_RECOVERY_BODY.kind &&
+      Object.keys(parsed).length === 2
+    );
+  } catch {
+    return false;
+  }
+}
+
+function heartbeatDeliveryMetadata(delivery: VerifiedQStashRecoveryContext) {
+  return {
+    source: delivery.source,
+    scheduleId: delivery.scheduleId,
+    destination: delivery.recoveryUrl,
+    messageId: delivery.messageId,
+    attempt: delivery.retried,
+  } as const;
+}
+
+function summarizeRecoveryResult(result: unknown): {
+  dispatched: number;
+  failed: number;
+} {
+  if (!result || typeof result !== "object") {
+    return { dispatched: 0, failed: 0 };
+  }
+  const value = result as {
+    sessionIds?: unknown;
+    failedSessionIds?: unknown;
+    dispatched?: unknown;
+    failed?: unknown;
+  };
+  if (Array.isArray(value.sessionIds) || Array.isArray(value.failedSessionIds)) {
+    return {
+      dispatched: Array.isArray(value.sessionIds) ? value.sessionIds.length : 0,
+      failed: Array.isArray(value.failedSessionIds)
+        ? value.failedSessionIds.length
+        : 0,
+    };
+  }
+  return {
+    dispatched: typeof value.dispatched === "number" ? value.dispatched : 0,
+    failed: typeof value.failed === "number" ? value.failed : 0,
+  };
 }
 
 /**
- * R400: structural readiness for the recovery tick. The cron tick is the
- * producer of the recovery heartbeat, so it must NOT be gated on heartbeat
- * freshness (that would be self-referential and would prevent the first
- * tick after a fresh deploy from ever running recovery). Instead we check
- * the *structural* prerequisites: opt-in, real model provider, real retrieval,
- * real reviewer, durable Redis, dedicated worker secret, and a separate
- * cron secret of at least 24 characters.
- *
- * `recovery_freshness` is reported back to the operator via the heartbeat
- * itself and surfaced to the UI as an observation, never used here as a
- * gate. This is what makes the first tick on a fresh deploy (or after a
- * long pause) still execute the recovery sweep.
+ * Structural readiness for a recovery tick. This intentionally excludes
+ * heartbeat freshness because the tick itself produces that observation.
  */
 export function checkStructuralRecoveryReadiness(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): { ready: boolean; missing: string[] } {
   const missing: string[] = [];
   if (env.LAUNCHLENS_DEEP_ENABLED !== "1") missing.push("deep-not-enabled");
-  const cronSecret = env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET || "";
-  if (cronSecret.length < 24) missing.push("cron-secret");
+  if (env.LAUNCHLENS_DEEP_RECOVERY_SOURCE !== "qstash") {
+    missing.push("qstash-source");
+  }
+  const currentSigningKey =
+    env.LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY ||
+    env.QSTASH_CURRENT_SIGNING_KEY ||
+    "";
+  const nextSigningKey =
+    env.LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY || env.QSTASH_NEXT_SIGNING_KEY || "";
+  if (
+    currentSigningKey.length < 24 ||
+    nextSigningKey.length < 24 ||
+    currentSigningKey === nextSigningKey
+  ) {
+    missing.push("qstash-signing-keys");
+  }
+  if (
+    env.LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID !==
+    QSTASH_RECOVERY_SCHEDULE_ID
+  ) {
+    missing.push("qstash-schedule-id");
+  }
+  if (env.LAUNCHLENS_QSTASH_RECOVERY_URL !== QSTASH_RECOVERY_PRODUCTION_URL) {
+    missing.push("qstash-recovery-url");
+  }
+
   const workerSecret = env.LAUNCHLENS_DEEP_WORKER_SECRET || "";
   if (workerSecret.length < 24) missing.push("worker-secret");
-  if (cronSecret && workerSecret && cronSecret === workerSecret) missing.push("secrets-equal");
   if (!resolveDeepWorkerOrigin(env)) missing.push("worker-origin");
-  // Real provider: must be configured and not mock-forced.
+
   const keyringEnabled = isManagedKeyringEnabled(env);
   const managedProvider = resolveManagedKeyringProvider(env);
   const hasLegacyProviderKey = Boolean(
@@ -226,10 +258,12 @@ export function checkStructuralRecoveryReadiness(
   if (env.LAUNCHLENS_PROVIDER?.trim().toLowerCase() === "mock") {
     missing.push("provider-forced-mock");
   }
-  // Real retrieval: must be configured and not mock-forced.
+
   if (!env.TAVILY_API_KEY) missing.push("retrieval-key");
-  if (env.LAUNCHLENS_SEARCH_PROVIDER === "mock") missing.push("retrieval-forced-mock");
-  // Real reviewer: must be configured and not mock-forced.
+  if (env.LAUNCHLENS_SEARCH_PROVIDER === "mock") {
+    missing.push("retrieval-forced-mock");
+  }
+
   const managedReviewerOverride = env.LAUNCHLENS_REVIEW_PROVIDER
     ?.trim()
     .toLowerCase();
@@ -245,14 +279,10 @@ export function checkStructuralRecoveryReadiness(
       env.LAUNCHLENS_OPENAI_KEY ||
       env.ANTHROPIC_API_KEY,
   );
-  if (
-    keyringEnabled
-      ? !managedReviewerReady
-      : !legacyReviewerReady
-  ) {
+  if (keyringEnabled ? !managedReviewerReady : !legacyReviewerReady) {
     missing.push("reviewer-key");
   }
-  // Redis authority.
+
   if (
     !(env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL) ||
     !(env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN)

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Superseded by [ADR-005](./ADR-005-qstash-recovery-scheduler.md).
 
 ## Date
 

@@ -6,6 +6,10 @@ import {
   resolveDeepWorkerOrigin,
 } from "./capability";
 import {
+  QSTASH_RECOVERY_PRODUCTION_URL,
+  QSTASH_RECOVERY_SCHEDULE_ID,
+} from "./qstash-recovery-auth";
+import {
   MIN_CONSECUTIVE_OK_FOR_HEALTHY,
   type RecoveryHeartbeat,
   type RecoveryHistoryEntry,
@@ -19,6 +23,11 @@ function freshHeartbeat(now: Date): RecoveryHeartbeat {
     lastOkDurationMs: 200,
     lastDispatched: 0,
     lastFailed: 0,
+    source: "qstash",
+    scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+    destination: QSTASH_RECOVERY_PRODUCTION_URL,
+    messageId: "msg_fresh",
+    attempt: 0,
   };
 }
 
@@ -44,6 +53,11 @@ function healthyHistory(
       failed: 0,
       errorCode: null,
       requestId: `tick-${i}`,
+      source: "qstash",
+      scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+      destination: QSTASH_RECOVERY_PRODUCTION_URL,
+      messageId: `msg_tick_${i}`,
+      attempt: 0,
     });
   }
   return out;
@@ -62,8 +76,31 @@ const readyEnv = {
   LAUNCHLENS_DEEP_WORKER_SECRET: "worker-secret-at-least-24-characters",
   LAUNCHLENS_DEEP_RECOVERY_MODE: "cron",
   LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "360",
-  CRON_SECRET: "cron-secret-at-least-24-characters",
+  LAUNCHLENS_DEEP_RECOVERY_SOURCE: "qstash",
+  LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY: "custom-current-signing-key-at-least-24",
+  LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY: "custom-next-signing-key-at-least-24",
+  LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID: QSTASH_RECOVERY_SCHEDULE_ID,
+  LAUNCHLENS_QSTASH_RECOVERY_URL: QSTASH_RECOVERY_PRODUCTION_URL,
 };
+
+const qstashReadyEnv = {
+  ...readyEnv,
+};
+
+function qstashHistory(
+  now: Date,
+  overrides: Partial<RecoveryHistoryEntry> = {},
+): RecoveryHistoryEntry[] {
+  return healthyHistory(now).map((entry, index) => ({
+    ...entry,
+    source: "qstash",
+    scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+    destination: QSTASH_RECOVERY_PRODUCTION_URL,
+    messageId: `msg-${index}`,
+    attempt: 0,
+    ...overrides,
+  }));
+}
 
 describe("probeDeepResearchCapability", () => {
   it("is available only when every durable and strict requirement is ready", async () => {
@@ -87,6 +124,134 @@ describe("probeDeepResearchCapability", () => {
       recoveryState: "healthy",
     });
     expect(capability.requirements.every((item) => item.ready)).toBe(true);
+  });
+
+  it("accepts preferred LaunchLens QStash signing aliases and counts only the bound schedule history", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const matching = qstashHistory(now);
+    const unrelatedFailure: RecoveryHistoryEntry = {
+      ...matching[matching.length - 1],
+      ok: false,
+      at: new Date(now.getTime() - 5_000).toISOString(),
+      errorCode: "UNRELATED",
+      source: "legacy",
+      scheduleId: null,
+      destination: null,
+      messageId: null,
+      attempt: null,
+    };
+    const wrongSchedule = {
+      ...matching[matching.length - 1],
+      at: new Date(now.getTime() - 4_000).toISOString(),
+      scheduleId: "scd_other",
+    };
+    const wrongDestination = {
+      ...matching[matching.length - 1],
+      at: new Date(now.getTime() - 3_000).toISOString(),
+      destination: "https://preview.example/api/cron/scheduler",
+    };
+
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...qstashReadyEnv,
+        QSTASH_CURRENT_SIGNING_KEY: "",
+        QSTASH_NEXT_SIGNING_KEY: "",
+      },
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => [
+        ...matching,
+        unrelatedFailure,
+        wrongSchedule,
+        wrongDestination,
+      ],
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("available");
+    expect(capability.requirements).toHaveLength(8);
+    expect(capability.recoveryState).toBe("healthy");
+    expect(capability.recoveryObservation.observedTicks).toBe(3);
+    expect(capability.recoveryObservation.observedFailures).toBe(0);
+    expect(capability.lastRecoveryAt).toBe(matching[matching.length - 1].at);
+  });
+
+  it("falls back to standard QSTASH signing-key names when custom aliases are absent", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const env = {
+      ...qstashReadyEnv,
+      LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY: undefined,
+      LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY: undefined,
+      QSTASH_CURRENT_SIGNING_KEY: "standard-current-signing-key-at-least-24",
+      QSTASH_NEXT_SIGNING_KEY: "standard-next-signing-key-at-least-24",
+    };
+    const capability = await probeDeepResearchCapability({
+      env,
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => qstashHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("available");
+    expect(capability.requirements.find((item) => item.id === "independent_recovery")?.ready)
+      .toBe(true);
+  });
+
+  it.each([
+    ["non-exact source", { LAUNCHLENS_DEEP_RECOVERY_SOURCE: "QSTASH" }],
+    ["missing current signing key", { LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY: "", QSTASH_CURRENT_SIGNING_KEY: "" }],
+    ["missing next signing key", { LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY: "", QSTASH_NEXT_SIGNING_KEY: "" }],
+    ["missing fixed schedule id", { LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID: "" }],
+    ["wrong HTTPS destination", { LAUNCHLENS_QSTASH_RECOVERY_URL: "https://studio.example/api/cron/scheduler" }],
+    ["non-HTTPS destination", { LAUNCHLENS_QSTASH_RECOVERY_URL: "http://launchlens-research-studio.vercel.app/api/cron/scheduler" }],
+    ["non-exact endpoint", { LAUNCHLENS_QSTASH_RECOVERY_URL: `${QSTASH_RECOVERY_PRODUCTION_URL}?source=qstash` }],
+  ])("fails QStash structural readiness for %s", async (_label, override) => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const capability = await probeDeepResearchCapability({
+      env: { ...qstashReadyEnv, ...override },
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => qstashHistory(now),
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toContain("independent_recovery");
+    expect(capability.requirements).toHaveLength(8);
+  });
+
+  it("ignores legacy and mismatched QStash ticks when proving recovery freshness", async () => {
+    const now = new Date("2026-07-13T00:00:00.000Z");
+    const legacyHistory = healthyHistory(now).map((entry) => ({
+      ...entry,
+      source: "legacy" as const,
+      scheduleId: null,
+      destination: null,
+      messageId: null,
+      attempt: null,
+    }));
+    const wrongHistory = healthyHistory(now).map((entry, index) => ({
+      ...entry,
+      source: "qstash" as const,
+      scheduleId: "scd_other",
+      destination: QSTASH_RECOVERY_PRODUCTION_URL,
+      messageId: `wrong-${index}`,
+      attempt: 0,
+    }));
+    const capability = await probeDeepResearchCapability({
+      env: qstashReadyEnv,
+      probeRedis: async () => true,
+      readHeartbeat: async () => freshHeartbeat(now),
+      readHistory: async () => [...legacyHistory, ...wrongHistory],
+      now: () => now,
+    });
+
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toEqual([]);
+    expect(capability.recoveryState).toBe("configured");
+    expect(capability.recoveryObservation.observedTicks).toBe(0);
+    expect(capability.requirements.filter((item) => item.ready)).toHaveLength(7);
   });
 
   it("accepts a managed keyring only after an enabled credential can be resolved", async () => {
@@ -278,6 +443,11 @@ describe("probeDeepResearchCapability", () => {
         failed: 0,
         errorCode: null,
         requestId: "tick-solo",
+        source: "qstash",
+        scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+        destination: QSTASH_RECOVERY_PRODUCTION_URL,
+        messageId: "msg_tick_solo",
+        attempt: 0,
       },
     ];
     const capability = await probeDeepResearchCapability({
@@ -392,11 +562,24 @@ describe("probeDeepResearchCapability", () => {
     expect(capability.blockers).toContain("independent_recovery");
   });
 
-  it("requires independent worker and cron credentials", async () => {
+  it("rejects a declared recovery delay below the 60-second proof floor", async () => {
     const capability = await probeDeepResearchCapability({
       env: {
         ...readyEnv,
-        CRON_SECRET: readyEnv.LAUNCHLENS_DEEP_WORKER_SECRET,
+        LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS: "59",
+      },
+      probeRedis: async () => true,
+    });
+    expect(capability.availability).toBe("preview");
+    expect(capability.blockers).toContain("independent_recovery");
+  });
+
+  it("requires distinct current and next QStash signing keys", async () => {
+    const capability = await probeDeepResearchCapability({
+      env: {
+        ...readyEnv,
+        LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY:
+          readyEnv.LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY,
       },
       probeRedis: async () => true,
     });

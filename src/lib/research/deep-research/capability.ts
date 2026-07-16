@@ -19,6 +19,10 @@ import {
   type RecoveryHeartbeat,
   type RecoveryHistoryEntry,
 } from "./recovery-heartbeat";
+import {
+  QSTASH_RECOVERY_PRODUCTION_URL,
+  QSTASH_RECOVERY_SCHEDULE_ID,
+} from "./qstash-recovery-auth";
 
 export type DeepCapabilityRequirementId =
   | "explicit_opt_in"
@@ -128,6 +132,7 @@ export interface ProbeDeepCapabilityOptions {
   now?: () => Date;
 }
 
+const MIN_RECOVERY_DELAY_SECONDS = 60;
 const MAX_RECOVERY_DELAY_SECONDS = 6 * 60;
 const DEFAULT_MAX_RECOVERY_FRESHNESS_MS = MAX_RECOVERY_DELAY_SECONDS * 1000;
 
@@ -172,13 +177,15 @@ export async function probeDeepResearchCapability(
   const workerOrigin = resolveDeepWorkerOrigin(env);
   const workerSecretReady = (env.LAUNCHLENS_DEEP_WORKER_SECRET?.length ?? 0) >= 24;
   const recoveryDelay = parsePositiveInteger(env.LAUNCHLENS_DEEP_RECOVERY_MAX_DELAY_SECONDS);
-  const recoverySecret = env.CRON_SECRET || env.LAUNCHLENS_CRON_SECRET;
+  const recoverySource = resolveRecoverySource(env.LAUNCHLENS_DEEP_RECOVERY_SOURCE);
+  const qstashBinding = resolveQStashRecoveryBinding(env);
   const recoveryReady =
     env.LAUNCHLENS_DEEP_RECOVERY_MODE === "cron" &&
     recoveryDelay !== null &&
+    recoveryDelay >= MIN_RECOVERY_DELAY_SECONDS &&
     recoveryDelay <= MAX_RECOVERY_DELAY_SECONDS &&
-    (recoverySecret?.length ?? 0) >= 24 &&
-    recoverySecret !== env.LAUNCHLENS_DEEP_WORKER_SECRET;
+    recoverySource === "qstash" &&
+    qstashBinding.ready;
 
   // Heartbeat freshness & series: only meaningful when the cron recovery
   // is the declared mechanism. The freshness threshold is the smaller of
@@ -188,18 +195,35 @@ export async function probeDeepResearchCapability(
   const readHb = options.readHeartbeat ?? defaultReadHeartbeat;
   const readHistory = options.readHistory ?? defaultReadHistory;
   const [heartbeat, history] = await Promise.all([readHb(), readHistory()]);
+  const qstashScopeReady = recoverySource === "qstash" &&
+    qstashBinding.scheduleId !== null &&
+    qstashBinding.destination !== null;
+  const scopedHistory = qstashScopeReady
+    ? history.filter((entry) =>
+      entry.source === "qstash" &&
+      entry.scheduleId === qstashBinding.scheduleId &&
+      entry.destination === qstashBinding.destination)
+    : [];
+  const scopedHeartbeat = !qstashScopeReady || !heartbeatMatchesQStashBinding(
+    heartbeat,
+    qstashBinding,
+  )
+    ? { ...heartbeat, lastOkAt: null }
+    : heartbeat;
   const freshnessBudgetMs = Math.min(
     (recoveryDelay ?? 0) * 1000,
     DEFAULT_MAX_RECOVERY_FRESHNESS_MS,
   );
   const recoveryObservation = computeRecoveryObservation({
-    history,
-    heartbeat,
+    history: scopedHistory,
+    heartbeat: scopedHeartbeat,
     freshnessBudgetMs,
     now: observedAt,
     recoveryDeclared: recoveryReady,
   });
-  const lastRecoveryAt = heartbeat.lastOkAt;
+  const lastRecoveryAt = qstashScopeReady
+    ? latestSuccessfulTickAt(scopedHistory) ?? scopedHeartbeat.lastOkAt
+    : null;
   const lastRecoveryAgeMs = lastTickAgeFromObservation(recoveryObservation);
   const heartbeatFresh =
     recoveryObservation.state === "healthy";
@@ -264,8 +288,8 @@ export async function probeDeepResearchCapability(
       ready: recoveryReady,
       label: "Independent recovery",
       detail: recoveryReady
-        ? `Cron recovery is declared with a maximum ${recoveryDelay}-second delay.`
-        : `A separately scheduled recovery trigger with a declared maximum delay of ${MAX_RECOVERY_DELAY_SECONDS} seconds is required.`,
+        ? `QStash recovery is bound to schedule ${qstashBinding.scheduleId} and the exact production destination with a maximum ${recoveryDelay}-second delay.`
+        : `QStash recovery requires a declared delay of ${MIN_RECOVERY_DELAY_SECONDS}-${MAX_RECOVERY_DELAY_SECONDS} seconds, both distinct signing keys, the fixed schedule id, and the exact HTTPS production scheduler URL.`,
     },
     {
       id: "recovery_freshness",
@@ -302,7 +326,7 @@ export async function probeDeepResearchCapability(
     capabilityNotice: available
       ? "Durable 10-20 minute Deep Research is ready with mandatory retrieval and three semantic validation passes."
       : degraded
-        ? "Independent recovery trigger was healthy but the latest observed tick exceeded the budget. The cron source may have stopped firing; check GitHub Actions / Vercel Cron and the heartbeat history."
+        ? "Independent recovery trigger was healthy but the latest observed tick exceeded the budget. The cron source may have stopped firing; check QStash or the configured external scheduler and the heartbeat history."
         : blockers.length === 0 && recoveryObservation.state === "warming"
           ? `Independent recovery is configured and the first ticks have been observed (${recoveryObservation.consecutiveOk} ok of ${recoveryObservation.requiredForHealthy} needed). Showing Preview while the series fills.`
           : `Durable async Deep Research remains Preview until ${blockers.length} production requirement${blockers.length === 1 ? "" : "s"} are ready.`,
@@ -370,6 +394,110 @@ function parsePositiveInteger(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+type RecoverySource = "qstash";
+
+interface QStashRecoveryBinding {
+  ready: boolean;
+  scheduleId: string | null;
+  destination: string | null;
+}
+
+function resolveRecoverySource(value: string | undefined): RecoverySource | null {
+  const normalized = value?.trim();
+  if (normalized === "qstash") return "qstash";
+  return null;
+}
+
+function resolveQStashRecoveryBinding(
+  env: Readonly<Record<string, string | undefined>>,
+): QStashRecoveryBinding {
+  // The LaunchLens-prefixed names allow a dedicated recovery configuration;
+  // the standard Upstash names remain a compatibility fallback. A non-empty
+  // custom value deliberately wins so an explicitly bad override fails closed.
+  const currentSigningKey = preferredQStashValue(
+    env.LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY,
+    env.QSTASH_CURRENT_SIGNING_KEY,
+  );
+  const nextSigningKey = preferredQStashValue(
+    env.LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY,
+    env.QSTASH_NEXT_SIGNING_KEY,
+  );
+  const configuredScheduleId = exactNonEmptyValue(
+    env.LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID,
+  );
+  const scheduleId = configuredScheduleId === QSTASH_RECOVERY_SCHEDULE_ID
+    ? QSTASH_RECOVERY_SCHEDULE_ID
+    : null;
+  const configuredDestination = exactHttpsRecoveryUrl(
+    env.LAUNCHLENS_QSTASH_RECOVERY_URL,
+  );
+  const destination = configuredDestination === QSTASH_RECOVERY_PRODUCTION_URL
+    ? QSTASH_RECOVERY_PRODUCTION_URL
+    : null;
+  const signingKeysReady =
+    isSigningKey(currentSigningKey) &&
+    isSigningKey(nextSigningKey) &&
+    currentSigningKey !== nextSigningKey;
+  return {
+    ready: signingKeysReady && scheduleId !== null && destination !== null,
+    scheduleId,
+    destination,
+  };
+}
+
+function preferredQStashValue(
+  preferred: string | undefined,
+  fallback: string | undefined,
+): string | null {
+  const preferredTrimmed = preferred?.trim();
+  if (preferredTrimmed) return preferredTrimmed;
+  const fallbackTrimmed = fallback?.trim();
+  return fallbackTrimmed || null;
+}
+
+function isSigningKey(value: string | null): value is string {
+  return value !== null && value.length >= 24;
+}
+
+function exactNonEmptyValue(value: string | undefined): string | null {
+  if (!value || value !== value.trim()) return null;
+  return value.length <= 256 ? value : null;
+}
+
+function exactHttpsRecoveryUrl(value: string | undefined): string | null {
+  if (!value || value !== value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    if (url.pathname !== "/api/cron/scheduler" || url.search || url.hash) return null;
+    // Reject alternative textual forms (default ports, dot-segments, etc.).
+    // Heartbeat provenance is compared byte-for-byte with this exact value.
+    return url.toString() === value ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function heartbeatMatchesQStashBinding(
+  heartbeat: RecoveryHeartbeat,
+  binding: QStashRecoveryBinding,
+): boolean {
+  return Boolean(
+    binding.scheduleId &&
+    binding.destination &&
+    heartbeat.source === "qstash" &&
+    heartbeat.scheduleId === binding.scheduleId &&
+    heartbeat.destination === binding.destination,
+  );
+}
+
+function latestSuccessfulTickAt(history: RecoveryHistoryEntry[]): string | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index].ok) return history[index].at;
+  }
+  return null;
 }
 
 async function defaultRedisProbe(): Promise<boolean> {

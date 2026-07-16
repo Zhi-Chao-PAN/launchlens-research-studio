@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
+  authenticate: vi.fn(),
   createDeepResearchService: vi.fn(),
   getRedis: vi.fn(),
   pruneStaleSessions: vi.fn(() => 0),
@@ -10,18 +11,23 @@ const mocks = vi.hoisted(() => ({
   tickSchedules: vi.fn(async () => 3),
 }));
 
-vi.mock("@/lib/research/redis-client", () => ({
-  getRedis: mocks.getRedis,
-}));
+vi.mock("@/lib/research/deep-research/qstash-recovery-auth", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("@/lib/research/deep-research/qstash-recovery-auth")
+  >();
+  return {
+    ...actual,
+    authenticateQStashRecoveryRequest: mocks.authenticate,
+  };
+});
 
+vi.mock("@/lib/research/redis-client", () => ({ getRedis: mocks.getRedis }));
 vi.mock("@/lib/research/scheduler", () => ({
   tickSchedules: mocks.tickSchedules,
 }));
-
 vi.mock("@/lib/research/research-engine", () => ({
   pruneStaleSessions: mocks.pruneStaleSessions,
 }));
-
 vi.mock("@/lib/research/deep-research/runtime", () => ({
   createDeepResearchService: mocks.createDeepResearchService,
 }));
@@ -33,6 +39,13 @@ import {
   HEARTBEAT_META_KEY,
   RECOVERY_HISTORY_KEY,
 } from "@/lib/research/deep-research/recovery-heartbeat";
+import {
+  QSTASH_RECOVERY_PRODUCTION_URL,
+  QSTASH_RECOVERY_SCHEDULE_ID,
+  QStashRecoveryAuthenticationError,
+  QStashRecoveryConfigurationError,
+  type VerifiedQStashRecoveryContext,
+} from "@/lib/research/deep-research/qstash-recovery-auth";
 import { GET, POST, checkStructuralRecoveryReadiness } from "./route";
 
 interface FakeRedisValue {
@@ -40,14 +53,8 @@ interface FakeRedisValue {
   value: unknown;
 }
 
-/**
- * Minimal Redis test double for the recovery primitives used by this route.
- * Expiry is evaluated against the fake Vitest clock, so lock recovery is
- * exercised by elapsed TTL rather than by deleting the key in the test.
- */
 class FakeRedis {
   private readonly values = new Map<string, FakeRedisValue>();
-
   failNextEval = false;
 
   private expireIfNeeded(key: string): void {
@@ -87,14 +94,12 @@ class FakeRedis {
   }
 
   async hset(key: string, fields: Record<string, string>): Promise<number> {
-    this.expireIfNeeded(key);
     const current = this.peek<Record<string, string>>(key) ?? {};
     this.values.set(key, { value: { ...current, ...fields } });
     return Object.keys(fields).length;
   }
 
   async expire(key: string, ttlSeconds: number): Promise<number> {
-    this.expireIfNeeded(key);
     const current = this.values.get(key);
     if (!current) return 0;
     current.expiresAt = Date.now() + ttlSeconds * 1_000;
@@ -102,7 +107,6 @@ class FakeRedis {
   }
 
   async lpush(key: string, value: string): Promise<number> {
-    this.expireIfNeeded(key);
     const current = this.peek<string[]>(key) ?? [];
     const next = [value, ...current];
     this.values.set(key, { value: next });
@@ -110,35 +114,33 @@ class FakeRedis {
   }
 
   async ltrim(key: string, start: number, stop: number): Promise<"OK"> {
-    this.expireIfNeeded(key);
     const current = this.peek<string[]>(key) ?? [];
     this.values.set(key, { value: current.slice(start, stop + 1) });
     return "OK";
   }
 
-  async eval(
-    _script: string,
-    keys: string[],
-    args: string[],
-  ): Promise<number> {
+  async eval(_script: string, keys: string[], args: string[]): Promise<number> {
     if (this.failNextEval) {
       this.failNextEval = false;
       throw new Error("simulated Redis release failure");
     }
     const key = keys[0];
-    if (!key) return 0;
-    this.expireIfNeeded(key);
-    if (this.peek<string>(key) !== args[0]) return 0;
+    if (!key || this.peek<string>(key) !== args[0]) return 0;
     this.values.delete(key);
     return 1;
   }
 }
 
-const VALID_SECRET = "correct-cron-secret-at-least-24-characters";
-const FIXED_NOW = new Date("2026-07-15T08:00:00.000Z");
+const FIXED_NOW = new Date("2026-07-16T12:00:00.000Z");
 const DEEP_READY_ENV = {
   LAUNCHLENS_DEEP_ENABLED: "1",
-  CRON_SECRET: VALID_SECRET,
+  LAUNCHLENS_DEEP_RECOVERY_SOURCE: "qstash",
+  LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY:
+    "current-signing-key-at-least-24-characters",
+  LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY:
+    "next-signing-key-at-least-24-characters",
+  LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID: QSTASH_RECOVERY_SCHEDULE_ID,
+  LAUNCHLENS_QSTASH_RECOVERY_URL: QSTASH_RECOVERY_PRODUCTION_URL,
   LAUNCHLENS_DEEP_WORKER_SECRET: "worker-secret-at-least-24-characters",
   LAUNCHLENS_DEEP_WORKER_BASE_URL: "https://studio.example",
   OPENAI_API_KEY: "model-key",
@@ -152,27 +154,30 @@ const DEEP_READY_ENV = {
 
 const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
-  "CRON_SECRET",
   "KV_REST_API_TOKEN",
   "KV_REST_API_URL",
-  "LAUNCHLENS_CRON_SECRET",
   "LAUNCHLENS_DEEP_ENABLED",
+  "LAUNCHLENS_DEEP_RECOVERY_SOURCE",
   "LAUNCHLENS_DEEP_WORKER_BASE_URL",
   "LAUNCHLENS_DEEP_WORKER_SECRET",
   "LAUNCHLENS_OPENAI_KEY",
   "LAUNCHLENS_PROVIDER",
   "LAUNCHLENS_PROVIDER_KEYRING_ENABLED",
   "LAUNCHLENS_PROVIDER_KEYRING_PROVIDER",
+  "LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY",
+  "LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY",
+  "LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID",
+  "LAUNCHLENS_QSTASH_RECOVERY_URL",
   "LAUNCHLENS_REVIEW_ANTHROPIC_KEY",
   "LAUNCHLENS_REVIEW_OPENAI_KEY",
   "LAUNCHLENS_REVIEW_PROVIDER",
   "LAUNCHLENS_SEARCH_PROVIDER",
   "OPENAI_API_KEY",
+  "QSTASH_CURRENT_SIGNING_KEY",
+  "QSTASH_NEXT_SIGNING_KEY",
   "TAVILY_API_KEY",
   "UPSTASH_REDIS_REST_TOKEN",
   "UPSTASH_REDIS_REST_URL",
-  "VERCEL_PROJECT_PRODUCTION_URL",
-  "VERCEL_URL",
 ] as const;
 
 const ORIGINAL_ENV = Object.fromEntries(
@@ -198,26 +203,31 @@ function configureDeepReadyEnv(): void {
   Object.assign(process.env, DEEP_READY_ENV);
 }
 
-function setLegacySecret(value: string | undefined): void {
-  if (value === undefined) delete process.env.LAUNCHLENS_CRON_SECRET;
-  else process.env.LAUNCHLENS_CRON_SECRET = value;
+function delivery(messageId = "msg_default", retried = 0): VerifiedQStashRecoveryContext {
+  return {
+    source: "qstash",
+    scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+    messageId,
+    retried,
+    recoveryUrl: QSTASH_RECOVERY_PRODUCTION_URL,
+    rawBody: JSON.stringify({ version: 1, kind: "deep-recovery" }),
+  };
 }
 
-function setVercelSecret(value: string | undefined): void {
-  if (value === undefined) delete process.env.CRON_SECRET;
-  else process.env.CRON_SECRET = value;
-}
-
-function makeRequest(path: string, headers: Record<string, string> = {}): NextRequest {
+function makeRequest(messageId = "msg_default"): NextRequest {
   return new NextRequest(
-    new Request(`http://localhost${path}`, { method: "POST", headers }),
+    new Request(QSTASH_RECOVERY_PRODUCTION_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "upstash-message-id": messageId,
+      },
+      body: JSON.stringify({ version: 1, kind: "deep-recovery" }),
+    }),
   );
 }
 
-function makeDeferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-} {
+function makeDeferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise;
@@ -232,9 +242,16 @@ beforeEach(() => {
   clearManagedEnv();
   redis = new FakeRedis();
   mocks.getRedis.mockReturnValue(redis);
+  mocks.authenticate.mockImplementation(async (request: Request) =>
+    delivery(request.headers.get("upstash-message-id") ?? "msg_default"),
+  );
   mocks.tickSchedules.mockResolvedValue(3);
   mocks.pruneStaleSessions.mockReturnValue(0);
-  mocks.signal.mockResolvedValue({ dispatched: 2, failed: 0 });
+  mocks.signal.mockResolvedValue({
+    kind: "recovery_dispatched",
+    sessionIds: ["session-private-1", "session-private-2"],
+    failedSessionIds: ["session-private-3"],
+  });
   mocks.createDeepResearchService.mockReturnValue({ signal: mocks.signal });
 });
 
@@ -244,273 +261,226 @@ afterEach(() => {
 });
 
 describe("/api/cron/scheduler authentication", () => {
-  it("returns 503 when CRON_SECRET and its legacy alias are unset", async () => {
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", { "x-cron-secret": "anything" }),
+  it("marks configuration failures as non-retryable without leaking secrets", async () => {
+    mocks.authenticate.mockRejectedValueOnce(
+      new QStashRecoveryConfigurationError("signing_keys_missing"),
     );
-    expect(res.status).toBe(503);
-  });
 
-  it("returns 401 when secret header is missing", async () => {
-    setLegacySecret(VALID_SECRET);
-    const res = await POST(makeRequest("/api/cron/scheduler"));
-    expect(res.status).toBe(401);
-  });
+    const response = await POST(makeRequest());
 
-  it("returns 401 when secret header is wrong", async () => {
-    setLegacySecret(VALID_SECRET);
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", { "x-cron-secret": "wrong" }),
-    );
-    expect(res.status).toBe(401);
-  });
-
-  it("accepts the correct x-cron-secret header and returns the trigger count", async () => {
-    setLegacySecret(VALID_SECRET);
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", { "x-cron-secret": VALID_SECRET }),
-    );
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({
-      ok: true,
-      triggered: 3,
-      timestamp: FIXED_NOW.toISOString(),
+    expect(response.status).toBe(489);
+    expect(response.headers.get("upstash-nonretryable-error")).toBe("true");
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: "scheduler_request_rejected",
+      code: "signing_keys_missing",
     });
   });
 
-  it("accepts Authorization: Bearer and prioritizes CRON_SECRET", async () => {
-    setVercelSecret(VALID_SECRET);
-    setLegacySecret("ignored-legacy-secret-at-least-24-characters");
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", {
-        authorization: `Bearer ${VALID_SECRET}`,
-      }),
+  it("marks invalid QStash signatures as non-retryable", async () => {
+    mocks.authenticate.mockRejectedValueOnce(
+      new QStashRecoveryAuthenticationError("signature_invalid"),
     );
-    expect(res.status).toBe(200);
+    const response = await POST(makeRequest());
+    expect(response.status).toBe(489);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "scheduler_request_rejected",
+      code: "signature_invalid",
+    });
   });
 
-  it("allows GET as an authenticated alias for POST", async () => {
-    setLegacySecret(VALID_SECRET);
-    const res = await GET(
-      makeRequest("/api/cron/scheduler", { "x-cron-secret": VALID_SECRET }),
-    );
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({ ok: true });
+  it("keeps unexpected authentication details behind a generic boundary", async () => {
+    mocks.authenticate.mockRejectedValueOnce(new Error("JWT body hash secret detail"));
+    const response = await POST(makeRequest());
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).toContain("scheduler_authentication_failed");
+    expect(body).not.toContain("JWT body hash secret detail");
   });
 
-  it("rejects a length-mismatched secret", async () => {
-    setLegacySecret(VALID_SECRET);
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", { "x-cron-secret": "correct-secre" }),
-    );
-    expect(res.status).toBe(401);
+  it("rejects a signed but unexpected payload contract", async () => {
+    mocks.authenticate.mockResolvedValueOnce({
+      ...delivery(),
+      rawBody: JSON.stringify({ version: 2, kind: "deep-recovery" }),
+    });
+    const response = await POST(makeRequest());
+    expect(response.status).toBe(489);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "delivery_contract_invalid",
+    });
   });
 
-  it("returns 503 when the configured cron secret is too short", async () => {
-    setVercelSecret("short");
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", { authorization: "Bearer short" }),
-    );
-    expect(res.status).toBe(503);
+  it("does not expose a GET execution alias", async () => {
+    const response = await GET();
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
+    expect(mocks.authenticate).not.toHaveBeenCalled();
   });
 });
 
 describe("/api/cron/scheduler recovery execution", () => {
-  it("[simulated unit] runs the recover signal on the first-ever tick and writes a success heartbeat", async () => {
+  it("runs the first tick, writes source-bound heartbeat evidence, and hides session ids", async () => {
     configureDeepReadyEnv();
 
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "first-tick",
-      }),
-    );
+    const response = await POST(makeRequest("msg_first_tick"));
+    const text = await response.text();
 
-    expect(res.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(JSON.parse(text)).toMatchObject({
+      ok: true,
+      triggered: 3,
+      deepRecovery: { kind: "recovered", dispatched: 2, failed: 1 },
+      timestamp: FIXED_NOW.toISOString(),
+    });
+    expect(text).not.toContain("session-private");
     expect(mocks.signal).toHaveBeenCalledWith({ kind: "recover", limit: 25 });
     expect(redis.peek(HEARTBEAT_KEY)).toBe(FIXED_NOW.toISOString());
     expect(redis.peek<Record<string, string>>(HEARTBEAT_META_KEY)).toMatchObject({
-      requestId: "first-tick",
-      lastOkAt: FIXED_NOW.toISOString(),
+      requestId: "msg_first_tick",
+      source: "qstash",
+      scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+      destination: QSTASH_RECOVERY_PRODUCTION_URL,
+      messageId: "msg_first_tick",
+      attempt: "0",
       lastDispatched: "2",
-      lastFailed: "0",
+      lastFailed: "1",
     });
     const history = redis.peek<string[]>(RECOVERY_HISTORY_KEY) ?? [];
-    expect(history).toHaveLength(1);
     expect(JSON.parse(history[0] ?? "{}")).toMatchObject({
       ok: true,
-      requestId: "first-tick",
-      dispatched: 2,
-      failed: 0,
+      requestId: "msg_first_tick",
+      source: "qstash",
+      scheduleId: QSTASH_RECOVERY_SCHEDULE_ID,
+      destination: QSTASH_RECOVERY_PRODUCTION_URL,
+      messageId: "msg_first_tick",
     });
   });
 
-  it("[simulated unit] runs recovery when the managed keyring is the only model credential source", async () => {
+  it("accepts the managed keyring as the only model credential source", async () => {
     configureDeepReadyEnv();
     delete process.env.OPENAI_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
     delete process.env.LAUNCHLENS_REVIEW_OPENAI_KEY;
-    delete process.env.LAUNCHLENS_REVIEW_ANTHROPIC_KEY;
     process.env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
     process.env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "openai";
 
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "keyring-only-tick",
-      }),
-    );
+    const response = await POST(makeRequest("msg_keyring"));
 
-    expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toMatchObject({
-      ok: true,
-      deepRecovery: { kind: "recovered" },
-    });
-    expect(mocks.signal).toHaveBeenCalledWith({ kind: "recover", limit: 25 });
-    expect(redis.peek(HEARTBEAT_KEY)).toBe(FIXED_NOW.toISOString());
-  });
-
-  it("[simulated unit] ignores a stale heartbeat as an execution gate and refreshes it after recovery", async () => {
-    configureDeepReadyEnv();
-    redis.seed(HEARTBEAT_KEY, "2026-07-14T00:00:00.000Z");
-
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "stale-heartbeat-tick",
-      }),
-    );
-
-    expect(res.status).toBe(200);
+    expect(response.status).toBe(200);
     expect(mocks.signal).toHaveBeenCalledTimes(1);
-    expect(mocks.signal).toHaveBeenCalledWith({ kind: "recover", limit: 25 });
+  });
+
+  it("refreshes a stale heartbeat instead of self-gating recovery", async () => {
+    configureDeepReadyEnv();
+    redis.seed(HEARTBEAT_KEY, "2026-07-15T00:00:00.000Z");
+
+    const response = await POST(makeRequest("msg_stale"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.signal).toHaveBeenCalledTimes(1);
     expect(redis.peek(HEARTBEAT_KEY)).toBe(FIXED_NOW.toISOString());
   });
 
-  it("[simulated unit] records a failed heartbeat when the recover signal throws", async () => {
+  it("records retryable failure evidence but never returns the upstream error", async () => {
     configureDeepReadyEnv();
-    const failure = new Error("provider unavailable");
+    const failure = new Error("provider unavailable: private account detail");
     failure.name = "ProviderUnavailableError";
     mocks.signal.mockRejectedValueOnce(failure);
 
-    const res = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "failed-tick",
-      }),
-    );
+    const response = await POST(makeRequest("msg_failed"));
+    const text = await response.text();
 
-    expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toMatchObject({
-      ok: false,
-      error: "provider unavailable",
-    });
-    expect(redis.peek(HEARTBEAT_KEY)).toBeUndefined();
+    expect(response.status).toBe(500);
+    expect(text).toContain("scheduler_tick_failed");
+    expect(text).not.toContain("private account detail");
     expect(redis.peek<Record<string, string>>(HEARTBEAT_META_KEY)).toMatchObject({
-      requestId: "failed-tick",
-      lastErrorAt: FIXED_NOW.toISOString(),
+      requestId: "msg_failed",
+      source: "qstash",
       lastErrorCode: "ProviderUnavailableError",
-    });
-    const history = redis.peek<string[]>(RECOVERY_HISTORY_KEY) ?? [];
-    expect(JSON.parse(history[0] ?? "{}")).toMatchObject({
-      ok: false,
-      requestId: "failed-tick",
-      errorCode: "ProviderUnavailableError",
     });
     expect(redis.peek(HEARTBEAT_LOCK_KEY)).toBeUndefined();
   });
 
-  it("[simulated unit] deduplicates a concurrent tick while the Redis lock is held", async () => {
+  it("deduplicates a successfully committed QStash message id", async () => {
+    configureDeepReadyEnv();
+
+    const first = await POST(makeRequest("msg_redelivery"));
+    const duplicate = await POST(makeRequest("msg_redelivery"));
+
+    expect(first.status).toBe(200);
+    expect(duplicate.status).toBe(200);
+    await expect(duplicate.json()).resolves.toMatchObject({
+      ok: true,
+      deduped: true,
+    });
+    expect(mocks.signal).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a retryable busy response without exposing the lock holder", async () => {
     configureDeepReadyEnv();
     const entered = makeDeferred<void>();
-    const releaseSignal = makeDeferred<{ dispatched: number; failed: number }>();
+    const releaseSignal = makeDeferred<{
+      kind: string;
+      sessionIds: string[];
+      failedSessionIds: string[];
+    }>();
     mocks.signal.mockImplementationOnce(async () => {
       entered.resolve();
       return releaseSignal.promise;
     });
 
-    const firstResponsePromise = POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "tick-owner",
-      }),
-    );
+    const ownerPromise = POST(makeRequest("msg_owner"));
     await entered.promise;
+    const duplicate = await POST(makeRequest("msg_overlap"));
+    const duplicateText = await duplicate.text();
 
-    const duplicate = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "tick-duplicate",
-      }),
-    );
-
-    expect(duplicate.status).toBe(200);
-    await expect(duplicate.json()).resolves.toMatchObject({
-      ok: true,
-      deduped: true,
-      heldBy: "tick-owner",
+    expect(duplicate.status).toBe(503);
+    expect(duplicateText).toContain("scheduler_busy");
+    expect(duplicateText).not.toContain("msg_owner");
+    releaseSignal.resolve({
+      kind: "recovery_dispatched",
+      sessionIds: ["one"],
+      failedSessionIds: [],
     });
-    expect(mocks.signal).toHaveBeenCalledTimes(1);
-
-    releaseSignal.resolve({ dispatched: 1, failed: 0 });
-    const firstResponse = await firstResponsePromise;
-    expect(firstResponse.status).toBe(200);
-    expect(redis.peek(HEARTBEAT_LOCK_KEY)).toBeUndefined();
+    expect((await ownerPromise).status).toBe(200);
   });
 
-  it("[simulated unit] retries recovery after the abandoned lock expires by TTL", async () => {
+  it("self-heals an abandoned single-flight lock after its TTL", async () => {
     configureDeepReadyEnv();
-    // Simulate the holder disappearing after doing its work but before its
-    // compare-and-delete reaches Redis. The production safety net is the
-    // lock TTL, which this fake Redis expires from elapsed clock time.
     redis.failNextEval = true;
 
-    const first = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "abandoned-owner",
-      }),
-    );
-    expect(first.status).toBe(200);
-    expect(redis.peek(HEARTBEAT_LOCK_KEY)).toBe("abandoned-owner");
+    expect((await POST(makeRequest("msg_abandoned"))).status).toBe(200);
+    expect(redis.peek(HEARTBEAT_LOCK_KEY)).toBe("msg_abandoned");
 
-    const beforeExpiry = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "before-expiry",
-      }),
-    );
-    await expect(beforeExpiry.json()).resolves.toMatchObject({
-      deduped: true,
-      heldBy: "abandoned-owner",
-    });
+    const beforeExpiry = await POST(makeRequest("msg_before_expiry"));
+    expect(beforeExpiry.status).toBe(503);
     expect(mocks.signal).toHaveBeenCalledTimes(1);
 
     vi.setSystemTime(
       new Date(FIXED_NOW.getTime() + DEFAULT_LOCK_TTL_SECONDS * 1_000 + 1),
     );
-    const afterExpiry = await POST(
-      makeRequest("/api/cron/scheduler", {
-        "x-cron-secret": VALID_SECRET,
-        "x-request-id": "after-expiry",
-      }),
-    );
-
+    const afterExpiry = await POST(makeRequest("msg_after_expiry"));
     expect(afterExpiry.status).toBe(200);
-    await expect(afterExpiry.json()).resolves.toMatchObject({
-      ok: true,
-      deepRecovery: { kind: "recovered" },
-    });
     expect(mocks.signal).toHaveBeenCalledTimes(2);
     expect(redis.peek(HEARTBEAT_LOCK_KEY)).toBeUndefined();
+  });
+
+  it("writes scheduler evidence without exposing structural dependency details", async () => {
+    configureDeepReadyEnv();
+    delete process.env.TAVILY_API_KEY;
+
+    const response = await POST(makeRequest("msg_structural"));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      deepRecovery: { kind: "structural-blocked" },
+    });
+    expect(mocks.signal).not.toHaveBeenCalled();
+    expect(redis.peek(HEARTBEAT_KEY)).toBe(FIXED_NOW.toISOString());
   });
 });
 
 describe("checkStructuralRecoveryReadiness", () => {
-  const FULL_ENV = {
-    ...DEEP_READY_ENV,
-    LAUNCHLENS_CRON_SECRET: "",
-  };
+  const FULL_ENV = { ...DEEP_READY_ENV };
 
   it("reports ready when every structural prerequisite is present", () => {
     expect(checkStructuralRecoveryReadiness(FULL_ENV)).toEqual({
@@ -519,175 +489,60 @@ describe("checkStructuralRecoveryReadiness", () => {
     });
   });
 
-  it("accepts the managed keyring as the provider and reviewer credential source", () => {
-    expect(
-      checkStructuralRecoveryReadiness({
-        ...FULL_ENV,
-        OPENAI_API_KEY: "",
-        ANTHROPIC_API_KEY: "",
-        LAUNCHLENS_REVIEW_OPENAI_KEY: "",
-        LAUNCHLENS_REVIEW_ANTHROPIC_KEY: "",
-        LAUNCHLENS_PROVIDER: "openai",
-        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
-        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
-      }),
-    ).toEqual({ ready: true, missing: [] });
-  });
-
-  it("normalizes managed provider configuration for structural readiness", () => {
-    expect(
-      checkStructuralRecoveryReadiness({
-        ...FULL_ENV,
-        OPENAI_API_KEY: "",
-        LAUNCHLENS_REVIEW_OPENAI_KEY: "",
-        LAUNCHLENS_PROVIDER: "",
-        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: " 1 ",
-        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: " OpEnAi ",
-        LAUNCHLENS_REVIEW_PROVIDER: " openai ",
-      }),
-    ).toEqual({ ready: true, missing: [] });
-  });
-
-  it("lets the dedicated keyring provider override the legacy generation setting", () => {
-    expect(
-      checkStructuralRecoveryReadiness({
-        ...FULL_ENV,
-        OPENAI_API_KEY: "",
-        LAUNCHLENS_REVIEW_OPENAI_KEY: "",
-        LAUNCHLENS_PROVIDER: "anthropic",
-        LAUNCHLENS_REVIEW_PROVIDER: "",
-        LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
-        LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
-      }),
-    ).toEqual({ ready: true, missing: [] });
-  });
-
-  it("rejects a keyring without a supported provider", () => {
-    const result = checkStructuralRecoveryReadiness({
+  it("accepts standard QStash signing-key names as a fallback", () => {
+    expect(checkStructuralRecoveryReadiness({
       ...FULL_ENV,
-      OPENAI_API_KEY: "legacy-key-must-not-bypass-keyring",
-      ANTHROPIC_API_KEY: "",
-      LAUNCHLENS_REVIEW_OPENAI_KEY: "legacy-review-key-must-not-bypass-keyring",
-      LAUNCHLENS_REVIEW_ANTHROPIC_KEY: "",
-      LAUNCHLENS_PROVIDER: "",
-      LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
-      LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "unsupported",
-    });
-
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("provider-key");
-    expect(result.missing).toContain("reviewer-key");
+      LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY: "",
+      LAUNCHLENS_QSTASH_NEXT_SIGNING_KEY: "",
+      QSTASH_CURRENT_SIGNING_KEY:
+        "standard-current-signing-key-at-least-24-characters",
+      QSTASH_NEXT_SIGNING_KEY:
+        "standard-next-signing-key-at-least-24-characters",
+    })).toEqual({ ready: true, missing: [] });
   });
 
-  it("rejects a reviewer override that conflicts with the managed provider", () => {
-    const result = checkStructuralRecoveryReadiness({
+  it("accepts the managed keyring as provider and reviewer source", () => {
+    expect(checkStructuralRecoveryReadiness({
       ...FULL_ENV,
       OPENAI_API_KEY: "",
-      ANTHROPIC_API_KEY: "",
-      LAUNCHLENS_PROVIDER: "openai",
-      LAUNCHLENS_REVIEW_PROVIDER: "anthropic",
+      LAUNCHLENS_REVIEW_OPENAI_KEY: "",
       LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
       LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
-    });
-
-    expect(result.ready).toBe(false);
-    expect(result.missing).not.toContain("provider-key");
-    expect(result.missing).toContain("reviewer-key");
+    })).toEqual({ ready: true, missing: [] });
   });
 
-  it("refuses to run when deep is not enabled", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      LAUNCHLENS_DEEP_ENABLED: "0",
-    });
+  it.each([
+    ["source", { LAUNCHLENS_DEEP_RECOVERY_SOURCE: "github" }, "qstash-source"],
+    ["signing keys", { LAUNCHLENS_QSTASH_CURRENT_SIGNING_KEY: "" }, "qstash-signing-keys"],
+    ["schedule id", { LAUNCHLENS_QSTASH_RECOVERY_SCHEDULE_ID: "other" }, "qstash-schedule-id"],
+    ["destination", { LAUNCHLENS_QSTASH_RECOVERY_URL: "https://other.example/api/cron/scheduler" }, "qstash-recovery-url"],
+    ["worker origin", { LAUNCHLENS_DEEP_WORKER_BASE_URL: "" }, "worker-origin"],
+    ["retrieval", { TAVILY_API_KEY: "" }, "retrieval-key"],
+    ["redis", { UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "" }, "redis"],
+  ])("fails closed when %s is invalid", (_label, override, expected) => {
+    const result = checkStructuralRecoveryReadiness({ ...FULL_ENV, ...override });
     expect(result.ready).toBe(false);
-    expect(result.missing).toContain("deep-not-enabled");
+    expect(result.missing).toContain(expected);
   });
 
-  it("refuses to run when the cron secret is too short", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      CRON_SECRET: "short",
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("cron-secret");
-  });
-
-  it("refuses to run when worker and cron secrets are equal", () => {
-    const same = "shared-secret-at-least-24-chars";
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      CRON_SECRET: same,
-      LAUNCHLENS_DEEP_WORKER_SECRET: same,
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("secrets-equal");
-  });
-
-  it("refuses to run when the worker origin is missing", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      LAUNCHLENS_DEEP_WORKER_BASE_URL: "",
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("worker-origin");
-  });
-
-  it("refuses to run when retrieval is missing", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      TAVILY_API_KEY: "",
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("retrieval-key");
-  });
-
-  it("refuses to run when retrieval is forced to mock", () => {
+  it("rejects mock retrieval and a missing reviewer", () => {
     const result = checkStructuralRecoveryReadiness({
       ...FULL_ENV,
       LAUNCHLENS_SEARCH_PROVIDER: "mock",
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("retrieval-forced-mock");
-  });
-
-  it("refuses to run when reviewer and shared provider keys are missing", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
       LAUNCHLENS_REVIEW_OPENAI_KEY: "",
-      LAUNCHLENS_REVIEW_ANTHROPIC_KEY: "",
       OPENAI_API_KEY: "",
-      ANTHROPIC_API_KEY: "",
     });
-    expect(result.ready).toBe(false);
+    expect(result.missing).toContain("retrieval-forced-mock");
     expect(result.missing).toContain("reviewer-key");
   });
 
-  it("refuses to run when Redis authority is not configured", () => {
-    const result = checkStructuralRecoveryReadiness({
-      ...FULL_ENV,
-      UPSTASH_REDIS_REST_URL: "",
-      UPSTASH_REDIS_REST_TOKEN: "",
-    });
-    expect(result.ready).toBe(false);
-    expect(result.missing).toContain("redis");
-  });
-
   it("uses KV_REST_API_* as the Redis authority fallback", () => {
-    const result = checkStructuralRecoveryReadiness({
+    expect(checkStructuralRecoveryReadiness({
       ...FULL_ENV,
       UPSTASH_REDIS_REST_URL: "",
       UPSTASH_REDIS_REST_TOKEN: "",
       KV_REST_API_URL: "https://kv.example",
       KV_REST_API_TOKEN: "kv-token",
-    });
-    expect(result.ready).toBe(true);
-  });
-
-  it("ignores heartbeat freshness because this tick produces the heartbeat", () => {
-    expect(checkStructuralRecoveryReadiness(FULL_ENV)).toEqual({
-      ready: true,
-      missing: [],
-    });
+    })).toEqual({ ready: true, missing: [] });
   });
 });

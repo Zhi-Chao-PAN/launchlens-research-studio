@@ -5,9 +5,14 @@ import {
   HEARTBEAT_LOCK_KEY,
   HEARTBEAT_META_KEY,
   RECOVERY_HISTORY_KEY,
+  RECOVERY_SUCCESSFUL_MESSAGE_KEY_PREFIX,
+  MAX_SUCCESSFUL_MESSAGE_TTL_SECONDS,
+  MIN_SUCCESSFUL_MESSAGE_TTL_SECONDS,
   acquireRecoveryLock,
   appendRecoveryHistoryEntry,
   emptyHeartbeat,
+  hasSuccessfulRecoveryMessageId,
+  markSuccessfulRecoveryMessageId,
   readRecoveryHeartbeat,
   readRecoveryHistory,
   releaseRecoveryLock,
@@ -175,6 +180,39 @@ describe("writeRecoveryHeartbeat", () => {
     const meta = fake.hashStore.get(HEARTBEAT_META_KEY)!;
     expect(meta.lastErrorCode).toBe("ECONNRESET");
     expect(meta.lastErrorAt).toBe("2026-07-13T02:00:00.000Z");
+  });
+
+  it("persists source-bound QStash delivery metadata in meta and history", async () => {
+    const fake = makeFakeRedis();
+    await writeRecoveryHeartbeat({
+      ok: true,
+      requestId: "req-qstash",
+      durationMs: 321,
+      source: "qstash",
+      scheduleId: "launchlens-deep-recovery-production-v1",
+      destination: "https://launchlens-research-studio.vercel.app/api/cron/scheduler",
+      messageId: "msg_123",
+      attempt: 2,
+      redis: fake as never,
+      now: () => new Date("2026-07-13T03:00:00.000Z"),
+    });
+
+    const heartbeat = await readRecoveryHeartbeat({ redis: fake as never });
+    expect(heartbeat).toMatchObject({
+      source: "qstash",
+      scheduleId: "launchlens-deep-recovery-production-v1",
+      destination: "https://launchlens-research-studio.vercel.app/api/cron/scheduler",
+      messageId: "msg_123",
+      attempt: 2,
+    });
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history[0]).toMatchObject({
+      source: "qstash",
+      scheduleId: "launchlens-deep-recovery-production-v1",
+      destination: "https://launchlens-research-studio.vercel.app/api/cron/scheduler",
+      messageId: "msg_123",
+      attempt: 2,
+    });
   });
 
   it("is a no-op when Redis is missing", async () => {
@@ -500,5 +538,92 @@ describe("recovery history series", () => {
     const history = await readRecoveryHistory({ redis: fake as never });
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ requestId: "decoded-object", ok: true });
+  });
+
+  it("backward-parses pre-provenance entries as legacy history", async () => {
+    const fake = makeFakeRedis();
+    fake.lists.set(RECOVERY_HISTORY_KEY, [
+      JSON.stringify({
+        ok: true,
+        at: "2026-07-13T09:00:00.000Z",
+        durationMs: 5,
+        dispatched: 1,
+        failed: 0,
+        errorCode: null,
+        requestId: "old-entry",
+      }),
+    ]);
+
+    const history = await readRecoveryHistory({ redis: fake as never });
+    expect(history[0]).toMatchObject({
+      source: "legacy",
+      scheduleId: null,
+      destination: null,
+      messageId: null,
+      attempt: null,
+    });
+  });
+});
+
+describe("successful QStash message idempotency", () => {
+  it("marks only explicit successes and recognizes a repeated message id", async () => {
+    const fake = makeFakeRedis();
+    expect(await hasSuccessfulRecoveryMessageId("msg-once", { redis: fake as never }))
+      .toBe(false);
+
+    expect(await markSuccessfulRecoveryMessageId("msg-once", { redis: fake as never }))
+      .toBe(true);
+    expect(await hasSuccessfulRecoveryMessageId("msg-once", { redis: fake as never }))
+      .toBe(true);
+    expect([...fake.store.keys()].some((key) =>
+      key.startsWith(RECOVERY_SUCCESSFUL_MESSAGE_KEY_PREFIX)))
+      .toBe(true);
+  });
+
+  it("does not mark a failed heartbeat, so QStash can retry the same message", async () => {
+    const fake = makeFakeRedis();
+    await writeRecoveryHeartbeat({
+      ok: false,
+      requestId: "req-failed",
+      durationMs: 100,
+      errorCode: "scheduler_tick_failed",
+      source: "qstash",
+      scheduleId: "launchlens-deep-recovery-production-v1",
+      destination: "https://launchlens-research-studio.vercel.app/api/cron/scheduler",
+      messageId: "msg-retry",
+      attempt: 1,
+      redis: fake as never,
+    });
+
+    expect(await hasSuccessfulRecoveryMessageId("msg-retry", { redis: fake as never }))
+      .toBe(false);
+  });
+
+  it("clamps idempotency TTLs to a bounded 60-second through 7-day window", async () => {
+    const fake = makeFakeRedis();
+    await markSuccessfulRecoveryMessageId("msg-short", {
+      redis: fake as never,
+      ttlSeconds: 1,
+    });
+    await markSuccessfulRecoveryMessageId("msg-long", {
+      redis: fake as never,
+      ttlSeconds: Number.MAX_SAFE_INTEGER,
+    });
+
+    const ttls = [...fake.expirations.entries()]
+      .filter(([key]) => key.startsWith(RECOVERY_SUCCESSFUL_MESSAGE_KEY_PREFIX))
+      .map(([, ttl]) => ttl)
+      .sort((a, b) => a - b);
+    expect(ttls).toEqual([
+      MIN_SUCCESSFUL_MESSAGE_TTL_SECONDS,
+      MAX_SUCCESSFUL_MESSAGE_TTL_SECONDS,
+    ]);
+  });
+
+  it("fails open without Redis and rejects blank message ids", async () => {
+    await expect(hasSuccessfulRecoveryMessageId("msg", { redis: null })).resolves.toBe(false);
+    await expect(markSuccessfulRecoveryMessageId("msg", { redis: null })).resolves.toBe(false);
+    await expect(markSuccessfulRecoveryMessageId("   ", { redis: makeFakeRedis() as never }))
+      .resolves.toBe(false);
   });
 });
