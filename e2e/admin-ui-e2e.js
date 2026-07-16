@@ -74,6 +74,20 @@ const PROVIDER_KEYS = [
   "e2e-openai-key-priority-two-0002",
   "e2e-openai-key-priority-three-0003",
 ];
+const PROVIDER_ROUTES = [
+  {
+    baseUrl: "https://api.minimaxi.com/v1",
+    model: "MiniMax-M3",
+  },
+  {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+    model: "doubao-seed-evolving",
+  },
+  {
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-flash",
+  },
+];
 const ARTIFACT_DIR = path.join(PROJECT_DIR, "output", "playwright");
 
 let passed = 0;
@@ -123,7 +137,10 @@ function initialCredentialSnapshot() {
     slots: [1, 2, 3].map((slot) => ({
       slot,
       isConfigured: false,
+      isRouteBound: false,
       provider: null,
+      baseUrl: PROVIDER_ROUTES[slot - 1].baseUrl,
+      model: PROVIDER_ROUTES[slot - 1].model,
       enabled: false,
       credentialId: null,
       createdAt: null,
@@ -204,6 +221,7 @@ async function run() {
 
     let credentialSnapshot = initialCredentialSnapshot();
     const providerMutations = [];
+    const providerTestMutations = [];
     await context.route("**/api/admin/provider-credentials", async (route) => {
       const request = route.request();
       if (request.method() === "GET") {
@@ -213,6 +231,8 @@ async function run() {
           body: JSON.stringify({
             data: credentialSnapshot,
             runtimeProvider: "openai",
+            targetProvider: "openai",
+            keyringEnabled: false,
           }),
         });
         return;
@@ -230,7 +250,10 @@ async function run() {
               ? {
                   ...slot,
                   isConfigured: true,
+                  isRouteBound: true,
                   provider: input.provider,
+                  baseUrl: input.baseUrl,
+                  model: input.model ?? null,
                   enabled: input.enabled !== false,
                   credentialId: `cred_e2e_slot_${input.slot}`,
                   createdAt: slot.createdAt || now,
@@ -245,6 +268,8 @@ async function run() {
           body: JSON.stringify({
             data: credentialSnapshot,
             runtimeProvider: "openai",
+            targetProvider: "openai",
+            keyringEnabled: false,
           }),
         });
         return;
@@ -254,6 +279,41 @@ async function run() {
         status: 405,
         contentType: "application/json",
         body: JSON.stringify({ error: { code: "METHOD_NOT_ALLOWED" } }),
+      });
+    });
+
+    await context.route("**/api/admin/provider-credentials/test", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.fulfill({
+          status: 405,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "METHOD_NOT_ALLOWED" } }),
+        });
+        return;
+      }
+
+      const input = request.postDataJSON();
+      providerTestMutations.push(input);
+      const savedRoute = credentialSnapshot.slots.find(
+        (candidate) => candidate.slot === input.slot,
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            ok: true,
+            slot: input.slot,
+            provider: input.provider,
+            baseUrl: savedRoute.baseUrl,
+            endpoint: `${savedRoute.baseUrl}/chat/completions`,
+            model: savedRoute.model,
+            durationMs: 42,
+            testedAt: new Date().toISOString(),
+            httpStatus: 200,
+          },
+        }),
       });
     });
 
@@ -314,17 +374,27 @@ async function run() {
 
     console.log("\n[2] Ordered three-key provider failover editor");
     await page.locator(".ops-nav button").filter({ hasText: "Provider keys" }).click();
-    await page.locator("#main-content h1").filter({ hasText: "API key failover" }).waitFor();
+    await page.locator("#main-content h1").filter({ hasText: "Credential route failover" }).waitFor();
     const cards = page.locator(".ops-key-sequence > li > .ops-key-card");
     await page.locator("#provider-key-3").waitFor({ state: "visible" });
     check("Exactly three key slots render", (await cards.count()) === 3);
-    check("Slot 1 is the primary", await cards.nth(0).getByText("Primary", { exact: true }).isVisible());
-    check("Slot 2 is fallback 1", await cards.nth(1).getByText("Fallback 1", { exact: true }).isVisible());
-    check("Slot 3 is fallback 2", await cards.nth(2).getByText("Fallback 2", { exact: true }).isVisible());
+    check("Slot 1 is the primary", await cards.nth(0).getByText("Primary route", { exact: true }).isVisible());
+    check("Slot 2 is fallback 1", await cards.nth(1).getByText("Fallback route 1", { exact: true }).isVisible());
+    check("Slot 3 is fallback 2", await cards.nth(2).getByText("Fallback route 2", { exact: true }).isVisible());
 
     for (let index = 0; index < PROVIDER_KEYS.length; index += 1) {
       const slot = index + 1;
       const card = cards.nth(index);
+      check(
+        `Priority ${slot} exposes its paired Base URL`,
+        (await card.locator(`#provider-base-url-${slot}`).inputValue()) ===
+          PROVIDER_ROUTES[index].baseUrl,
+      );
+      check(
+        `Priority ${slot} exposes its paired model`,
+        (await card.locator(`#provider-model-${slot}`).inputValue()) ===
+          PROVIDER_ROUTES[index].model,
+      );
       await card.locator(`#provider-key-${slot}`).fill(PROVIDER_KEYS[index]);
       await card.getByRole("button", { name: "Add key" }).click();
       await page.waitForFunction(
@@ -335,6 +405,10 @@ async function run() {
       check(
         `Priority ${slot} input clears after its write-only save`,
         (await card.locator(`#provider-key-${slot}`).inputValue()) === "",
+      );
+      check(
+        `Priority ${slot} changes to the saved-route action`,
+        await card.getByRole("button", { name: "Save", exact: true }).isVisible(),
       );
     }
 
@@ -351,6 +425,34 @@ async function run() {
       "All key slots target the selected provider",
       providerMutations.every((mutation) => mutation.provider === "openai"),
     );
+    check(
+      "Each key stays paired with its Base URL and model",
+      providerMutations.every(
+        (mutation, index) =>
+          mutation.baseUrl === PROVIDER_ROUTES[index].baseUrl &&
+          mutation.model === PROVIDER_ROUTES[index].model &&
+          mutation.enabled === true,
+      ),
+    );
+
+    const firstCard = cards.nth(0);
+    await firstCard.getByRole("button", { name: "Test connection", exact: true }).click();
+    await firstCard.getByText("Connection verified", { exact: true }).waitFor();
+    check(
+      "Connection test reports the saved model",
+      await firstCard.getByText(PROVIDER_ROUTES[0].model, { exact: true }).isVisible(),
+    );
+    check(
+      "Connection test sends only the saved credential reference",
+      providerTestMutations.length === 1 &&
+        providerTestMutations[0].slot === 1 &&
+        providerTestMutations[0].provider === "openai" &&
+        providerTestMutations[0].credentialId === "cred_e2e_slot_1" &&
+        providerTestMutations[0].expectedRevision === 10 &&
+        !("apiKey" in providerTestMutations[0]) &&
+        !("baseUrl" in providerTestMutations[0]) &&
+        !("model" in providerTestMutations[0]),
+    );
 
     storage = await readStorage(page);
     check(
@@ -364,8 +466,8 @@ async function run() {
     );
 
     await page.locator(".ops-language").getByRole("button", { name: "中" }).click();
-    await page.locator("#main-content h1").filter({ hasText: "API 密钥降级" }).waitFor();
-    check("Authenticated provider view switches to Chinese", await page.getByText("主密钥", { exact: true }).isVisible());
+    await page.locator("#main-content h1").filter({ hasText: "服务凭据路由降级" }).waitFor();
+    check("Authenticated provider view switches to Chinese", await page.getByText("主路由", { exact: true }).isVisible());
     await page.locator(".ops-language").getByRole("button", { name: "EN" }).click();
 
     console.log("\n[3] Desktop sections and responsive navigation");
@@ -398,7 +500,7 @@ async function run() {
     check("Mobile navigation exposes expanded state", (await menuButton.getAttribute("aria-expanded")) === "true");
     check("Mobile navigation drawer becomes visible", await page.locator(".ops-sidebar.is-open").isVisible());
     await page.locator(".ops-nav button").filter({ hasText: "Provider keys" }).click();
-    await page.locator("#main-content h1").filter({ hasText: "API key failover" }).waitFor();
+    await page.locator("#main-content h1").filter({ hasText: "Credential route failover" }).waitFor();
     check("Selecting a mobile section closes the drawer", (await menuButton.getAttribute("aria-expanded")) === "false");
     const mobileSignOut = page.getByRole("button", { name: "Sign out" });
     check("Mobile sign-out keeps its accessible name", await mobileSignOut.isVisible());
