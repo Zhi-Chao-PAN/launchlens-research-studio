@@ -273,10 +273,75 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"),
     const copyButtons = await page.locator('button').filter({ hasText: /Copy (LaunchLens brief|Markdown|JSON)/i }).count();
     log("Copy buttons present", copyButtons >= 1, `count=${copyButtons}`);
 
-    // ====== Test 7: Share button ======
-    console.log("\n[7] Share button");
+    // ====== Test 7: Share studio compact-viewport scrolling ======
+    console.log("\n[7] Share studio compact-viewport scrolling");
     if (await shareButton.isVisible().catch(() => false)) {
       log("Share button exists", true);
+
+      await page.setViewportSize({ width: 1365, height: 640 });
+      await shareButton.click();
+
+      const shareDialog = page.getByRole("dialog").first();
+      await shareDialog.waitFor({ state: "visible", timeout: 5000 });
+      await shareDialog.getByRole("button", { name: "Full report" }).click();
+
+      const dialogMetrics = await shareDialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          viewportHeight: window.innerHeight,
+        };
+      });
+      log(
+        "Share dialog fits a 100% zoom compact viewport",
+        dialogMetrics.top >= 0 &&
+          dialogMetrics.bottom <= dialogMetrics.viewportHeight + 1 &&
+          dialogMetrics.scrollHeight <= dialogMetrics.clientHeight + 1,
+        "top=" + dialogMetrics.top + ", bottom=" + dialogMetrics.bottom + ", viewport=" + dialogMetrics.viewportHeight,
+      );
+
+      const contentPane = shareDialog.getByRole("region", { name: "Shared content" });
+      const contentScrollBefore = await contentPane.evaluate((element) => element.scrollTop);
+      await contentPane.hover();
+      await page.mouse.wheel(0, 2000);
+      await page.waitForTimeout(100);
+      const contentScrollAfter = await contentPane.evaluate((element) => element.scrollTop);
+      const accessButton = shareDialog.getByRole("button", { name: /Access controls/ });
+      const accessButtonIsReachable = await accessButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.top >= 0 && rect.bottom <= window.innerHeight && (hit === element || element.contains(hit));
+      });
+      log(
+        "Shared-content controls scroll to the access settings",
+        contentScrollAfter > contentScrollBefore && accessButtonIsReachable,
+        "scrollTop=" + contentScrollAfter,
+      );
+
+      const posterPane = shareDialog.getByRole("tabpanel");
+      const posterScrollBefore = await posterPane.evaluate((element) => element.scrollTop);
+      await posterPane.hover();
+      await page.mouse.wheel(0, 2000);
+      await page.waitForTimeout(100);
+      const posterScrollAfter = await posterPane.evaluate((element) => element.scrollTop);
+      const posterButton = shareDialog.getByRole("button", { name: "Create QR poster" });
+      const posterButtonIsReachable = await posterButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.top >= 0 && rect.bottom <= window.innerHeight && (hit === element || element.contains(hit));
+      });
+      log(
+        "Poster preview scrolls to its primary action",
+        posterScrollAfter > posterScrollBefore && posterButtonIsReachable,
+        "scrollTop=" + posterScrollAfter,
+      );
+
+      await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-share-compact.png") });
+      await shareDialog.getByRole("button", { name: "Close share studio" }).click();
+      await page.setViewportSize({ width: 1200, height: 800 });
     } else {
       log("Share button exists", false, "not found");
     }
@@ -288,7 +353,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-04-synthesis.png"),
     });
     await page.waitForTimeout(200);
     await settle(page, 500);
-await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-dark-mode.png"), fullPage: true });
+await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-dark-mode.png"), fullPage: true });
     log("Dark mode screenshot captured", true);
 
     // ====== Test 9: Mobile viewport ======
@@ -301,14 +366,14 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-05-dark-mode.png"),
     const mobilePage = await mobileCtx.newPage();
     await mobilePage.goto(BASE_URL, { waitUntil: "networkidle" });
     await settle(mobilePage, 300);
-await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-mobile.png"), fullPage: true });
+await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile.png"), fullPage: true });
 
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
     await mobilePage.locator('button[type="submit"]').first().click();
     await mobilePage.waitForSelector('button[aria-controls="studio-sidebar"]', { timeout: 15000, state: "attached" });
     await settle(mobilePage, 500);
-await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
+await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-08-mobile-studio.png") });
 
     const mobileToggle = mobilePage.locator('button[aria-controls="studio-sidebar"]').first();
     log("Mobile sidebar toggle exists", await mobileToggle.count() > 0);
