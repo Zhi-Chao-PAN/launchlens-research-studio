@@ -134,6 +134,7 @@ describe("/api/admin/provider-credentials", () => {
       }),
     );
     expect(put.status).toBe(200);
+    expect(put.headers.get("cache-control")).toBe("private, no-store");
     expect(put.headers.get("x-csrf-token")).toBeTruthy();
     const putText = await put.text();
     expect(putText).not.toContain(apiKey);
@@ -141,6 +142,7 @@ describe("/api/admin/provider-credentials", () => {
 
     const get = await GET(makeRequest("GET"));
     expect(get.status).toBe(200);
+    expect(get.headers.get("cache-control")).toBe("private, no-store");
     const getText = await get.text();
     expect(getText).not.toContain(apiKey);
     const getPayload = JSON.parse(getText) as {
@@ -158,6 +160,8 @@ describe("/api/admin/provider-credentials", () => {
       slot: 1,
       isConfigured: true,
       provider: "openai",
+      baseUrl: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
     });
     expect(getPayload.data.slots[0]).toHaveProperty("credentialId");
     expect(getPayload.data.slots[0]).not.toHaveProperty("fingerprint");
@@ -249,6 +253,49 @@ describe("/api/admin/provider-credentials", () => {
     expect(empty.status).toBe(422);
     expect(await empty.json()).toMatchObject({
       error: { code: "VALIDATION_ERROR" },
+    });
+  });
+
+  it("updates a slot endpoint/model without requiring the write-only key again", async () => {
+    const created = await PUT(
+      makeRequest("PUT", {
+        provider: "openai",
+        slot: 2,
+        expectedRevision: 0,
+        apiKey: "sk-route-endpoint-model-key-123456",
+      }),
+    );
+    expect(created.status).toBe(200);
+    const updated = await PUT(
+      makeRequest("PUT", {
+        provider: "openai",
+        slot: 2,
+        expectedRevision: 1,
+        baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+        model: "doubao-seed-evolving",
+      }),
+    );
+    expect(updated.status).toBe(200);
+    const updatedPayload = (await updated.json()) as {
+      data: { revision: number; slots: Array<Record<string, unknown>> };
+    };
+    expect(updatedPayload.data.revision).toBe(2);
+    expect(updatedPayload.data.slots[1]).toMatchObject({
+      baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      model: "doubao-seed-evolving",
+    });
+
+    const blocked = await PUT(
+      makeRequest("PUT", {
+        provider: "openai",
+        slot: 2,
+        expectedRevision: 2,
+        baseUrl: "https://evil.example/v1",
+      }),
+    );
+    expect(blocked.status).toBe(422);
+    expect(await blocked.json()).toMatchObject({
+      error: { code: "PROVIDER_CREDENTIAL_VALIDATION_ERROR" },
     });
   });
 

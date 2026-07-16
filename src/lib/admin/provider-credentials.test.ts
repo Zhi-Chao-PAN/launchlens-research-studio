@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from "vitest";
+import { createCipheriv, createHmac } from "node:crypto";
 import {
   PROVIDER_CREDENTIALS_KEY,
+  ProviderCredentialNotFoundError,
   ProviderCredentialValidationError,
   ProviderCredentialsIntegrityError,
   ProviderCredentialsUnavailableError,
@@ -11,6 +13,7 @@ import {
   recordProviderCredentialFailure,
   recordProviderCredentialSuccess,
   releaseProviderCredentialProbe,
+  resolveProviderCredentialForTest,
   resolveProviderCredentials,
   upsertProviderCredential,
 } from "./provider-credentials";
@@ -163,6 +166,179 @@ describe("provider credential vault", () => {
     expect(snapshot.slots[0].credentialId).toMatch(/^[a-f0-9]{32}$/u);
     expect(snapshot.slots[0]).not.toHaveProperty("fingerprint");
     expect(snapshot.slots[0]).not.toHaveProperty("hint");
+    expect(snapshot.slots.map(({ baseUrl, model }) => ({ baseUrl, model })))
+      .toEqual([
+        { baseUrl: "https://api.minimaxi.com/v1", model: "MiniMax-M3" },
+        {
+          baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+          model: "doubao-seed-evolving",
+        },
+        { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+      ]);
+  });
+
+  it("binds endpoint configuration into GCM AAD", async () => {
+    await upsertProviderCredential(
+      {
+        provider: "openai",
+        slot: 2,
+        apiKey: "sk-test-endpoint-aad-key-123456",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+        model: "doubao-seed-evolving",
+        expectedRevision: 0,
+      },
+      { redis, env: ENV, now: NOW },
+    );
+    const raw = JSON.parse(redis.store.get(PROVIDER_CREDENTIALS_KEY)!) as {
+      credentials: Array<{
+        endpointConfig: { baseUrl: string; model: string | null };
+      }>;
+    };
+    raw.credentials[0].endpointConfig.baseUrl = "https://api.deepseek.com";
+    raw.credentials[0].endpointConfig.model = "deepseek-v4-flash";
+    redis.store.set(PROVIDER_CREDENTIALS_KEY, JSON.stringify(raw));
+
+    await expect(getProviderCredentialsSnapshot({ redis, env: ENV }))
+      .rejects.toBeInstanceOf(ProviderCredentialsIntegrityError);
+  });
+
+  it("rotates identity and clears health/probe when endpoint or model changes", async () => {
+    const created = await upsertProviderCredential(
+      {
+        provider: "openai",
+        slot: 1,
+        apiKey: "sk-test-config-identity-key-123456",
+        expectedRevision: 0,
+      },
+      { redis, env: ENV, now: NOW },
+    );
+    const oldId = created.slots[0].credentialId!;
+    await recordProviderCredentialFailure(
+      "openai",
+      1,
+      oldId,
+      "network",
+      1_000,
+      { redis, env: ENV, now: NOW },
+    );
+    await acquireProviderCredentialProbe("openai", 1, oldId, 15, {
+      redis,
+      env: ENV,
+    });
+
+    const endpointChanged = await upsertProviderCredential(
+      {
+        provider: "openai",
+        slot: 1,
+        baseUrl: "https://api.deepseek.com",
+        model: "deepseek-v4-flash",
+        expectedRevision: created.revision,
+      },
+      { redis, env: ENV, now: NOW },
+    );
+    const nextId = endpointChanged.slots[0].credentialId!;
+    expect(nextId).not.toBe(oldId);
+    expect(endpointChanged.slots[0]).toMatchObject({
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-flash",
+      health: { status: "unknown" },
+    });
+    expect([...redis.store.keys()].some((key) => key.includes(oldId))).toBe(false);
+
+    const toggled = await upsertProviderCredential(
+      {
+        provider: "openai",
+        slot: 1,
+        enabled: false,
+        expectedRevision: endpointChanged.revision,
+      },
+      { redis, env: ENV, now: NOW },
+    );
+    expect(toggled.slots[0].credentialId).toBe(nextId);
+  });
+
+  it("rejects arbitrary public endpoints unless the exact base URL is deployed", async () => {
+    await expect(
+      upsertProviderCredential(
+        {
+          provider: "openai",
+          slot: 1,
+          apiKey: "sk-test-disallowed-endpoint-key-123456",
+          baseUrl: "https://evil.example/v1",
+          expectedRevision: 0,
+        },
+        { redis, env: ENV, now: NOW },
+      ),
+    ).rejects.toBeInstanceOf(ProviderCredentialValidationError);
+
+    await expect(
+      upsertProviderCredential(
+        {
+          provider: "openai",
+          slot: 1,
+          apiKey: "sk-test-disallowed-extension-key-123456",
+          baseUrl: "https://gateway.example/v1/",
+          expectedRevision: 0,
+        },
+        {
+          redis,
+          env: {
+            ...ENV,
+            LAUNCHLENS_PROVIDER_BASE_URL_ALLOWLIST:
+              "https://gateway.example/v1",
+          },
+          now: NOW,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ProviderCredentialValidationError);
+  });
+
+  it("requires an explicit route binding before a legacy key can run or be tested", async () => {
+    const apiKey = "sk-test-legacy-envelope-key-123456";
+    const legacy = legacyDocument(apiKey, 2);
+    redis.store.set(PROVIDER_CREDENTIALS_KEY, JSON.stringify(legacy));
+
+    const snapshot = await getProviderCredentialsSnapshot({ redis, env: ENV });
+    expect(snapshot.slots[1]).toMatchObject({
+      baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      model: "doubao-seed-evolving",
+      isRouteBound: false,
+    });
+    await expect(resolveProviderCredentials("openai", { redis, env: ENV }))
+      .resolves.toEqual([]);
+    await expect(resolveProviderCredentialForTest(
+      {
+        provider: "openai",
+        slot: 2,
+        credentialId: legacy.credentials[0].credentialId,
+        expectedRevision: 1,
+      },
+      { redis, env: ENV },
+    )).rejects.toBeInstanceOf(ProviderCredentialNotFoundError);
+
+    const migrated = await upsertProviderCredential(
+      {
+        provider: "openai",
+        slot: 2,
+        baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+        model: "doubao-seed-evolving",
+        expectedRevision: 1,
+      },
+      { redis, env: ENV, now: NOW },
+    );
+    expect(migrated.slots[1]).toMatchObject({ isRouteBound: true });
+    expect(migrated.slots[1].credentialId)
+      .not.toBe(legacy.credentials[0].credentialId);
+    const resolved = await resolveProviderCredentialForTest(
+      {
+        provider: "openai",
+        slot: 2,
+        credentialId: migrated.slots[1].credentialId!,
+        expectedRevision: migrated.revision,
+      },
+      { redis, env: ENV },
+    );
+    expect(resolved).toMatchObject({ apiKey, model: "doubao-seed-evolving" });
   });
 
   it("resolves enabled keys in strict 1 -> 2 -> 3 order", async () => {
@@ -513,3 +689,52 @@ describe("provider credential vault", () => {
     }
   });
 });
+
+function legacyDocument(apiKey: string, slot: 1 | 2 | 3) {
+  const key = Buffer.from(ENV.LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET, "base64");
+  const credentialId = "b".repeat(32);
+  const fingerprint = createHmac("sha256", key)
+    .update("launchlens-provider-key-fingerprint\0", "utf8")
+    .update(apiKey, "utf8")
+    .digest("hex")
+    .slice(0, 20);
+  const createdAt = "2026-07-14T08:00:00.000Z";
+  const updatedAt = createdAt;
+  const aad = [
+    "launchlens-provider-credential",
+    1,
+    credentialId,
+    "openai",
+    slot,
+    "1",
+    fingerprint,
+    createdAt,
+    updatedAt,
+  ].join(":");
+  const iv = Buffer.alloc(12, 3);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(Buffer.from(aad, "utf8"));
+  const ciphertext = Buffer.concat([
+    cipher.update(apiKey, "utf8"),
+    cipher.final(),
+  ]);
+  return {
+    version: 1,
+    revision: 1,
+    credentials: [{
+      credentialId,
+      provider: "openai",
+      slot,
+      enabled: true,
+      fingerprint,
+      createdAt,
+      updatedAt,
+      encrypted: {
+        algorithm: "aes-256-gcm",
+        iv: iv.toString("base64url"),
+        ciphertext: ciphertext.toString("base64url"),
+        authTag: cipher.getAuthTag().toString("base64url"),
+      },
+    }],
+  };
+}

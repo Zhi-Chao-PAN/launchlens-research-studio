@@ -64,14 +64,6 @@ export function selectProvider(
   if (isManagedKeyringEnabled(env)) {
     const managedProvider = resolveManagedKeyringProvider(env);
     if (!managedProvider) return mockResearchProvider;
-    const safe = managedProvider === "openai"
-      ? isSafeProviderBaseUrl(env.OPENAI_BASE_URL, DEFAULT_OPENAI_BASE_URL, {
-          nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
-        })
-      : isSafeProviderBaseUrl(env.ANTHROPIC_BASE_URL, DEFAULT_ANTHROPIC_BASE_URL, {
-          nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV,
-        });
-    if (!safe) return mockResearchProvider;
     return createManagedResearchProvider({
       provider: managedProvider,
       failureMode: options.failureMode ?? "fallback",

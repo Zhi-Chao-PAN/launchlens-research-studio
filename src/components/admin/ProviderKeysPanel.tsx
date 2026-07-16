@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useConfirm } from "@/components/ui/useConfirm";
 import { useToast } from "@/components/toast/ToastContext";
 import {
@@ -9,6 +9,8 @@ import {
   isUnauthorized,
   removeProviderCredential,
   saveProviderCredential,
+  testProviderCredential,
+  type ProviderCredentialTestResult,
   type ProviderCredentialSlot,
   type ProviderName,
   type ProviderSlot,
@@ -20,10 +22,16 @@ import {
   RefreshButton,
   ResourceState,
   SectionIntro,
-  StatusBadge,
-  formatAdminTime,
 } from "./AdminPrimitives";
 import { useAdminResource } from "./use-admin-resource";
+import {
+  ProviderCredentialCard,
+  type ProviderCredentialDraft,
+} from "./ProviderCredentialCard";
+import {
+  classifyProviderAdminError,
+  type ProviderAdminErrorKey,
+} from "./provider-admin-error";
 
 export function ProviderKeysPanel({
   locale,
@@ -39,7 +47,7 @@ export function ProviderKeysPanel({
   const { showToast } = useToast();
   const { askConfirm, dialog } = useConfirm();
   const [pendingSlot, setPendingSlot] = useState<ProviderSlot | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ProviderAdminErrorKey | null>(null);
   const resource = useAdminResource(getProviderCredentials, {
     onUnauthorized,
     onUpdated,
@@ -55,11 +63,7 @@ export function ProviderKeysPanel({
     ),
   );
 
-  async function handleSave(input: {
-    slot: ProviderSlot;
-    apiKey: string;
-    enabled: boolean;
-  }): Promise<boolean> {
+  async function handleSave(input: ProviderCredentialDraft): Promise<boolean> {
     if (!snapshot || !targetProvider || providerMismatch) return false;
     setPendingSlot(input.slot);
     setActionError(null);
@@ -69,6 +73,8 @@ export function ProviderKeysPanel({
         slot: input.slot,
         expectedRevision: snapshot.revision,
         ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+        baseUrl: input.baseUrl,
+        model: input.model,
         enabled: input.enabled,
       });
       resource.replace(next);
@@ -80,32 +86,38 @@ export function ProviderKeysPanel({
         onUnauthorized();
         return false;
       }
+      setActionError(classifyProviderAdminError(error));
       if (
         error instanceof AdminApiError &&
-        error.code === "PROVIDER_CREDENTIALS_REVISION_CONFLICT"
+        [
+          "PROVIDER_CREDENTIALS_REVISION_CONFLICT",
+          "PROVIDER_KEYRING_PROVIDER_MISMATCH",
+          "PROVIDER_KEYRING_RUNTIME_PROVIDER_UNAVAILABLE",
+        ].includes(error.code ?? "")
       ) {
-        setActionError(t("providers.conflict"));
         await resource.refresh();
-      } else if (
-        error instanceof AdminApiError &&
-        error.code === "PROVIDER_KEYRING_PROVIDER_MISMATCH"
-      ) {
-        setActionError(t("providers.providerMismatch"));
-        await resource.refresh();
-      } else if (
-        error instanceof AdminApiError &&
-        error.code === "PROVIDER_KEYRING_RUNTIME_PROVIDER_UNAVAILABLE"
-      ) {
-        setActionError(t("providers.targetProviderUnavailable"));
-        await resource.refresh();
-      } else if (error instanceof AdminApiError && error.status === 503) {
-        setActionError(t("providers.unavailable"));
-      } else {
-        setActionError(error instanceof Error ? error.message : t("common.operationFailed"));
       }
       return false;
     } finally {
       setPendingSlot(null);
+    }
+  }
+
+  async function handleTest(slot: ProviderSlot): Promise<ProviderCredentialTestResult> {
+    const credential = snapshot?.slots.find((candidate) => candidate.slot === slot);
+    if (!targetProvider || providerMismatch || !snapshot || !credential?.credentialId) {
+      throw new AdminApiError(t("providers.unavailable"), { status: 503 });
+    }
+    try {
+      return await testProviderCredential({
+        provider: targetProvider,
+        slot,
+        credentialId: credential.credentialId,
+        expectedRevision: snapshot.revision,
+      });
+    } catch (error) {
+      if (isUnauthorized(error)) onUnauthorized();
+      throw error;
     }
   }
 
@@ -131,14 +143,12 @@ export function ProviderKeysPanel({
             onUnauthorized();
             return;
           }
+          setActionError(classifyProviderAdminError(error));
           if (
             error instanceof AdminApiError &&
             error.code === "PROVIDER_CREDENTIALS_REVISION_CONFLICT"
           ) {
-            setActionError(t("providers.conflict"));
             await resource.refresh();
-          } else {
-            setActionError(error instanceof Error ? error.message : t("common.operationFailed"));
           }
         } finally {
           setPendingSlot(null);
@@ -178,7 +188,7 @@ export function ProviderKeysPanel({
       {actionError ? (
         <div className="ops-inline-state ops-inline-state-error" role="alert">
           <AdminIcon name="warning" />
-          <span>{actionError}</span>
+          <span>{t(actionError)}</span>
         </div>
       ) : null}
 
@@ -224,6 +234,7 @@ export function ProviderKeysPanel({
                     : "providers.activationStaged",
                 )}
               </span>
+              <p className="ops-provider-flow-help">{t("providers.flowHelp")}</p>
             </div>
             <label className="ops-field" htmlFor="provider-name">
               <span>{t("providers.targetProvider")}</span>
@@ -238,7 +249,7 @@ export function ProviderKeysPanel({
           <ol className="ops-key-sequence" aria-label={t("providers.flow")}>
             {snapshot.slots.map((slot, index) => (
               <li key={`${snapshot.revision}-${slot.slot}`}>
-                <SlotEditor
+                <ProviderCredentialCard
                   slot={slot}
                   locale={locale}
                   t={t}
@@ -250,6 +261,7 @@ export function ProviderKeysPanel({
                   }
                   removeDisabled={pendingSlot !== null && pendingSlot !== slot.slot}
                   onSave={handleSave}
+                  onTest={handleTest}
                   onRemove={() => confirmRemove(slot)}
                 />
                 {index < snapshot.slots.length - 1 ? (
@@ -269,156 +281,6 @@ export function ProviderKeysPanel({
       ) : null}
       {dialog}
     </section>
-  );
-}
-
-function SlotEditor({
-  slot,
-  locale,
-  t,
-  pending,
-  writeDisabled,
-  removeDisabled,
-  onSave,
-  onRemove,
-}: {
-  slot: ProviderCredentialSlot;
-  locale: AdminLocale;
-  t: AdminTranslator;
-  pending: boolean;
-  writeDisabled: boolean;
-  removeDisabled: boolean;
-  onSave: (input: { slot: ProviderSlot; apiKey: string; enabled: boolean }) => Promise<boolean>;
-  onRemove: () => void;
-}) {
-  const [apiKey, setApiKey] = useState("");
-  const [enabled, setEnabled] = useState(slot.isConfigured ? slot.enabled : true);
-  const enabledChanged = slot.isConfigured && enabled !== slot.enabled;
-  const validNewKey = apiKey.length >= 16;
-  const canSave = slot.isConfigured ? validNewKey || (apiKey.length === 0 && enabledChanged) : validNewKey;
-  const healthTone =
-    slot.health.status === "healthy"
-      ? "positive"
-      : slot.health.status === "degraded"
-        ? "warning"
-        : slot.health.status === "cooldown"
-          ? "danger"
-          : "neutral";
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSave) return;
-    const saved = await onSave({ slot: slot.slot, apiKey, enabled });
-    if (saved) setApiKey("");
-  }
-
-  return (
-    <article className={slot.isConfigured ? "ops-key-card is-configured" : "ops-key-card"}>
-      <header className="ops-key-card-header">
-        <div className="ops-key-priority">
-          <span>{String(slot.slot).padStart(2, "0")}</span>
-          <div>
-            <p>{t("providers.slot", { slot: slot.slot })}</p>
-            <strong>
-              {slot.slot === 1
-                ? t("providers.primary")
-                : t("providers.fallback", { slot: slot.slot - 1 })}
-            </strong>
-          </div>
-        </div>
-        <StatusBadge tone={slot.isConfigured ? "info" : "neutral"}>
-          {slot.isConfigured ? t("providers.configured") : t("providers.notConfigured")}
-        </StatusBadge>
-      </header>
-
-      <div className="ops-key-health">
-        <div>
-          <span>{t("providers.health")}</span>
-          <StatusBadge tone={healthTone}>{t(`providers.status.${slot.health.status}`)}</StatusBadge>
-        </div>
-        <dl>
-          <div>
-            <dt>{t("providers.lastSuccess")}</dt>
-            <dd>{formatAdminTime(slot.health.lastSuccessAt, locale)}</dd>
-          </div>
-          <div>
-            <dt>{t("providers.lastFailure")}</dt>
-            <dd>{formatAdminTime(slot.health.lastFailureAt, locale)}</dd>
-          </div>
-          <div>
-            <dt>{t("providers.failures")}</dt>
-            <dd>{slot.health.consecutiveFailures}</dd>
-          </div>
-        </dl>
-        {slot.health.cooldownUntil ? (
-          <p className="ops-key-cooldown">
-            {t("providers.cooldown", { time: formatAdminTime(slot.health.cooldownUntil, locale) })}
-          </p>
-        ) : null}
-      </div>
-
-      {slot.credentialId ? (
-        <p className="ops-credential-id">
-          <span>{t("providers.credentialId")}</span>
-          <code>{slot.credentialId.slice(0, 12)}</code>
-        </p>
-      ) : null}
-
-      <form className="ops-key-form" onSubmit={submit}>
-        <label htmlFor={`provider-key-${slot.slot}`}>{t("providers.key")}</label>
-        <input
-          id={`provider-key-${slot.slot}`}
-          name={`provider-key-${slot.slot}`}
-          type="password"
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-          placeholder={t("providers.keyPlaceholder")}
-          autoComplete="new-password"
-          spellCheck={false}
-          minLength={16}
-          maxLength={512}
-          disabled={pending || writeDisabled}
-          aria-describedby={`provider-key-help-${slot.slot}`}
-        />
-        <p id={`provider-key-help-${slot.slot}`}>{t("providers.keyHelp")}</p>
-        <label className="ops-toggle">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-            disabled={pending || writeDisabled}
-          />
-          <span aria-hidden="true" />
-          {t("providers.toggle")}
-        </label>
-        <div className="ops-key-actions">
-          <button
-            className="ops-button ops-button-primary"
-            type="submit"
-            disabled={!canSave || pending || writeDisabled}
-          >
-            <AdminIcon name="key" />
-            {pending
-              ? t("common.saving")
-              : slot.isConfigured && apiKey
-                ? t("providers.replace")
-                : slot.isConfigured
-                  ? t("common.save")
-                  : t("providers.add")}
-          </button>
-          {slot.isConfigured ? (
-            <button
-              className="ops-text-button ops-text-danger"
-              type="button"
-              onClick={onRemove}
-              disabled={pending || removeDisabled}
-            >
-              {t("providers.remove")}
-            </button>
-          ) : null}
-        </div>
-      </form>
-    </article>
   );
 }
 

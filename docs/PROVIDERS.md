@@ -5,7 +5,9 @@ single-key environment configuration, and a production-oriented managed
 three-slot keyring. Provider selection is implemented in
 [`provider-registry.ts`](../src/lib/providers/provider-registry.ts); the managed
 contract is recorded in
-[`ADR-002`](./decisions/ADR-002-managed-provider-keyring.md).
+[`ADR-002`](./decisions/ADR-002-managed-provider-keyring.md). Per-slot route
+binding and connection testing are recorded in
+[`ADR-004`](./decisions/ADR-004-slot-scoped-provider-routes.md).
 
 ## Choose one credential authority
 
@@ -40,6 +42,29 @@ credential identity, and health metadata, but never an API key, suffix, or
 fingerprint. Keys and bootstrap tokens must not be placed in URLs, browser
 storage, screenshots, or logs.
 
+Each slot is one atomic `API key + Base URL + model + enabled` route. The
+built-in OpenAI-compatible defaults are MiniMax, Volcengine Ark, and DeepSeek
+in slots 1, 2, and 3. The console lets an administrator edit and save the route,
+then run a small real chat-completion test against that exact saved
+revision. Testing is also available while a saved route is disabled, does not
+affect runtime cooldowns, and never returns the key or upstream response body.
+Unsaved drafts cannot be tested.
+
+After upgrading a legacy key-only vault, each configured card shows its
+recommended route but remains out of runtime/test selection until an
+administrator clicks **Save** once. This binds Base URL and model into the
+authenticated encryption envelope without asking for the API key again.
+
+| Priority | Default Base URL | Default model |
+| --- | --- | --- |
+| 1 | `https://api.minimaxi.com/v1` | `MiniMax-M3` |
+| 2 | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seed-evolving` |
+| 3 | `https://api.deepseek.com` | `deepseek-v4-flash` |
+
+The production endpoint policy is fail-closed: a Base URL must exactly match
+one of the three built-in routes, redirects are disabled, and the connection
+test rejects any private or reserved DNS answer before the key is attached.
+
 Changing providers is a deployment operation: clear the existing slots, change
 `LAUNCHLENS_PROVIDER_KEYRING_PROVIDER`, redeploy, and then add matching keys.
 The console intentionally cannot switch the runtime provider.
@@ -51,10 +76,13 @@ Each logical operation makes at most one upstream request per slot.
 
 - Authentication, quota, rate-limit, network, timeout-response, and upstream
   5xx failures may advance to the next slot and update credential health.
+- An upstream HTTP 400 may advance to the next slot without cooling down the
+  key because heterogeneous OpenAI-compatible routes can reject different
+  request fields.
 - Abort signals stop immediately.
-- Request, configuration, schema, empty-response, JSON parsing, and validation
-  failures stop immediately so another key is not charged for the same invalid
-  operation.
+- Locally detected configuration, schema, empty-response, JSON parsing, and
+  validation failures stop immediately so another key is not charged for the
+  same invalid operation.
 - Cooldowns are credential-bound. Replacing a key creates a new opaque identity
   so stale health cannot contaminate the replacement.
 - Standard research may invoke the deterministic mock once after the managed
@@ -130,7 +158,9 @@ silently dispatching into Production.
 | Symptom | Check |
 | --- | --- |
 | `/admin` cannot save a key | Verify Redis, the canonical 32-byte encryption secret, administrator session setup, and that the submitted provider matches the deployment provider. |
-| Slot 2 or 3 is never tried | Inspect the first failure category. Schema/configuration/parsing/validation errors intentionally stop instead of rotating keys. |
+| Connection test reports an endpoint error | Save the Base URL/model first. Verify the exact route is built in and resolves only to public addresses. |
+| Connection test returns authentication/response failure | Verify the slot's key, exact model ID, and provider account entitlement. The diagnostic intentionally omits the upstream body. |
+| Slot 2 or 3 is never tried | Inspect the first failure category. Upstream HTTP 400 can advance across heterogeneous routes, but local schema/configuration/parsing/validation errors intentionally stop. |
 | Output is marked mock/degraded | Inspect fallback provenance and credential health. Standard can explicitly degrade; Deep cannot. |
 | Deep is unavailable | Inspect `GET /api/research/capabilities`; provider configuration alone is only one of the eight production requirements. |
 | Preview worker wake returns a redirect or 401 | Verify the explicit/Preview worker origin, Deep worker secret, and Vercel Protection Bypass for Automation. Never print either secret while diagnosing. |

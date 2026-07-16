@@ -6,6 +6,11 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { getRedis } from "@/lib/research/redis-client";
+import {
+  DEFAULT_MANAGED_PROVIDER_BASE_URLS,
+  normalizeManagedProviderBaseUrl,
+} from "@/lib/security/provider-base-url";
+import { MINIMAX_DEFAULT_MODEL } from "@/lib/providers/openai-compatible-profile";
 
 export const PROVIDER_CREDENTIALS_KEY =
   "rs:admin:provider-credentials:v1";
@@ -14,10 +19,21 @@ const FORMAT_VERSION = 1 as const;
 const ALGORITHM = "aes-256-gcm" as const;
 const MIN_API_KEY_LENGTH = 16;
 const MAX_API_KEY_LENGTH = 512;
+const MAX_MODEL_LENGTH = 200;
 const HEALTH_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 export const LLM_PROVIDERS = ["openai", "anthropic"] as const;
 export const PROVIDER_CREDENTIAL_SLOTS = [1, 2, 3] as const;
+export const DEFAULT_PROVIDER_BASE_URLS = {
+  1: DEFAULT_MANAGED_PROVIDER_BASE_URLS[0],
+  2: DEFAULT_MANAGED_PROVIDER_BASE_URLS[1],
+  3: DEFAULT_MANAGED_PROVIDER_BASE_URLS[2],
+} as const satisfies Record<ProviderCredentialSlot, string>;
+export const DEFAULT_PROVIDER_MODELS = {
+  1: MINIMAX_DEFAULT_MODEL,
+  2: "doubao-seed-evolving",
+  3: "deepseek-v4-flash",
+} as const satisfies Record<ProviderCredentialSlot, string | null>;
 
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 export type ProviderCredentialSlot =
@@ -60,7 +76,18 @@ interface StoredCredential {
   fingerprint: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Absent only on records written before per-slot endpoints were introduced.
+   * Keeping this additive preserves the authenticated envelope of v1 records.
+   */
+  endpointConfig?: StoredEndpointConfig;
   encrypted: EncryptedPayload;
+}
+
+interface StoredEndpointConfig {
+  version: 1;
+  baseUrl: string;
+  model: string | null;
 }
 
 interface StoredDocument {
@@ -93,12 +120,18 @@ export interface ProviderCredentialHealth {
 export interface ProviderCredentialSlotStatus {
   slot: ProviderCredentialSlot;
   isConfigured: boolean;
+  /** False only for legacy key-only records that must be explicitly rebound. */
+  isRouteBound: boolean;
   provider: LlmProvider | null;
   enabled: boolean;
   /** Opaque identity; regenerated for every key replacement. */
   credentialId: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  /** Non-secret endpoint configuration; API keys remain write-only. */
+  baseUrl: string;
+  /** Null means use the provider-wide runtime model fallback. */
+  model: string | null;
   health: ProviderCredentialHealth;
 }
 
@@ -114,6 +147,10 @@ export interface ResolvedProviderCredential {
   provider: LlmProvider;
   slot: ProviderCredentialSlot;
   apiKey: string;
+  /** Always populated after the route has been explicitly bound. */
+  baseUrl: string;
+  /** Null means the managed adapter must use its runtime model fallback. */
+  model: string | null;
   fingerprint: string;
   health: ProviderCredentialHealth;
 }
@@ -123,6 +160,9 @@ export interface UpsertProviderCredentialInput {
   slot: ProviderCredentialSlot;
   /** Required for creation/replacement; omit when only toggling enabled. */
   apiKey?: string;
+  baseUrl?: string;
+  /** Null clears a slot-specific override and restores the runtime fallback. */
+  model?: string | null;
   enabled?: boolean;
   expectedRevision: number;
 }
@@ -130,6 +170,13 @@ export interface UpsertProviderCredentialInput {
 export interface DeleteProviderCredentialInput {
   provider: LlmProvider;
   slot: ProviderCredentialSlot;
+  expectedRevision: number;
+}
+
+export interface ResolveProviderCredentialForTestInput {
+  provider: LlmProvider;
+  slot: ProviderCredentialSlot;
+  credentialId: string;
   expectedRevision: number;
 }
 
@@ -326,11 +373,61 @@ export function validateProviderApiKey(value: unknown): string {
   return value;
 }
 
+export function defaultProviderBaseUrl(
+  slot: ProviderCredentialSlot,
+): string {
+  return DEFAULT_PROVIDER_BASE_URLS[slot];
+}
+
+export function defaultProviderModel(
+  slot: ProviderCredentialSlot,
+): string | null {
+  return DEFAULT_PROVIDER_MODELS[slot];
+}
+
+export function validateProviderCredentialBaseUrl(
+  value: unknown,
+  slot: ProviderCredentialSlot,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  if (typeof value !== "string") {
+    throw new ProviderCredentialValidationError("baseUrl must be a string.");
+  }
+  try {
+    return normalizeManagedProviderBaseUrl(value, defaultProviderBaseUrl(slot), {
+      nodeEnv: env.NODE_ENV,
+      env,
+    });
+  } catch {
+    throw new ProviderCredentialValidationError(
+      "baseUrl must be a safe HTTPS provider endpoint.",
+    );
+  }
+}
+
+export function validateProviderCredentialModel(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string") {
+    throw new ProviderCredentialValidationError("model must be a string or null.");
+  }
+  if (
+    value.length < 1 ||
+    value.length > MAX_MODEL_LENGTH ||
+    value.trim() !== value ||
+    /[\s\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    throw new ProviderCredentialValidationError(
+      `model must be 1-${MAX_MODEL_LENGTH} non-whitespace characters.`,
+    );
+  }
+  return value;
+}
+
 export async function getProviderCredentialsSnapshot(
   options: ProviderCredentialStoreOptions = {},
 ): Promise<ProviderCredentialsSnapshot> {
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   const decrypted = await verifyCredentials(document, context.key);
   const health = await Promise.all(
     PROVIDER_CREDENTIAL_SLOTS.map((slot) =>
@@ -348,11 +445,17 @@ export async function getProviderCredentialsSnapshot(
       return {
         slot,
         isConfigured: true,
+        isRouteBound: record.record.endpointConfig !== undefined,
         provider: record.record.provider,
         enabled: record.record.enabled,
         credentialId: record.record.credentialId,
         createdAt: record.record.createdAt,
         updatedAt: record.record.updatedAt,
+        baseUrl:
+          record.record.endpointConfig?.baseUrl ?? defaultProviderBaseUrl(slot),
+        model: record.record.endpointConfig
+          ? record.record.endpointConfig.model
+          : defaultProviderModel(slot),
         health:
           slotHealth &&
           slotHealth.provider === record.record.provider &&
@@ -370,7 +473,7 @@ export async function upsertProviderCredential(
 ): Promise<ProviderCredentialsSnapshot> {
   validateMutationIdentity(input);
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   const verified = await verifyCredentials(document, context.key);
   assertExpectedRevision(document, input.expectedRevision);
 
@@ -387,6 +490,31 @@ export async function upsertProviderCredential(
   const now = (options.now ?? (() => new Date()))().toISOString();
   let nextRecord: StoredCredential;
 
+  const hasBaseUrl = Object.prototype.hasOwnProperty.call(input, "baseUrl");
+  const hasModel = Object.prototype.hasOwnProperty.call(input, "model");
+  const currentBaseUrl =
+    existing?.record.endpointConfig?.baseUrl ?? defaultProviderBaseUrl(input.slot);
+  const currentModel = existing?.record.endpointConfig
+    ? existing.record.endpointConfig.model
+    : defaultProviderModel(input.slot);
+  const nextBaseUrl = hasBaseUrl
+    ? validateProviderCredentialBaseUrl(input.baseUrl, input.slot, options.env)
+    : currentBaseUrl;
+  const nextModel = hasModel
+    ? validateProviderCredentialModel(input.model)
+    : currentModel;
+  const endpointChanged =
+    existing !== undefined && (
+      existing.record.endpointConfig === undefined ||
+      nextBaseUrl !== currentBaseUrl ||
+      nextModel !== currentModel
+    );
+  const endpointConfig: StoredEndpointConfig = {
+    version: 1,
+    baseUrl: nextBaseUrl,
+    model: nextModel,
+  };
+
   if (input.apiKey !== undefined) {
     const apiKey = validateProviderApiKey(input.apiKey);
     nextRecord = encryptCredential(
@@ -397,6 +525,7 @@ export async function upsertProviderCredential(
         enabled: input.enabled ?? true,
         createdAt: existing?.record.createdAt ?? now,
         updatedAt: now,
+        endpointConfig,
       },
       apiKey,
       context.key,
@@ -405,20 +534,27 @@ export async function upsertProviderCredential(
     if (!existing || existing.record.provider !== input.provider) {
       throw new ProviderCredentialNotFoundError();
     }
-    const enabled = input.enabled;
-    if (typeof enabled !== "boolean") {
+    if (
+      typeof input.enabled !== "boolean" &&
+      !hasBaseUrl &&
+      !hasModel
+    ) {
       throw new ProviderCredentialValidationError(
-        "apiKey or enabled must be provided.",
+        "apiKey, enabled, baseUrl, or model must be provided.",
       );
     }
+    const enabled = input.enabled ?? existing.record.enabled;
     nextRecord = encryptCredential(
       {
-        credentialId: existing.record.credentialId,
+        credentialId: endpointChanged
+          ? randomBytes(16).toString("hex")
+          : existing.record.credentialId,
         provider: existing.record.provider,
         slot: existing.record.slot,
         enabled,
         createdAt: existing.record.createdAt,
         updatedAt: now,
+        endpointConfig,
       },
       existing.apiKey,
       context.key,
@@ -438,7 +574,7 @@ export async function upsertProviderCredential(
   // Health never carries secrets. Clearing it is best-effort and stale entries
   // are ignored unless their provider matches the newly configured slot.
   if (existing && existing.record.credentialId !== nextRecord.credentialId) {
-    await clearHealthIfCredentialMatches(
+    await clearCredentialRuntimeState(
       context.redis,
       input.slot,
       existing.record.credentialId,
@@ -453,7 +589,7 @@ export async function deleteProviderCredential(
 ): Promise<ProviderCredentialsSnapshot> {
   validateMutationIdentity(input);
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   await verifyCredentials(document, context.key);
   assertExpectedRevision(document, input.expectedRevision);
   const existing = document.credentials.find(
@@ -469,7 +605,7 @@ export async function deleteProviderCredential(
     ),
   };
   await compareAndSet(context.redis, document.revision, next);
-  await clearHealthIfCredentialMatches(
+  await clearCredentialRuntimeState(
     context.redis,
     input.slot,
     existing.credentialId,
@@ -489,11 +625,14 @@ export async function resolveProviderCredentials(
     throw new ProviderCredentialValidationError("Unsupported provider.");
   }
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   const verified = await verifyCredentials(document, context.key);
   const matches = verified
     .filter(
-      ({ record }) => record.provider === provider && record.enabled,
+      ({ record }) =>
+        record.provider === provider &&
+        record.enabled &&
+        record.endpointConfig !== undefined,
     )
     .sort((a, b) => a.record.slot - b.record.slot);
 
@@ -505,6 +644,11 @@ export async function resolveProviderCredentials(
         provider,
         slot: record.slot,
         apiKey,
+        baseUrl:
+          record.endpointConfig?.baseUrl ?? defaultProviderBaseUrl(record.slot),
+        model: record.endpointConfig
+          ? record.endpointConfig.model
+          : defaultProviderModel(record.slot),
         fingerprint: record.fingerprint,
         health:
           storedHealth && storedHealth.provider === provider
@@ -514,6 +658,58 @@ export async function resolveProviderCredentials(
       };
     }),
   );
+}
+
+/**
+ * Resolve one exact saved slot for an authenticated manual connection test.
+ * Disabled credentials are eligible once their route is bound. Revision +
+ * immutable identity prevent a stale browser snapshot from silently selecting
+ * a replacement credential.
+ */
+export async function resolveProviderCredentialForTest(
+  input: ResolveProviderCredentialForTestInput,
+  options: ProviderCredentialStoreOptions = {},
+): Promise<ResolvedProviderCredential> {
+  validateRuntimeIdentity(input.provider, input.slot, input.credentialId);
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 0
+  ) {
+    throw new ProviderCredentialValidationError(
+      "expectedRevision must be a non-negative integer.",
+    );
+  }
+  const context = resolveContext(options);
+  const document = await readDocument(context.redis, context.env);
+  assertExpectedRevision(document, input.expectedRevision);
+  const verified = await verifyCredentials(document, context.key);
+  const match = verified.find(
+    ({ record }) =>
+      record.provider === input.provider &&
+      record.slot === input.slot &&
+      record.credentialId === input.credentialId &&
+      record.endpointConfig !== undefined,
+  );
+  if (!match) throw new ProviderCredentialNotFoundError();
+  const storedHealth = await readHealth(context.redis, input.slot);
+  return {
+    credentialId: match.record.credentialId,
+    provider: match.record.provider,
+    slot: match.record.slot,
+    apiKey: match.apiKey,
+    baseUrl:
+      match.record.endpointConfig?.baseUrl ?? defaultProviderBaseUrl(input.slot),
+    model: match.record.endpointConfig
+      ? match.record.endpointConfig.model
+      : defaultProviderModel(input.slot),
+    fingerprint: match.record.fingerprint,
+    health:
+      storedHealth &&
+      storedHealth.provider === input.provider &&
+      storedHealth.credentialId === input.credentialId
+        ? publicHealth(storedHealth)
+        : unknownHealth(),
+  };
 }
 
 export async function recordProviderCredentialSuccess(
@@ -583,7 +779,7 @@ export async function acquireProviderCredentialProbe(
     );
   }
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   await verifyCredentials(document, context.key);
   const current = document.credentials.some(
     (record) =>
@@ -630,7 +826,11 @@ export async function releaseProviderCredentialProbe(
   }
 }
 
-type ResolvedContext = { redis: ProviderCredentialRedis; key: Buffer };
+type ResolvedContext = {
+  redis: ProviderCredentialRedis;
+  key: Buffer;
+  env: Readonly<Record<string, string | undefined>>;
+};
 
 function resolveContext(
   options: ProviderCredentialStoreOptions,
@@ -639,13 +839,13 @@ function resolveContext(
     options.redis === undefined
       ? (getRedis() as unknown as ProviderCredentialRedis | null)
       : options.redis;
-  const source =
-    (options.env ?? process.env).LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET;
+  const env = options.env ?? process.env;
+  const source = env.LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET;
   const key = decodeMasterKey(source);
   if (!redis || !key) {
     throw new ProviderCredentialsUnavailableError();
   }
-  return { redis, key };
+  return { redis, key, env };
 }
 
 function decodeMasterKey(value: unknown): Buffer | null {
@@ -667,6 +867,7 @@ function decodeMasterKey(value: unknown): Buffer | null {
 
 async function readDocument(
   redis: ProviderCredentialRedis,
+  env: Readonly<Record<string, string | undefined>>,
 ): Promise<StoredDocument> {
   let raw: unknown;
   try {
@@ -677,7 +878,7 @@ async function readDocument(
   if (raw === null || raw === undefined) return emptyDocument();
   try {
     const decoded = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (!isStoredDocument(decoded)) throw new Error("invalid document");
+    if (!isStoredDocument(decoded, env)) throw new Error("invalid document");
     return decoded;
   } catch {
     throw new ProviderCredentialsIntegrityError();
@@ -756,9 +957,10 @@ function aadFor(
     | "fingerprint"
     | "createdAt"
     | "updatedAt"
+    | "endpointConfig"
   >,
 ): string {
-  return [
+  const legacy = [
     "launchlens-provider-credential",
     FORMAT_VERSION,
     record.credentialId,
@@ -768,7 +970,17 @@ function aadFor(
     record.fingerprint,
     record.createdAt,
     record.updatedAt,
-  ].join(":");
+  ];
+  if (!("endpointConfig" in record) || record.endpointConfig === undefined) {
+    return legacy.join(":");
+  }
+  return legacy.concat(
+    "endpoint-v1",
+    Buffer.from(record.endpointConfig.baseUrl, "utf8").toString("base64url"),
+    record.endpointConfig.model === null
+      ? "-"
+      : Buffer.from(record.endpointConfig.model, "utf8").toString("base64url"),
+  ).join(":");
 }
 
 function fingerprintFor(apiKey: string, key: Buffer): string {
@@ -832,7 +1044,7 @@ async function writeHealthUpdate(
 ): Promise<void> {
   validateRuntimeIdentity(provider, slot, credentialId);
   const context = resolveContext(options);
-  const document = await readDocument(context.redis);
+  const document = await readDocument(context.redis, context.env);
   await verifyCredentials(document, context.key);
   const credential = document.credentials.find(
     (record) =>
@@ -885,6 +1097,19 @@ async function clearHealthIfCredentialMatches(
   } catch {
     // Config is already committed. Stale health is non-secret and ignored
     // because every read is identity-bound, so cleanup remains best-effort.
+  }
+}
+
+async function clearCredentialRuntimeState(
+  redis: ProviderCredentialRedis,
+  slot: ProviderCredentialSlot,
+  credentialId: string,
+): Promise<void> {
+  await clearHealthIfCredentialMatches(redis, slot, credentialId);
+  try {
+    await redis.del(probeKey(slot, credentialId));
+  } catch {
+    // The immutable identity means a stale lease cannot affect the replacement.
   }
 }
 
@@ -943,11 +1168,14 @@ function emptySlot(slot: ProviderCredentialSlot): ProviderCredentialSlotStatus {
   return {
     slot,
     isConfigured: false,
+    isRouteBound: false,
     provider: null,
     enabled: false,
     credentialId: null,
     createdAt: null,
     updatedAt: null,
+    baseUrl: defaultProviderBaseUrl(slot),
+    model: defaultProviderModel(slot),
     health: unknownHealth(),
   };
 }
@@ -985,7 +1213,10 @@ function probeKey(
   return `${HEALTH_KEY_PREFIX}:probe:${slot}:${credentialId}`;
 }
 
-function isStoredDocument(value: unknown): value is StoredDocument {
+function isStoredDocument(
+  value: unknown,
+  env: Readonly<Record<string, string | undefined>>,
+): value is StoredDocument {
   if (!isRecord(value)) return false;
   if (
     value.version !== FORMAT_VERSION ||
@@ -999,7 +1230,7 @@ function isStoredDocument(value: unknown): value is StoredDocument {
   const seen = new Set<number>();
   const providers = new Set<LlmProvider>();
   const valid = value.credentials.every((entry) => {
-    if (!isStoredCredential(entry) || seen.has(entry.slot)) return false;
+    if (!isStoredCredential(entry, env) || seen.has(entry.slot)) return false;
     seen.add(entry.slot);
     providers.add(entry.provider);
     return true;
@@ -1007,11 +1238,22 @@ function isStoredDocument(value: unknown): value is StoredDocument {
   return valid && providers.size <= 1;
 }
 
-function isStoredCredential(value: unknown): value is StoredCredential {
+function isStoredCredential(
+  value: unknown,
+  env: Readonly<Record<string, string | undefined>>,
+): value is StoredCredential {
   if (!isRecord(value) || !isRecord(value.encrypted)) return false;
+  if (!isProviderCredentialSlot(value.slot)) return false;
+  const endpointConfigValid = value.endpointConfig === undefined || (
+    isRecord(value.endpointConfig) &&
+    value.endpointConfig.version === 1 &&
+    typeof value.endpointConfig.baseUrl === "string" &&
+    isSafeStoredBaseUrl(value.endpointConfig.baseUrl, value.slot, env) &&
+    (value.endpointConfig.model === null ||
+      isSafeStoredModel(value.endpointConfig.model))
+  );
   return (
     isLlmProvider(value.provider) &&
-    isProviderCredentialSlot(value.slot) &&
     typeof value.credentialId === "string" &&
     /^[a-f0-9]{32}$/u.test(value.credentialId) &&
     typeof value.enabled === "boolean" &&
@@ -1019,11 +1261,36 @@ function isStoredCredential(value: unknown): value is StoredCredential {
     /^[a-f0-9]{20}$/u.test(value.fingerprint) &&
     isIsoTimestamp(value.createdAt) &&
     isIsoTimestamp(value.updatedAt) &&
+    endpointConfigValid &&
     value.encrypted.algorithm === ALGORITHM &&
     isBase64Url(value.encrypted.iv) &&
     isBase64Url(value.encrypted.ciphertext) &&
     isBase64Url(value.encrypted.authTag)
   );
+}
+
+function isSafeStoredBaseUrl(
+  value: string,
+  slot: ProviderCredentialSlot,
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  try {
+    return normalizeManagedProviderBaseUrl(
+      value,
+      defaultProviderBaseUrl(slot),
+      { nodeEnv: env.NODE_ENV, env },
+    ) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeStoredModel(value: unknown): value is string {
+  try {
+    return validateProviderCredentialModel(value) === value;
+  } catch {
+    return false;
+  }
 }
 
 function isStoredHealth(value: unknown): value is StoredHealth {

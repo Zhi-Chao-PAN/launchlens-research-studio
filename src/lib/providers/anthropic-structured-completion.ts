@@ -71,6 +71,7 @@ export function createAnthropicStructuredCompletionProvider(
         try {
           response = await fetchImpl(`${baseUrl}/v1/messages`, {
             method: "POST",
+            redirect: "error",
             headers: {
               "Content-Type": "application/json",
               "x-api-key": config.apiKey,

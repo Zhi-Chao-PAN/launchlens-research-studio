@@ -27,6 +27,10 @@ import {
   ProviderRequestError,
 } from "@/lib/providers/provider-request-error";
 import { normalizeProviderBaseUrl } from "@/lib/security/provider-base-url";
+import {
+  openAICompatibleRequestOptions,
+  resolveOpenAICompatibleEndpointProfile,
+} from "@/lib/providers/openai-compatible-profile";
 
 export interface OpenAIProviderConfig {
   apiKey: string;
@@ -50,6 +54,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
   const fetchImpl = config.fetchImpl || globalThis.fetch;
   const maxAttempts = Math.max(1, Math.min(3, Math.floor(config.maxAttempts ?? 3)));
   const allowStructuredRepair = config.allowStructuredRepair !== false;
+  const endpointProfile = resolveOpenAICompatibleEndpointProfile(baseUrl);
 
   return {
     id: "openai",
@@ -81,6 +86,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           try {
             r = await fetchImpl(url, {
               method: "POST",
+              redirect: "error",
               headers: {
                 "Content-Type": "application/json",
                 "Authorization": "Bearer " + config.apiKey,
@@ -88,9 +94,16 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               signal: ctx.signal,
               body: JSON.stringify({
                 model,
-                temperature: 0.4,
+                ...openAICompatibleRequestOptions(baseUrl, {
+                  temperature: 0.4,
+                  // Preserve the existing generic Ark/DeepSeek request while
+                  // using MiniMax's documented completion-length field.
+                  ...(endpointProfile.id === "minimax"
+                    ? { maxOutputTokens: 8_192 }
+                    : {}),
+                  jsonObject: true,
+                }),
                 stream,
-                response_format: { type: "json_object" },
                 messages: [
                   { role: "system", content: buildSystemPrompt(agentId, outputLanguage) },
                   { role: "user", content: buildUserPrompt(agentId, { query: ctx.query, keywords: ctx.keywords, upstream: ctx.upstream, outputLanguage, retrievedSources: ctx.retrievedSources, validationSummary: ctx.validationSummary }) },

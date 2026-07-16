@@ -65,8 +65,6 @@ export function selectStructuredCompletionProvider(
     ) {
       return { kind: "unavailable", reason: "forced_provider_missing_key" };
     }
-    const safe = keyringProvider === "openai" ? safeOpenAIUrl() : safeAnthropicUrl();
-    if (!safe) return { kind: "unavailable", reason: "invalid_provider_url" };
     return {
       kind: "configured",
       provider: createManagedStructuredCompletionProvider({

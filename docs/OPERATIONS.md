@@ -48,6 +48,16 @@ keys, suffixes, or fingerprints. Treat loss of the encryption secret as loss of
 the encrypted credentials; the runtime intentionally does not guess or decrypt
 with another value.
 
+Configure every slot as an atomic key, Base URL, and model route. Save a route
+before using its **Test connection** action; the probe is revision- and
+credential-bound, may test a saved disabled slot, and does not alter runtime
+health. Built-in routes cover MiniMax, Volcengine Ark, and DeepSeek. Additional
+routes are intentionally rejected: URL syntax, redirects, and private/reserved
+DNS answers fail closed so stored keys cannot be sent to an arbitrary host.
+On first deployment over a legacy key-only vault, click **Save** on each
+configured route before activating the keyring. No key re-entry is required;
+the save binds the displayed URL/model and rotates the route identity.
+
 ### Deep Research
 
 `GET /api/research/capabilities` evaluates eight requirements before Deep can
@@ -86,8 +96,10 @@ must therefore also confirm `event=schedule` in GitHub Actions.
 Managed provider slots are attempted strictly `1 -> 2 -> 3`, with at most one
 upstream request per slot for one logical operation. Authentication, quota,
 rate-limit, network, timeout-response, and 5xx failures may rotate to the next
-slot. Schema, configuration, parsing, empty-response, and validation failures
-stop immediately. Abort signals also stop immediately.
+slot. A provider-specific HTTP 400 can also advance to the next slot without
+cooling down the key, because heterogeneous OpenAI-compatible routes can reject
+different request fields. Local schema, configuration, parsing, empty-response, and
+validation failures stop immediately. Abort signals also stop immediately.
 
 - **Standard:** after the managed path is exhausted, one deterministic mock
   fallback is allowed only with explicit degraded/fallback provenance.

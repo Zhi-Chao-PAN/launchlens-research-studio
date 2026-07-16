@@ -93,6 +93,16 @@ export interface AdminTelemetry {
 
 export type ProviderName = "openai" | "anthropic";
 export type ProviderSlot = 1 | 2 | 3;
+export const DEFAULT_PROVIDER_BASE_URLS: Record<ProviderSlot, string> = {
+  1: "https://api.minimaxi.com/v1",
+  2: "https://ark.cn-beijing.volces.com/api/plan/v3",
+  3: "https://api.deepseek.com",
+};
+export const DEFAULT_PROVIDER_MODELS: Record<ProviderSlot, string | null> = {
+  1: "MiniMax-M3",
+  2: "doubao-seed-evolving",
+  3: "deepseek-v4-flash",
+};
 export type ProviderHealthStatus =
   | "unknown"
   | "healthy"
@@ -117,7 +127,13 @@ export interface ProviderCredentialHealth {
 export interface ProviderCredentialSlot {
   slot: ProviderSlot;
   isConfigured: boolean;
+  /** Legacy key-only records remain inactive until this route is saved once. */
+  isRouteBound: boolean;
   provider: ProviderName | null;
+  /** Non-secret API root paired with this slot's encrypted key. */
+  baseUrl: string;
+  /** Optional per-slot model override; null follows the global model. */
+  model: string | null;
   enabled: boolean;
   credentialId: string | null;
   createdAt: string | null;
@@ -135,6 +151,19 @@ export interface ProviderCredentialsSnapshot {
   /** Whether the managed vault currently owns runtime provider traffic. */
   keyringEnabled: boolean;
   slots: ProviderCredentialSlot[];
+}
+
+export interface ProviderCredentialTestResult {
+  ok: boolean;
+  slot: ProviderSlot;
+  provider: ProviderName;
+  baseUrl: string;
+  endpoint: string;
+  model: string;
+  durationMs: number;
+  testedAt: string;
+  httpStatus?: number;
+  reason?: "auth" | "rate_limit" | "network" | "server" | "invalid_response";
 }
 
 interface ProviderCredentialsApiResponse {
@@ -352,6 +381,8 @@ export async function saveProviderCredential(input: {
   slot: ProviderSlot;
   expectedRevision: number;
   apiKey?: string;
+  baseUrl?: string;
+  model?: string | null;
   enabled?: boolean;
 }): Promise<ProviderCredentialsSnapshot> {
   const payload = await adminJson<ProviderCredentialsApiResponse>(
@@ -359,6 +390,19 @@ export async function saveProviderCredential(input: {
     { method: "PUT", body: JSON.stringify(input) },
   );
   return toProviderCredentialsSnapshot(payload);
+}
+
+export async function testProviderCredential(input: {
+  provider: ProviderName;
+  slot: ProviderSlot;
+  credentialId: string;
+  expectedRevision: number;
+}): Promise<ProviderCredentialTestResult> {
+  const payload = await adminJson<{ data: ProviderCredentialTestResult }>(
+    "/api/admin/provider-credentials/test",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
 }
 
 export async function removeProviderCredential(input: {
@@ -377,12 +421,28 @@ function toProviderCredentialsSnapshot(
   payload: ProviderCredentialsApiResponse,
 ): ProviderCredentialsSnapshot {
   const runtimeProvider = payload.runtimeProvider ?? null;
+  const targetProvider = payload.targetProvider ?? runtimeProvider;
   return {
     ...payload.data,
+    slots: payload.data.slots.map((slot) => ({
+      ...slot,
+      isRouteBound: slot.isRouteBound ?? false,
+      // Keep the console usable during a rolling deployment where an older
+      // serverless instance may still return the legacy key-only shape.
+      baseUrl:
+        slot.baseUrl ||
+        (targetProvider === "openai" ? DEFAULT_PROVIDER_BASE_URLS[slot.slot] : ""),
+      model:
+        slot.model === undefined
+          ? targetProvider === "openai"
+            ? DEFAULT_PROVIDER_MODELS[slot.slot]
+            : null
+          : slot.model,
+    })),
     runtimeProvider,
     // Backwards compatibility keeps a mixed-version client usable while a
     // newly deployed API rolls out across serverless instances.
-    targetProvider: payload.targetProvider ?? runtimeProvider,
+    targetProvider,
     keyringEnabled: payload.keyringEnabled ?? runtimeProvider !== null,
   };
 }

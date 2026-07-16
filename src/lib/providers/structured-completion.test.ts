@@ -130,6 +130,32 @@ describe("OpenAI structured completion", () => {
       retryable: false,
     });
   });
+
+  it("uses MiniMax completion fields without undeclared JSON mode", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const provider = createOpenAIStructuredCompletionProvider({
+      apiKey: "minimax-secret-key",
+      baseUrl: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
+      fetchImpl: vi.fn(async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return jsonResponse({
+          choices: [{ message: { content: '<think>review</think>\n{"ok":true}' } }],
+        });
+      }) as typeof fetch,
+    });
+
+    await expect(provider.complete(request({ temperature: 0, maxOutputTokens: 512 })))
+      .resolves.toEqual({ ok: true });
+    expect(requestBody).toMatchObject({
+      model: "MiniMax-M3",
+      temperature: 1,
+      max_completion_tokens: 512,
+      stream: false,
+    });
+    expect(requestBody).not.toHaveProperty("max_tokens");
+    expect(requestBody).not.toHaveProperty("response_format");
+  });
 });
 
 describe("Anthropic structured completion", () => {
@@ -177,6 +203,18 @@ describe("structured completion registry", () => {
     const selected = selectStructuredCompletionProvider({
       LAUNCHLENS_PROVIDER: "openai",
       LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+    });
+    expect(selected).toMatchObject({
+      kind: "configured",
+      provider: { id: "openai-keyring", isMock: false },
+    });
+  });
+
+  it("does not gate the managed reviewer on legacy review-wide endpoints", () => {
+    const selected = selectStructuredCompletionProvider({
+      LAUNCHLENS_PROVIDER_KEYRING_ENABLED: "1",
+      LAUNCHLENS_PROVIDER_KEYRING_PROVIDER: "openai",
+      LAUNCHLENS_REVIEW_BASE_URL: "http://localhost:11434/v1",
     });
     expect(selected).toMatchObject({
       kind: "configured",

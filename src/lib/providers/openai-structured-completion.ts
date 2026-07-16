@@ -16,6 +16,7 @@ import {
   ProviderBaseUrlError,
   normalizeProviderBaseUrl,
 } from "@/lib/security/provider-base-url";
+import { openAICompatibleRequestOptions } from "./openai-compatible-profile";
 
 export interface OpenAIStructuredCompletionConfig {
   apiKey: string;
@@ -71,6 +72,7 @@ export function createOpenAIStructuredCompletionProvider(
         try {
           response = await fetchImpl(`${baseUrl}/chat/completions`, {
             method: "POST",
+            redirect: "error",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${config.apiKey}`,
@@ -78,10 +80,12 @@ export function createOpenAIStructuredCompletionProvider(
             signal: deadline.signal,
             body: JSON.stringify({
               model,
-              temperature: normalized.temperature,
+              ...openAICompatibleRequestOptions(baseUrl, {
+                temperature: normalized.temperature,
+                maxOutputTokens: normalized.maxOutputTokens,
+                jsonObject: true,
+              }),
               stream: false,
-              max_tokens: normalized.maxOutputTokens,
-              response_format: { type: "json_object" },
               messages: [
                 {
                   role: "system",

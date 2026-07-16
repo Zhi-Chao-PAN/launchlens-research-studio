@@ -84,6 +84,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           try {
             r = await fetchImpl(url, {
               method: "POST",
+              redirect: "error",
               headers: {
                 "Content-Type": "application/json",
                 "x-api-key": config.apiKey,

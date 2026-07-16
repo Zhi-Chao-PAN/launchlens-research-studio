@@ -54,6 +54,13 @@ describe("selectProvider", () => {
     expect(selectProvider(env).id).toBe("openai-keyring");
   });
 
+  it("does not let a legacy global base URL gate the slot-managed provider", () => {
+    env.LAUNCHLENS_PROVIDER_KEYRING_ENABLED = "1";
+    env.LAUNCHLENS_PROVIDER_KEYRING_PROVIDER = "openai";
+    env.OPENAI_BASE_URL = "http://localhost:11434/v1";
+    expect(selectProvider(env).id).toBe("openai-keyring");
+  });
+
   it("keeps the legacy provider active while managed credentials are staged", () => {
     env.OPENAI_API_KEY = "legacy-key";
     env.LAUNCHLENS_PROVIDER = "openai";

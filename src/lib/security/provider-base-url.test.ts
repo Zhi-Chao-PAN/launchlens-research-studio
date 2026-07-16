@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   ProviderBaseUrlError,
   isSafeProviderBaseUrl,
+  isPublicIpAddress,
+  normalizeManagedProviderBaseUrl,
   normalizeProviderBaseUrl,
 } from "./provider-base-url";
 
@@ -49,5 +51,43 @@ describe("normalizeProviderBaseUrl", () => {
       .toBe(true);
     expect(isSafeProviderBaseUrl("http://api.example/v1", "https://unused.example"))
       .toBe(false);
+  });
+
+  it.each([
+    "https://evil.example/v1",
+    "https://api.deepseek.com:444",
+    "https://api.deepseek.com/v1",
+    "https://api.deepseek.com./",
+  ])("rejects managed endpoints outside the exact host/path allowlist: %s", (baseUrl) => {
+    expect(() => normalizeManagedProviderBaseUrl(
+      baseUrl,
+      "https://api.deepseek.com",
+      { nodeEnv: "production", env: {} },
+    )).toThrow(ProviderBaseUrlError);
+  });
+
+  it("does not permit deployment variables to extend the credential route set", () => {
+    expect(() => normalizeManagedProviderBaseUrl(
+      "https://gateway.example/v1/",
+      "https://unused.example",
+      {
+        nodeEnv: "production",
+        env: {
+          LAUNCHLENS_PROVIDER_BASE_URL_ALLOWLIST: "https://gateway.example/v1",
+        },
+      },
+    )).toThrow(ProviderBaseUrlError);
+  });
+
+  it.each([
+    ["8.8.8.8", true],
+    ["10.0.0.1", false],
+    ["169.254.169.254", false],
+    ["127.0.0.1", false],
+    ["2606:4700:4700::1111", true],
+    ["fc00::1", false],
+    ["2001:db8::1", false],
+  ])("classifies public provider DNS addresses: %s", (address, expected) => {
+    expect(isPublicIpAddress(String(address))).toBe(expected);
   });
 });

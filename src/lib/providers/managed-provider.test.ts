@@ -36,6 +36,16 @@ function credential(slot: 1 | 2 | 3, health = unknownHealth): ResolvedProviderCr
     slot,
     credentialId: String(slot).repeat(32),
     apiKey: `managed-key-${slot}-long-enough`,
+    baseUrl: ({
+      1: "https://api.minimaxi.com/v1",
+      2: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      3: "https://api.deepseek.com",
+    } as const)[slot],
+    model: ({
+      1: "MiniMax-M3",
+      2: "doubao-seed-evolving",
+      3: "deepseek-v4-flash",
+    } as const)[slot],
     fingerprint: String(slot).repeat(20),
     health,
   };
@@ -113,6 +123,42 @@ describe("managed research provider", () => {
     expect(success).toHaveBeenCalledWith("openai", 2, "2".repeat(32));
   });
 
+  it("keeps each failover key paired with its own endpoint and model", async () => {
+    const { deps } = dependencies([credential(1), credential(2), credential(3)]);
+    const fetchImpl = openAiFetch({
+      "managed-key-1-long-enough": 401,
+      "managed-key-2-long-enough": 401,
+    });
+    const provider = createManagedResearchProvider({
+      provider: "openai",
+      failureMode: "throw",
+      env: {
+        OPENAI_BASE_URL: "https://global.example/v1",
+        OPENAI_MODEL: "global-fallback-model",
+      },
+      fetchImpl: fetchImpl as typeof fetch,
+      dependencies: deps,
+    });
+
+    await provider.generate("channel-scout", { query: "q", keywords: [] });
+
+    expect(fetchImpl.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.minimaxi.com/v1/chat/completions",
+      "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions",
+      "https://api.deepseek.com/chat/completions",
+    ]);
+    expect(fetchImpl.mock.calls.map(([, init]) =>
+      JSON.parse(String(init?.body)).model,
+    )).toEqual(["MiniMax-M3", "doubao-seed-evolving", "deepseek-v4-flash"]);
+    expect(fetchImpl.mock.calls.map(([, init]) =>
+      new Headers(init?.headers).get("authorization"),
+    )).toEqual([
+      "Bearer managed-key-1-long-enough",
+      "Bearer managed-key-2-long-enough",
+      "Bearer managed-key-3-long-enough",
+    ]);
+  });
+
   it("falls back to mock exactly once in Standard after all three fail", async () => {
     const { deps } = dependencies([credential(1), credential(2), credential(3)]);
     const fetchImpl = openAiFetch({
@@ -159,8 +205,8 @@ describe("managed research provider", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("does not switch keys for shared 400 request errors", async () => {
-    const { deps } = dependencies([credential(1), credential(2)]);
+  it("switches endpoints for provider-specific 400 request errors", async () => {
+    const { deps, success, failure } = dependencies([credential(1), credential(2)]);
     const fetchImpl = openAiFetch({ "managed-key-1-long-enough": 400 });
     const provider = createManagedResearchProvider({
       provider: "openai",
@@ -169,9 +215,17 @@ describe("managed research provider", () => {
       dependencies: deps,
     });
 
-    await expect(provider.generate("market-sizer", { query: "q", keywords: [] }))
-      .rejects.toMatchObject({ status: 400 });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await expect(provider.generate("channel-scout", { query: "q", keywords: [] }))
+      .resolves.toMatchObject({ agent: "channel-scout" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(failure).toHaveBeenCalledWith(
+      "openai",
+      1,
+      "1".repeat(32),
+      "unknown",
+      0,
+    );
+    expect(success).toHaveBeenCalledWith("openai", 2, "2".repeat(32));
   });
 
   it("skips an active cooldown without probing it", async () => {
@@ -272,12 +326,78 @@ describe("managed structured reviewer", () => {
     expect(failure).toHaveBeenCalledWith("openai", 1, "1".repeat(32), "rate_limit", 60_000);
     expect(success).toHaveBeenCalledWith("openai", 2, "2".repeat(32));
   });
+
+  it("ignores review-wide URL/model overrides and uses slot configuration", async () => {
+    const { deps } = dependencies([credential(2)]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ ok: true }) } }],
+    }), { status: 200 }));
+    const reviewer = createManagedStructuredCompletionProvider({
+      provider: "openai",
+      env: {
+        OPENAI_MODEL: "global-generation-model",
+        LAUNCHLENS_REVIEW_MODEL: "must-not-override-slot",
+        LAUNCHLENS_REVIEW_BASE_URL: "https://must-not-be-used.example/v1",
+      },
+      fetchImpl: fetchImpl as typeof fetch,
+      dependencies: deps,
+    });
+
+    await reviewer.complete({
+      schemaName: "managed_test",
+      systemPrompt: "Return the test schema.",
+      userPrompt: "Untrusted test payload.",
+      validate: (value): value is { ok: true } =>
+        typeof value === "object" && value !== null && (value as { ok?: unknown }).ok === true,
+    });
+
+    const [input, init] = (fetchImpl.mock.calls as unknown as Array<
+      [RequestInfo | URL, RequestInit?]
+    >)[0];
+    expect(String(input)).toBe(
+      "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions",
+    );
+    expect(JSON.parse(String(init?.body)).model).toBe("doubao-seed-evolving");
+  });
+
+  it("continues structured failover after a provider-specific 400", async () => {
+    const { deps, success, failure } = dependencies([credential(1), credential(2)]);
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const key = new Headers(init?.headers).get("authorization")?.replace("Bearer ", "");
+      if (key?.includes("key-1")) return new Response("unsupported parameter", { status: 400 });
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"ok":true}' } }],
+      }), { status: 200 });
+    });
+    const reviewer = createManagedStructuredCompletionProvider({
+      provider: "openai",
+      fetchImpl: fetchImpl as typeof fetch,
+      dependencies: deps,
+    });
+
+    await expect(reviewer.complete({
+      schemaName: "managed_test",
+      systemPrompt: "Return the test schema.",
+      userPrompt: "Untrusted test payload.",
+      validate: (value): value is { ok: true } =>
+        typeof value === "object" && value !== null && (value as { ok?: unknown }).ok === true,
+    })).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(failure).toHaveBeenCalledWith(
+      "openai",
+      1,
+      "1".repeat(32),
+      "unknown",
+      0,
+    );
+    expect(success).toHaveBeenCalledWith("openai", 2, "2".repeat(32));
+  });
 });
 
 describe("managed failover policy", () => {
   it("switches only key-specific/transient failures", () => {
     expect(classifyManagedProviderError(new ProviderRequestError("http", "bad", { status: 401 })).action).toBe("switch");
-    expect(classifyManagedProviderError(new ProviderRequestError("http", "bad", { status: 400 })).action).toBe("stop");
+    expect(classifyManagedProviderError(new ProviderRequestError("http", "bad", { status: 400 })).action).toBe("switch");
     expect(classifyManagedProviderError(new ProviderRequestError("network", "offline")).action).toBe("switch");
     expect(classifyManagedProviderError(new RetriableSseError("socket reset")).action).toBe("switch");
   });

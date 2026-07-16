@@ -17,6 +17,7 @@ import {
   getAdminStats,
   getProviderCredentials,
   saveProviderCredential,
+  testProviderCredential,
 } from "./admin-client";
 
 describe("admin-client", () => {
@@ -52,7 +53,18 @@ describe("admin-client", () => {
       slots: [1, 2, 3].map((slot) => ({
         slot,
         isConfigured: slot === 1,
+        isRouteBound: slot === 1,
         provider: slot === 1 ? "openai" : null,
+        baseUrl: slot === 1
+          ? "https://api.minimaxi.com/v1"
+          : slot === 2
+            ? "https://ark.cn-beijing.volces.com/api/plan/v3"
+            : "https://api.deepseek.com",
+        model: slot === 2
+          ? "doubao-seed-evolving"
+          : slot === 3
+            ? "deepseek-v4-flash"
+            : null,
         enabled: slot === 1,
         credentialId: slot === 1 ? "cred_opaque_123" : null,
         createdAt: null,
@@ -124,7 +136,23 @@ describe("admin-client", () => {
     const data = {
       version: 1 as const,
       revision: 3,
-      slots: [],
+      slots: [{
+        slot: 1 as const,
+        isConfigured: false,
+        provider: null,
+        enabled: false,
+        credentialId: null,
+        createdAt: null,
+        updatedAt: null,
+        health: {
+          status: "unknown" as const,
+          consecutiveFailures: 0,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastFailureReason: null,
+          cooldownUntil: null,
+        },
+      }],
     };
     fetchWithCsrfMock.mockResolvedValue(
       new Response(
@@ -135,6 +163,12 @@ describe("admin-client", () => {
 
     await expect(getProviderCredentials()).resolves.toEqual({
       ...data,
+      slots: [{
+        ...data.slots[0],
+        isRouteBound: false,
+        baseUrl: "",
+        model: null,
+      }],
       runtimeProvider: "anthropic",
       targetProvider: "anthropic",
       keyringEnabled: true,
@@ -168,5 +202,75 @@ describe("admin-client", () => {
       code: "PROVIDER_CREDENTIALS_REVISION_CONFLICT",
       currentRevision: 9,
     });
+  });
+
+  it("sends Base URL and model updates with the credential CAS revision", async () => {
+    fetchWithCsrfMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: { version: 1, revision: 8, slots: [] },
+          runtimeProvider: "openai",
+          targetProvider: "openai",
+          keyringEnabled: true,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await saveProviderCredential({
+      provider: "openai",
+      slot: 2,
+      expectedRevision: 7,
+      baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      model: "ep-user-supplied-model-id",
+      enabled: true,
+    });
+
+    const [path, init] = fetchWithCsrfMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/admin/provider-credentials");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toEqual({
+      provider: "openai",
+      slot: 2,
+      expectedRevision: 7,
+      baseUrl: "https://ark.cn-beijing.volces.com/api/plan/v3",
+      model: "ep-user-supplied-model-id",
+      enabled: true,
+    });
+  });
+
+  it("tests a saved slot without sending plaintext credentials or draft overrides", async () => {
+    const result = {
+      ok: true,
+      slot: 3,
+      provider: "openai",
+      baseUrl: "https://api.deepseek.com",
+      endpoint: "https://api.deepseek.com/chat/completions",
+      model: "deepseek-chat",
+      durationMs: 318,
+      testedAt: "2026-07-16T08:00:00.000Z",
+    };
+    fetchWithCsrfMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: result }), { status: 200 }),
+    );
+
+    await expect(testProviderCredential({
+      provider: "openai",
+      slot: 3,
+      credentialId: "cred_deepseek_opaque",
+      expectedRevision: 12,
+    })).resolves.toEqual(result);
+
+    const [path, init] = fetchWithCsrfMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/admin/provider-credentials/test");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      provider: "openai",
+      slot: 3,
+      credentialId: "cred_deepseek_opaque",
+      expectedRevision: 12,
+    });
+    expect(String(init.body)).not.toContain("apiKey");
+    expect(String(init.body)).not.toContain("baseUrl");
   });
 });

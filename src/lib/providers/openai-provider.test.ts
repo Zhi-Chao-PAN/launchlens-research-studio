@@ -158,6 +158,30 @@ describe("createOpenAIProvider", () => {
     expect(capturedBody.response_format.type).toBe("json_object");
   });
 
+  it("uses the MiniMax OpenAI-compatible request profile", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      capturedBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+      return { ok: false, status: 401 } as Response;
+    });
+    const provider = createOpenAIProvider({
+      apiKey: "k",
+      baseUrl: "https://api.minimaxi.com/v1",
+      model: "MiniMax-M3",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    await provider.generate("market-sizer", { query: "q", keywords: [] });
+
+    expect(capturedBody).toMatchObject({
+      model: "MiniMax-M3",
+      temperature: 0.4,
+      max_completion_tokens: 8_192,
+    });
+    expect(capturedBody).not.toHaveProperty("max_tokens");
+    expect(capturedBody).not.toHaveProperty("response_format");
+  });
+
   it("injects the schema-aware system prompt into the LLM call", async () => {
     let systemContent = "";
     let userContent = "";

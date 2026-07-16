@@ -1046,6 +1046,15 @@
   font-size: 0.65rem;
 }
 
+.ops-provider-flow-help {
+  max-width: 58ch;
+  margin: 0.55rem 0 0;
+  color: var(--ops-muted);
+  font-size: 0.69rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
 .ops-provider-control .ops-field {
   width: min(100%, 16rem);
 }
@@ -1089,6 +1098,47 @@
   border-top: 0.2rem solid var(--ops-accent);
 }
 
+.ops-route-summary {
+  margin-inline: -1.1rem;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--ops-line);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ops-accent) 8%, transparent), transparent 72%);
+}
+
+.ops-route-summary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ops-route-summary span {
+  color: var(--ops-dim);
+  font-size: 0.61rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ops-route-summary strong {
+  color: var(--ops-accent-strong);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.ops-route-summary code {
+  display: block;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  color: var(--ops-text-soft);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.65rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ops-key-card-header,
 .ops-key-priority {
   display: flex;
@@ -1114,7 +1164,7 @@
 }
 
 .ops-key-priority p,
-.ops-key-priority strong {
+.ops-key-priority h3 {
   display: block;
   margin: 0;
 }
@@ -1124,10 +1174,11 @@
   font-size: 0.62rem;
 }
 
-.ops-key-priority strong {
+.ops-key-priority h3 {
   margin-top: 0.15rem;
   color: var(--ops-text-soft);
   font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .ops-key-health {
@@ -1191,11 +1242,55 @@
   padding-top: 1rem;
 }
 
+.ops-route-fields {
+  display: grid;
+  gap: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ops-line);
+}
+
+.ops-route-fields .ops-field + .ops-field {
+  margin-top: 0.9rem;
+}
+
+.ops-route-fields input,
+.ops-key-form > input {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.ops-shell input[aria-invalid="true"] {
+  border-color: var(--ops-danger);
+}
+
+.ops-field-help,
+.ops-field-error,
+.ops-test-guidance {
+  margin: 0.4rem 0 0;
+  font-size: 0.63rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.ops-field-help,
+.ops-test-guidance {
+  color: var(--ops-dim);
+}
+
+.ops-field-error {
+  color: #f0a19a;
+}
+
 .ops-key-form > p {
   margin: 0.4rem 0 0;
   color: var(--ops-dim);
   font-size: 0.63rem;
   line-height: 1.45;
+}
+
+.ops-key-form > .ops-field-error {
+  color: #f0a19a;
 }
 
 .ops-toggle {
@@ -1254,8 +1349,98 @@
 .ops-key-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ops-key-actions .ops-text-button {
+  margin-left: auto;
+}
+
+.ops-test-button.is-testing .ops-icon {
+  animation: ops-test-spin 850ms linear infinite;
+}
+
+@keyframes ops-test-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ops-connection-test {
+  margin-top: 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--ops-line);
+  background: var(--ops-bg);
+}
+
+.ops-connection-test.is-success {
+  border-left: 0.18rem solid var(--ops-positive);
+}
+
+.ops-connection-test.is-error {
+  border-left: 0.18rem solid var(--ops-danger);
+}
+
+.ops-connection-test.is-testing {
+  border-left: 0.18rem solid var(--ops-info);
+}
+
+.ops-connection-test > header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.ops-connection-test > header > span {
+  color: var(--ops-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.ops-connection-test dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--ops-line);
+}
+
+.ops-connection-test dl > div {
+  display: grid;
+  grid-template-columns: minmax(6.4rem, 0.38fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.ops-connection-test dt,
+.ops-connection-test dd {
+  margin: 0;
+  font-size: 0.63rem;
+}
+
+.ops-connection-test dt {
+  color: var(--ops-dim);
+}
+
+.ops-connection-test dd {
+  min-width: 0;
+  color: var(--ops-text-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ops-connection-test code {
+  overflow-wrap: anywhere;
+  color: var(--ops-text-soft);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  white-space: normal;
+}
+
+.ops-connection-test > p {
+  margin: 0.7rem 0 0;
+  color: #f0a19a;
+  font-size: 0.65rem;
+  line-height: 1.5;
 }
 
 .ops-key-connector {
@@ -1812,9 +1997,11 @@
   .ops-export-group { display: grid; grid-template-columns: 1fr 1fr; }
   .ops-export-group .ops-button { padding-inline: 0.5rem; }
   .ops-key-card { padding: 0.85rem; }
+  .ops-route-summary { margin-inline: -0.85rem; padding-inline: 0.85rem; }
   .ops-key-card-header { align-items: flex-start; }
   .ops-key-actions { align-items: stretch; flex-direction: column; }
   .ops-key-actions .ops-button { width: 100%; }
+  .ops-key-actions .ops-text-button { align-self: flex-start; margin-left: 0; }
   .ops-subtabs { overflow-x: auto; }
   .ops-subtabs button { flex: 0 0 auto; padding-inline: 0.75rem; }
   .ops-form-row { grid-template-columns: 1fr; }
@@ -1833,6 +2020,7 @@
   .ops-nav-scrim,
   .ops-button,
   .ops-nav-item,
+  .ops-test-button .ops-icon,
   .ops-session-line::after {
     animation: none;
     transition: none;

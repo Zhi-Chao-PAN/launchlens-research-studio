@@ -31,6 +31,8 @@ interface MutationBody {
   slot: 1 | 2 | 3;
   expectedRevision: number;
   apiKey?: string;
+  baseUrl?: string;
+  model?: string | null;
   enabled?: boolean;
 }
 
@@ -44,7 +46,7 @@ export async function GET(request: NextRequest) {
     const data = await getProviderCredentialsSnapshot();
     return NextResponse.json(
       providerCredentialsPayload(data),
-      { headers: cors.headers },
+      { headers: privateHeaders(cors.headers) },
     );
   } catch (error) {
     return routeError(error, cors.headers);
@@ -86,6 +88,12 @@ export async function PUT(request: NextRequest) {
       ...(parsed.body.apiKey === undefined
         ? {}
         : { apiKey: parsed.body.apiKey }),
+      ...(parsed.body.baseUrl === undefined
+        ? {}
+        : { baseUrl: parsed.body.baseUrl }),
+      ...(Object.prototype.hasOwnProperty.call(parsed.body, "model")
+        ? { model: parsed.body.model }
+        : {}),
       ...(parsed.body.enabled === undefined
         ? {}
         : { enabled: parsed.body.enabled }),
@@ -94,7 +102,7 @@ export async function PUT(request: NextRequest) {
     return rotateCsrf(
       NextResponse.json(
         providerCredentialsPayload(data),
-        { headers: preflight.headers },
+        { headers: privateHeaders(preflight.headers) },
       ),
     );
   } catch (error) {
@@ -118,7 +126,7 @@ export async function DELETE(request: NextRequest) {
     return rotateCsrf(
       NextResponse.json(
         providerCredentialsPayload(data),
-        { headers: preflight.headers },
+        { headers: privateHeaders(preflight.headers) },
       ),
     );
   } catch (error) {
@@ -213,7 +221,15 @@ async function readMutationBody(
   }
 
   const allowed = allowCredentialFields
-    ? new Set(["provider", "slot", "expectedRevision", "apiKey", "enabled"])
+    ? new Set([
+        "provider",
+        "slot",
+        "expectedRevision",
+        "apiKey",
+        "baseUrl",
+        "model",
+        "enabled",
+      ])
     : new Set(["provider", "slot", "expectedRevision"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) {
     return validationError("Request body contains unsupported fields.");
@@ -240,8 +256,25 @@ async function readMutationBody(
     if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
       return validationError("enabled must be a boolean.");
     }
-    if (value.apiKey === undefined && value.enabled === undefined) {
-      return validationError("apiKey or enabled must be provided.");
+    if (value.baseUrl !== undefined && typeof value.baseUrl !== "string") {
+      return validationError("baseUrl must be a string.");
+    }
+    if (
+      value.model !== undefined &&
+      value.model !== null &&
+      typeof value.model !== "string"
+    ) {
+      return validationError("model must be a string or null.");
+    }
+    if (
+      value.apiKey === undefined &&
+      value.enabled === undefined &&
+      value.baseUrl === undefined &&
+      !Object.prototype.hasOwnProperty.call(value, "model")
+    ) {
+      return validationError(
+        "apiKey, enabled, baseUrl, or model must be provided.",
+      );
     }
   }
 
@@ -252,6 +285,10 @@ async function readMutationBody(
       slot: value.slot,
       expectedRevision: Number(value.expectedRevision),
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
+      ...(typeof value.baseUrl === "string" ? { baseUrl: value.baseUrl } : {}),
+      ...(Object.prototype.hasOwnProperty.call(value, "model")
+        ? { model: value.model as string | null }
+        : {}),
       ...(typeof value.enabled === "boolean" ? { enabled: value.enabled } : {}),
     },
   };
@@ -343,10 +380,15 @@ function applyHeaders(
   response: Response,
   headers: Record<string, string>,
 ): Response {
+  response.headers.set("Cache-Control", "private, no-store");
   for (const [name, value] of Object.entries(headers)) {
     response.headers.set(name, value);
   }
   return response;
+}
+
+function privateHeaders(headers: Record<string, string>): Record<string, string> {
+  return { ...headers, "Cache-Control": "private, no-store" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

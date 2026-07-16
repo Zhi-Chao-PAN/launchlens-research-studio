@@ -15,6 +15,8 @@ import { createAnthropicStructuredCompletionProvider } from "@/lib/providers/ant
 import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { createOpenAIProvider } from "@/lib/providers/openai-provider";
 import { createOpenAIStructuredCompletionProvider } from "@/lib/providers/openai-structured-completion";
+import { resolveManagedCredentialModel } from "@/lib/providers/managed-credential-config";
+import { normalizeManagedProviderBaseUrl } from "@/lib/security/provider-base-url";
 import {
   isAbortError,
   ProviderRequestError,
@@ -185,8 +187,7 @@ export function createManagedResearchProvider(
         if (lease === false) continue;
         try {
           const adapter = createStrictResearchAdapter(
-            options.provider,
-            credential.apiKey,
+            credential,
             env,
             options.fetchImpl,
           );
@@ -227,7 +228,7 @@ export function createManagedStructuredCompletionProvider(
   return {
     id: `${options.provider}-keyring`,
     displayName: `${providerLabel(options.provider)} · managed 1→2→3 reviewer`,
-    model: modelFor(options.provider, env, true),
+    model: modelFor(options.provider, env),
     isMock: false,
     async complete<T>(request: StructuredCompletionRequest<T>): Promise<T> {
       let credentials: ResolvedProviderCredential[];
@@ -242,8 +243,7 @@ export function createManagedStructuredCompletionProvider(
         if (lease === false) continue;
         try {
           const adapter = createStrictStructuredAdapter(
-            options.provider,
-            credential.apiKey,
+            credential,
             env,
             options.fetchImpl,
           );
@@ -284,6 +284,12 @@ function classifyHttpStatus(status: number | undefined): FailoverDecision {
   if (status === 408 || (typeof status === "number" && status >= 500)) {
     return { action: "switch", reason: "server", cooldownMs: TRANSIENT_COOLDOWN_MS, fallbackReason: "http_error" };
   }
+  if (status === 400) {
+    // A heterogeneous OpenAI-compatible keyring can legitimately hit a
+    // provider-specific request-contract rejection. Bound the attempt to the
+    // current slot and continue without cooling down an otherwise valid key.
+    return { action: "switch", reason: "unknown", cooldownMs: 0, fallbackReason: "http_error" };
+  }
   return { action: "stop", reason: null, cooldownMs: 0, fallbackReason: "http_error" };
 }
 
@@ -308,25 +314,26 @@ async function admitCredential(
 }
 
 function createStrictResearchAdapter(
-  provider: LlmProvider,
-  apiKey: string,
+  credential: ResolvedProviderCredential,
   env: Readonly<Record<string, string | undefined>>,
   fetchImpl?: typeof fetch,
 ): ResearchProvider {
+  const provider = credential.provider;
+  const baseUrl = managedBaseUrlFor(credential.baseUrl, env);
   if (provider === "anthropic") {
     return createAnthropicProvider({
-      apiKey,
-      baseUrl: env.ANTHROPIC_BASE_URL,
-      model: env.ANTHROPIC_MODEL,
+      apiKey: credential.apiKey,
+      baseUrl,
+      model: resolveManagedCredentialModel(provider, credential.model, env),
       fetchImpl,
       failureMode: "throw",
       maxAttempts: 1,
     });
   }
   return createOpenAIProvider({
-    apiKey,
-    baseUrl: env.OPENAI_BASE_URL,
-    model: env.OPENAI_MODEL,
+    apiKey: credential.apiKey,
+    baseUrl,
+    model: resolveManagedCredentialModel(provider, credential.model, env),
     fetchImpl,
     failureMode: "throw",
     maxAttempts: 1,
@@ -335,23 +342,24 @@ function createStrictResearchAdapter(
 }
 
 function createStrictStructuredAdapter(
-  provider: LlmProvider,
-  apiKey: string,
+  credential: ResolvedProviderCredential,
   env: Readonly<Record<string, string | undefined>>,
   fetchImpl?: typeof fetch,
 ): StructuredCompletionProvider {
+  const provider = credential.provider;
+  const baseUrl = managedBaseUrlFor(credential.baseUrl, env);
   if (provider === "anthropic") {
     return createAnthropicStructuredCompletionProvider({
-      apiKey,
-      baseUrl: env.LAUNCHLENS_REVIEW_BASE_URL || env.ANTHROPIC_BASE_URL,
-      model: modelFor(provider, env, true),
+      apiKey: credential.apiKey,
+      baseUrl,
+      model: resolveManagedCredentialModel(provider, credential.model, env),
       fetchImpl,
     });
   }
   return createOpenAIStructuredCompletionProvider({
-    apiKey,
-    baseUrl: env.LAUNCHLENS_REVIEW_BASE_URL || env.OPENAI_BASE_URL,
-    model: modelFor(provider, env, true),
+    apiKey: credential.apiKey,
+    baseUrl,
+    model: resolveManagedCredentialModel(provider, credential.model, env),
     fetchImpl,
   });
 }
@@ -359,11 +367,18 @@ function createStrictStructuredAdapter(
 function modelFor(
   provider: LlmProvider,
   env: Readonly<Record<string, string | undefined>>,
-  review = false,
 ): string {
-  return (review ? env.LAUNCHLENS_REVIEW_MODEL : undefined) ||
-    (provider === "anthropic" ? env.ANTHROPIC_MODEL : env.OPENAI_MODEL) ||
-    (provider === "anthropic" ? "claude-3-5-sonnet-latest" : "gpt-4o-mini");
+  return resolveManagedCredentialModel(provider, null, env);
+}
+
+function managedBaseUrlFor(
+  value: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return normalizeManagedProviderBaseUrl(value, value, {
+    nodeEnv: env.NODE_ENV,
+    env,
+  });
 }
 
 function providerLabel(provider: LlmProvider): string {
