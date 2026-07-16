@@ -18,6 +18,7 @@ import { ResearchPanel } from "./ResearchPanel";
 import { ProviderKeysPanel } from "./ProviderKeysPanel";
 import { SecurityPanel } from "./SecurityPanel";
 import { SystemPanel } from "./SystemPanel";
+import { AnalyticsPanel } from "./AnalyticsPanel";
 
 type AuthState = "checking" | "anonymous" | "authenticated";
 
@@ -129,6 +130,9 @@ export function AdminConsole() {
     >
       {activeView === "overview" ? (
         <OverviewPanel t={t} onUnauthorized={endSession} onUpdated={setLastUpdatedAt} />
+      ) : null}
+      {activeView === "analytics" ? (
+        <AnalyticsPanel t={t} onUnauthorized={endSession} onUpdated={setLastUpdatedAt} />
       ) : null}
       {activeView === "research" ? (
         <ResearchPanel locale={locale} t={t} onUnauthorized={endSession} onUpdated={setLastUpdatedAt} />

@@ -6,6 +6,7 @@ import { getRetrySeconds } from "./use-admin-resource";
 
 export type AdminIconName =
   | "overview"
+  | "analytics"
   | "research"
   | "providers"
   | "security"
@@ -26,6 +27,13 @@ export function AdminIcon({ name }: { name: AdminIconName }) {
     overview: (
       <>
         <path d="M4 4h6v6H4zM14 4h6v3h-6zM14 11h6v9h-6zM4 14h6v6H4z" />
+      </>
+    ),
+    analytics: (
+      <>
+        <path d="M4 19V5M4 19h16" />
+        <path d="m7 15 3-4 3 2 5-7" />
+        <path d="M17 6h2v2" />
       </>
     ),
     research: (

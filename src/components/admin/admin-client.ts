@@ -153,6 +153,38 @@ export interface ProviderCredentialsSnapshot {
   slots: ProviderCredentialSlot[];
 }
 
+export interface ResearchFunnelModeSummary {
+  selected: number;
+  queryFilled: number;
+  started: number;
+  completed: number;
+  shared: number;
+  completionRate: number | null;
+  shareRate: number | null;
+}
+
+export interface ResearchFunnelSummary {
+  configured: boolean;
+  windowDays: number;
+  viewed: number;
+  deepSelected: number;
+  queryFilled: number;
+  started: number;
+  completed: number;
+  shared: number;
+  handoff: number;
+  completionRate: number | null;
+  handoffRate: number | null;
+  deepSelectionRate: number | null;
+  queryFillRate: number | null;
+  startRate: number | null;
+  shareRate: number | null;
+  modes: {
+    standard: ResearchFunnelModeSummary;
+    deep: ResearchFunnelModeSummary;
+  };
+}
+
 export interface ProviderCredentialTestResult {
   ok: boolean;
   slot: ProviderSlot;
@@ -290,6 +322,11 @@ export async function deleteAdminSession(): Promise<void> {
 
 export async function getAdminStats(): Promise<AdminStats> {
   return adminJson<AdminStats>("/api/admin/stats");
+}
+
+export async function getResearchFunnel(days = 30): Promise<ResearchFunnelSummary> {
+  const safeDays = Math.min(90, Math.max(1, Math.trunc(days) || 30));
+  return adminJson<ResearchFunnelSummary>(`/api/analytics/funnel?days=${safeDays}`);
 }
 
 export async function getResearchRuns(input: {

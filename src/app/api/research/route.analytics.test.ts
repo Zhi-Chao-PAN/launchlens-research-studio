@@ -43,6 +43,7 @@ describe("POST /api/research product events", () => {
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "research_started",
       body.sessionId,
+      { mode: "standard", stage2: undefined },
     );
   });
 
@@ -119,6 +120,7 @@ describe("POST /api/research product events", () => {
       "research_started",
       body.sessionId,
       {
+        mode: "standard",
         stage2: {
           stage2Participant: "P01",
           stage2Batch: "pilot-1",

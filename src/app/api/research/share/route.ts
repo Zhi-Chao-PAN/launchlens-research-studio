@@ -12,6 +12,7 @@ import {
 } from "@/lib/research/share-manifest";
 import { getShareRepository } from "@/lib/research/share-repository";
 import { revokeShareToken } from "@/lib/research/share-tokens";
+import { recordResearchFunnelEvent } from "@/lib/research/funnel-analytics";
 
 // Create a share token for a run
 export async function POST(request: Request) {
@@ -74,6 +75,9 @@ export async function POST(request: Request) {
       report,
       expiresInMs: expiresMs,
       maxViews: maxViewsN,
+    });
+    await recordResearchFunnelEvent("share_created", runId, {
+      mode: run.mode,
     });
 
     return rotateCsrf(

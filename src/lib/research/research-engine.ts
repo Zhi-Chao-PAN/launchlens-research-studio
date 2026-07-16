@@ -1966,13 +1966,10 @@ export async function runResearchSession(
       : "Research complete";
     await checkpointTerminalSession(session, "completed", completionMessage);
 
-    if (session.stage2Tracking) {
-      await recordResearchFunnelEvent("research_completed", session.id, {
-        stage2: session.stage2Tracking,
-      });
-    } else {
-      await recordResearchFunnelEvent("research_completed", session.id);
-    }
+    await recordResearchFunnelEvent("research_completed", session.id, {
+      mode: session.mode,
+      stage2: session.stage2Tracking,
+    });
 
     return session;
   } finally {

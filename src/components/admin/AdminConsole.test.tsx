@@ -48,6 +48,7 @@ vi.mock("./AdminShell", () => ({
 }));
 
 vi.mock("./OverviewPanel", () => ({ OverviewPanel: () => <div /> }));
+vi.mock("./AnalyticsPanel", () => ({ AnalyticsPanel: () => <div /> }));
 vi.mock("./ResearchPanel", () => ({ ResearchPanel: () => <div /> }));
 vi.mock("./ProviderKeysPanel", () => ({ ProviderKeysPanel: () => <div /> }));
 vi.mock("./SecurityPanel", () => ({ SecurityPanel: () => <div /> }));

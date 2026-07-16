@@ -93,6 +93,7 @@ describe("GET /api/research/[sessionId]/brief", () => {
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "brief_exported",
       "session123",
+      { mode: undefined, stage2: undefined },
     );
     await expect(response.json()).resolves.toEqual({
       sourceStatus: "completed",
@@ -122,7 +123,7 @@ describe("GET /api/research/[sessionId]/brief", () => {
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "brief_exported",
       "session123",
-      { stage2: stage2Tracking },
+      { mode: undefined, stage2: stage2Tracking },
     );
   });
 

@@ -206,13 +206,10 @@ export async function POST(request: NextRequest) {
   // the client ever connects. storeSession is a no-op (returns immediately)
   // when Redis is not configured, so local dev / tests are unaffected.
   if (mode !== "deep") await storeSession(session);
-  if (session.stage2Tracking) {
-    await recordResearchFunnelEvent("research_started", session.id, {
-      stage2: session.stage2Tracking,
-    });
-  } else {
-    await recordResearchFunnelEvent("research_started", session.id);
-  }
+  await recordResearchFunnelEvent("research_started", session.id, {
+    mode: session.mode,
+    stage2: session.stage2Tracking,
+  });
 
   logRequest(201, true);
   const response = NextResponse.json(

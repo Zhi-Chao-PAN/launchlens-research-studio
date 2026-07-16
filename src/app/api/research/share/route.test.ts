@@ -9,6 +9,7 @@ const {
   rotateCsrf,
   shareRepository,
   verifyCsrf,
+  recordResearchFunnelEvent,
 } = vi.hoisted(() => ({
   checkRateLimit: vi.fn(() => ({ allowed: true, remaining: 10, resetMs: 0 })),
   checkRateLimitForIp: vi.fn(() => ({ allowed: true, resetMs: 0 })),
@@ -24,6 +25,7 @@ const {
     stats: vi.fn(),
   },
   verifyCsrf: vi.fn(() => null),
+  recordResearchFunnelEvent: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock("@/lib/api/csrf-guard", () => ({ verifyCsrf }));
@@ -34,6 +36,7 @@ vi.mock("@/lib/research/share-repository", () => ({
   getShareRepository: () => shareRepository,
 }));
 vi.mock("@/lib/research/share-tokens", () => ({ revokeShareToken }));
+vi.mock("@/lib/research/funnel-analytics", () => ({ recordResearchFunnelEvent }));
 
 vi.mock("@/lib/api/bypass-tokens", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/bypass-tokens")>();
@@ -109,6 +112,7 @@ describe("POST /api/research/share", () => {
       views: 0,
       maxViews: null,
     });
+    recordResearchFunnelEvent.mockClear();
   });
 
   it("rejects cancelled reports before creating a token", async () => {
@@ -156,6 +160,11 @@ describe("POST /api/research/share", () => {
       expiresInMs: undefined,
       maxViews: undefined,
     });
+    expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
+      "share_created",
+      "run-123",
+      { mode: undefined },
+    );
     await expect(response.json()).resolves.toMatchObject({
       token: "share-token",
       manageToken: "manage-token",

@@ -64,11 +64,39 @@ describe("research funnel analytics", () => {
     await expect(summarizeResearchFunnel(30, now)).resolves.toEqual({
       configured: true,
       windowDays: 30,
+      viewed: 0,
+      deepSelected: 0,
+      queryFilled: 0,
       started: 2,
       completed: 1,
       handoff: 1,
+      shared: 0,
       completionRate: 0.5,
       handoffRate: 1,
+      deepSelectionRate: null,
+      queryFillRate: null,
+      startRate: null,
+      shareRate: 0,
+      modes: {
+        standard: {
+          selected: 0,
+          queryFilled: 0,
+          started: 0,
+          completed: 0,
+          shared: 0,
+          completionRate: null,
+          shareRate: null,
+        },
+        deep: {
+          selected: 0,
+          queryFilled: 0,
+          started: 0,
+          completed: 0,
+          shared: 0,
+          completionRate: null,
+          shareRate: null,
+        },
+      },
     });
   });
 

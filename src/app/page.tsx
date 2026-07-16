@@ -38,6 +38,7 @@ import {
   type ResearchModeId,
 } from "@/lib/research/research-modes";
 import { useDeepResearchCapability } from "@/lib/research/use-deep-research-capability";
+import { trackResearchFunnelEvent } from "@/lib/analytics/research-funnel-client";
 
 export default function Home() {
   useFreezeMode();
@@ -254,6 +255,12 @@ export default function Home() {
     if (hasSession) setResearchMode(state.mode);
   }, [hasSession, state.mode]);
 
+  // Product telemetry is intentionally aggregate-only: the journey id is
+  // opaque and the event payload never contains query text or identity.
+  useEffect(() => {
+    void trackResearchFunnelEvent("workspace_viewed");
+  }, []);
+
   // Load dashboard stats on mount.
   // R224: fetch a single pre-aggregated payload from /api/research/stats
   // instead of pulling up to 100 summary rows and re-counting on the client.
@@ -335,10 +342,18 @@ export default function Home() {
       if (!canStartSelectedMode) return;
       setSidebarOpen(false);
       userSelectedTabRef.current = false;
+      void trackResearchFunnelEvent("query_filled", { mode: researchMode });
       startResearch(query, keywords, researchMode);
     },
     [canStartSelectedMode, researchMode, startResearch],
   );
+
+  const handleModeChange = useCallback((nextMode: ResearchModeId) => {
+    setResearchMode(nextMode);
+    if (nextMode === "deep") {
+      void trackResearchFunnelEvent("deep_selected", { mode: nextMode });
+    }
+  }, []);
 
   const resetWorkspace = useCallback(() => {
     reset();
@@ -597,7 +612,7 @@ export default function Home() {
                 <div className="space-y-5 p-5 sm:p-6">
                   <ResearchModeSelector
                     value={researchMode}
-                    onChange={setResearchMode}
+                    onChange={handleModeChange}
                     runtimeAvailability={runtimeModeAvailability}
                     readiness={runtimeModeReadiness}
                   />
@@ -714,7 +729,7 @@ export default function Home() {
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <ResearchModeSelector
                   value={state.mode}
-                  onChange={setResearchMode}
+                  onChange={handleModeChange}
                   disabled
                   compact
                   runtimeAvailability={runtimeModeAvailability}

@@ -17,6 +17,7 @@ import type { AdminLocale, AdminTranslator } from "./admin-i18n";
 
 export type AdminView =
   | "overview"
+  | "analytics"
   | "research"
   | "providers"
   | "security"
@@ -29,6 +30,7 @@ const navItems: Array<{
   hint: Parameters<AdminTranslator>[0];
 }> = [
   { id: "overview", icon: "overview", label: "nav.overview", hint: "nav.overviewHint" },
+  { id: "analytics", icon: "analytics", label: "nav.analytics", hint: "nav.analyticsHint" },
   { id: "research", icon: "research", label: "nav.research", hint: "nav.researchHint" },
   { id: "providers", icon: "providers", label: "nav.providers", hint: "nav.providersHint" },
   { id: "security", icon: "security", label: "nav.security", hint: "nav.securityHint" },

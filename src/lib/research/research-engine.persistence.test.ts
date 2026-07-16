@@ -176,6 +176,7 @@ describe("completed session persistence", () => {
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "research_completed",
       session.id,
+      { mode: "standard", stage2: undefined },
     );
   });
 
@@ -198,7 +199,7 @@ describe("completed session persistence", () => {
     expect(recordResearchFunnelEvent).toHaveBeenCalledWith(
       "research_completed",
       session.id,
-      { stage2 },
+      { mode: "standard", stage2 },
     );
   });
 
