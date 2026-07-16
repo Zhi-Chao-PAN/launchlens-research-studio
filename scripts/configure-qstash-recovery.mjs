@@ -24,7 +24,9 @@ async function configure() {
   const token = requiredEnvironment("QSTASH_TOKEN");
   const baseUrl = qstashApiBase(requiredEnvironment("QSTASH_URL"));
   const manifest = await readManifest();
-  const endpoint = `${baseUrl}/v2/schedules/${encodeURIComponent(manifest.destination)}`;
+  // QStash's path contract consumes the destination as a URL-shaped suffix;
+  // percent-encoding the scheme makes the API treat it as a non-HTTP target.
+  const endpoint = `${baseUrl}/v2/schedules/${manifest.destination}`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -40,7 +42,10 @@ async function configure() {
     body: JSON.stringify(manifest.body),
   });
   if (!response.ok) {
-    throw new Error(`QStash schedule configuration failed with HTTP ${response.status}`);
+    const detail = await safeErrorDetail(response);
+    throw new Error(
+      `QStash schedule configuration failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
+    );
   }
   const result = await response.json();
   if (result.scheduleId !== manifest.scheduleId) {
@@ -52,6 +57,17 @@ async function configure() {
     destination: manifest.destination,
     cron: manifest.cron,
   })}\n`);
+}
+
+async function safeErrorDetail(response) {
+  try {
+    const payload = await response.json();
+    const detail = typeof payload?.error === "string" ? payload.error : "";
+    if (!detail || /authorization|bearer|token|signing.?key/i.test(detail)) return "";
+    return detail.replace(/[\r\n]+/g, " ").slice(0, 240);
+  } catch {
+    return "";
+  }
 }
 
 configure().catch((error) => {
