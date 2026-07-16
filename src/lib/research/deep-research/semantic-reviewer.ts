@@ -1,4 +1,5 @@
 import type { RetrievalProvider } from "@/lib/providers/retrieval.types";
+import { buildDeepRetrievalQueries } from "@/lib/research/evidence-ledger";
 import {
   serializeUntrustedResearchData,
   StructuredCompletionError,
@@ -226,9 +227,14 @@ export class DeepSemanticReviewer {
     for (const [agentId, claims] of groups) {
       throwIfAborted(signal);
       const retrievedSets = await Promise.all(
-        claims.map((claim) =>
+        claims.map((claim, claimIndex) =>
           this.options.retrieval.search({
-            query: buildIndependentQuery(session.query, claim),
+            query: buildIndependentQuery(
+              session.query,
+              session.keywords,
+              claim,
+              claimIndex,
+            ),
             agentId,
             maxResults: 3,
             searchDepth: "advanced",
@@ -764,16 +770,16 @@ function groupClaimsByAgent(claims: readonly ResearchClaim[]) {
   return groups;
 }
 
-function buildIndependentQuery(query: string, claim: ResearchClaim): string {
-  const focus: Record<ResearchClaim["agentId"], string> = {
-    "market-sizer": "Dated market-report evidence",
-    "competitor-analyst": "Official product, pricing, or comparison evidence",
-    "pain-detective": "Voice-of-customer, forum, or product-review evidence",
-    "pricing-scout": "Official pricing or willingness-to-pay evidence",
-    "channel-scout": "Acquisition-channel benchmark or community evidence",
-  };
+function buildIndependentQuery(
+  query: string,
+  keywords: readonly string[] | undefined,
+  claim: ResearchClaim,
+  claimIndex: number,
+): string {
+  const planned = buildDeepRetrievalQueries(query, claim.agentId, keywords ?? []);
+  const topic = planned[claimIndex % Math.max(1, planned.length)] ?? query;
   return truncateSearchText(
-    `${focus[claim.agentId]}. Claim to check: ${claim.text}. Product context: ${query}`,
+    topic + " Claim to check: " + claim.text,
     280,
   );
 }

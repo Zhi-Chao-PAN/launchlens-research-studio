@@ -526,6 +526,59 @@ describe("DeepSemanticReviewer", () => {
       });
   });
 
+  it("grounds independent market retrieval in the topic before the claim text", async () => {
+    let session = await fixtureSession(["market-sizer"]);
+    session.query =
+      "一个创业想法：在暑假七八月，在深圳地铁口摆摊卖早餐，目标用户是通勤上班族。请验证市场需求、合规约束、单位经济性、竞争格局和获客渠道。";
+    session.keywords = ["深圳", "地铁早餐", "通勤上班族", "摆摊合规", "单位经济性"];
+    const provider = successfulProvider();
+    session = await new DeepSemanticReviewer({ provider, retrieval: liveRetrieval() })
+      .runPass(session, "claim_source_entailment");
+    const queries: string[] = [];
+    const retrieval: RetrievalProvider = {
+      id: "topic-first-search",
+      displayName: "Topic-first independent search",
+      isMock: false,
+      async search({ agentId, query }) {
+        queries.push(query);
+        const now = new Date().toISOString();
+        return [{
+          id: "topic-first-" + queries.length,
+          title: "Independent market benchmark",
+          url: "https://evidence.example/topic-first/" + queries.length,
+          snippet: "An independent market benchmark covers the same product context.",
+          accessedAt: now,
+          retrievedAt: now,
+          confidence: "medium",
+          agent: agentId ?? "market-sizer",
+        }];
+      },
+    };
+
+    const reviewed = await new DeepSemanticReviewer({ provider, retrieval })
+      .runPass(session, "independent_corroboration_conflict");
+
+    if (session.validation?.version !== 2 || reviewed.validation?.version !== 2) {
+      throw new Error("expected V2 ledger");
+    }
+    expect(queries).toHaveLength(session.validation.claims.length);
+    expect(queries[0]).not.toMatch(/^Dated market-report evidence/);
+    expect(
+      queries.every((query) =>
+        query.startsWith("在深圳地铁口摆摊卖早餐 ") &&
+        query.indexOf("在深圳地铁口摆摊卖早餐") < query.indexOf("Claim to check:"),
+      ),
+    ).toBe(true);
+    expect(
+      queries.map((query) => query.split("Claim to check:")[0]).join(" "),
+    ).not.toMatch(/SaaS|software|B2B|cross-border|Indie Hackers/iu);
+    expect(
+      reviewed.validation.reviewSources.filter(
+        (source) => source.origin === "independent_retrieval" && source.agent === "market-sizer",
+      ),
+    ).toHaveLength(session.validation.claims.length);
+  });
+
   it("keeps shared URLs agent-scoped across focused independent retrievals", async () => {
     let session = await fixtureSession(["market-sizer", "competitor-analyst"]);
     const provider = successfulProvider();
