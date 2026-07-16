@@ -36,6 +36,9 @@ KV_REST_API_URL + KV_REST_API_TOKEN
 Then configure:
 
 - `LAUNCHLENS_ADMIN_TOKENS`: long, rotatable bootstrap tokens;
+- `LAUNCHLENS_ADMIN_ROTATION_TOKENS`: optional additive bootstrap channel for
+  short-lived credential rotation; revoke the temporary token in-app before
+  removing the deployment variable;
 - `LAUNCHLENS_ADMIN_SESSION_SECRET`: a distinct secret of at least 32 random
   bytes;
 - `LAUNCHLENS_PROVIDER_KEY_ENCRYPTION_SECRET`: canonical Base64 for exactly 32

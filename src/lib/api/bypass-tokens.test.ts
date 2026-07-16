@@ -22,6 +22,22 @@ describe("bypass-tokens", () => {
   });
 
   describe("createBypassToken + scopes", () => {
+    it("loads an additive administrator rotation token without replacing primary tokens", () => {
+      const rotationToken = "temporary-admin-rotation-token-123456789";
+      process.env.LAUNCHLENS_ADMIN_ROTATION_TOKENS = rotationToken;
+      clearBypassTokens();
+      try {
+        expect(getTokenInfo(rotationToken)).toMatchObject({
+          scope: "admin",
+          label: "env-admin-rotation",
+        });
+        expect(isAdminToken(rotationToken)).toBe(true);
+      } finally {
+        delete process.env.LAUNCHLENS_ADMIN_ROTATION_TOKENS;
+        clearBypassTokens();
+      }
+    });
+
     it("creates a bypass-scoped token by default", () => {
       const tok = createBypassToken(undefined, "test");
       const info = getTokenInfo(tok);

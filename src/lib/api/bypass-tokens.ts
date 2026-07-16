@@ -20,9 +20,6 @@ import { recordAuthAudit } from "@/lib/api/auth-audit";
 import { hashIp } from "@/lib/telemetry/request-log";
 
 const STORAGE_KEY = "bypassTokens";
-const ENV_BYPASS_TOKENS = process.env.LAUNCHLENS_BYPASS_TOKENS || "";
-const ENV_ADMIN_TOKENS = process.env.LAUNCHLENS_ADMIN_TOKENS || "";
-
 export type TokenScope = "bypass" | "admin";
 
 export interface BypassTokenInfo {
@@ -76,18 +73,28 @@ function load(): Record<string, BypassTokenInfo> {
   // Load env tokens on first call
   if (!envTokensLoaded) {
     const now = Date.now();
-    const bypassTokens = ENV_BYPASS_TOKENS.split(",").map((t) => t.trim()).filter(Boolean);
+    const bypassTokens = readEnvTokens("LAUNCHLENS_BYPASS_TOKENS");
     for (const tok of bypassTokens) {
       const h = hashToken(tok);
       if (!stored[h]) {
         stored[h] = { hash: h, scope: "bypass", label: "env-bypass", createdAt: now, usageCount: 0 };
       }
     }
-    const adminTokens = ENV_ADMIN_TOKENS.split(",").map((t) => t.trim()).filter(Boolean);
-    for (const tok of adminTokens) {
-      const h = hashToken(tok);
-      if (!stored[h]) {
-        stored[h] = { hash: h, scope: "admin", label: "env-admin", createdAt: now, usageCount: 0 };
+    for (const [name, label] of [
+      ["LAUNCHLENS_ADMIN_TOKENS", "env-admin"],
+      ["LAUNCHLENS_ADMIN_ROTATION_TOKENS", "env-admin-rotation"],
+    ] as const) {
+      for (const tok of readEnvTokens(name)) {
+        const h = hashToken(tok);
+        if (!stored[h]) {
+          stored[h] = {
+            hash: h,
+            scope: "admin",
+            label,
+            createdAt: now,
+            usageCount: 0,
+          };
+        }
       }
     }
     persist(stored);
@@ -96,6 +103,13 @@ function load(): Record<string, BypassTokenInfo> {
 
   cached = stored;
   return stored;
+}
+
+function readEnvTokens(name: string): string[] {
+  return (process.env[name] || "")
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
 }
 
 function persist(tokens: Record<string, BypassTokenInfo>): void {
@@ -343,7 +357,7 @@ export function checkAdminTokenRateLimit(tokenHash: string) {
  * Clear all tokens — used for testing.
  */
 export function clearBypassTokens(): void {
-  cached = {};
   persist({});
+  cached = null;
   envTokensLoaded = false; // allow re-loading from env on next call
 }
