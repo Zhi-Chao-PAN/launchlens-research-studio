@@ -100,7 +100,7 @@ export function ResearchModeShowcase({
             {t("researchMode.deep.bestFor")}
           </span>
           <span className={`inline-flex min-h-10 items-center justify-center rounded-lg px-4 text-xs font-semibold ${
-            deepSelected ? "bg-teal-300 text-slate-950" : "bg-white/10 text-white group-hover:bg-white/15"
+            deepSelected ? "bg-teal-300 text-[#0f172a]" : "bg-white/10 text-white group-hover:bg-white/15"
           }`}>
             {deepSelected ? t("researchMode.selected") : t("researchMode.select")}
           </span>
