@@ -25,6 +25,13 @@ describe("detectQueryLanguage", () => {
     expect(detectQueryLanguage("こんにちは")).toBe("ja");
   });
 
+  it("recognizes conservative Kanji-only Japanese research queries", () => {
+    expect(detectQueryLanguage("東京駅前朝食店価格調査")).toBe("ja");
+    expect(detectQueryLanguage("日本市場調査")).toBe("ja");
+    expect(detectQueryLanguage("调查东京站早餐价格")).toBe("zh-CN");
+    expect(detectQueryLanguage("東京市場調查")).toBe("zh-CN");
+  });
+
   it("returns 'ko' for Korean input (Hangul present)", () => {
     expect(detectQueryLanguage("한국的高速服务区에酒吧을 열다")).toBe("ko");
     expect(detectQueryLanguage("안녕하세요")).toBe("ko");

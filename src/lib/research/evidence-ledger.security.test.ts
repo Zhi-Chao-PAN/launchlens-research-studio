@@ -8,6 +8,7 @@ import {
   buildDeepRetrievalRescueQueries,
   buildFocusedRetrievalQuery,
   canonicalizeRetrievedSources,
+  shouldRestrictDeepVocDomains,
 } from "./evidence-ledger";
 
 function source(url: string, id: string): RetrievedSource {
@@ -200,6 +201,245 @@ describe("evidence ledger security boundaries", () => {
     expect(queries.every((item) => !item.startsWith("面向大学生的人工智能研究平台 人工智能 "))).toBe(
       true,
     );
+  });
+
+  it("keeps Chinese local-business Deep queries on-topic and in-language", () => {
+    const query =
+      "一个创业想法：在暑假七八月，在深圳地铁口摆摊卖早餐，目标用户是通勤上班族。请验证市场需求、合规约束、单位经济性、竞争格局和获客渠道。";
+    const keywords = ["深圳", "地铁早餐", "通勤上班族", "摆摊合规", "单位经济性"];
+
+    const painQueries = buildDeepRetrievalQueries(query, "pain-detective", keywords);
+    const pricingQueries = buildDeepRetrievalQueries(query, "pricing-scout", keywords);
+    const channelQueries = buildDeepRetrievalQueries(query, "channel-scout", keywords);
+    const specialistIds = [
+      "market-sizer",
+      "competitor-analyst",
+      "pain-detective",
+      "pricing-scout",
+      "channel-scout",
+    ] as const;
+    const allQueries = specialistIds.flatMap((agentId) => [
+      ...buildDeepRetrievalQueries(query, agentId, keywords),
+      ...buildDeepRetrievalRescueQueries(query, agentId, keywords),
+    ]);
+
+    expect(allQueries).toHaveLength(25);
+    expect(
+      allQueries.every((item) => item.startsWith("在深圳地铁口摆摊卖早餐 ")),
+    ).toBe(true);
+    expect(painQueries[0]).toContain("消费者评价");
+    expect(pricingQueries[0]).toContain("竞品官方价格");
+    expect(channelQueries[0]).toContain("获客渠道");
+    expect(allQueries.join(" ")).not.toMatch(
+      /SaaS|software|B2B|cross-border|Indie Hackers/iu,
+    );
+    expect(shouldRestrictDeepVocDomains(query, keywords)).toBe(false);
+    expect(
+      shouldRestrictDeepVocDomains(
+        "Evaluate an AI research workspace for SaaS founders",
+        ["product reviews"],
+      ),
+    ).toBe(true);
+    expect(
+      shouldRestrictDeepVocDomains(
+        "Open a breakfast stall outside a London station for commuters",
+        ["local food", "unit economics"],
+      ),
+    ).toBe(false);
+  });
+
+  it("scores and combines location-prefixed subjects instead of taking the first clause", () => {
+    const keywords = ["深圳", "地铁早餐", "通勤上班族", "摆摊合规", "单位经济性"];
+    const chineseVariants = [
+      "一个创业想法：在深圳，在地铁口摆摊卖早餐，目标用户是通勤上班族。",
+      "我有一个创业想法，在2026年第三季度，在深圳，在地铁口摆摊卖早餐，目标用户是通勤上班族。",
+    ];
+
+    for (const query of chineseVariants) {
+      const primary = buildDeepRetrievalQueries(query, "pain-detective", keywords);
+      const rescue = buildDeepRetrievalRescueQueries(query, "pain-detective", keywords);
+      expect([...primary, ...rescue].every((item) =>
+        item.startsWith("在深圳地铁口摆摊卖早餐 "),
+      )).toBe(true);
+    }
+
+    const englishQuery =
+      "A startup idea: In 2026, in Shenzhen, sell breakfast outside a subway platform for commuters.";
+    const englishQueries = buildDeepRetrievalQueries(
+      englishQuery,
+      "pain-detective",
+      ["Shenzhen", "station breakfast", "commuters"],
+    );
+    expect(
+      englishQueries.every((item) => item.startsWith("in Shenzhen sell breakfast ")),
+    ).toBe(true);
+    expect(englishQueries.join(" ")).not.toMatch(/SaaS|cross-border|Indie Hackers/iu);
+    expect(shouldRestrictDeepVocDomains(englishQuery)).toBe(false);
+
+    const nounPhraseQueries = buildDeepRetrievalQueries(
+      "A business idea: In Shenzhen, a breakfast stall for commuters.",
+      "market-sizer",
+      ["Shenzhen"],
+    );
+    expect(
+      nounPhraseQueries.every((item) =>
+        item.startsWith("In Shenzhen a breakfast stall for commuters "),
+      ),
+      nounPhraseQueries.join("\n"),
+    ).toBe(true);
+
+    const dimensionQueries = buildDeepRetrievalQueries(
+      "一个创业想法：在深圳地铁口摆摊卖早餐。单位经济性至关重要。",
+      "pricing-scout",
+      ["单位经济性"],
+    );
+    expect(
+      dimensionQueries.every((item) =>
+        item.startsWith("在深圳地铁口摆摊卖早餐 "),
+      ),
+      dimensionQueries.join("\n"),
+    ).toBe(true);
+
+    const englishDimensionQueries = buildDeepRetrievalQueries(
+      "A business idea: In Shenzhen, a breakfast stall for commuters. Unit economics is critical.",
+      "pricing-scout",
+      ["unit economics"],
+    );
+    expect(
+      englishDimensionQueries.every((item) =>
+        item.startsWith("In Shenzhen a breakfast stall for commuters "),
+      ),
+      englishDimensionQueries.join("\n"),
+    ).toBe(true);
+
+    const compoundDimensionFixtures = [
+      {
+        query: "一个创业想法：在深圳地铁口摆摊卖早餐。单位经济性和合规约束都至关重要。",
+        keywords: ["单位经济性和合规约束"],
+        anchor: "在深圳地铁口摆摊卖早餐 ",
+      },
+      {
+        query: "A business idea: sell breakfast outside a Shenzhen station. Unit economics and compliance are both critical.",
+        keywords: ["unit economics and compliance"],
+        anchor: "sell breakfast outside a Shenzhen station ",
+      },
+    ];
+    for (const fixture of compoundDimensionFixtures) {
+      const queries = buildDeepRetrievalQueries(
+        fixture.query,
+        "pricing-scout",
+        fixture.keywords,
+      );
+      expect(
+        queries.every((item) => item.startsWith(fixture.anchor)),
+        queries.join("\n"),
+      ).toBe(true);
+    }
+
+    const postposedLocationQuery =
+      "A business idea: a breakfast stall for commuters, in Shenzhen.";
+    const postposedLocationQueries = [
+      ...buildDeepRetrievalQueries(
+        postposedLocationQuery,
+        "market-sizer",
+        ["Shenzhen"],
+      ),
+      ...buildDeepRetrievalRescueQueries(
+        postposedLocationQuery,
+        "market-sizer",
+        ["Shenzhen"],
+      ),
+    ];
+    expect(
+      postposedLocationQueries.every((item) =>
+        item.startsWith("in Shenzhen a breakfast stall for commuters "),
+      ),
+      postposedLocationQueries.join("\n"),
+    ).toBe(true);
+
+    const aiPreambleQueries = buildDeepRetrievalQueries(
+      "An AI business idea: In Shenzhen, open a tutoring center for local families.",
+      "market-sizer",
+      ["AI"],
+    );
+    expect(
+      aiPreambleQueries.every((item) =>
+        item.startsWith("In Shenzhen open a tutoring center for local families "),
+      ),
+      aiPreambleQueries.join("\n"),
+    ).toBe(true);
+
+    const shortKeywordQueries = buildDeepRetrievalQueries(
+      "早餐店，面向通勤族。",
+      "market-sizer",
+      ["早餐店"],
+    );
+    expect(shortKeywordQueries.every((item) => item.startsWith("早餐店 "))).toBe(true);
+    expect(shortKeywordQueries.join("\n")).not.toContain("在早餐店面向通勤族");
+  });
+
+  it("requires explicit SaaS evidence before using bespoke software intents or VOC domains", () => {
+    const physicalAiService =
+      "Open an AI-assisted physical tutoring center near a subway platform for local families.";
+    const consumerApp =
+      "Evaluate a consumer meal-planning app for busy parents, including pricing and acquisition.";
+
+    expect(shouldRestrictDeepVocDomains(physicalAiService)).toBe(false);
+    expect(shouldRestrictDeepVocDomains(consumerApp)).toBe(false);
+    expect(
+      buildDeepRetrievalQueries(consumerApp, "channel-scout").join(" "),
+    ).not.toMatch(/B2B SaaS|cross-border|founder communities/iu);
+    expect(
+      shouldRestrictDeepVocDomains(
+        "Evaluate a bilingual AI research workspace for APAC SaaS founders.",
+      ),
+    ).toBe(true);
+    expect(
+      shouldRestrictDeepVocDomains(
+        "Evaluate a Software-as-a-Service research workspace for founders.",
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves per-query qualifiers when a long subject consumes the anchor budget", () => {
+    const queries = buildDeepRetrievalQueries(
+      `Assess the market opportunity for ${"a premium commuter breakfast concept with rapid service ".repeat(4)}`,
+      "pricing-scout",
+      ["London", "rail commuters", "unit economics"],
+    );
+
+    expect(queries.every((item) => item.length <= 120)).toBe(true);
+    expect(queries[0]).toContain("London");
+    expect(queries[1]).toContain("rail commuters");
+    expect(queries[2]).toContain("unit economics");
+  });
+
+  it("keeps Japanese and Korean general-business intents in the query language", () => {
+    const japanese = buildDeepRetrievalQueries(
+      "東京駅前で通勤客向けの朝食店を開く。価格と需要を検証する。",
+      "pricing-scout",
+    );
+    const korean = buildDeepRetrievalQueries(
+      "서울 지하철역 앞에서 직장인을 위한 아침 식당을 열다. 가격과 수요를 검증한다.",
+      "pricing-scout",
+    );
+
+    expect(japanese.join(" ")).toContain("競合の公式価格");
+    expect(
+      japanese.every((item) =>
+        item.startsWith("東京駅前で通勤客向けの朝食店を開く "),
+      ),
+      japanese.join("\n"),
+    ).toBe(true);
+    expect(korean.join(" ")).toContain("경쟁사 공식 가격");
+    expect([...japanese, ...korean].join(" ")).not.toMatch(/SaaS|software official/iu);
+
+    const kanjiOnlyJapanese = buildDeepRetrievalQueries(
+      "東京駅前朝食店価格調査",
+      "pricing-scout",
+    );
+    expect(kanjiOnlyJapanese.join(" ")).toContain("競合の公式価格");
+    expect(kanjiOnlyJapanese.join(" ")).not.toContain("竞品官方价格");
   });
 
   it("preserves semantic punctuation when plain keyword tokens overlap", () => {

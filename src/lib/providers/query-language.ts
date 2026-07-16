@@ -10,6 +10,9 @@
 
 export type OutputLanguage = "en" | "zh-CN" | "ja" | "ko";
 
+const KANJI_JAPANESE_PLACE_PATTERN = /(?:東京|大阪|京都|日本)/u;
+const KANJI_JAPANESE_ORTHOGRAPHY_PATTERN = /(?:駅|価格|調査|競合)/u;
+
 /**
  * Detect the dominant language of a free-text query. Returns "en" when the
  * query is dominantly Latin (or too short to decide), "zh-CN" / "ja" / "ko"
@@ -47,7 +50,18 @@ export function detectQueryLanguage(text: string | undefined | null): OutputLang
   // Han ideographs with Japanese kanji, so without kana we call it Chinese.
   if (hiraganaKatakana / total >= 0.1) return "ja";
   if (hangul / total >= 0.1) return "ko";
-  if (cjk / total >= 0.2) return "zh-CN";
+  if (cjk / total >= 0.2) {
+    // Some concise Japanese research queries use Kanji only. Require both a
+    // Japanese place spelling and a Japanese-specific business term so
+    // ordinary Simplified or Traditional Chinese remains classified as Chinese.
+    if (
+      KANJI_JAPANESE_PLACE_PATTERN.test(text) &&
+      KANJI_JAPANESE_ORTHOGRAPHY_PATTERN.test(text)
+    ) {
+      return "ja";
+    }
+    return "zh-CN";
+  }
   return "en";
 }
 

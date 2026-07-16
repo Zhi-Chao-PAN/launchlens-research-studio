@@ -301,7 +301,7 @@ describe("runResearchAgentStage", () => {
         status: "retrieved",
         sourceCount: 3,
         focusedQueries: expect.arrayContaining([
-          expect.stringContaining("industry revenue forecasts"),
+          expect.stringContaining("official demand statistics"),
         ]),
       },
       grounding: "grounded",
@@ -339,6 +339,43 @@ describe("runResearchAgentStage", () => {
     expect(result.session.evidence?.agents[pricingAgent]?.retrieval).toMatchObject({
       status: "retrieved",
       sourceCount: 3,
+    });
+    expect(mocks.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Chinese local-business pain retrieval broad, topical, and localized", async () => {
+    const painAgent = "pain-detective" as const;
+    mocks.search.mockImplementation(async () => {
+      const call = mocks.search.mock.calls.length;
+      return [
+        source(call * 10 + 1, `local-${call}-a.example`),
+        source(call * 10 + 2, `local-${call}-b.example`),
+      ];
+    });
+    const session = createResearchSession(
+      "一个创业想法：在暑假七八月，在深圳地铁口摆摊卖早餐，目标用户是通勤上班族。请验证市场需求、合规约束、单位经济性、竞争格局和获客渠道。",
+      ["深圳", "地铁早餐", "通勤上班族", "摆摊合规", "单位经济性"],
+      undefined,
+      { mode: "deep" },
+    );
+
+    const result = await runResearchAgentStage(session.id, painAgent, {
+      minimumRetrievedSources: 3,
+      stepDelayMs: 0,
+    });
+
+    expect(mocks.search).toHaveBeenCalledTimes(3);
+    expect(
+      mocks.search.mock.calls.every(
+        ([retrievalQuery]) =>
+          retrievalQuery.includeDomains === undefined &&
+          retrievalQuery.query.startsWith("在深圳地铁口摆摊卖早餐 ") &&
+          !/SaaS|software|cross-border|Indie Hackers/iu.test(retrievalQuery.query),
+      ),
+    ).toBe(true);
+    expect(result.session.evidence?.agents[painAgent]?.retrieval).toMatchObject({
+      status: "retrieved",
+      sourceCount: 6,
     });
     expect(mocks.generate).toHaveBeenCalledTimes(1);
   });

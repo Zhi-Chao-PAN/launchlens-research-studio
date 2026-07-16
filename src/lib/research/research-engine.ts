@@ -31,6 +31,7 @@ import {
   createAgentEvidenceEntry,
   createEvidenceLedger,
   ensureEvidenceLedger,
+  shouldRestrictDeepVocDomains,
   specialistAllowlistedSourceUnion,
 } from "@/lib/research/evidence-ledger";
 import { buildResearchValidation } from "@/lib/research/validation-ledger";
@@ -805,7 +806,10 @@ async function prepareAgentEvidence(
           maxResults: deepRetrieval ? 5 : 6,
           searchDepth: deepRetrieval ? "advanced" : "basic",
           includeDomains:
-            deepRetrieval && agentId === "pain-detective" && queryIndex === 0
+            deepRetrieval &&
+            agentId === "pain-detective" &&
+            queryIndex === 0 &&
+            shouldRestrictDeepVocDomains(session.query, session.keywords)
               ? DEEP_VOC_DOMAINS
               : undefined,
           signal,
