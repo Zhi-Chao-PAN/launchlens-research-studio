@@ -682,16 +682,30 @@ export type DictionaryKey =
   | "researchMode.legend"
   | "researchMode.availability.ready"
   | "researchMode.availability.preview"
+  | "researchMode.recommended"
+  | "researchMode.selected"
+  | "researchMode.select"
   | "researchMode.standard.label"
   | "researchMode.standard.description"
   | "researchMode.standard.depthLabel"
   | "researchMode.standard.duration"
   | "researchMode.standard.capabilityNotice"
+  | "researchMode.standard.kicker"
+  | "researchMode.standard.promise"
+  | "researchMode.standard.bestFor"
   | "researchMode.deep.label"
   | "researchMode.deep.description"
   | "researchMode.deep.depthLabel"
   | "researchMode.deep.duration"
   | "researchMode.deep.capabilityNotice"
+  | "researchMode.deep.promise"
+  | "researchMode.deep.bestFor"
+  | "researchMode.deep.proof.retrieval"
+  | "researchMode.deep.proof.claimBinding"
+  | "researchMode.deep.proof.review"
+  | "researchMode.deep.proof.recovery"
+  | "researchMode.deep.flowTitle"
+  | "researchMode.deep.flow"
   | "researchMode.retrieval.optional"
   | "researchMode.retrieval.required"
   | "researchMode.validationPass.one"
@@ -1485,16 +1499,30 @@ const en: Dict = {
   "researchMode.legend": "Research mode",
   "researchMode.availability.ready": "Ready",
   "researchMode.availability.preview": "Preview",
+  "researchMode.recommended": "Recommended for high-stakes decisions",
+  "researchMode.selected": "Selected",
+  "researchMode.select": "Select this mode",
   "researchMode.standard.label": "Standard",
   "researchMode.standard.description": "A focused 5+1 agent scan with one synthesis pass for exploratory decisions.",
   "researchMode.standard.depthLabel": "Focused evidence scan",
   "researchMode.standard.duration": "{min}–{max} min",
   "researchMode.standard.capabilityNotice": "Runs inside the current request-bound {seconds}-second execution window.",
+  "researchMode.standard.kicker": "Fast orientation",
+  "researchMode.standard.promise": "Map the market in 3–5 minutes when you need direction before proof.",
+  "researchMode.standard.bestFor": "Best for: early exploration, idea screening and narrowing the next question.",
   "researchMode.deep.label": "Deep Research",
   "researchMode.deep.description": "A durable evidence-first protocol with mandatory retrieval and three ordered semantic reviews.",
   "researchMode.deep.depthLabel": "Multi-pass evidence audit",
   "researchMode.deep.duration": "{min}–{max} min target",
   "researchMode.deep.capabilityNotice": "Async Preview until durable state, real providers, authenticated worker wake, and independent recovery are verified; no run beyond the {seconds}-second request window will start.",
+  "researchMode.deep.promise": "Trade speed for an evidence trail you can challenge—not a longer answer.",
+  "researchMode.deep.bestFor": "Best for: launch, investment, pricing and positioning decisions with real consequences.",
+  "researchMode.deep.proof.retrieval": "Mandatory independent retrieval beyond model memory",
+  "researchMode.deep.proof.claimBinding": "Evidence bound to each decision-critical claim",
+  "researchMode.deep.proof.review": "Three ordered semantic reviews and conflict checks",
+  "researchMode.deep.proof.recovery": "Durable execution that self-recovers after interruption",
+  "researchMode.deep.flowTitle": "Where the extra time goes",
+  "researchMode.deep.flow": "5 specialist investigations → independent corroboration → claim adjudication → evidence-bound synthesis",
   "researchMode.retrieval.optional": "Optional",
   "researchMode.retrieval.required": "Required",
   "researchMode.validationPass.one": "{count} validation pass",
@@ -2285,16 +2313,30 @@ const zhCN: Dict = {
   "researchMode.legend": "研究模式",
   "researchMode.availability.ready": "可运行",
   "researchMode.availability.preview": "预览",
+  "researchMode.recommended": "重要决策 · 推荐",
+  "researchMode.selected": "已选择",
+  "researchMode.select": "选择此模式",
   "researchMode.standard.label": "标准模式",
   "researchMode.standard.description": "聚焦型 5+1 智能体扫描，通过一轮综合验证辅助探索性决策。",
   "researchMode.standard.depthLabel": "聚焦式证据扫描",
   "researchMode.standard.duration": "{min}–{max} 分钟",
   "researchMode.standard.capabilityNotice": "在当前请求绑定的 {seconds} 秒执行窗口内运行。",
+  "researchMode.standard.kicker": "快速摸底",
+  "researchMode.standard.promise": "用 3–5 分钟建立市场全景，适合先找方向，再决定是否深挖。",
+  "researchMode.standard.bestFor": "适合：早期探索、想法筛选与收窄下一步问题。",
   "researchMode.deep.label": "深度研究",
   "researchMode.deep.description": "持久化、证据优先的研究协议，强制检索并依次完成三轮语义审查。",
   "researchMode.deep.depthLabel": "多轮证据审计",
   "researchMode.deep.duration": "目标 {min}–{max} 分钟",
   "researchMode.deep.capabilityNotice": "异步能力保持预览状态，直至持久化状态、真实提供方、鉴权工作器唤醒与独立恢复全部验证；不会启动超过 {seconds} 秒请求窗口的任务。",
+  "researchMode.deep.promise": "用更多时间换取可追问、可裁决的证据链，而不是一份更长的回答。",
+  "researchMode.deep.bestFor": "适合：立项、投入、定价、定位等需要承担后果的决策。",
+  "researchMode.deep.proof.retrieval": "强制独立检索，不只依赖模型记忆",
+  "researchMode.deep.proof.claimBinding": "证据逐条绑定到关键结论",
+  "researchMode.deep.proof.review": "三轮有序语义审查与冲突检查",
+  "researchMode.deep.proof.recovery": "持久化执行，中断后自动恢复",
+  "researchMode.deep.flowTitle": "多出的时间花在哪里",
+  "researchMode.deep.flow": "5 位专业分析员检索 → 独立补证 → 逐条裁决 → 证据约束的最终综合",
   "researchMode.retrieval.optional": "可选",
   "researchMode.retrieval.required": "必需",
   "researchMode.validationPass.one": "{count} 轮验证",
@@ -3085,16 +3127,30 @@ const ja: Dict = {
   "researchMode.legend": "リサーチモード",
   "researchMode.availability.ready": "実行可能",
   "researchMode.availability.preview": "プレビュー",
+  "researchMode.recommended": "重要な意思決定に推奨",
+  "researchMode.selected": "選択中",
+  "researchMode.select": "このモードを選択",
   "researchMode.standard.label": "標準",
   "researchMode.standard.description": "探索的な意思決定向けに、5+1エージェントで対象を絞って調査し、1回の統合検証を行います。",
   "researchMode.standard.depthLabel": "重点型エビデンススキャン",
   "researchMode.standard.duration": "{min}～{max} 分",
   "researchMode.standard.capabilityNotice": "現在のリクエスト連動型の実行枠（{seconds} 秒以内）で動作します。",
+  "researchMode.standard.kicker": "クイック調査",
+  "researchMode.standard.promise": "3～5分で市場の全体像を把握し、深掘りする方向を見極めます。",
+  "researchMode.standard.bestFor": "適用：初期探索、アイデアの選別、次の問いの絞り込み。",
   "researchMode.deep.label": "ディープリサーチ",
   "researchMode.deep.description": "情報取得を必須とし、順序付き 3 段階の意味レビューを行う、永続的なエビデンス優先プロトコルです。",
   "researchMode.deep.depthLabel": "複数段階のエビデンス監査",
   "researchMode.deep.duration": "目標 {min}～{max} 分",
   "researchMode.deep.capabilityNotice": "永続状態、実プロバイダー、認証済みワーカー起動、独立復旧がすべて検証されるまで非同期機能はプレビューのままです。{seconds} 秒のリクエスト枠を超える実行は開始しません。",
+  "researchMode.deep.promise": "長い回答ではなく、検証・反証できるエビデンスチェーンに時間を使います。",
+  "researchMode.deep.bestFor": "適用：ローンチ、投資、価格設定、ポジショニングなど結果責任を伴う判断。",
+  "researchMode.deep.proof.retrieval": "モデルの記憶を超えた独立検索を必須化",
+  "researchMode.deep.proof.claimBinding": "意思決定上重要な主張ごとに根拠を紐付け",
+  "researchMode.deep.proof.review": "順序付き3段階レビューと矛盾チェック",
+  "researchMode.deep.proof.recovery": "中断後に自己復旧する永続実行",
+  "researchMode.deep.flowTitle": "追加時間の使い道",
+  "researchMode.deep.flow": "5分野の専門調査 → 独立裏付け → 主張の裁定 → 根拠に制約された統合",
   "researchMode.retrieval.optional": "任意",
   "researchMode.retrieval.required": "必須",
   "researchMode.validationPass.one": "検証 {count} 回",
@@ -3885,16 +3941,30 @@ const ko: Dict = {
   "researchMode.legend": "리서치 모드",
   "researchMode.availability.ready": "실행 가능",
   "researchMode.availability.preview": "미리보기",
+  "researchMode.recommended": "중요한 의사결정에 추천",
+  "researchMode.selected": "선택됨",
+  "researchMode.select": "이 모드 선택",
   "researchMode.standard.label": "표준",
   "researchMode.standard.description": "탐색적 의사결정을 위한 집중형 5+1 에이전트 조사와 한 차례의 종합 검증입니다.",
   "researchMode.standard.depthLabel": "집중형 증거 조사",
   "researchMode.standard.duration": "{min}~{max}분",
   "researchMode.standard.capabilityNotice": "현재 요청 연동형 {seconds}초 실행 범위 안에서 동작합니다.",
+  "researchMode.standard.kicker": "빠른 방향 탐색",
+  "researchMode.standard.promise": "3~5분 안에 시장의 큰 그림을 파악하고 심층 조사 여부를 결정합니다.",
+  "researchMode.standard.bestFor": "적합: 초기 탐색, 아이디어 선별, 다음 질문 구체화.",
   "researchMode.deep.label": "심층 리서치",
   "researchMode.deep.description": "검색을 필수로 수행하고 순차적인 3단계 의미 검토를 거치는 영구 증거 우선 프로토콜입니다.",
   "researchMode.deep.depthLabel": "다단계 증거 감사",
   "researchMode.deep.duration": "목표 {min}~{max}분",
   "researchMode.deep.capabilityNotice": "영구 상태, 실제 제공자, 인증된 워커 호출, 독립 복구가 모두 검증될 때까지 비동기 기능은 미리보기로 유지되며 {seconds}초 요청 범위를 넘는 실행은 시작하지 않습니다.",
+  "researchMode.deep.promise": "더 긴 답변이 아니라 검증하고 이의를 제기할 수 있는 근거 체계에 시간을 투자합니다.",
+  "researchMode.deep.bestFor": "적합: 출시, 투자, 가격, 포지셔닝처럼 결과 책임이 따르는 의사결정.",
+  "researchMode.deep.proof.retrieval": "모델 기억을 넘어선 독립 검색 필수",
+  "researchMode.deep.proof.claimBinding": "의사결정 핵심 주장마다 근거 연결",
+  "researchMode.deep.proof.review": "순차적 3단계 의미 검토와 충돌 점검",
+  "researchMode.deep.proof.recovery": "중단 후 자체 복구하는 영구 실행",
+  "researchMode.deep.flowTitle": "추가 시간이 쓰이는 곳",
+  "researchMode.deep.flow": "5개 전문 조사 → 독립 교차 확인 → 주장 판정 → 근거에 구속된 종합",
   "researchMode.retrieval.optional": "선택",
   "researchMode.retrieval.required": "필수",
   "researchMode.validationPass.one": "{count}회 검증",
