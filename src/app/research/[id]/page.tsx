@@ -22,6 +22,7 @@ import {
 } from "@/components/studio/HistoricalDossierPanel";
 import { CollapsibleSectionTitle } from "@/components/report/primitives/CollapsibleSectionTitle";
 import { SafeExternalLink } from "@/components/report/primitives/SafeExternalLink";
+import { ShareButton } from "@/components/report/ShareButton";
 import type { ResearchModeId } from "@/lib/research/research-modes";
 import type { ResearchDossier } from "@/lib/research/storage";
 import dynamic from "next/dynamic";
@@ -358,9 +359,6 @@ export default function ResearchDetailPage({ params }: { params: Promise<{ id: s
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [compareCount, setCompareCount] = useState(0);
   const exportMenuRef = useRef<HTMLDivElement>(null);
-  const [shareToken, setShareToken] = useState<string | null>(null);
-  const [shareLoading, setShareLoading] = useState(false);
-  const [shareError, setShareError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const router = useRouter();
   const { t } = useLocale();
@@ -765,41 +763,6 @@ async function loadRun() {
     }
   }, [run, synthesis, showToast, t]);
 
-  const handleCopyLink = useCallback(async () => {
-    if (!run) return;
-    const url = window.location.href;
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast(t("report.linkCopied"));
-    } catch {
-      showToast(t("report.copyLinkFailed"));
-    }
-  }, [run, showToast, t]);
-
-  const handleGenerateShare = useCallback(async () => {
-    if (!run || run.status !== "completed") return;
-    setShareLoading(true);
-    setShareError(null);
-    const { createShareAndCopyUrl, buildShareUrl } = await import("@/lib/research/share-api");
-    const r = await createShareAndCopyUrl(run.id);
-    setShareLoading(false);
-    if (!r.ok) { setShareError(r.error || "Failed to create share link"); return; }
-    setShareToken(r.token || null);
-    if (r.copied) showToast(t("report.shareLinkCopied"));
-    else showToast(t("report.shareLinkCreated", { url: buildShareUrl(r.token || "") }));
-  }, [run, showToast, t]);
-
-  const handleCopyShareLink = useCallback(async () => {
-    if (!shareToken) return;
-    const url = `${window.location.origin}/share/${shareToken}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast(t("report.shareCopied"));
-    } catch {
-      showToast(t("report.shareFailed"));
-    }
-  }, [shareToken, showToast, t]);
-
   const confirmSaveAsTemplate = useCallback(() => {
     if (!run || !templateName.trim()) return;
     createTemplate({
@@ -1197,9 +1160,20 @@ async function loadRun() {
             </button>
             {canDistributeReport && (
               <>
-                <button onClick={() => setShowShareDialog(true)} className="research-action-btn">
-                  {t("report.share")}
-                </button>
+                <ShareButton
+                  sessionId={run.id}
+                  label={t("report.share")}
+                  variant="plain"
+                  className="research-action-btn"
+                  open={showShareDialog}
+                  onOpenChange={setShowShareDialog}
+                  report={{
+                    query: run.query,
+                    keywords: run.keywords,
+                    createdAt: run.createdAt,
+                    synthesis,
+                  }}
+                />
                 <button onClick={handleCopyMarkdown} className="research-action-btn">
                   {t("report.copyMarkdown")}
                 </button>
@@ -1742,75 +1716,6 @@ async function loadRun() {
         )}
       </main>
       </div>
-
-      {/* Share dialog */}
-      {canDistributeReport && showShareDialog && (
-        <div className="research-modal-overlay" onClick={() => setShowShareDialog(false)}>
-          <div className="research-modal research-modal-share" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("report.shareTitle")}</h3>
-            {!shareToken ? (
-              <>
-                <p className="research-modal-desc">
-                  {t("report.shareDesc")}
-                </p>
-                {shareError && (
-                  <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-3 py-2 mb-2" role="alert">
-                    {shareError}
-                  </div>
-                )}
-                <div className="research-modal-actions">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setShowShareDialog(false)}
-                  >
-                    {t("common.cancel")}
-                  </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleGenerateShare}
-                    disabled={shareLoading}
-                  >
-                    {shareLoading ? t("report.shareGenerating") : t("report.shareGenerateLink")}
-                  </button>
-                </div>
-                <div className="research-share-alt">
-                  <span className="research-share-alt-label">{t("report.shareOrCopyLabel")}</span>
-                  <button
-                    className="btn btn-sm btn-secondary research-copy-link-btn"
-                    onClick={handleCopyLink}
-                  >
-                    {t("report.shareCopyLink")}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="research-share-success">
-                  <div className="research-share-success-icon">✓</div>
-                  <p>{t("report.shareGenerated")}</p>
-                </div>
-                <div className="research-share-url">
-                  <code>{typeof window !== "undefined" ? window.location.origin : ""}/share/{shareToken}</code>
-                  <button
-                    className="btn btn-sm btn-primary"
-                    onClick={handleCopyShareLink}
-                  >
-                    {t("report.shareCopy")}
-                  </button>
-                </div>
-                <div className="research-modal-actions">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setShowShareDialog(false)}
-                  >
-                    {t("common.close")}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Toast notification */}
       {copySuccess && (

@@ -423,7 +423,17 @@ export default function Home() {
               </span>
             )}
             {hasSession && state.sessionId && state.status === "completed" && (
-              <ShareButton sessionId={state.sessionId} size="sm" label={t("header.share")} />
+              <ShareButton
+                sessionId={state.sessionId}
+                size="sm"
+                label={t("header.share")}
+                report={{
+                  query: state.query,
+                  keywords: state.keywords,
+                  createdAt: state.createdAt ?? undefined,
+                  synthesis: state.agentOutputs.synthesis as any,
+                }}
+              />
             )}
             <ProviderPill />
             <LanguageSwitcher />

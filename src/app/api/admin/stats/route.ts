@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getResearchStorageInfo, listResearchRuns } from "@/lib/research/storage";
-import { getShareStats } from "@/lib/research/share-tokens";
+import { getShareRepository } from "@/lib/research/share-repository";
 import { getAlerts } from "@/lib/api/auth-alerts";
 import { requireAdmin } from "@/lib/api/require-admin";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const storageInfo = getResearchStorageInfo();
-    const shareStats = getShareStats();
+    const shareStats = await getShareRepository().stats();
     const alerts = getAlerts();
 
     // Research stats

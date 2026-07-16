@@ -7,6 +7,9 @@
 
 import crypto from "crypto";
 import { getResearchRun, type ResearchRun } from "./storage";
+import { LEGACY_PUBLIC_SHARE_COMPAT_UNTIL_MS } from "./share-compat";
+
+export { LEGACY_PUBLIC_SHARE_COMPAT_UNTIL_MS } from "./share-compat";
 
 export interface ShareToken {
   token: string;
@@ -21,6 +24,25 @@ export interface ShareToken {
 }
 
 const shareTokens = new Map<string, ShareToken>();
+
+/**
+ * Legacy plaintext-token storage was deployed before the Redis capability
+ * repository. Keep a short, explicit migration window rather than carrying a
+ * permanent second authorization path. Password and folder shares are never
+ * eligible for this public-report fallback.
+ */
+const LEGACY_PUBLIC_TOKEN_PATTERN = /^[A-Za-z0-9_-]{6,128}$/;
+
+export interface LegacyPublicRunShare {
+  run: ResearchRun;
+  share: {
+    runId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    views: number;
+    maxViews: number | null;
+  };
+}
 
 let shareStoragePath: string | null = null;
 
@@ -65,7 +87,7 @@ if (typeof window === "undefined" && process.env.LAUNCHLENS_STORAGE_DIR) {
     } catch {
       // ignore
     }
-    shareStoragePath = path.join(dir, "share-tokens.json");
+    shareStoragePath = path.join(/*turbopackIgnore: true*/ dir, "share-tokens.json");
     if (fs.existsSync(shareStoragePath)) {
       try {
         const data = JSON.parse(fs.readFileSync(shareStoragePath, "utf8"));
@@ -135,6 +157,72 @@ export function getSharedRun(token: string): { run: ResearchRun; share: ShareTok
   persistShares();
 
   return { run, share };
+}
+
+/**
+ * Read, but do not consume, an eligible legacy run share. The caller moves it
+ * into the current repository and performs the first increment atomically.
+ * Returning the full run is internal-only; the API must reduce it through the
+ * strict public projection before responding.
+ */
+export function readLegacyPublicRunShare(
+  token: string,
+  nowMs: number = Date.now(),
+): LegacyPublicRunShare | null {
+  if (
+    nowMs >= LEGACY_PUBLIC_SHARE_COMPAT_UNTIL_MS ||
+    typeof token !== "string" ||
+    !LEGACY_PUBLIC_TOKEN_PATTERN.test(token)
+  ) return null;
+
+  const share = shareTokens.get(token);
+  if (!isValidLegacyRunShare(share, token, nowMs)) return null;
+  const run = getResearchRun(share.runId);
+  if (!run || run.status !== "completed") return null;
+
+  return {
+    run,
+    share: {
+      runId: share.runId,
+      createdAt: share.createdAt,
+      expiresAt: share.expiresAt,
+      views: share.views,
+      maxViews: share.maxViews,
+    },
+  };
+}
+
+/** Persist the repository's monotonic view count so a non-Redis host cannot
+ * reset a migrated legacy budget after a process restart. */
+export function synchronizeLegacyPublicShareViews(token: string, views: number): void {
+  if (!Number.isInteger(views) || views < 0) return;
+  const share = shareTokens.get(token);
+  if (!share || isFolderShare(share) || isPasswordProtected(share)) return;
+  if (!Number.isInteger(share.views) || views <= share.views) return;
+  share.views = views;
+  shareTokens.set(token, share);
+  persistShares();
+}
+
+function isValidLegacyRunShare(
+  share: ShareToken | undefined,
+  token: string,
+  nowMs: number,
+): share is ShareToken {
+  if (!share || share.token !== token || share.revoked) return false;
+  if (isFolderShare(share) || isPasswordProtected(share)) return false;
+  if (typeof share.runId !== "string" || !share.runId) return false;
+  if (!Number.isFinite(share.createdAt) || share.createdAt < 0) return false;
+  if (!Number.isInteger(share.views) || share.views < 0) return false;
+  if (
+    share.expiresAt !== null &&
+    (!Number.isFinite(share.expiresAt) || share.expiresAt <= nowMs)
+  ) return false;
+  if (
+    share.maxViews !== null &&
+    (!Number.isInteger(share.maxViews) || share.maxViews < 1 || share.views >= share.maxViews)
+  ) return false;
+  return true;
 }
 
 export function revokeShareToken(token: string): boolean {

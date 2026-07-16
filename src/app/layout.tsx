@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import { PrivacySafeAnalytics } from "@/components/analytics/PrivacySafeAnalytics";
 import { WebVitalsReporter } from "@/components/perf/WebVitalsReporter";
 import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
 import { CommandPaletteProvider } from "@/components/command-palette/CommandPaletteContext";
@@ -150,7 +150,7 @@ export default async function RootLayout({
             </LocaleProvider>
           </ThemeProvider>
         </ErrorBoundary>
-        {process.env.VERCEL === "1" ? <Analytics /> : null}
+        {process.env.VERCEL === "1" ? <PrivacySafeAnalytics /> : null}
       </body>
     </html>
   );

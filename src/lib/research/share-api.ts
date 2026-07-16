@@ -5,7 +5,25 @@
  * Works in the browser — calls the share API to create tokens.
  */
 
+import type { ShareSectionId } from "@/lib/research/share-manifest";
+
 const SHARE_API_BASE = "/api/research/share";
+
+export interface ShareCreationOptions {
+  expiresInMs?: number;
+  maxViews?: number;
+  sections?: ShareSectionId[];
+}
+
+export interface CreatedShare {
+  token: string;
+  /** One-time capability used by the creator to revoke this share. */
+  manageToken: string;
+  expiresAt: number | null;
+  maxViews: number | null;
+  createdAt: number;
+  sections: ShareSectionId[];
+}
 
 /**
  * Build a share URL from a share token.
@@ -22,6 +40,8 @@ export interface CopyShareResult {
   ok: boolean;
   url?: string;
   token?: string;
+  manageToken?: string;
+  sections?: ShareSectionId[];
   copied: boolean;
   error?: string;
 }
@@ -32,7 +52,7 @@ export interface CopyShareResult {
  */
 export async function createShareAndCopyUrl(
   runId: string,
-  options: { expiresInMs?: number; maxViews?: number } = {},
+  options: ShareCreationOptions = {},
 ): Promise<CopyShareResult> {
   try {
     const res = await fetchWithCsrf(SHARE_API_BASE, {
@@ -67,7 +87,14 @@ export async function createShareAndCopyUrl(
         document.body.removeChild(ta);
       } catch { copied = false; }
     }
-    return { ok: true, url, token: data.token, copied };
+    return {
+      ok: true,
+      url,
+      token: data.token,
+      manageToken: data.manageToken,
+      sections: data.sections,
+      copied,
+    };
   } catch (e) {
     return { ok: false, copied: false, error: e instanceof Error ? e.message : "Failed to create share link" };
   }
@@ -76,7 +103,7 @@ export async function createShareAndCopyUrl(
 /** Back-compat: returns true when share is created AND URL is copied to clipboard. */
 export async function copyShareUrl(
   runId: string,
-  options: { expiresInMs?: number; maxViews?: number } = {},
+  options: ShareCreationOptions = {},
 ): Promise<boolean> {
   const r = await createShareAndCopyUrl(runId, options);
   return r.ok && r.copied;
@@ -84,8 +111,8 @@ export async function copyShareUrl(
 
 export async function createShareWithOptions(
   runId: string,
-  options: { expiresInMs?: number; maxViews?: number } = {},
-): Promise<{ token: string; expiresAt?: number; maxViews?: number; createdAt: number } | null> {
+  options: ShareCreationOptions = {},
+): Promise<CreatedShare | null> {
   try {
     const res = await fetchWithCsrf(SHARE_API_BASE, { method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -105,10 +132,12 @@ export async function createShareWithOptions(
 /**
  * Revoke a share token.
  */
-export async function revokeShare(token: string): Promise<boolean> {
+export async function revokeShare(token: string, manageToken: string): Promise<boolean> {
   try {
-    const res = await fetchWithCsrf(`${SHARE_API_BASE}?token=${encodeURIComponent(token)}`, {
+    const res = await fetchWithCsrf(SHARE_API_BASE, {
       method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, manageToken }),
     });
     return res.ok;
   } catch {
