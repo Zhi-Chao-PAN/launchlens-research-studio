@@ -39,6 +39,12 @@ export const runtime = "nodejs";
 // gap. See research-engine.ts header comment for the full rationale.
 export const maxDuration = 300;
 
+// Deep Research is durable and the SSE endpoint is only an observer. Rotate
+// the observer before Vercel's hard 300s timeout so clients receive a clean
+// reconnect event instead of a runtime timeout error. The worker continues
+// independently through Redis and the next observer immediately resumes.
+export const DEEP_STREAM_ROTATION_MS = 240_000;
+
 const SESSION_ID_PATTERN = /^[a-z0-9]{1,128}$/i;
 const HEARTBEAT_INTERVAL_MS = 15000;
 const DEEP_POLL_INTERVAL_MS = 2000;
@@ -149,6 +155,7 @@ export async function GET(
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let deepPoll: ReturnType<typeof setInterval> | null = null;
+  let rotationTimer: ReturnType<typeof setTimeout> | null = null;
   let deepPollInFlight = false;
   // unsubscribe is assigned after subscribeToSession below; safeClose is only
   // invoked asynchronously (via events/heartbeat/timeouts/abort signal), so the
@@ -160,6 +167,7 @@ export async function GET(
     closed = true;
     if (heartbeat) clearInterval(heartbeat);
     if (deepPoll) clearInterval(deepPoll);
+    if (rotationTimer) clearTimeout(rotationTimer);
     unsubscribe();
     // Give the client a tiny window to receive the final event bytes.
     sleep(CLOSE_FLUSH_DELAY_MS).finally(() => writer.close().catch(() => {}));
@@ -328,6 +336,15 @@ export async function GET(
     };
     deepPoll = setInterval(pollDeepState, DEEP_POLL_INTERVAL_MS);
     pollDeepState();
+
+    rotationTimer = setTimeout(() => {
+      if (closed) return;
+      writeEvent(
+        "reconnect",
+        JSON.stringify({ reason: "observer_window", message: "Deep Research observer window rotated." }),
+      );
+      safeClose();
+    }, DEEP_STREAM_ROTATION_MS);
   }
 
   // A stream is an observer, even when this request acquired the execution

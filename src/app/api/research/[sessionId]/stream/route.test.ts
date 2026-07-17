@@ -85,4 +85,38 @@ describe("research session stream terminal snapshot", () => {
       retryable: true,
     });
   });
+
+  it("rotates a Deep observer stream before the serverless timeout window", async () => {
+    vi.useFakeTimers();
+    isRedisConfigured.mockReturnValue(true);
+    readDeepResearchRecord.mockResolvedValue(null);
+    const session = createResearchSession(
+      "deep observer rotation",
+      [],
+      undefined,
+      { mode: "deep" },
+    );
+
+    try {
+      const response = await GET(
+        new Request(`http://localhost/api/research/${session.id}/stream`),
+        { params: Promise.resolve({ sessionId: session.id }) },
+      );
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      await vi.advanceTimersByTimeAsync(240_000);
+      let next = "";
+      for (let index = 0; index < 64 && !next.includes("event: reconnect"); index += 1) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        next += decoder.decode(chunk.value, { stream: true });
+      }
+
+      expect(next).toContain("event: state");
+      expect(next).toContain("event: reconnect");
+    } finally {
+      deleteSession(session.id);
+      vi.useRealTimers();
+    }
+  });
 });

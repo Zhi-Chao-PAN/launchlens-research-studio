@@ -534,6 +534,31 @@ export function useResearchStudio() {
         } catch {}
         closeEventSource();
       });
+      // Deep Research observers rotate before the platform's hard request
+      // timeout. Treat the explicit server event as a transparent handoff:
+      // keep the durable session running and reopen the observer immediately.
+      es.addEventListener("reconnect", () => {
+        if (sessionIdRef.current !== sessionId || finalizedSessionIdRef.current === sessionId) {
+          es.close();
+          return;
+        }
+        pollingActive = false;
+        clearPolling();
+        clearReconnectTimer();
+        es.close();
+        if (eventSourceRef.current === es) eventSourceRef.current = null;
+        reconnectAttemptsRef.current = 0;
+        setState((prev) =>
+          prev.sessionId === sessionId
+            ? { ...prev, reconnectUntilMs: null, pollingIntervalMs: null }
+            : prev,
+        );
+        setTimeout(() => {
+          if (sessionIdRef.current === sessionId && finalizedSessionIdRef.current !== sessionId) {
+            setupSseRef.current(sessionId);
+          }
+        }, 0);
+      });
       es.onerror = () => {
         const wasActive = eventSourceRef.current === es;
         es.close();
