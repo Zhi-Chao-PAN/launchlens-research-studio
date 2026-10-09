@@ -34,13 +34,13 @@ const GAP_POOL: { gap: string; opportunity: string; difficulty: "low" | "medium"
 ];
 
 const CITATION_POOL = [
-  { id: "cite-extra-1", title: "Quarterly category report", url: "https://example.com/research/q4", confidence: "medium" as const },
-  { id: "cite-extra-2", title: "Public earnings call summary", url: "https://example.com/earnings", confidence: "high" as const },
-  { id: "cite-extra-3", title: "Independent market sizing whitepaper", url: "https://example.com/whitepaper", confidence: "medium" as const },
-  { id: "cite-extra-4", title: "Founder interview transcript", url: "https://example.com/interview", confidence: "low" as const },
+  { id: "cite-extra-1", title: "Quarterly category report", url: "https://example.com/research/q4", confidence: "medium" as const, snippet: "Category growth continues to outpace adjacent SaaS verticals.", agent: "market-sizer" as const },
+  { id: "cite-extra-2", title: "Public earnings call summary", url: "https://example.com/earnings", confidence: "high" as const, snippet: "Executives cited AI workflow depth as primary competitive moat.", agent: "competitor-analyst" as const },
+  { id: "cite-extra-3", title: "Independent market sizing whitepaper", url: "https://example.com/whitepaper", confidence: "medium" as const, snippet: "SAM estimates vary widely depending on segment definitions.", agent: "market-sizer" as const },
+  { id: "cite-extra-4", title: "Founder interview transcript", url: "https://example.com/interview", confidence: "low" as const, snippet: "Distribution, not product quality, was the primary failure mode cited.", agent: "channel-scout" as const },
 ];
 
-function withTimestamp<T extends { id: string }>(c: T) {
+function withTimestamp<T extends { id: string; snippet: string; agent: AgentId }>(c: T) {
   return { ...c, accessedAt: new Date().toISOString() };
 }
 

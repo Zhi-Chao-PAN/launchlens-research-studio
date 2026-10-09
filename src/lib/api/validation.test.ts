@@ -125,3 +125,52 @@ describe("jsonError and jsonValidationError", () => {
     expect(r.status).toBe(400);
   });
 });
+
+describe("validateResearchRequest i18n", () => {
+  const mockI18n = {
+    t: (key: string, fallback?: string) => `[${key}]` || fallback || "",
+    fmt: (key: string, vars: Record<string, string | number>, fallback?: string) =>
+      `[${key}:${JSON.stringify(vars)}]`,
+  };
+
+  it("uses i18n keys for invalid body error", () => {
+    const r = validateResearchRequest(null, mockI18n);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("api.invalidBody");
+    }
+  });
+
+  it("uses i18n keys for query required error", () => {
+    const r = validateResearchRequest({}, mockI18n);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("api.queryRequired");
+    }
+  });
+
+  it("uses i18n keys with interpolation for query too short", () => {
+    const r = validateResearchRequest({ query: "ab" }, mockI18n);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("api.queryTooShort");
+      expect(r.body.error).toContain("min");
+    }
+  });
+
+  it("uses i18n keys for keywords array error", () => {
+    const r = validateResearchRequest({ query: "test query", keywords: "not-array" }, mockI18n);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("api.keywordsMustBeArray");
+    }
+  });
+
+  it("defaults to English when no i18n provided (backward compat)", () => {
+    const r = validateResearchRequest({ query: "ab" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.body.error).toContain("Query must be at least");
+    }
+  });
+});

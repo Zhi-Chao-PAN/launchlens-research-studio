@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { listCachedSessions, deleteCachedSession, type CachedSession } from "@/lib/research/session-cache";
-import { formatRelativeTime } from "@/lib/research/history";
+import { formatRelativeTimeI18n } from "@/lib/research/history";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface CachedSessionsProps {
   refreshKey: number;
@@ -19,10 +20,15 @@ function agentProgress(c: CachedSession): { done: number; total: number } {
 }
 
 export function CachedSessionsList({ refreshKey, onSelect, onClear }: CachedSessionsProps) {
+  const { t, fmt } = useLocale();
   const [expanded, setExpanded] = useState(true);
   const all = listCachedSessions();
+  void refreshKey; // used to force re-read via parent
 
   if (all.length === 0) return null;
+
+  const agentsLabel = t("cache.agents", "agents");
+  const citationsLabel = t("cache.citations", "citations");
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm" data-testid="cached-sessions">
@@ -32,7 +38,7 @@ export function CachedSessionsList({ refreshKey, onSelect, onClear }: CachedSess
       >
         <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
           <span aria-hidden>📚</span>
-          Past research
+          {t("cache.title", "Past research")}
           <span className="text-xs text-slate-400 font-normal">({all.length})</span>
         </h3>
         <span className={`text-slate-400 text-xs transition-transform ${expanded ? "rotate-90" : ""}`} aria-hidden>▸</span>
@@ -62,13 +68,13 @@ export function CachedSessionsList({ refreshKey, onSelect, onClear }: CachedSess
                       {c.query}
                     </p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span className="text-[10px] text-slate-400">{formatRelativeTime(c.completedAt)}</span>
+                      <span className="text-[10px] text-slate-400">{formatRelativeTimeI18n(c.completedAt, fmt, t)}</span>
                       <span className="text-[10px] text-slate-300">·</span>
                       <span className="text-[10px] text-emerald-600 font-medium">
-                        {done}/{total} agents
+                        {done}/{total} {agentsLabel}
                       </span>
                       <span className="text-[10px] text-slate-300">·</span>
-                      <span className="text-[10px] text-slate-500">{c.citationCount} citations</span>
+                      <span className="text-[10px] text-slate-500">{c.citationCount} {citationsLabel}</span>
                     </div>
                   </div>
                   <button
@@ -78,8 +84,8 @@ export function CachedSessionsList({ refreshKey, onSelect, onClear }: CachedSess
                       onClear();
                     }}
                     className="text-slate-300 hover:text-rose-500 transition-colors flex-shrink-0 p-0.5"
-                    title="Delete cached session"
-                    aria-label="Delete cached session"
+                    title={t("cache.delete", "Delete cached session")}
+                    aria-label={t("cache.delete", "Delete cached session")}
                   >
                     ✕
                   </button>

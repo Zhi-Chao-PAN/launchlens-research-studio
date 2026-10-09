@@ -10,11 +10,13 @@ import {
   jsonValidationError,
   jsonError,
 } from "@/lib/api/validation";
+import { createServerI18n } from "@/lib/i18n/server-i18n";
 
 export async function POST(request: Request) {
   const start = Date.now();
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "anonymous";
   const ua = (request.headers.get("user-agent") || "").slice(0, 80);
+  const { t, fmt } = createServerI18n(request);
   const logRequest = (status: number, ok: boolean) => recordRequest({
     ts: Date.now(),
     route: "/api/research",
@@ -29,12 +31,13 @@ export async function POST(request: Request) {
   if (!rate.allowed) {
     logRequest(429, false);
     return NextResponse.json(
-      { error: "Rate limit exceeded. Please retry shortly.", resetMs: rate.resetMs },
+      { error: t("api.rateLimitExceeded", "Rate limit exceeded. Please retry shortly."), code: "RATE_LIMITED", resetMs: rate.resetMs },
       {
         status: 429,
         headers: {
           "X-RateLimit-Remaining": String(rate.remaining),
           "X-RateLimit-Reset-Ms": String(rate.resetMs),
+          "Retry-After": String(Math.ceil(rate.resetMs / 1000)),
         },
       },
     );
@@ -44,10 +47,10 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     logRequest(400, false);
-    return jsonError("Request body must be valid JSON.", 400);
+    return jsonError(t("api.invalidJson", "Request body must be valid JSON."), 400, undefined, "INVALID_JSON");
   }
 
-  const validation = validateResearchRequest(body);
+  const validation = validateResearchRequest(body, { t, fmt });
   if (!validation.ok) {
     logRequest(400, false);
     return jsonValidationError(validation);
@@ -85,9 +88,10 @@ export async function POST(request: Request) {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { t } = createServerI18n(request);
   return NextResponse.json(
-    { error: "Use POST to create a research session." },
+    { error: t("api.methodNotAllowed", "Use POST to create a research session.") },
     {
       status: 405,
       headers: { Allow: "POST" },

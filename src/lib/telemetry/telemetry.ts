@@ -11,6 +11,8 @@ export interface TelemetryRecord {
   durationMs: number;
   ok: boolean;
   error?: string;
+  /** True when the run was cancelled by the user (DELETE / reset) — not a provider failure. */
+  cancelled?: boolean;
 }
 
 const RING_CAPACITY = 200;
@@ -58,31 +60,42 @@ export function clearTelemetry(): void {
 
 export function summarizeTelemetry(): {
   total: number;
+  ok: number;
+  cancelled: number;
+  failed: number;
   successRate: number;
   averageMs: number;
-  byProvider: Record<string, { count: number; ok: number }>;
-  byAgent: Record<string, { count: number; ok: number }>;
+  byProvider: Record<string, { count: number; ok: number; cancelled: number }>;
+  byAgent: Record<string, { count: number; ok: number; cancelled: number }>;
 } {
   hydrate();
   const total = ring.length;
   if (total === 0) {
-    return { total: 0, successRate: 1, averageMs: 0, byProvider: {}, byAgent: {} };
+    return { total: 0, ok: 0, cancelled: 0, failed: 0, successRate: 1, averageMs: 0, byProvider: {}, byAgent: {} };
   }
   const okCount = ring.filter((r) => r.ok).length;
+  const cancelledCount = ring.filter((r) => r.cancelled).length;
+  const failedCount = total - okCount - cancelledCount;
   const totalMs = ring.reduce((acc, r) => acc + r.durationMs, 0);
-  const byProvider: Record<string, { count: number; ok: number }> = {};
-  const byAgent: Record<string, { count: number; ok: number }> = {};
+  const byProvider: Record<string, { count: number; ok: number; cancelled: number }> = {};
+  const byAgent: Record<string, { count: number; ok: number; cancelled: number }> = {};
   for (const r of ring) {
-    byProvider[r.providerId] = byProvider[r.providerId] || { count: 0, ok: 0 };
+    byProvider[r.providerId] = byProvider[r.providerId] || { count: 0, ok: 0, cancelled: 0 };
     byProvider[r.providerId].count++;
     if (r.ok) byProvider[r.providerId].ok++;
-    byAgent[r.agentId] = byAgent[r.agentId] || { count: 0, ok: 0 };
+    if (r.cancelled) byProvider[r.providerId].cancelled++;
+    byAgent[r.agentId] = byAgent[r.agentId] || { count: 0, ok: 0, cancelled: 0 };
     byAgent[r.agentId].count++;
     if (r.ok) byAgent[r.agentId].ok++;
+    if (r.cancelled) byAgent[r.agentId].cancelled++;
   }
   return {
     total,
-    successRate: okCount / total,
+    ok: okCount,
+    cancelled: cancelledCount,
+    failed: failedCount,
+    // Success rate among non-cancelled runs (cancellations don't reflect reliability).
+    successRate: total - cancelledCount === 0 ? 1 : okCount / (total - cancelledCount),
     averageMs: Math.round(totalMs / total),
     byProvider,
     byAgent,

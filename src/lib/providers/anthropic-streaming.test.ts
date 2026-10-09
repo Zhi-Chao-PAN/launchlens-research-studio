@@ -52,9 +52,15 @@ describe("Anthropic streaming", () => {
 
   it("requests stream:true when onProgress is provided", async () => {
     let body: any = null;
+    const validPayload = JSON.stringify({
+      agent: "market-sizer",
+      summary: "ok",
+      marketSize: { tam: 1, sam: 1, som: 1, unit: "users", currency: "USD", growthRate: 5, growthTrend: "steady", confidence: "medium" },
+      citations: [],
+    });
     const fetchImpl = vi.fn(async (_url: string, init: any) => {
       body = JSON.parse(init.body);
-      return mockSSE(["data: {\"type\":\"message_stop\"}\n"]);
+      return mockSSE([dataLine(validPayload), "data: {\"type\":\"message_stop\"}\n"]);
     });
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
     await p.generate("market-sizer", { query: "q", keywords: [], onProgress: () => {} });

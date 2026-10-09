@@ -32,8 +32,19 @@ const AGENT_ORDER: AgentId[] = [
   "synthesis",
 ];
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CNY: "¥",
+  INR: "₹",
+  CAD: "C$",
+  AUD: "A$",
+};
+
 function fmtMoney(value: number, currency: string = "USD"): string {
-  const sym = currency === "USD" ? "$" : currency + " ";
+  const sym = CURRENCY_SYMBOLS[currency] ?? currency + " ";
   if (value >= 1_000_000_000) return `${sym}${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
@@ -107,6 +118,9 @@ function formatCompetitorAnalyst(o: CompetitorAnalystOutput): string {
         ``,
       ].filter(Boolean).join("\n");
     }),
+    `### Competitive Matrix\n`,
+    ...o.competitiveMatrix.map((d) => `- **${d.dimension}**: ${d.players.map((p) => `${p.name} (${p.score}/10)`).join("; ")}`),
+    ``,
     `### Market Gaps\n`,
     ...o.gaps.map((g) => `- **${g.gap}** _(${g.difficulty} difficulty)_\n  _Opportunity:_ ${g.opportunity}`),
     ``,
@@ -157,7 +171,7 @@ function formatPricingScout(o: PricingScoutOutput): string {
     `### Willingness to Pay by Segment\n`,
     `| Segment | Estimate | Confidence |`,
     `|---------|----------|------------|`,
-    ...o.willingnessToPay.map((w) => `| ${w.segment} | ${fmtMoney(w.estimate)}/period | ${confidenceBadge(w.confidence)} |`),
+    ...o.willingnessToPay.map((w) => `| ${w.segment} | ${fmtMoney(w.estimate)}/mo | ${confidenceBadge(w.confidence)} |`),
     ``,
     `### Recommendations\n`,
     ...o.recommendations.map((r) => `- **${r.tier}:** ${fmtMoney(r.price)} — _${r.rationale}_`),

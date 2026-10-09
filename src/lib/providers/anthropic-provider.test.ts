@@ -10,41 +10,37 @@ const validPayload = {
 };
 
 describe("createAnthropicProvider", () => {
-  it("retries 5xx then falls back to mock", async () => {
+  it("retries 5xx then throws", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500 }) as any);
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
-    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
-    expect(out.agent).toBe("market-sizer");
+    await expect(p.generate("market-sizer", { query: "q", keywords: [] })).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("does not retry on 4xx and falls back immediately", async () => {
+  it("does not retry on 4xx and throws immediately", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
-    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
-    expect(out.agent).toBe("market-sizer");
+    await expect(p.generate("market-sizer", { query: "q", keywords: [] })).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to mock when JSON is malformed", async () => {
+  it("throws when JSON is malformed", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: async () => ({ content: [{ type: "text", text: "not json" }] }),
     } as any));
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
-    const out = await p.generate("pricing-scout", { query: "q", keywords: [] });
-    expect(out.agent).toBe("pricing-scout");
+    await expect(p.generate("pricing-scout", { query: "q", keywords: [] })).rejects.toThrow();
   });
 
-  it("falls back to mock when validation fails", async () => {
+  it("throws when validation fails (output does not match schema)", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: async () => ({ content: [{ type: "text", text: JSON.stringify({ agent: "channel-scout" }) }] }),
     } as any));
     const p = createAnthropicProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
-    const out = await p.generate("channel-scout", { query: "q", keywords: [] });
-    expect(out.agent).toBe("channel-scout");
-    expect(Array.isArray(out.citations)).toBe(true);
+    // Missing required 'summary' field should cause validator to throw
+    await expect(p.generate("channel-scout", { query: "q", keywords: [] })).rejects.toThrow();
   });
 
   it("returns parsed JSON when remote succeeds", async () => {
@@ -71,7 +67,7 @@ describe("createAnthropicProvider", () => {
       model: "claude-3-haiku",
       fetchImpl: fetchImpl as any,
     });
-    await p.generate("market-sizer", { query: "q", keywords: ["a"] });
+    await expect(p.generate("market-sizer", { query: "q", keywords: ["a"] })).rejects.toThrow();
     expect(url).toBe("https://example.com/v1/messages");
     expect(init.headers["x-api-key"]).toBe("k");
     expect(init.headers["anthropic-version"]).toBe("2023-06-01");

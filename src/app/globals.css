@@ -164,6 +164,42 @@ body {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+@keyframes skeleton-in {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-skeleton-in {
+  animation: skeleton-in 0.4s ease-out forwards;
+  animation-fill-mode: forwards;
+}
+
+@keyframes loading-bar {
+  0% { margin-left: -25%; width: 25%; }
+  50% { width: 50%; }
+  100% { margin-left: 100%; width: 25%; }
+}
+
+.animate-loading {
+  animation: loading-bar 1.6s ease-in-out infinite;
+}
+
+/* View Transitions API — smooth fade for tab switches, when supported. */
+::view-transition-old(root) {
+  animation: vt-fade-out 0.15s ease-out forwards;
+}
+::view-transition-new(root) {
+  animation: vt-fade-in 0.2s ease-in forwards;
+}
+@keyframes vt-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 
 /* Manual dark mode toggle (via [data-theme=dark] on html) */
 [data-theme='dark'] {
@@ -271,9 +307,17 @@ a:focus-visible {
     padding: 8pt !important;
   }
 
-  /* Expand all collapsed sections for print */
-  [aria-expanded='false'] > * + * {
+  /* Expand all collapsed sections for print.
+     Collapsible components (CitationList, SynthesisReport brief) use CSS-based
+     .hidden class (not React conditional rendering) for collapsible content
+     so print styles can override them. */
+  .hidden {
     display: block !important;
+  }
+
+  /* The max-height clamp on the launchlens brief should be lifted in print */
+  .max-h-96 {
+    max-height: none !important;
   }
 
   /* Use landscape for wide tables */

@@ -7,10 +7,10 @@ import { applyQueryVariability } from "@/lib/providers/mock-variability";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
 
 const MOCK_STEPS = [
-  { fraction: 0.2, step: "Loading research context" },
-  { fraction: 0.5, step: "Synthesizing findings" },
-  { fraction: 0.85, step: "Compiling citations" },
-  { fraction: 1.0, step: "Complete" },
+  { fraction: 0.2, step: "step.loadingContext" },
+  { fraction: 0.5, step: "step.synthesizingFindings" },
+  { fraction: 0.85, step: "step.compilingCitations" },
+  { fraction: 1.0, step: "step.complete" },
 ];
 
 export const mockResearchProvider: ResearchProvider = {

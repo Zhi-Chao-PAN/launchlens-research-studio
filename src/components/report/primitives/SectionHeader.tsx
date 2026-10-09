@@ -1,4 +1,6 @@
-﻿"use client";
+"use client";
+
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface SectionHeaderProps {
   title: string;
@@ -35,10 +37,15 @@ export function SectionHeader({
   icon,
   count,
   onCopy,
-  copyLabel = "Copy section",
+  copyLabel,
   copied = false,
   accent = "indigo",
 }: SectionHeaderProps) {
+  const { t } = useLocale();
+  const effectiveCopyLabel = copyLabel ?? t("actions.copySection", "Copy section");
+  const copiedLabel = t("actions.copied", "Copied");
+  const itemLabel = count === 1 ? t("common.item", "item") : t("common.items", "items");
+
   return (
     <div className={`bg-gradient-to-r ${ACCENT_SOFT[accent]} rounded-xl p-5 relative`}>
       <div className="flex items-start justify-between gap-3">
@@ -56,7 +63,7 @@ export function SectionHeader({
               <span>{title}</span>
               {typeof count === "number" && (
                 <span className="text-[10px] font-mono uppercase tracking-wide text-slate-500 bg-white/70 px-2 py-0.5 rounded-full">
-                  {count} {count === 1 ? "item" : "items"}
+                  {count} {itemLabel}
                 </span>
               )}
             </h3>
@@ -67,10 +74,10 @@ export function SectionHeader({
           <button
             onClick={onCopy}
             className="flex-shrink-0 text-[10px] font-medium text-slate-600 hover:text-slate-800 bg-white/70 hover:bg-white px-2 py-1 rounded transition-colors flex items-center gap-1"
-            title={copyLabel}
+            title={effectiveCopyLabel}
           >
             <span aria-hidden>{copied ? "✅" : "📋"}</span>
-            <span className="hidden sm:inline">{copied ? "Copied" : copyLabel}</span>
+            <span className="hidden sm:inline">{copied ? copiedLabel : effectiveCopyLabel}</span>
           </button>
         )}
       </div>

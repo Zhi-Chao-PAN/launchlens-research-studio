@@ -5,13 +5,14 @@ import type { CompetitorAnalystOutput, Competitor } from "@/lib/schema/research-
 import { SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { Stars } from "../primitives/Meter";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 
-const POSITIONING_STYLE: Record<Competitor["positioning"], { bg: string; text: string; emoji: string; label: string }> = {
-  premium: { bg: "bg-violet-100", text: "text-violet-700", emoji: "💎", label: "Premium" },
-  "mid-market": { bg: "bg-indigo-100", text: "text-indigo-700", emoji: "⚖️", label: "Mid-market" },
-  budget: { bg: "bg-emerald-100", text: "text-emerald-700", emoji: "💰", label: "Budget" },
-  niche: { bg: "bg-amber-100", text: "text-amber-700", emoji: "🎯", label: "Niche" },
+const POSITIONING_STYLE: Record<Competitor["positioning"], { bg: string; text: string; emoji: string; labelKey: string }> = {
+  premium: { bg: "bg-violet-100", text: "text-violet-700", emoji: "💎", labelKey: "competitor.positioning.premium" },
+  "mid-market": { bg: "bg-indigo-100", text: "text-indigo-700", emoji: "⚖️", labelKey: "competitor.positioning.mid-market" },
+  budget: { bg: "bg-emerald-100", text: "text-emerald-700", emoji: "💰", labelKey: "competitor.positioning.budget" },
+  niche: { bg: "bg-amber-100", text: "text-amber-700", emoji: "🎯", labelKey: "competitor.positioning.niche" },
 };
 
 const DIFFICULTY_STYLE = {
@@ -27,25 +28,27 @@ function formatPrice(min: number, max: number, currency: string): string {
 
 export function CompetitorAnalystReport({ output }: { output: any }) {
   const data = output as CompetitorAnalystOutput;
+  const { t } = useLocale();
   const { copied, copy } = useCopyText();
 
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Competitor Analyst"
+        title={t("agent.competitor-analyst.name", "Competitor Analyst")}
         description={data.summary}
         icon="🏆"
         count={data.competitors.length}
         accent="amber"
         onCopy={() => copy(generateAgentMarkdown("competitor-analyst", data), "competitor-analyst")}
         copied={copied === "competitor-analyst"}
-        copyLabel="Copy section"
+        copyLabel={t("actions.copySection", "Copy section")}
       />
 
       {/* Competitor cards */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          Competitors <span className="text-xs text-slate-400 font-normal">({data.competitors.length})</span>
+          {t("competitor.landscape", "Competitors")}{" "}
+          <span className="text-xs text-slate-400 font-normal">({data.competitors.length})</span>
         </h3>
         <div className="space-y-3">
           {data.competitors.map((comp) => {
@@ -60,7 +63,7 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
                       <h4 className="font-semibold text-slate-800">{comp.name}</h4>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${pos.bg} ${pos.text} flex items-center gap-1`}>
                         <span aria-hidden>{pos.emoji}</span>
-                        <span>{pos.label}</span>
+                        <span>{t(pos.labelKey, comp.positioning)}</span>
                       </span>
                       <Stars value={score} />
                     </div>
@@ -70,7 +73,9 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
 
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 mb-1.5">Strengths</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 mb-1.5">
+                      {t("competitor.strengths", "Strengths")}
+                    </p>
                     <ul className="text-xs text-slate-700 space-y-1">
                       {comp.strengths.map((s, i) => (
                         <li key={i} className="flex items-start gap-1.5">
@@ -81,7 +86,9 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
                     </ul>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600 mb-1.5">Weaknesses</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-rose-600 mb-1.5">
+                      {t("competitor.weaknesses", "Weaknesses")}
+                    </p>
                     <ul className="text-xs text-slate-700 space-y-1">
                       {comp.weaknesses.map((w, i) => (
                         <li key={i} className="flex items-start gap-1.5">
@@ -101,7 +108,8 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
                     </span>
                     {comp.marketShare !== undefined && (
                       <span className="text-slate-500">
-                        <span className="font-semibold text-slate-700">{comp.marketShare}%</span> market share
+                        <span className="font-semibold text-slate-700">{comp.marketShare}%</span>{" "}
+                        {t("competitor.marketShare", "market share")}
                       </span>
                     )}
                     {comp.url && (
@@ -111,7 +119,7 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
                         rel="noopener noreferrer"
                         className="text-indigo-600 hover:underline flex items-center gap-0.5"
                       >
-                        Visit <span aria-hidden>↗</span>
+                        {t("competitor.visit", "Visit")} <span aria-hidden>↗</span>
                       </a>
                     )}
                   </div>
@@ -126,7 +134,9 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
       {/* Competitive Matrix */}
       {data.competitiveMatrix && data.competitiveMatrix.length > 0 && (
         <div>
-          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Competitive Matrix</h3>
+          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+            {t("competitor.matrix", "Competitive Matrix")}
+          </h3>
           <div className="space-y-3">
             {data.competitiveMatrix.map((dim, i) => (
               <div key={i} className="bg-slate-50 rounded-xl p-3">
@@ -151,7 +161,8 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
       {/* Gaps */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          Market Gaps & Opportunities <span className="text-xs text-slate-400 font-normal">({data.gaps.length})</span>
+          {t("competitor.gaps", "Market Gaps & Opportunities")}{" "}
+          <span className="text-xs text-slate-400 font-normal">({data.gaps.length})</span>
         </h3>
         <div className="space-y-2">
           {data.gaps.map((gap: any, i: number) => {
@@ -166,7 +177,7 @@ export function CompetitorAnalystReport({ output }: { output: any }) {
                   </span>
                 </div>
                 <p className="text-xs text-emerald-700">
-                  <span className="font-semibold">Opportunity:</span> {gap.opportunity}
+                  <span className="font-semibold">{t("competitor.opportunityLabel", "Opportunity")}:</span> {gap.opportunity}
                 </p>
               </div>
             );

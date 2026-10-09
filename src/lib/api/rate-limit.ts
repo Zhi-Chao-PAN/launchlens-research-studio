@@ -1,8 +1,10 @@
 // Per-key token bucket rate limiter.
-// Default: 10 requests per 60 seconds per IP. Used by the research POST
-// endpoint to prevent runaway cost on real providers. Memory-only and
-// process-local; a future round can swap in Redis if horizontal scale
-// becomes a concern.
+// Default: 10 tokens, refilling at 10/60s (~0.167/sec). Used by the research
+// POST endpoint to prevent runaway cost on real providers.
+// True token bucket: tokens refill continuously at a steady rate rather than
+// resetting on a fixed window boundary. This avoids the "double burst" problem
+// where a client could exhaust capacity at the end of one window and immediately
+// get a full refill at the next boundary. Memory-only and process-local.
 
 interface Bucket {
   tokens: number;
@@ -36,26 +38,43 @@ export function checkRateLimit(
     capacity: config.capacity ?? DEFAULT_CONFIG.capacity,
     refillIntervalMs: config.refillIntervalMs ?? DEFAULT_CONFIG.refillIntervalMs,
   };
-  const bucket = buckets.get(key) ?? { tokens: cfg.capacity, lastRefill: now };
+
+  const refillRate = cfg.capacity / cfg.refillIntervalMs; // tokens per ms
+
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = { tokens: cfg.capacity, lastRefill: now };
+  }
+
+  // Continuous refill: add tokens proportional to elapsed time
   const elapsed = now - bucket.lastRefill;
-  if (elapsed >= cfg.refillIntervalMs) {
-    bucket.tokens = cfg.capacity;
+  if (elapsed > 0) {
+    const newTokens = elapsed * refillRate;
+    bucket.tokens = Math.min(cfg.capacity, bucket.tokens + newTokens);
     bucket.lastRefill = now;
   }
-  if (bucket.tokens > 0) {
-    bucket.tokens--;
+
+  if (bucket.tokens >= 1) {
+    bucket.tokens -= 1;
     buckets.set(key, bucket);
+    // Time until one more token is available (or full refill, whichever is less)
+    const msToNextToken = bucket.tokens < cfg.capacity
+      ? Math.ceil((1 - (bucket.tokens - Math.floor(bucket.tokens))) / refillRate)
+      : 0;
     return {
       allowed: true,
-      remaining: bucket.tokens,
-      resetMs: cfg.refillIntervalMs - (now - bucket.lastRefill),
+      remaining: Math.floor(bucket.tokens),
+      resetMs: msToNextToken,
     };
   }
+
   buckets.set(key, bucket);
+  // Time until at least one token refills
+  const msToNextToken = Math.ceil((1 - bucket.tokens) / refillRate);
   return {
     allowed: false,
     remaining: 0,
-    resetMs: cfg.refillIntervalMs - (now - bucket.lastRefill),
+    resetMs: Math.max(0, msToNextToken),
   };
 }
 

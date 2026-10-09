@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // OpenAI-compatible provider adapter.
 // Targets any chat-completions endpoint that returns JSON when prompted to.
-// Falls back to the mock provider on any remote failure so the demo path
-// always succeeds, even with a misconfigured key. When ctx.onProgress is
+// Throws on any remote failure — the caller (research-engine) is responsible
+// for fallback to mock and circuit-breaker telemetry. When ctx.onProgress is
 // defined the adapter requests stream:true and forwards partial tokens.
 // Transient HTTP errors (5xx, 429) are retried with exponential backoff;
 // 4xx errors are surfaced immediately so the outer fallback can degrade
@@ -10,7 +10,6 @@
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
-import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
 
@@ -85,20 +84,32 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
     supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       const wantsStream = typeof ctx.onProgress === "function";
-      try {
-        const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
+      const url = baseUrl.replace(/\/$/, "") + "/chat/completions";
+      // Per-attempt timeout: 90s for streaming, 60s for JSON. Prevents hung fetches.
+      const ATTEMPT_TIMEOUT_MS = wantsStream ? 90_000 : 60_000;
 
         const doFetch = async () => {
+          // Compose per-attempt signal: user abort + per-attempt timeout
+          let attemptSignal = ctx.signal;
+          if (typeof AbortSignal !== "undefined" && "timeout" in AbortSignal) {
+            const timeout = (AbortSignal as any).timeout(ATTEMPT_TIMEOUT_MS);
+            if (ctx.signal && "any" in AbortSignal) {
+              attemptSignal = (AbortSignal as any).any([ctx.signal, timeout]);
+            } else if (!ctx.signal) {
+              attemptSignal = timeout;
+            }
+          }
           const r = await fetchImpl(url, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Authorization": "Bearer " + config.apiKey,
             },
-            signal: ctx.signal,
+            signal: attemptSignal,
             body: JSON.stringify({
               model,
               temperature: 0.4,
+              max_tokens: 8192,
               stream: wantsStream,
               response_format: { type: "json_object" },
               messages: [
@@ -107,6 +118,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
               ],
             }),
           });
+          // Retry 5xx, 429, and transient network failures (TypeError).
           if (!r.ok && (r.status >= 500 || r.status === 429)) {
             throw new Error("retriable HTTP " + r.status);
           }
@@ -117,27 +129,45 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): ResearchProv
           maxAttempts: 3,
           baseDelayMs: 200,
           maxDelayMs: 2000,
-          shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
+          signal: ctx.signal,
+          shouldRetry: (err) => {
+            if (err instanceof Error && err.message.startsWith("retriable HTTP")) return true;
+            if (err instanceof TypeError) return true;
+            if (err instanceof DOMException && err.name === "TimeoutError") return true;
+            if (err instanceof Error && err.name === "TimeoutError") return true;
+            return false;
+          },
         });
 
         if (!res.ok) throw new Error("provider HTTP " + res.status);
 
-        let text: string;
-        if (wantsStream) {
-          text = await readSSE(res as unknown as Response, (assembled) => {
-            const fraction = Math.min(0.95, assembled.length / 1500);
-            ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
-          });
-          ctx.onProgress!({ fraction: 1, step: "Validating output" });
-        } else {
+      let text: string;
+      if (wantsStream) {
+        // Per-agent estimated output size (in characters) for progress estimation.
+        const estimatedChars: Record<string, number> = {
+          "market-sizer": 2200,
+          "competitor-analyst": 2800,
+          "pain-detective": 2500,
+          "pricing-scout": 1800,
+          "channel-scout": 2000,
+          synthesis: 3500,
+        };
+        const expected = estimatedChars[agentId] ?? 2000;
+        text = await readSSE(res as unknown as Response, (assembled) => {
+          // Ease-out curve for more natural-feeling progress
+          const raw = Math.min(0.9, assembled.length / expected);
+          const fraction = raw < 0.5
+            ? 2 * raw * raw
+            : 1 - Math.pow(-2 * raw + 2, 2) / 2;
+          ctx.onProgress!({ fraction: Math.min(0.95, fraction), step: "step.streaming", partial: assembled });
+        });
+        ctx.onProgress!({ fraction: 1, step: "step.validating" });
+      } else {
           const json: any = await res.json();
           text = json?.choices?.[0]?.message?.content || "";
         }
         const parsed = JSON.parse(text);
         return validateAgentOutput(agentId, parsed);
-      } catch {
-        return mockResearchProvider.generate(agentId, ctx);
-      }
     },
   };
 }

@@ -5,15 +5,33 @@ import type { MarketSizerOutput } from "@/lib/schema/research-schema";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", INR: "₹", CAD: "C$", AUD: "A$",
+};
+
 function formatCurrency(value: number, currency: string = "USD"): string {
-  const sym = currency === "USD" ? "$" : currency + " ";
+  const sym = CURRENCY_SYMBOLS[currency] ?? currency + " ";
   if (value >= 1e9) return `${sym}${(value / 1e9).toFixed(2)}B`;
   if (value >= 1e6) return `${sym}${(value / 1e6).toFixed(1)}M`;
   if (value >= 1e3) return `${sym}${(value / 1e3).toFixed(0)}K`;
   return `${sym}${value.toFixed(0)}`;
 }
+
+function formatCount(value: number): string {
+  if (value >= 1e9) return `${(value / 1e9).toFixed(2)}B`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
+  return value.toLocaleString();
+}
+
+const UNIT_LABELS: Record<string, string> = {
+  users: "market.unit.users",
+  revenue: "market.unit.revenue",
+  businesses: "market.unit.businesses",
+};
 
 const TREND_ICON = { positive: "📈", negative: "📉", neutral: "➡️" } as const;
 const TREND_COLOR = {
@@ -25,45 +43,62 @@ const TREND_BAR = { positive: "bg-emerald-400", negative: "bg-rose-400", neutral
 
 export function MarketSizerReport({ output }: { output: any }) {
   const data = output as MarketSizerOutput;
+  const { t, fmt } = useLocale();
   const { copied, copy } = useCopyText();
 
   // Sanity check the nested TAM/SAM/SOM relationship
-  const tamLabel = "Total addressable market";
-  const samLabel = "Serviceable addressable market";
-  const somLabel = "3-year obtainable market";
+  const tamLabel = t("market.tamLabel", "Total addressable market");
+  const samLabel = t("market.samLabel", "Serviceable addressable market");
+  const somLabel = t("market.somLabel", "3-year obtainable market");
   const tam = data.marketSize.tam;
   const sam = data.marketSize.sam;
   const som = data.marketSize.som;
   const samPct = tam > 0 ? Math.round((sam / tam) * 100) : 0;
   const somPct = sam > 0 ? Math.round((som / sam) * 100) : 0;
+  const isRevenue = data.marketSize.unit !== "users" && data.marketSize.unit !== "businesses";
+  const formatValue = isRevenue
+    ? (v: number) => formatCurrency(v, data.marketSize.currency)
+    : (v: number) => formatCount(v);
+  const unitLabel = t(UNIT_LABELS[data.marketSize.unit] ?? "market.unit.revenue", data.marketSize.unit ?? "revenue");
+
+  const trendLabel = data.marketSize.growthTrend === "accelerating"
+    ? t("market.trend.accelerating", "accelerating")
+    : data.marketSize.growthTrend === "declining"
+    ? t("market.trend.declining", "declining")
+    : t("market.trend.steady", "steady");
 
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Market Sizer"
+        title={t("agent.market-sizer.name", "Market Sizer")}
         description={data.summary}
         icon="📊"
         count={data.targetSegments.length}
         accent="indigo"
         onCopy={() => copy(generateAgentMarkdown("market-sizer", data), "market-sizer")}
         copied={copied === "market-sizer"}
-        copyLabel="Copy section"
+        copyLabel={t("actions.copySection", "Copy section")}
       />
 
       {/* Market size cards with proportional bars */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Market Size Estimate</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
+          {t("market.tamSamSom", "TAM / SAM / SOM")}
+          <span className="text-[10px] font-normal text-slate-500 uppercase tracking-normal bg-slate-100 px-2 py-0.5 rounded-full">
+            {unitLabel}
+          </span>
+        </h3>
         <div className="space-y-3">
-          <SizeBar label="TAM" sublabel={tamLabel} value={tam} displayValue={formatCurrency(tam, data.marketSize.currency)} percentage={100} color="from-indigo-600 to-violet-600" />
-          <SizeBar label="SAM" sublabel={samLabel} value={sam} displayValue={formatCurrency(sam, data.marketSize.currency)} percentage={samPct} color="from-indigo-400 to-violet-500" />
-          <SizeBar label="SOM" sublabel={somLabel} value={som} displayValue={formatCurrency(som, data.marketSize.currency)} percentage={somPct} color="from-emerald-400 to-teal-500" />
+          <SizeBar label="TAM" sublabel={tamLabel} value={tam} displayValue={formatValue(tam)} percentage={100} color="from-indigo-600 to-violet-600" />
+          <SizeBar label="SAM" sublabel={samLabel} value={sam} displayValue={formatValue(sam)} percentage={samPct} color="from-indigo-400 to-violet-500" />
+          <SizeBar label="SOM" sublabel={somLabel} value={som} displayValue={formatValue(som)} percentage={somPct} color="from-emerald-400 to-teal-500" />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
           <span className="text-xs px-2.5 py-1 bg-slate-100 rounded-full text-slate-700 flex items-center gap-1">
             <span>📊</span>
             <span className="font-semibold">{data.marketSize.growthRate}%/yr</span>
-            <span className="text-slate-500">growth</span>
+            <span className="text-slate-500">{t("market.growth", "growth")}</span>
           </span>
           <span className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${
             data.marketSize.growthTrend === "accelerating"
@@ -73,7 +108,7 @@ export function MarketSizerReport({ output }: { output: any }) {
               : "bg-slate-100 text-slate-700"
           }`}>
             <span aria-hidden>{data.marketSize.growthTrend === "accelerating" ? "🚀" : data.marketSize.growthTrend === "declining" ? "🔻" : "➡️"}</span>
-            <span className="capitalize">{data.marketSize.growthTrend} trend</span>
+            <span className="capitalize">{trendLabel}</span>
           </span>
           <ConfidenceBadge level={data.marketSize.confidence} withLabel />
         </div>
@@ -82,7 +117,8 @@ export function MarketSizerReport({ output }: { output: any }) {
       {/* Trends */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          Key Trends <span className="text-xs text-slate-400 font-normal">({data.keyTrends.length})</span>
+          {t("market.trends", "Key Trends")}{" "}
+          <span className="text-xs text-slate-400 font-normal">({data.keyTrends.length})</span>
         </h3>
         <div className="space-y-2">
           {data.keyTrends.map((trend: { trend: string; impact: "positive" | "negative" | "neutral"; evidence: string }, i: number) => (
@@ -103,7 +139,9 @@ export function MarketSizerReport({ output }: { output: any }) {
 
       {/* Target Segments */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Target Segments</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+          {t("market.segments", "Target Segments")}
+        </h3>
         <div className="grid grid-cols-1 gap-2">
           {data.targetSegments.map((seg: { name: string; size: number; description: string }, i: number) => {
             const segPct = data.marketSize.sam > 0 ? Math.min(100, (seg.size / data.marketSize.sam) * 100) : 0;

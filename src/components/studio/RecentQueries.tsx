@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
-import { useResearchHistory, formatRelativeTime } from "@/lib/research/history";
+import { useResearchHistory, formatRelativeTimeI18n } from "@/lib/research/history";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface RecentQueriesProps {
   onSelect: (query: string, keywords: string[]) => void;
@@ -8,6 +9,7 @@ interface RecentQueriesProps {
 }
 
 export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
+  const { t, fmt } = useLocale();
   const { history, removeEntry, clearAll, hydrated } = useResearchHistory();
 
   if (!hydrated || history.length === 0) return null;
@@ -17,14 +19,14 @@ export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-1.5">
           <span aria-hidden>🕐</span>
-          Recent research
+          {t("history.recent", "Recent research")}
         </h3>
         <button
           onClick={clearAll}
           className="text-[10px] text-slate-400 hover:text-slate-600"
-          title="Clear history"
+          title={t("history.clear", "Clear")}
         >
-          Clear
+          {t("history.clear", "Clear")}
         </button>
       </div>
       <div className="space-y-1.5">
@@ -39,7 +41,7 @@ export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
                 {entry.query}
               </p>
               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span className="text-[10px] text-slate-400">{formatRelativeTime(entry.createdAt)}</span>
+                <span className="text-[10px] text-slate-400">{formatRelativeTimeI18n(entry.createdAt, fmt, t)}</span>
                 {entry.keywords.length > 0 && (
                   <>
                     <span className="text-[10px] text-slate-300">·</span>
@@ -57,8 +59,8 @@ export function RecentQueries({ onSelect, isLoading }: RecentQueriesProps) {
                 removeEntry(entry.id);
               }}
               className="text-slate-300 hover:text-rose-500 transition-colors flex-shrink-0 p-0.5"
-              title="Remove from history"
-              aria-label="Remove from history"
+              title={t("history.remove", "Remove from history")}
+              aria-label={t("history.remove", "Remove from history")}
             >
               ✕
             </button>

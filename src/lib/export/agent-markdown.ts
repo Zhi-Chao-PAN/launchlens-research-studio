@@ -22,8 +22,12 @@ const AGENT_TITLE: Record<AgentId, string> = {
   synthesis: "Synthesis",
 };
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", INR: "₹", CAD: "C$", AUD: "A$",
+};
+
 function fmtMoney(value: number, currency: string = "USD"): string {
-  const sym = currency === "USD" ? "$" : currency + " ";
+  const sym = CURRENCY_SYMBOLS[currency] ?? currency + " ";
   if (value >= 1_000_000_000) return `${sym}${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}K`;
@@ -80,8 +84,13 @@ function formatCompetitorAnalyst(o: CompetitorAnalystOutput): string {
       `- **Differentiation:** ${c.differentiation}`,
       ``,
       `**Strengths:** ${c.strengths.map((s) => s).join("; ")}`,
+      ``,
+      `**Weaknesses:** ${c.weaknesses.join("; ")}`,
+      ``,
     ]),
-    `**Weaknesses:** ${o.competitors.flatMap((c) => c.weaknesses).join("; ")}`,
+    `## Competitive Matrix`,
+    ``,
+    ...o.competitiveMatrix.map((d) => `- **${d.dimension}**: ${d.players.map((p) => `${p.name} (${p.score}/10)`).join("; ")}`),
     ``,
     `## Market Gaps & Opportunities`,
     ``,
@@ -147,7 +156,7 @@ function formatPricingScout(o: PricingScoutOutput): string {
     ``,
     `| Segment | Estimate | Confidence |`,
     `|---------|----------|------------|`,
-    ...o.willingnessToPay.map((w) => `| ${w.segment} | ${fmtMoney(w.estimate)}/period | ${confidence(w.confidence)} |`),
+    ...o.willingnessToPay.map((w) => `| ${w.segment} | ${fmtMoney(w.estimate)}/mo | ${confidence(w.confidence)} |`),
     ``,
     `## Recommendations`,
     ``,
@@ -211,6 +220,10 @@ function formatSynthesis(o: SynthesisOutput): string {
     `## Recommended Next Step`,
     ``,
     o.recommendedNextStep,
+    ``,
+    `## LaunchLens Import Brief`,
+    ``,
+    o.launchlensBrief,
     ``,
     o.citations.length > 0 ? `## Sources\n\n${o.citations.map((c, i) => `${i + 1}. [${c.title}](${c.url || "#"}) ${confidence(c.confidence)} — _${c.snippet}_`).join("\n")}\n` : "",
   ].filter(Boolean).join("\n");

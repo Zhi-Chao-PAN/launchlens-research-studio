@@ -1,17 +1,31 @@
-﻿"use client";
+"use client";
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
 import dynamic from "next/dynamic";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
-// Each agent report is its own chunk to keep the initial JS bundle small.
-// ssr:false avoids hydration churn for surfaces only mounted after a session.
-const SectionFallback = () => (
-  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-    <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-3" />
-    <p className="text-xs">Loading report section...</p>
-  </div>
-);
+// Tab label mapping: prefer the report.tabs.* i18n keys, fall back to AGENT_METADATA
+const TAB_I18N_KEYS: Record<AgentId, string> = {
+  "market-sizer": "report.tabs.market",
+  "competitor-analyst": "report.tabs.competition",
+  "pain-detective": "report.tabs.pain",
+  "pricing-scout": "report.tabs.pricing",
+  "channel-scout": "report.tabs.channels",
+  synthesis: "report.tabs.synthesis",
+};
+
+// A client-only fallback component that renders a spinner with localized text.
+// This is a component (not a plain function) so it can use hooks.
+function SectionFallback() {
+  const { t } = useLocale();
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+      <div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-3" />
+      <p className="text-xs">{t("report.loading", "Loading report section...")}</p>
+    </div>
+  );
+}
 
 const MarketSizerReport = dynamic(() => import("./sections/MarketSizerReport").then((m) => m.MarketSizerReport), { ssr: false, loading: SectionFallback });
 const CompetitorAnalystReport = dynamic(() => import("./sections/CompetitorAnalystReport").then((m) => m.CompetitorAnalystReport), { ssr: false, loading: SectionFallback });
@@ -37,16 +51,23 @@ const AGENT_ORDER: AgentId[] = [
 ];
 
 export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: ReportViewProps) {
+  const { t, fmt } = useLocale();
   const meta = AGENT_METADATA[activeAgent];
   const output = outputs[activeAgent];
   const completedCount = Object.values(outputs).filter(Boolean).length;
+  const totalAgents = AGENT_ORDER.length;
+  const totalCitations = Object.values(outputs).reduce(
+    (n, o) => n + (o && "citations" in o && Array.isArray(o.citations) ? o.citations.length : 0),
+    0,
+  );
 
   const renderReport = () => {
     if (isLoading && !output) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin mb-4" />
-          <p className="text-sm">Agent is gathering data...</p>
+          <p className="text-sm">{t("report.empty.title", "Agent is gathering data...")}</p>
+          <p className="text-xs text-slate-400 mt-1">{t("report.empty.description", "Research is still running. Results will appear here.")}</p>
         </div>
       );
     }
@@ -56,7 +77,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
           <div className="text-5xl mb-4" aria-hidden>
             {meta.icon}
           </div>
-          <p className="text-sm">Start a research session to see findings</p>
+          <p className="text-sm">{t("report.empty.start", "Start a research session to see results")}</p>
         </div>
       );
     }
@@ -94,6 +115,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
         <div className="flex gap-1">
           {AGENT_ORDER.map((id) => {
             const tabMeta = AGENT_METADATA[id];
+            const tabLabel = t(TAB_I18N_KEYS[id], tabMeta.name);
             const hasOut = !!outputs[id];
             const isActive = id === activeAgent;
             return (
@@ -108,8 +130,8 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
                 aria-pressed={isActive}
               >
                 <span aria-hidden>{tabMeta.icon}</span>
-                <span>{tabMeta.name}</span>
-                {hasOut && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-label="completed" />}
+                <span>{tabLabel}</span>
+                {hasOut && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-label={t("status.label.complete", "complete")} />}
               </button>
             );
           })}
@@ -119,12 +141,7 @@ export function ReportView({ activeAgent, outputs, isLoading, onSwitchTab }: Rep
       <div className="flex-1 overflow-y-auto p-6" role="region" aria-label="Agent report" aria-busy={isLoading && !output}>{renderReport()}</div>
 
       <div className="px-6 py-2 border-t border-slate-100 text-[10px] text-slate-400 flex-shrink-0 flex items-center justify-between">
-        <span>
-          {completedCount}/6 agents completed
-        </span>
-        {output && "citations" in output && Array.isArray((output as { citations?: unknown[] }).citations) && (
-          <span>{(output as { citations: unknown[] }).citations.length} citations</span>
-        )}
+        <span>{fmt("report.empty.stats", { completed: completedCount, total: totalAgents, citations: totalCitations }, "{completed} of {total} agents completed · {citations} citations")}</span>
       </div>
     </div>
   );

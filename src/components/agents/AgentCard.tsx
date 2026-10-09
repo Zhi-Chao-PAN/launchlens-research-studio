@@ -6,6 +6,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { AgentId, AgentState } from "@/lib/schema/research-schema";
 import { bucketProgress } from "@/lib/perf/perf-utils";
 import { AGENT_METADATA } from "@/lib/schema/research-schema";
+import { stepDictKey, stepKeyFor, STEP_ENGLISH } from "@/lib/research/steps";
 
 interface AgentCardProps {
   agentId: AgentId;
@@ -20,13 +21,17 @@ const statusColors: Record<string, string> = {
   running: "bg-amber-100 text-amber-700",
   done: "bg-emerald-100 text-emerald-700",
   error: "bg-rose-100 text-rose-700",
+  cancelled: "bg-slate-200 text-slate-500",
 };
 
-const statusLabel: Record<string, string> = {
-  idle: "Waiting",
-  running: "Researching",
-  done: "Complete",
-  error: "Error",
+// Localized status labels. Cancellations are grey/neutral since the user
+// initiated them; they are not failures.
+const STATUS_LABEL_KEYS: Record<string, string | null> = {
+  idle: null, // badge shows the icon only
+  running: null,
+  done: "step.complete",
+  error: "agent.failed",
+  cancelled: "agent.cancelled",
 };
 
 function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardProps) {
@@ -37,6 +42,19 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
     name: t(("agent." + agentId + ".name") as any, baseMeta.name),
     description: t(("agent." + agentId + ".description") as any, baseMeta.description),
   };
+
+  // Translate well-known step strings via the shared resolver; pass anything
+  // else through as-is (e.g. dynamic "Error: <detail>" messages, provider-
+  // specific prose). Free-form English from a stale cache / pre-migration
+  // provider still maps via the legacy table inside stepDictKey().
+  const stepKey = stepKeyFor(state.currentStep);
+  const dictKey = stepDictKey(state.currentStep);
+  // Always show human-readable English even if the dictionary is out of sync
+  // with a newly-added step key; otherwise the user sees "step.foo.bar".
+  const englishFallback = stepKey
+    ? STEP_ENGLISH[stepKey]
+    : state.currentStep;
+  const displayStep = dictKey ? t(dictKey as any, englishFallback) : englishFallback;
 
   return (
     <button
@@ -58,7 +76,17 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[state.status] || statusColors.idle}`}
             >
-              {error ? t("agent.status.error") : t(("agent.status." + state.status) as any, statusLabel[state.status] || state.status)}
+              {state.status === "cancelled"
+                ? t("agent.cancelled", "Cancelled")
+                : error
+                ? t("agent.failed", "Error")
+                : state.status === "done"
+                ? t("step.complete", "Complete")
+                : state.status === "idle"
+                ? t("step.waiting", "Waiting")
+                : state.status === "running"
+                ? ""
+                : state.status}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 truncate">{meta.description}</p>
@@ -71,7 +99,7 @@ function AgentCardImpl({ agentId, state, isActive, onClick, error }: AgentCardPr
                   style={{ width: `${bucketProgress(state.progress)}%` }}
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1 truncate">{state.currentStep}</p>
+              <p className="text-xs text-slate-500 mt-1 truncate">{displayStep}</p>
             </div>
           )}
 

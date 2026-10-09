@@ -5,6 +5,7 @@ import type { PricingScoutOutput } from "@/lib/schema/research-schema";
 import { SectionHeader } from "../primitives/SectionHeader";
 import { CitationList, useCopyText } from "../primitives/CitationList";
 import { ConfidenceBadge } from "../primitives/ConfidenceBadge";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { generateAgentMarkdown } from "@/lib/export/agent-markdown";
 
 function formatPrice(value: number, currency: string = "USD"): string {
@@ -25,6 +26,7 @@ const TIER_COLOR = ["from-emerald-500 to-teal-500", "from-indigo-500 to-violet-5
 
 export function PricingScoutReport({ output }: { output: any }) {
   const data = output as PricingScoutOutput;
+  const { t } = useLocale();
   const { copied, copy } = useCopyText();
 
   // Visualize price bands as overlapping range bars
@@ -34,20 +36,20 @@ export function PricingScoutReport({ output }: { output: any }) {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Pricing Scout"
+        title={t("agent.pricing-scout.name", "Pricing Scout")}
         description={data.summary}
         icon="💰"
         count={data.priceBands.length + data.recommendations.length}
         accent="emerald"
         onCopy={() => copy(generateAgentMarkdown("pricing-scout", data), "pricing-scout")}
         copied={copied === "pricing-scout"}
-        copyLabel="Copy section"
+        copyLabel={t("actions.copySection", "Copy section")}
       />
 
       {/* Price bands visualization */}
       <div>
         <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
-          Price Bands
+          {t("pricing.bands", "Price Bands")}
         </h3>
         <div className="space-y-2">
           {allBands.map((band: any, i: number) => {
@@ -73,22 +75,26 @@ export function PricingScoutReport({ output }: { output: any }) {
                   <div
                     className="absolute h-full w-0.5 bg-slate-700"
                     style={{ left: `${(band.typical / maxPrice) * 100}%` }}
-                    title="Typical"
+                    title={t("pricing.typicalLabel", "Typical")}
                   />
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">
-                  Typical: <span className="font-semibold">{formatPrice(band.typical, band.currency)}</span>
+                  {t("pricing.typicalLabel", "Typical")}: <span className="font-semibold">{formatPrice(band.typical, band.currency)}</span>
                 </p>
               </div>
             );
           })}
         </div>
-        <p className="text-[10px] text-slate-400 mt-2">← Min | → Max | Vertical mark = typical price</p>
+        <p className="text-[10px] text-slate-400 mt-2">
+          {t("pricing.legend", "← Min | → Max | Vertical mark = typical price")}
+        </p>
       </div>
 
       {/* Recommendations */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Recommended Pricing Tiers</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+          {t("pricing.recommendations", "Recommended Pricing Tiers")}
+        </h3>
         <div className={`grid gap-3 ${data.recommendations.length === 1 ? "grid-cols-1" : data.recommendations.length === 2 ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-3"}`}>
           {data.recommendations.map((rec: any, i: number) => {
             const grad = TIER_COLOR[i % TIER_COLOR.length];
@@ -106,18 +112,24 @@ export function PricingScoutReport({ output }: { output: any }) {
 
       {/* Monetization models */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Monetization Models</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+          {t("pricing.models", "Monetization Models")}
+        </h3>
         <div className="space-y-2">
           {data.monetizationModels.map((m: any, i: number) => (
             <div key={i} className="p-3 bg-slate-50 rounded-lg">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <p className="text-sm font-semibold text-slate-800">{m.model}</p>
-                <span className="text-xs font-mono text-indigo-600 flex-shrink-0">{m.prevalence}% prevalence</span>
+                <span className="text-xs font-mono text-indigo-600 flex-shrink-0">
+                  {m.prevalence}% {t("pricing.prevalence", "prevalence")}
+                </span>
               </div>
               <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-1.5">
                 <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${m.prevalence}%` }} />
               </div>
-              <p className="text-xs text-slate-500">Examples: {m.examples.join(", ")}</p>
+              <p className="text-xs text-slate-500">
+                {t("pricing.examples", "Examples")}: {m.examples.join(", ")}
+              </p>
             </div>
           ))}
         </div>
@@ -125,7 +137,9 @@ export function PricingScoutReport({ output }: { output: any }) {
 
       {/* Willingness to pay */}
       <div>
-        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">Willingness to Pay by Segment</h3>
+        <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+          {t("pricing.wtpSegment", "Willingness to Pay by Segment")}
+        </h3>
         <div className="space-y-2">
           {data.willingnessToPay.map((w: any, i: number) => (
             <div key={i} className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-lg">
@@ -133,13 +147,53 @@ export function PricingScoutReport({ output }: { output: any }) {
                 <p className="text-sm text-slate-800">{w.segment}</p>
               </div>
               <div className="text-right flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-bold text-slate-800">{formatPrice(w.estimate)}/mo</span>
+                <span className="text-sm font-bold text-slate-800">{formatPrice(w.estimate, w.currency)}/{w.period || "mo"}</span>
                 <ConfidenceBadge level={w.confidence} size="xs" />
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Competitor pricing */}
+      {data.competitorPricing && data.competitorPricing.length > 0 && (
+        <div>
+          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">
+            {t("competitor.pricing", "Competitor Pricing")}{" "}
+            <span className="text-xs text-slate-400 font-normal">({data.competitorPricing.length})</span>
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500 text-left">
+                  <th className="py-2 pr-3 font-medium">
+                    {t("report.competitor.nameColumn", "Competitor")}
+                  </th>
+                  <th className="py-2 px-3 font-medium">
+                    {t("pricing.recommendations", "Tiers")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.competitorPricing.map((cp: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-2 pr-3 font-medium text-slate-700">{cp.competitor}</td>
+                    <td className="py-2 px-3 text-slate-600">
+                      <div className="flex flex-wrap gap-1">
+                        {cp.tiers.map((tier: any, j: number) => (
+                          <span key={j} className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px] font-mono">
+                            {tier.tier}: {formatPrice(tier.price, tier.currency || "USD")}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <CitationList citations={data.citations} />
     </div>

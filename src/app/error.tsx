@@ -59,7 +59,7 @@ export default function GlobalError({
         <p className="text-slate-600 mb-6">{t("crash.body")}</p>
         {error.digest && (
           <p className="text-xs text-slate-400 font-mono mb-4">
-            Error ID: {error.digest}
+            {t("error.errorId", "Error ID")}: {error.digest}
           </p>
         )}
         <div className="flex flex-col sm:flex-row gap-2 justify-center">

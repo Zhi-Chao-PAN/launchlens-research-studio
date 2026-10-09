@@ -76,6 +76,42 @@ describe("retryWithBackoff", () => {
     ctl.abort();
     await expect(
       retryWithBackoff(async () => "x", { signal: ctl.signal }),
-    ).rejects.toThrow("retry aborted");
+    ).rejects.toThrow();
+    try {
+      await retryWithBackoff(async () => "x", { signal: ctl.signal });
+    } catch (e) {
+      expect((e as Error).name).toBe("AbortError");
+    }
+  });
+
+  it("aborts during sleep with proper AbortError name", async () => {
+    const ctl = new AbortController();
+    const promise = retryWithBackoff(
+      async () => { throw new Error("fail"); },
+      { maxAttempts: 5, baseDelayMs: 500, signal: ctl.signal },
+    );
+    setTimeout(() => ctl.abort(), 20);
+    try {
+      await promise;
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect((e as Error).name).toBe("AbortError");
+    }
+  }, 2000);
+
+  it("does not retry when operation itself throws AbortError", async () => {
+    let calls = 0;
+    const fn = vi.fn(async () => {
+      calls++;
+      if (typeof DOMException !== "undefined") {
+        throw new DOMException("aborted", "AbortError");
+      }
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      throw err;
+    });
+    await expect(retryWithBackoff(fn, { maxAttempts: 5, baseDelayMs: 1 })).rejects.toThrow();
+    // Should fail immediately without retries
+    expect(calls).toBe(1);
   });
 });

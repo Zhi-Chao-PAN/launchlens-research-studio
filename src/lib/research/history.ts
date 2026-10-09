@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 ﻿// Recent research history persisted in localStorage.
 // Stores query + keywords + timestamp. Read on app boot, written on completion.
+// Writes use requestIdleCallback to avoid blocking the main thread.
 
 import { useEffect, useState, useCallback } from "react";
 
@@ -33,12 +34,38 @@ function safeRead(): HistoryEntry[] {
   }
 }
 
-function safeWrite(entries: HistoryEntry[]): void {
+// In-memory cache + idle-callback writes for non-blocking persistence
+let memoryCache: HistoryEntry[] | null = null;
+let pendingWrite: HistoryEntry[] | null = null;
+let writeScheduled = false;
+
+function ensureCache(): HistoryEntry[] {
+  if (memoryCache === null) {
+    memoryCache = safeRead();
+  }
+  return memoryCache;
+}
+
+function scheduleWrite(entries: HistoryEntry[]): void {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // localStorage may be full or disabled — fail silently
+  pendingWrite = entries;
+  if (writeScheduled) return;
+  writeScheduled = true;
+
+  const doWrite = () => {
+    writeScheduled = false;
+    if (pendingWrite === null) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingWrite));
+    } catch {
+      // localStorage may be full or disabled — fail silently
+    }
+  };
+
+  if ("requestIdleCallback" in window) {
+    (window as any).requestIdleCallback(doWrite, { timeout: 1000 });
+  } else {
+    setTimeout(doWrite, 0);
   }
 }
 
@@ -47,7 +74,8 @@ export function useResearchHistory() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setHistory(safeRead());
+    const entries = ensureCache();
+    setHistory(entries);
     setHydrated(true);
   }, []);
 
@@ -64,7 +92,8 @@ export function useResearchHistory() {
         (e) => e.query.toLowerCase().trim() !== entry.query.toLowerCase().trim(),
       );
       const next = [entry, ...filtered].slice(0, MAX_ENTRIES);
-      safeWrite(next);
+      memoryCache = next;
+      scheduleWrite(next);
       return next;
     });
   }, []);
@@ -72,14 +101,16 @@ export function useResearchHistory() {
   const removeEntry = useCallback((id: string) => {
     setHistory((prev) => {
       const next = prev.filter((e) => e.id !== id);
-      safeWrite(next);
+      memoryCache = next;
+      scheduleWrite(next);
       return next;
     });
   }, []);
 
   const clearAll = useCallback(() => {
     setHistory([]);
-    safeWrite([]);
+    memoryCache = [];
+    scheduleWrite([]);
   }, []);
 
   return { history, addEntry, removeEntry, clearAll, hydrated };
@@ -98,5 +129,29 @@ export function formatRelativeTime(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
   if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * i18n-aware relative time formatter.
+ * Accepts a format function (from useLocale().fmt) and returns localized strings.
+ */
+export function formatRelativeTimeI18n(
+  iso: string,
+  fmt: (key: string, vars: Record<string, string | number>, fallback?: string) => string,
+  t: (key: string, fallback?: string) => string,
+): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const now = Date.now();
+  const diffMs = now - then;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return t("time.justNow", "just now");
+  const min = Math.floor(sec / 60);
+  if (min < 60) return fmt(min === 1 ? "time.minuteAgo" : "time.minutesAgo", { n: min }, `${min}m ago`);
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return fmt(hr === 1 ? "time.hourAgo" : "time.hoursAgo", { n: hr }, `${hr}h ago`);
+  const days = Math.floor(hr / 24);
+  if (days < 7) return fmt(days === 1 ? "time.dayAgo" : "time.daysAgo", { n: days }, `${days}d ago`);
   return new Date(iso).toLocaleDateString();
 }

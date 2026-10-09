@@ -7,6 +7,7 @@ import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   translate as translateFn,
+  format as formatFn,
   type DictionaryKey,
   type Locale,
 } from "./dictionaries";
@@ -15,6 +16,8 @@ interface LocaleContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
   t: (key: DictionaryKey | string, fallback?: string) => string;
+  /** Translate with {placeholder} interpolation. */
+  fmt: (key: DictionaryKey | string, vars: Record<string, string | number>, fallback?: string) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
@@ -57,7 +60,13 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
-  const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
+  const fmt = useCallback(
+    (key: DictionaryKey | string, vars: Record<string, string | number>, fallback?: string) =>
+      formatFn(locale, key, vars, fallback),
+    [locale],
+  );
+
+  const value = useMemo(() => ({ locale, setLocale, t, fmt }), [locale, setLocale, t, fmt]);
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
@@ -70,6 +79,8 @@ export function useLocale(): LocaleContextValue {
       locale: DEFAULT_LOCALE,
       setLocale: () => {},
       t: (key: DictionaryKey | string, fallback?: string) => translateFn(DEFAULT_LOCALE, key, fallback),
+      fmt: (key: DictionaryKey | string, vars: Record<string, string | number>, fallback?: string) =>
+        formatFn(DEFAULT_LOCALE, key, vars, fallback),
     };
   }
   return ctx;

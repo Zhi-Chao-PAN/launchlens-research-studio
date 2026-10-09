@@ -147,6 +147,13 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {/* Blocking inline script: sets data-theme before first paint to prevent
+            dark-mode FOUC. Must run synchronously before body renders. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('launchlens:theme');var d=t==='dark'||(!t||t==='system')&&window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.setAttribute('data-theme','dark')}catch(e){}})()`,
+          }}
+        />
         <WebVitalsReporter />
         <LocaleProvider><a href="#main-content" className="skip-link">
           Skip to main content

@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { buildShareUrl, copyShareUrl } from "@/lib/research/share";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface ShareButtonProps {
   sessionId: string;
@@ -10,16 +11,19 @@ interface ShareButtonProps {
   label?: string;
 }
 
-export function ShareButton({ sessionId, size = "md", variant = "secondary", label = "Share" }: ShareButtonProps) {
+export function ShareButton({ sessionId, size = "md", variant = "secondary", label }: ShareButtonProps) {
+  const { t } = useLocale();
   const [copied, setCopied] = useState(false);
+
+  const defaultLabel = t("actions.share", "Share");
+  const finalLabel = label ?? defaultLabel;
 
   const handleShare = async () => {
     const url = buildShareUrl(sessionId);
     let ok = false;
     try {
       if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
-        // Mobile devices: try native share
-        await navigator.share({ title: "Research report", url });
+        await navigator.share({ title: t("share.title", "Research report"), url });
         ok = true;
       } else {
         ok = await copyShareUrl(sessionId);
@@ -31,8 +35,7 @@ export function ShareButton({ sessionId, size = "md", variant = "secondary", lab
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } else {
-      // Fallback: open prompt
-      window.prompt("Copy this URL to share:", url);
+      window.prompt(t("share.prompt", "Copy this URL to share:"), url);
     }
   };
 
@@ -45,10 +48,10 @@ export function ShareButton({ sessionId, size = "md", variant = "secondary", lab
     <button
       onClick={handleShare}
       className={`${sizeClass} ${variantClass} font-medium rounded-lg transition-colors flex items-center gap-1.5`}
-      aria-label={label}
+      aria-label={finalLabel}
     >
       <span aria-hidden>{copied ? "✅" : "🔗"}</span>
-      <span>{copied ? "Link copied!" : label}</span>
+      <span>{copied ? t("share.copied", "Link copied!") : finalLabel}</span>
     </button>
   );
 }

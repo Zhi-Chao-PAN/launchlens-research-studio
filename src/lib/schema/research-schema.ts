@@ -10,7 +10,7 @@ export type AgentId =
   | "channel-scout"
   | "synthesis";
 
-export type AgentStatus = "idle" | "running" | "done" | "error";
+export type AgentStatus = "idle" | "running" | "done" | "error" | "cancelled";
 
 export type ConfidenceLevel = "low" | "medium" | "high";
 
@@ -186,7 +186,7 @@ export interface ResearchSession {
 }
 
 export interface ResearchEvent {
-  type: "status" | "progress" | "step" | "output" | "error" | "complete";
+  type: "status" | "progress" | "step" | "output" | "error" | "cancelled" | "complete";
   agentId: AgentId;
   timestamp: string;
   data?: unknown;

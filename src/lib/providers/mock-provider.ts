@@ -399,130 +399,301 @@ export function generateMockSynthesis(
   keywords: string[],
   agentOutputs: AgentOutput[],
 ): SynthesisOutput {
-  return {
-    agent: "synthesis",
-    execSummary: personalizeSummary("The AI-powered go-to-market tool space is large (TAM ~$85B) and growing rapidly (26.5% CAGR). While the market is crowded with content-generation tools, there is a clear gap for strategic, evidence-based decision support tools that span the full GTM lifecycle. The strongest opportunity lies in serving solo founders and small SaaS teams who need sharp execution help before overbuilding. Main risks are market commoditization, distribution challenges, and rising quality expectations.", query, keywords, 5),
-    opportunityScore: 72,
-    riskScore: 58,
-    keyInsights: [
-      {
-        insight: "Content AI is commoditized; strategic AI is wide open",
-        supportingAgents: ["competitor-analyst", "pain-detective"],
-        confidence: "high",
-      },
-      {
-        insight: "Validation before building is the top unmet need for founders",
-        supportingAgents: ["pain-detective", "market-sizer"],
-        confidence: "medium",
-      },
-      {
-        insight: "Pricing can undercut incumbents while maintaining quality signal",
-        supportingAgents: ["pricing-scout", "competitor-analyst"],
-        confidence: "medium",
-      },
-      {
-        insight: "Community-led growth is the most viable GTM channel for AI tools",
-        supportingAgents: ["channel-scout"],
-        confidence: "high",
-      },
-    ],
-    topThreeOpportunities: [
-      {
-        title: "Evidence-based strategic AI",
-        description:
-          "Move beyond generic content generation to decision support that cites sources, tracks evidence, and builds confidence over time.",
-        rationale:
-          "All agents confirm this gap. Competitors focus on content; users want strategy. High differentiation potential.",
-      },
-      {
-        title: "Founder-focused workspace approach",
-        description:
-          "An integrated workspace covering research to strategy to execution, rather than another point tool.",
-        rationale:
-          "Tool fragmentation is a top pain point. A single GTM workspace creates lock-in and compounding value.",
-      },
-      {
-        title: "Product-market fit validation layer",
-        description:
-          "A dedicated validation loop that helps founders test ideas before committing to building.",
-        rationale:
-          "The validation gap is severe and underserved. Saving founders months of building the wrong thing is highly valuable.",
-      },
-    ],
-    topThreeRisks: [
-      {
-        title: "Market commoditization",
-        description:
-          "As base models improve and become cheaper, the bar for AI-powered features keeps rising.",
-        mitigation:
-          "Differentiate on workflow depth, evidence loop, and data flywheel - not raw generation quality.",
-      },
-      {
-        title: "Distribution in a crowded market",
-        description:
-          "Hundreds of AI tools launch every week. Standing out is harder than building.",
-        mitigation:
-          "Double down on community-led growth, build-in-public, and niche content angles.",
-      },
-      {
-        title: "Quality expectations outpacing capability",
-        description:
-          "Users expect AI to replace strategists, but current models can only augment them.",
-        mitigation:
-          "Set honest expectations. Position as a co-pilot, not a replacement. Lean into the evidence loop for gradual trust.",
-      },
-    ],
-    recommendedNextStep:
-      "Start with the research-to-brief workflow. Build a strong research studio that produces high-quality, well-sourced market intelligence, then feed it directly into the GTM workspace.",
-    launchlensBrief: `# Market Research Brief
+  // Pull typed outputs from the upstream results. If an agent is missing
+  // (e.g. due to an upstream failure) we fall back to the static mock so
+  // synthesis still produces a structurally complete report.
+  const market = agentOutputs.find((o) => o.agent === "market-sizer") as MarketSizerOutput | undefined;
+  const competitors = agentOutputs.find((o) => o.agent === "competitor-analyst") as CompetitorAnalystOutput | undefined;
+  const pain = agentOutputs.find((o) => o.agent === "pain-detective") as PainDetectiveOutput | undefined;
+  const pricing = agentOutputs.find((o) => o.agent === "pricing-scout") as PricingScoutOutput | undefined;
+  const channels = agentOutputs.find((o) => o.agent === "channel-scout") as ChannelScoutOutput | undefined;
+
+  const snippet = querySnippet(query, 60);
+  const kwStr = keywordList(keywords, 6);
+
+  // --- Derive opportunity/risk scores from upstream evidence --------------
+  // Opportunity is boosted by high growth, large TAM, positive trends,
+  // "common" pain points, and competitor gaps. Risk is boosted by many
+  // competitors, "high" difficulty gaps, negative trends, and crowded channels.
+  const growth = market?.marketSize.growthRate ?? 20;
+  const confidenceCount = agentOutputs.filter(
+    (o) => "citations" in o && (o as { citations: SourceCitation[] }).citations.length >= 2,
+  ).length;
+  const severePains = pain?.painPoints.filter((p) => p.severity === "critical").length ?? 0;
+  const commonPains = pain?.painPoints.filter((p) => p.frequency === "common").length ?? 0;
+  const numGaps = competitors?.gaps.length ?? 0;
+  const hardGaps = competitors?.gaps.filter((g) => g.difficulty !== "high").length ?? 0;
+  const positiveTrends = market?.keyTrends.filter((t) => t.impact === "positive").length ?? 0;
+  const negativeTrends = market?.keyTrends.filter((t) => t.impact === "negative").length ?? 0;
+  const numCompetitors = competitors?.competitors.length ?? 3;
+  const highEffChannels = channels?.channels.filter((c) => c.effectiveness === "high").length ?? 0;
+  const highCostChannels = channels?.channels.filter((c) => c.cost === "high").length ?? 0;
+
+  let opportunityScore = 40;
+  opportunityScore += Math.min(25, growth * 0.8); // up to ~25 from growth
+  opportunityScore += Math.min(15, numGaps * 4 + hardGaps * 2);
+  opportunityScore += Math.min(10, severePains * 4 + commonPains * 2);
+  opportunityScore += Math.min(5, positiveTrends * 2);
+  opportunityScore += Math.min(5, confidenceCount);
+  opportunityScore += Math.min(5, highEffChannels * 2);
+  opportunityScore = Math.max(10, Math.min(95, Math.round(opportunityScore)));
+
+  let riskScore = 30;
+  riskScore += Math.min(20, numCompetitors * 3);
+  riskScore += Math.min(15, negativeTrends * 5);
+  riskScore += Math.min(15, Math.max(0, numGaps - hardGaps) * 5);
+  riskScore += Math.min(10, highCostChannels * 3);
+  riskScore += Math.min(10, keywords.length === 0 ? 10 : 0);
+  riskScore = Math.max(10, Math.min(95, Math.round(riskScore)));
+
+  // --- Build exec summary dynamically from findings ----------------------
+  const tam = market?.marketSize.tam ?? 85_600_000_000;
+  const sam = market?.marketSize.sam ?? 12_400_000_000;
+  const som = market?.marketSize.som ?? 180_000_000;
+  const growthRate = market?.marketSize.growthRate ?? growth;
+  const currency = market?.marketSize.currency ?? "USD";
+  const topCompetitor = competitors?.competitors[0]?.name ?? "established players";
+  const topPain = pain?.painPoints[0]?.pain ?? "generic, undifferentiated output";
+  const recChannel = channels?.recommendedChannels[0]?.channel ?? "Product Hunt + Twitter/X launch";
+  const proTier = pricing?.recommendations.find((r) => /pro/i.test(r.tier))?.price ?? 39;
+  const teamTier = pricing?.recommendations.find((r) => /team/i.test(r.tier))?.price ?? 129;
+
+  function shortMoney(v: number, c: string = "USD"): string {
+    const sym = c === "USD" ? "$" : c === "EUR" ? "€" : c === "GBP" ? "£" : c === "JPY" || c === "CNY" ? "¥" : c + " ";
+    if (v >= 1_000_000_000) return `${sym}${(v / 1_000_000_000).toFixed(1)}B`;
+    if (v >= 1_000_000) return `${sym}${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${sym}${(v / 1_000).toFixed(0)}K`;
+    return `${sym}${v.toFixed(0)}`;
+  }
+
+  const execSummary = personalizeSummary(
+    `The market for "${snippet}" shows strong signals: TAM estimated at ${shortMoney(tam, currency)} with ${growthRate.toFixed(1)}% annual growth, ` +
+    `and research uncovered ${severePains} critical and ${commonPains} common pain points, including "${topPain}". ` +
+    `The competitive landscape includes ${numCompetitors} tracked players (led by ${topCompetitor}), ` +
+    `with ${numGaps} identifiable gaps${hardGaps < numGaps ? " (some requiring significant execution)" : ""}. ` +
+    `Opportunity is scored ${opportunityScore}/100 with a risk profile of ${riskScore}/100. ` +
+    `Recommended entry: price around ${shortMoney(proTier, currency)}/${shortMoney(teamTier, currency)} for pro/team tiers, ` +
+    `launch via ${recChannel}.${kwStr ? " Focus areas: " + kwStr + "." : ""}`,
+    query,
+    keywords,
+    5,
+  );
+
+  // --- Build opportunity/risk/insight lists -----------------------------
+  const gapItems = (competitors?.gaps ?? []).slice(0, 3);
+  const painItems = (pain?.painPoints ?? []).slice(0, 3);
+  const trendItems = (market?.keyTrends ?? []).slice(0, 3);
+
+  const topOpportunities: { title: string; description: string; rationale: string }[] = [];
+  if (gapItems.length > 0) {
+    topOpportunities.push({
+      title: gapItems[0].gap,
+      description: gapItems[0].opportunity,
+      rationale: `Competitor gap identified (difficulty: ${gapItems[0].difficulty}). Addressing this creates immediate differentiation.`,
+    });
+  }
+  if (painItems.length > 0) {
+    topOpportunities.push({
+      title: `Solve: ${painItems[0].pain.slice(0, 80)}`,
+      description: painItems[0].quotes?.[0]?.text ?? "Key user pain identified across multiple sources.",
+      rationale: `${painItems[0].frequency}/${painItems[0].severity} pain point with ${painItems[0].quotes?.length ?? 0} supporting quotes.`,
+    });
+  }
+  if (pricing?.recommendations?.[0]) {
+    const r = pricing.recommendations[0];
+    topOpportunities.push({
+      title: `Launch with ${r.tier} tier at ${shortMoney(r.price, pricing.priceBands?.[0]?.currency ?? "USD")}`,
+      description: r.rationale,
+      rationale: `Pricing recommendation benchmarked against ${pricing.competitorPricing.length} competitor pricing pages.`,
+    });
+  }
+  while (topOpportunities.length < 3) {
+    topOpportunities.push({
+      title: "Evidence-based strategic AI",
+      description: "Build decision support that cites sources and tracks evidence over time.",
+      rationale: "Content AI is commoditized; strategic decision support remains underserved.",
+    });
+  }
+
+  const topRisks: { title: string; description: string; mitigation: string }[] = [];
+  if (negativeTrends > 0) {
+    const t = trendItems.find((x) => x.impact === "negative");
+    topRisks.push({
+      title: "Headwind: " + (t?.trend ?? "Market headwinds"),
+      description: t?.evidence ?? "Negative trend detected in market analysis.",
+      mitigation: "Plan a moat that does not rely on this trend reversing; monitor quarterly.",
+    });
+  }
+  topRisks.push({
+    title: `Competition from ${numCompetitors}+ existing players`,
+    description: `The category already has ${topCompetitor} and ${Math.max(0, numCompetitors - 1)} other tracked competitors.`,
+    mitigation: `Differentiate through evidence-based outputs, tighter workflow, and the ${recChannel} community channels.`,
+  });
+  if (numCompetitors > 4) {
+    topRisks.push({
+      title: "Crowded category risk",
+      description: "High competitor density makes organic discovery difficult.",
+      mitigation: "Invest early in community-led growth and niche content; avoid paid acquisition until product-market fit is validated.",
+    });
+  } else {
+    topRisks.push({
+      title: "Quality expectations outpacing capability",
+      description: "Users expect AI to replace analysts, but current models can only augment them.",
+      mitigation: "Position as a co-pilot, not a replacement. Cite sources and be transparent about confidence.",
+    });
+  }
+
+  const keyInsights = [
+    {
+      insight: growth >= 20
+        ? `Market is growing rapidly (${growthRate.toFixed(1)}% CAGR) — favorable entry window`
+        : `Market growth at ${growthRate.toFixed(1)}% suggests a mature category requiring sharp differentiation`,
+      supportingAgents: ["market-sizer"] as AgentId[],
+      confidence: (market?.citations.length ?? 0) >= 2 ? "high" as const : "medium" as const,
+    },
+    {
+      insight: `${numCompetitors} competitors analyzed; ${numGaps} market gaps identified`,
+      supportingAgents: ["competitor-analyst"] as AgentId[],
+      confidence: "medium" as const,
+    },
+    {
+      insight: `${severePains} critical, ${commonPains} common user pain points surface in voice-of-customer data`,
+      supportingAgents: ["pain-detective"] as AgentId[],
+      confidence: (pain?.citations.length ?? 0) >= 2 ? "high" as const : "medium" as const,
+    },
+    {
+      insight: `Recommended pricing anchors around ${shortMoney(proTier, currency)} pro / ${shortMoney(teamTier, currency)} team`,
+      supportingAgents: ["pricing-scout", "competitor-analyst"] as AgentId[],
+      confidence: "medium" as const,
+    },
+  ];
+
+  const recommendedNextStep =
+    `Start with a focused ${recChannel.split(" ")[0]} launch targeting the "${painItems[0]?.pain?.slice(0, 60) ?? topPain}" pain point, ` +
+    `priced at ${shortMoney(proTier, currency)}/mo, then iterate based on early-adopter feedback collected via the Research Studio evidence loop.`;
+
+  const topCompList = (competitors?.competitors ?? []).slice(0, 3).map((c) => c.name).join(", ") || "existing tools";
+  const citedPains = painItems.slice(0, 3).map((p, i) => `${i + 1}. ${p.pain}`).join("\n");
+  const topChannels = (channels?.recommendedChannels ?? []).slice(0, 4).map((c, i) => `${i + 1}. ${c.channel} (${c.priority} priority)`).join("\n");
+  const topGaps = gapItems.slice(0, 3).map((g, i) => `${i + 1}. ${g.gap}`).join("\n");
+
+  const launchlensBrief = `# Market Research Brief
+
+## Research Query
+**Product idea:** ${query || "(none provided)"}
+${kwStr ? `**Keywords:** ${kwStr}` : ""}
 
 ## Executive Summary
-Generated by LaunchLens Research Studio - multi-agent market intelligence.
+Generated by LaunchLens Research Studio — multi-agent market intelligence.
 
-**Opportunity Score:** 72/100
-**Risk Score:** 58/100
+**Opportunity Score:** ${opportunityScore}/100
+**Risk Score:** ${riskScore}/100
 
 ## Target Market
-- TAM: ~$85.6B (AI in marketing, 2030 projection)
-- SAM: ~$12.4B
-- SOM: ~$180M (3-year target)
-- Growth: 26.5% CAGR, accelerating
+- TAM: ~${shortMoney(tam, currency)}
+- SAM: ~${shortMoney(sam, currency)}
+- SOM (3yr): ~${shortMoney(som, currency)}
+- Growth: ${growthRate.toFixed(1)}% CAGR, ${market?.marketSize.growthTrend ?? "growing"}
 
 ## Competitive Landscape
-Crowded but fragmented. Key players: Jasper, Copy.ai, Notion AI.
-Most focus on content generation, not strategic planning.
+Tracked competitors: ${topCompList}.
+${numGaps > 0 ? "Identified gaps:\n" + topGaps : "The market is well-served by existing players."}
 
 ## Core User Pains
-1. Generic, undifferentiated AI output
-2. Tool fragmentation (7+ tools, no integration)
-3. Difficulty validating ideas before building
+${citedPains || "1. Generic, undifferentiated output\n2. Tool fragmentation\n3. Idea validation gap"}
 
 ## Pricing
-- Pro tier benchmark: $49/month
-- Team tier benchmark: $149/month
-- Recommendation: Price at $39/$129 to undercut while signaling quality
+- Observed pro tier benchmark: ~${shortMoney(pricing?.priceBands?.[1]?.typical ?? 49, currency)}/month
+- Observed team tier benchmark: ~${shortMoney(pricing?.priceBands?.[2]?.typical ?? 149, currency)}/month
+- Recommendation: anchor at ${shortMoney(proTier, currency)}/${shortMoney(teamTier, currency)} pro/team
 
 ## Recommended Channels
-1. Product Hunt launch (high priority)
-2. Build-in-public on Twitter/X (high priority)
-3. Content marketing - niche angles (medium priority)
-4. Indie Hackers community (medium priority)
+${topChannels || "1. Product Hunt launch (high priority)\n2. Build-in-public (high priority)\n3. Content marketing (medium priority)"}
 
 ## Key Differentiation
-- Evidence-based decision support, not just content
-- Full GTM lifecycle workspace
-- Validation loop that builds confidence over time
-`,
-    citations: [
+- Evidence-based decision support with cited sources
+- Cross-agent validation reduces hallucination risk
+- Structured brief ready for GTM strategy import
+`;
+
+  const allCitations: SourceCitation[] = [];
+  const seenIds = new Set<string>();
+  for (const o of agentOutputs) {
+    if ("citations" in o) {
+      for (const c of (o as { citations: SourceCitation[] }).citations) {
+        if (!seenIds.has(c.id)) {
+          seenIds.add(c.id);
+          allCitations.push(c);
+        }
+      }
+    }
+  }
+  if (allCitations.length === 0) {
+    allCitations.push(
       withTimestamp("cite-market-1"),
       withTimestamp("cite-comp-1"),
       withTimestamp("cite-pain-1"),
       withTimestamp("cite-price-1"),
       withTimestamp("cite-channel-1"),
-    ],
+    );
+  }
+
+  return {
+    agent: "synthesis",
+    execSummary,
+    opportunityScore,
+    riskScore,
+    keyInsights,
+    topThreeOpportunities: topOpportunities,
+    topThreeRisks: topRisks,
+    recommendedNextStep,
+    launchlensBrief,
+    citations: allCitations,
   };
 }
 
+export function generateMockAgentOutput(
+  agentId: "market-sizer",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): MarketSizerOutput;
+export function generateMockAgentOutput(
+  agentId: "competitor-analyst",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): CompetitorAnalystOutput;
+export function generateMockAgentOutput(
+  agentId: "pain-detective",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): PainDetectiveOutput;
+export function generateMockAgentOutput(
+  agentId: "pricing-scout",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): PricingScoutOutput;
+export function generateMockAgentOutput(
+  agentId: "channel-scout",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): ChannelScoutOutput;
+export function generateMockAgentOutput(
+  agentId: "synthesis",
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): SynthesisOutput;
+export function generateMockAgentOutput(
+  agentId: AgentId,
+  query: string,
+  keywords: string[],
+  agentOutputs?: AgentOutput[],
+): AgentOutput;
 export function generateMockAgentOutput(
   agentId: AgentId,
   query: string,

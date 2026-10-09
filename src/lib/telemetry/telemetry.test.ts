@@ -33,11 +33,25 @@ describe("telemetry ring buffer", () => {
     recordTelemetry({ ts: 3, agentId: "synthesis", providerId: "openai", durationMs: 300, ok: true });
     const s = summarizeTelemetry();
     expect(s.total).toBe(3);
+    expect(s.cancelled).toBe(0);
+    expect(s.failed).toBe(1);
     expect(s.successRate).toBeCloseTo(2 / 3);
     expect(s.averageMs).toBe(200);
-    expect(s.byProvider.mock).toEqual({ count: 2, ok: 1 });
-    expect(s.byProvider.openai).toEqual({ count: 1, ok: 1 });
+    expect(s.byProvider.mock).toEqual({ count: 2, ok: 1, cancelled: 0 });
+    expect(s.byProvider.openai).toEqual({ count: 1, ok: 1, cancelled: 0 });
     expect(s.byAgent["market-sizer"].count).toBe(2);
+  });
+
+  it("excludes cancelled runs from success rate and tracks cancelled count", () => {
+    recordTelemetry({ ts: 1, agentId: "market-sizer", providerId: "openai", durationMs: 50, ok: false, cancelled: true });
+    recordTelemetry({ ts: 2, agentId: "market-sizer", providerId: "openai", durationMs: 150, ok: true });
+    const s = summarizeTelemetry();
+    expect(s.total).toBe(2);
+    expect(s.cancelled).toBe(1);
+    expect(s.failed).toBe(0);
+    // One real (non-cancelled) run, which succeeded: 1/1 = 100%.
+    expect(s.successRate).toBe(1);
+    expect(s.byProvider.openai.cancelled).toBe(1);
   });
 
   it("returns neutral summary on empty ring", () => {

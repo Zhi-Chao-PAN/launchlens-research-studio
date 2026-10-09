@@ -10,40 +10,38 @@ const validPayload = {
 };
 
 describe("createOpenAIProvider", () => {
-  it("retries 5xx then falls back to mock", async () => {
+  it("retries 5xx then throws", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 500 }) as any);
     const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
-    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
-    expect(out.agent).toBe("market-sizer");
+    await expect(p.generate("market-sizer", { query: "q", keywords: [] })).rejects.toThrow();
     // 5xx is retriable: retryWithBackoff makes up to 3 attempts.
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("does not retry on 4xx and falls back to mock immediately", async () => {
+  it("does not retry on 4xx and throws immediately", async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as any);
     const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
-    const out = await p.generate("market-sizer", { query: "q", keywords: [] });
-    expect(out.agent).toBe("market-sizer");
+    await expect(p.generate("market-sizer", { query: "q", keywords: [] })).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to mock when JSON parse fails", async () => {
+  it("throws when JSON parse fails", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: async () => ({ choices: [{ message: { content: "not json" } }] }),
     }) as any);
     const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
-    const out = await p.generate("pricing-scout", { query: "q", keywords: [] });
-    expect(out.agent).toBe("pricing-scout");
+    await expect(p.generate("pricing-scout", { query: "q", keywords: [] })).rejects.toThrow();
   });
 
-  it("falls back to mock when validation fails", async () => {
+  it("returns normalized output when validator fills defaults", async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: JSON.stringify({ agent: "wrong" }) } }] }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({ agent: "channel-scout", summary: "ok" }) } }] }),
     }) as any);
     const p = createOpenAIProvider({ apiKey: "sk-x", fetchImpl: fetchImpl as any });
     const out = await p.generate("channel-scout", { query: "q", keywords: [] });
+    // Validator normalizes output and fills default arrays
     expect(out.agent).toBe("channel-scout");
     expect(Array.isArray(out.citations)).toBe(true);
   });
@@ -72,7 +70,7 @@ describe("createOpenAIProvider", () => {
       model: "test-model",
       fetchImpl: fetchImpl as any,
     });
-    await p.generate("market-sizer", { query: "q", keywords: ["a"] });
+    await expect(p.generate("market-sizer", { query: "q", keywords: ["a"] })).rejects.toThrow();
     expect(capturedUrl).toBe("https://example.com/v1/chat/completions");
     expect(capturedBody.model).toBe("test-model");
     expect(capturedBody.response_format.type).toBe("json_object");

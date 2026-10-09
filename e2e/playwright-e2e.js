@@ -87,7 +87,7 @@ async function run() {
     const hasQueryInput = await page.locator("textarea").first().isVisible();
     log("Query textarea visible", hasQueryInput);
 
-    const hasStartButton = await page.locator('button:has-text("Start Research")').first().isVisible();
+    const hasStartButton = await page.locator('[data-testid="research-submit"]').first().isVisible();
     log("Start Research button visible", hasStartButton);
 
     // ====== Test 2: Theme toggle ======
@@ -107,7 +107,31 @@ async function run() {
       await page.waitForTimeout(150);
     }
 
-    // ====== Test 3: Accessibility - skip link ======
+    // ====== Test 2.5: Language / i18n toggle ======
+    console.log("\n[2.5] Language switching");
+    const langSelect = page.locator('select[aria-label*="language" i], select[aria-label*="lang" i], select[aria-label*="语言" i], select[aria-label*="言語" i]').first();
+    const langCount = await langSelect.count();
+    if (langCount > 0) {
+      log("Language selector exists", true);
+      // Check current selection is English
+      const initialVal = await langSelect.inputValue();
+      const isEnglish = initialVal === "en";
+      log("Initial language is English", isEnglish, "value=" + initialVal);
+
+      // Switch to Chinese via selectOption (native <select> doesn't expose clickable <option>)
+      await langSelect.selectOption({ value: "zh-CN" });
+      await page.waitForTimeout(500);
+      const zhText = await page.locator("h2").filter({ hasText: /市场|调研/ }).first().textContent();
+      const isZh = /市场|调研/.test(zhText || "");
+      log("Switches to Chinese", isZh, "found Chinese text in hero");
+      // Switch back to English
+      await langSelect.selectOption({ value: "en" });
+      await page.waitForTimeout(500);
+      const enBack = await langSelect.inputValue();
+      log("Switches back to English", enBack === "en", "value=" + enBack);
+    } else {
+      log("Language selector exists", false, "not found");
+    }
     console.log("\n[3] Skip link");
     await page.goto(BASE_URL, { waitUntil: "networkidle" });
     await page.keyboard.press("Tab");
@@ -136,7 +160,21 @@ async function run() {
     const diagnosticsResponse = await page.request.get(BASE_URL + '/diagnostics');
     log('diagnostics page renders 200', diagnosticsResponse.status() === 200);
     const diagHtml = await diagnosticsResponse.text();
-    log('diagnostics page contains provider section', diagHtml.includes('Provider') && diagHtml.includes('Diagnostics'));
+    // Diagnostics renders localized headings; check for both English defaults
+    // (Diagnostics/Provider) and the zh/ja equivalents so the assertion is
+    // locale-agnostic. A successful render also contains the intro paragraph
+    // with the package name launchlens-research-studio.
+    const hasProviderSection =
+      (/Provider|供应商|プロバイダー/.test(diagHtml) && /Diagnostics|诊断|診断/.test(diagHtml)) ||
+      diagHtml.includes('launchlens-research-studio');
+    log('diagnostics page renders content', hasProviderSection);
+    // Check that diagnostics auth gate shows Unauthorized UI OR the full
+    // diagnostics content (auth is bypassed when LAUNCHLENS_DIAGNOSTICS_TOKEN
+    // is unset, which is the common local-dev case).
+    const diagAuthVisible =
+      /Unauthorized|未授权|未認証|restricted|受限|制限/.test(diagHtml) ||
+      /Circuit breaker|breaker|熔断/.test(diagHtml);
+    log('diagnostics auth/content present', diagAuthVisible);
     // Wait briefly for the ProviderPill to fetch /api/health and render
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.waitForTimeout(700);
@@ -145,6 +183,30 @@ async function run() {
 
         const manifestResponse = await page.request.get(BASE_URL + '/manifest.webmanifest');
     log('manifest.webmanifest served', manifestResponse.status() === 200, 'status=' + manifestResponse.status());
+
+    // ====== Test 3.7: Client-side inline validation errors ======
+    console.log("\n[3.7] Form validation");
+    // Too-short query should show an inline error and disable submit.
+    await page.locator("textarea").first().fill("hi");
+    await page.waitForTimeout(80); // React state flush
+    const shortErrVisible = await page.locator('[data-testid="form-error-query"]').first().isVisible().catch(() => false);
+    log("Too-short query shows inline error", shortErrVisible);
+    const submitBtn = page.locator('[data-testid="research-submit"]').first();
+    const shortDisabled = await submitBtn.isDisabled();
+    log("Submit button disabled while invalid", shortDisabled);
+    // Too many keywords
+    await page.locator("textarea").first().fill("A long enough query for validation test here");
+    const tooMany = Array.from({ length: 14 }, (_, i) => "kw" + i).join(", ");
+    const kwInput = page.locator('input[placeholder*="SaaS"], input[placeholder*="keyword"], input[placeholder*="e.g."]').first();
+    await kwInput.fill(tooMany);
+    await page.waitForTimeout(80);
+    const kwErrVisible = await page.locator('[data-testid="form-error-keywords"]').first().isVisible().catch(() => false);
+    log("Too-many-keywords shows inline keyword error", kwErrVisible);
+    // Reset fields for the main research-flow test.
+    await kwInput.fill("AI, students, education");
+    await page.locator("textarea").first().fill("AI-powered tool for university students");
+    await page.waitForTimeout(80);
+    log("Errors clear when input becomes valid", !(await page.locator('[data-testid="form-error-query"]').count()) && !(await page.locator('[data-testid="form-error-keywords"]').count()));
 
     // ====== Test 4: Start research flow ======
     console.log("\n[4] Start research flow");
@@ -157,7 +219,7 @@ async function run() {
     }
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-02-form-filled.png") });
 
-    await page.locator('button:has-text("Start Research")').first().click();
+    await page.locator('[data-testid="research-submit"]').first().click();
 
     // Wait for the studio layout
     await page.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 10000 });
@@ -195,11 +257,33 @@ async function run() {
     await page.waitForSelector('button[aria-pressed]:has-text("Synthesis")', { timeout: 60000 });
     log("Research completes", true);
 
-    const downloadButtons = await page.locator('button').filter({ hasText: /Download Markdown|Download JSON|Download CSVs|Print/i }).count();
+    // i18n-aware button matching (en/zh/ja)
+    const downloadBtnRegex = /Download Markdown|Markdown.*下载|Markdown.*ダウンロード|Download JSON|Download CSVs|Print|打印|印刷/i;
+    const downloadButtons = await page.locator('button').filter({ hasText: downloadBtnRegex }).count();
     log("Export download buttons present", downloadButtons >= 3, `count=${downloadButtons}`);
 
-    const copyButtons = await page.locator('button').filter({ hasText: /Copy (LaunchLens brief|Markdown|JSON)/i }).count();
+    const copyBtnRegex = /Copy (LaunchLens brief|brief|Markdown|JSON)|Copied|复制|コピー/i;
+    const copyButtons = await page.locator('button').filter({ hasText: copyBtnRegex }).count();
     log("Copy buttons present", copyButtons >= 1, `count=${copyButtons}`);
+
+    // Test that clicking a copy button shows "Copied!" feedback.
+    // Use waitFor to handle the 1800ms flash timeout and clipboard permission latency.
+    const copyBriefBtn = page.locator('button').filter({ hasText: /Copy.*brief|brief.*Copy|复制.*简报|ブリーフ.*コピー/i }).first();
+    if (await copyBriefBtn.count() > 0) {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await copyBriefBtn.click();
+      // Wait up to 2s for the Copied!/已复制/コピーしました state to appear.
+      let showsCopied = false;
+      for (let i = 0; i < 20; i++) {
+        const txt = (await copyBriefBtn.textContent()) || "";
+        if (/Copied|已复制|コピーしました/i.test(txt)) { showsCopied = true; break; }
+        await page.waitForTimeout(100);
+      }
+      const afterText = await copyBriefBtn.textContent();
+      log("Copy brief button shows Copied feedback", showsCopied, `text="${(afterText||'').trim()}"`);
+    } else {
+      log("Copy brief button shows Copied feedback", false, "button not found (synthesis may not have completed)");
+    }
 
     // ====== Test 7: Share button ======
     console.log("\n[7] Share button");
@@ -229,7 +313,7 @@ async function run() {
 
     // Mobile sidebar toggle should be present in studio
     await mobilePage.locator("textarea").first().fill("Mobile test product");
-    await mobilePage.locator('button:has-text("Start Research")').first().click();
+    await mobilePage.locator('[data-testid="research-submit"]').first().click();
     await mobilePage.waitForSelector("h3:has-text(\"Research Agents\"), h3:has-text(\"调研智能体\"), h3:has-text(\"リサーチエージェント\")", { timeout: 15000, state: "attached" });
     await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile-studio.png") });
 
@@ -241,6 +325,11 @@ async function run() {
       const expanded = await mobileToggle.getAttribute("aria-expanded");
       log("Mobile toggle has aria-expanded", expanded === "true", `expanded=${expanded}`);
     }
+
+    // ProviderPill should be visible on mobile (dot-only variant)
+    const mobileProviderPill = mobilePage.locator('[role="status"][aria-live="polite"]').first();
+    const pillVisible = await mobileProviderPill.isVisible().catch(() => false);
+    log("ProviderPill visible on mobile", pillVisible);
 
     // ====== Summary ======
     console.log("\n" + "=".repeat(50));

@@ -59,9 +59,15 @@ describe("OpenAI provider streaming path", () => {
 
   it("requests stream:true when onProgress is provided", async () => {
     let capturedBody: any = null;
+    const validPayload = JSON.stringify({
+      agent: "market-sizer",
+      summary: "ok",
+      marketSize: { tam: 1, sam: 1, som: 1, unit: "users", currency: "USD", growthRate: 5, growthTrend: "steady", confidence: "medium" },
+      citations: [],
+    });
     const fetchImpl = vi.fn(async (_url: string, init: any) => {
       capturedBody = JSON.parse(init.body);
-      return mockSSEResponse(["data: [DONE]\n"]);
+      return mockSSEResponse([dataLine(validPayload), "data: [DONE]\n"]);
     });
     const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });
     await p.generate("market-sizer", {
@@ -74,11 +80,17 @@ describe("OpenAI provider streaming path", () => {
 
   it("requests stream:false when onProgress is omitted", async () => {
     let capturedBody: any = null;
+    const validPayload = JSON.stringify({
+      agent: "market-sizer",
+      summary: "ok",
+      marketSize: { tam: 1, sam: 1, som: 1, unit: "users", currency: "USD", growthRate: 5, growthTrend: "steady", confidence: "medium" },
+      citations: [],
+    });
     const fetchImpl = vi.fn(async (_url: string, init: any) => {
       capturedBody = JSON.parse(init.body);
       return {
         ok: true,
-        json: async () => ({ choices: [{ message: { content: "{}" } }] }),
+        json: async () => ({ choices: [{ message: { content: validPayload } }] }),
       } as any;
     });
     const p = createOpenAIProvider({ apiKey: "k", fetchImpl: fetchImpl as any });

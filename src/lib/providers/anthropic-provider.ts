@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Anthropic Messages API adapter.
-// Targets POST {baseUrl}/v1/messages with x-api-key header. Falls back
-// to mock outputs on HTTP failure or validation failure so the demo
-// path is always intact, and validates the parsed JSON before returning.
+// Targets POST {baseUrl}/v1/messages with x-api-key header.
+// Throws on HTTP failure or validation failure — the caller (research-engine)
+// is responsible for fallback to mock and circuit-breaker telemetry.
 // When ctx.onProgress is defined the adapter requests stream:true and
 // forwards Anthropic content_block_delta events as partial text plus a
 // fraction estimate. Transient HTTP errors (5xx, 429) are retried with
@@ -10,7 +10,6 @@
 
 import type { AgentId, AgentOutput } from "@/lib/schema/research-schema";
 import type { ProviderContext, ResearchProvider } from "@/lib/providers/provider.types";
-import { mockResearchProvider } from "@/lib/providers/mock-provider-adapter";
 import { validateAgentOutput } from "@/lib/providers/output-validator";
 import { retryWithBackoff } from "@/lib/utils/retry";
 
@@ -98,10 +97,22 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
     supportsStreaming: true,
     async generate(agentId: AgentId, ctx: ProviderContext): Promise<AgentOutput> {
       const wantsStream = typeof ctx.onProgress === "function";
-      try {
-        const url = baseUrl.replace(/\/$/, "") + "/v1/messages";
+      const url = baseUrl.replace(/\/$/, "") + "/v1/messages";
+      // Per-attempt timeout: 90s for streaming (long outputs), 60s for JSON.
+      // Prevents hung fetches from leaking resources. Timeout is retriable.
+      const ATTEMPT_TIMEOUT_MS = wantsStream ? 90_000 : 60_000;
 
         const doFetch = async () => {
+          // Compose abort signal per attempt: user cancellation + per-attempt timeout.
+          let attemptSignal = ctx.signal;
+          if (typeof AbortSignal !== "undefined" && "timeout" in AbortSignal) {
+            const timeout = (AbortSignal as any).timeout(ATTEMPT_TIMEOUT_MS);
+            if (ctx.signal && "any" in AbortSignal) {
+              attemptSignal = (AbortSignal as any).any([ctx.signal, timeout]);
+            } else if (!ctx.signal) {
+              attemptSignal = timeout;
+            }
+          }
           const r = await fetchImpl(url, {
             method: "POST",
             headers: {
@@ -109,10 +120,10 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
               "x-api-key": config.apiKey,
               "anthropic-version": "2023-06-01",
             },
-            signal: ctx.signal,
+            signal: attemptSignal,
             body: JSON.stringify({
               model,
-              max_tokens: 2048,
+              max_tokens: 8192,
               temperature: 0.4,
               stream: wantsStream,
               system: buildSystemPrompt(agentId),
@@ -121,6 +132,8 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
               ],
             }),
           });
+          // Retry on 5xx, 429, *and* network failures (TypeError from fetch).
+          // 4xx (401/403 bad key, etc.) surface immediately so we don't burn quota.
           if (!r.ok && (r.status >= 500 || r.status === 429)) {
             throw new Error("retriable HTTP " + r.status);
           }
@@ -131,27 +144,49 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): Resear
           maxAttempts: 3,
           baseDelayMs: 200,
           maxDelayMs: 2000,
-          shouldRetry: (err) => err instanceof Error && err.message.startsWith("retriable HTTP"),
+          signal: ctx.signal,
+          shouldRetry: (err) => {
+            if (err instanceof Error && err.message.startsWith("retriable HTTP")) return true;
+            if (err instanceof TypeError) return true; // network failure
+            if (err instanceof DOMException && err.name === "TimeoutError") return true;
+            if (err instanceof Error && err.name === "TimeoutError") return true;
+            return false;
+          },
         });
 
         if (!res.ok) throw new Error("anthropic HTTP " + res.status);
 
         let text: string;
         if (wantsStream) {
+          // Per-agent estimated output size (in characters) for progress estimation.
+          // These are rough averages — the actual output varies, but using
+          // per-agent baselines gives a more realistic progress curve than a
+          // one-size-fits-all 1500-char assumption.
+          const estimatedChars: Record<string, number> = {
+            "market-sizer": 2200,
+            "competitor-analyst": 2800,
+            "pain-detective": 2500,
+            "pricing-scout": 1800,
+            "channel-scout": 2000,
+            synthesis: 3500,
+          };
+          const expected = estimatedChars[agentId] ?? 2000;
           text = await readAnthropicSSE(res as unknown as Response, (assembled) => {
-            const fraction = Math.min(0.95, assembled.length / 1500);
-            ctx.onProgress!({ fraction, step: "Streaming response", partial: assembled });
+            // Ease-out curve: progress grows quickly at first, slows as it
+            // approaches 90%, giving a natural deceleration feel.
+            const raw = Math.min(0.9, assembled.length / expected);
+            const fraction = raw < 0.5
+              ? 2 * raw * raw
+              : 1 - Math.pow(-2 * raw + 2, 2) / 2;
+            ctx.onProgress!({ fraction: Math.min(0.95, fraction), step: "step.streaming", partial: assembled });
           });
-          ctx.onProgress!({ fraction: 1, step: "Validating output" });
+          ctx.onProgress!({ fraction: 1, step: "step.validating" });
         } else {
           const json: any = await res.json();
           text = extractJsonFromMessages(json);
         }
         const parsed = JSON.parse(text);
         return validateAgentOutput(agentId, parsed);
-      } catch {
-        return mockResearchProvider.generate(agentId, ctx);
-      }
     },
   };
 }

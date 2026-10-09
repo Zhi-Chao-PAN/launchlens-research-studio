@@ -63,15 +63,15 @@ export function ProviderPill() {
 
   return (
     <span
-      className={"hidden md:inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border " + tone}
+      className={"inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border " + tone}
       title={label + " (v" + health.version + ")"}
       role="status"
       aria-live="polite"
     >
       <span className={"w-1.5 h-1.5 rounded-full " + (breakerOpen ? "bg-amber-500" : isMock ? "bg-slate-400" : "bg-emerald-500")} />
-      <span className="truncate max-w-[160px]">{label}</span>
+      <span className="hidden sm:inline truncate max-w-[160px]">{label}</span>
       {health.provider.supportsStreaming && !breakerOpen && (
-        <span className="text-[9px] uppercase tracking-wider text-current/70 ml-0.5" aria-hidden>
+        <span className="hidden sm:inline text-[9px] uppercase tracking-wider text-current/70 ml-0.5" aria-hidden>
           {t("provider.streaming", "stream")}
         </span>
       )}

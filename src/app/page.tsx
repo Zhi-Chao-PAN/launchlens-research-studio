@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect, react-hooks/immutability, react-hooks/preserve-manual-memoization */
 /* eslint-disable @next/next/no-img-element */
-﻿"use client";
+"use client";
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useMemo } from "react";
 import { useResearchStudio } from "@/lib/research/use-research-studio";
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
@@ -19,23 +19,38 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { ProviderPill } from "@/components/ui/ProviderPill";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import { RESEARCH_AGENTS, AGENT_METADATA } from "@/lib/schema/research-schema";
+import { SUPPORTED_LOCALES } from "@/lib/i18n/dictionaries";
+import { AGENT_METADATA } from "@/lib/schema/research-schema";
 import type { AgentId } from "@/lib/schema/research-schema";
 
 export default function Home() {
-  const { t } = useLocale();
-  const { state, startResearch, setActiveAgentTab, reset, allAgentIds } = useResearchStudio();
+  const { t, fmt, locale, setLocale } = useLocale();
+  const { state, startResearch, setActiveAgentTab, reset, clearFormError, hydrateFromCache, allAgentIds } = useResearchStudio();
   const { history, addEntry } = useResearchHistory();
   const isRunning = state.status === "running" || state.status === "loading";
   const hasSession = state.sessionId !== null;
-  const hasError = state.status === "error" && state.error;
+  const cooldownActive =
+    !!state.formError && state.formError.code === "RATE_LIMITED" && state.retryAfterSeconds > 0;
+  // Two kinds of top-level error banner:
+  //  - Start-time failures that weren't rendered inline inside QueryInput
+  //    (network errors, 5xx — handled inline as formError.general, excluded here).
+  //  - Mid-session expiry: SESSION_EXPIRED formError is raised after the form is
+  //    gone (polling 404) and must appear as a top-level banner with a localized
+  //    message, not the English fallback stored in state.error.
+  const sessionExpired = state.formError?.code === "SESSION_EXPIRED";
+  const hasError = (state.status === "error" && state.error && !state.formError) || sessionExpired;
+  const errorTitle = sessionExpired
+    ? t("errors.sessionExpired")
+    : t("errors.startFailed");
+  const errorDetail = sessionExpired
+    ? t("errors.sessionExpired")
+    : state.error;
   const [cacheRefreshKey, setCacheRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
-  // Bridge: persist on completion, detect share links, restore from cache
+  // Bridge: persist on completion, detect share links, restore from cache.
   // Build a ResearchSession-shaped object for the bridge.
-  // Note: state doesn't have per-agent .output or session .citations, so we
-  // build those from state.agentOutputs and count from the agent outputs.
   const bridge = useSessionBridge(
     hasSession
       ? {
@@ -70,17 +85,16 @@ export default function Home() {
     }
   }, [state.sessionId, state.query, state.keywords, addEntry]);
 
-  // Trigger cache refresh when a session completes (so the CachedSessionsList updates)
+  // Trigger cache refresh when a session completes (so CachedSessionsList updates)
   useEffect(() => {
     if (state.status === "completed") {
       setCacheRefreshKey((k) => k + 1);
     }
   }, [state.status]);
 
-  // If the user followed a share link, offer to restore
+  // If the user followed a share link, restore the shared session
   useEffect(() => {
     if (bridge.pendingRestoreId && bridge.pendingRestore) {
-      // Auto-restore the shared session if user lands with a share hash
       handleRestoreFromCache(bridge.pendingRestore);
     }
   }, [bridge.pendingRestoreId]);
@@ -93,36 +107,87 @@ export default function Home() {
     [startResearch],
   );
 
-  // Restore from a cached session: pretend the session is "running" briefly
-  // and populate outputs from cache. The simplest UX is to start a fresh
-  // session with the same query/keywords and overlay cached outputs.
-  const handleRestoreFromCache = useCallback((cached: CachedSession) => {
-    if (!cached.outputs) return;
-    // Hydrate from cache by re-submitting the query (mock provider is deterministic,
-    // but the cached outputs may include user-specific state).
-    startResearch(cached.query, cached.keywords);
-  }, [startResearch]);
+  const handleFieldChange = useCallback(
+    (field: "query" | "keywords") => {
+      // User is editing a field that had a server-side validation error — clear
+      // the stale message so they don't keep seeing it while typing.
+      clearFormError(field);
+    },
+    [clearFormError],
+  );
 
-  // Keyboard shortcut: ⌘/Ctrl + Enter submits the query
+  const handleDismissFormError = useCallback(() => {
+    clearFormError("general");
+  }, [clearFormError]);
+
+  // Restore from cache: hydrate outputs instantly from localStorage without
+  // hitting the server (the server is in-memory and does not persist sessions
+  // across restarts anyway).
+  const handleRestoreFromCache = useCallback((cached: CachedSession) => {
+    setSidebarOpen(false);
+    hydrateFromCache(cached);
+  }, [hydrateFromCache]);
+
+  const doneCount = Object.values(state.agents).filter((a) => a.status === "done").length;
+
+  // Detected once at mount; used to render the correct modifier glyph in
+  // help-modal shortcut labels (⌘ on macOS, Ctrl everywhere else).
+  const isMac = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /Mac|iPod|iPhone|iPad/.test(navigator.platform || "");
+  }, []);
+  const modKey = isMac ? "⌘" : "Ctrl";
+
+  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      // Cmd/Ctrl+K focuses the query input (like command palette).
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        const ta = document.querySelector<HTMLTextAreaElement>("#query-input");
+        ta?.focus();
+        ta?.select();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        // Respect loading / rate-limit cooldown so the shortcut can't bypass
+        // the disabled submit button, and don't fire when the user is in a
+        // textarea (Enter already submits natively via <form>).
+        if (isRunning || cooldownActive || isTyping) return;
         const form = document.querySelector<HTMLFormElement>("form[data-research-form]");
+        const btn = form?.querySelector<HTMLButtonElement>("button[type=submit]");
+        if (btn && btn.disabled) return;
         form?.requestSubmit();
       }
-      if (e.key === "Escape" && hasSession && !isRunning) {
-        if (sidebarOpen) setSidebarOpen(false);
-        else reset();
+      if (e.key === "Escape") {
+        // Staged Esc dismissal: help modal → sidebar → general form error →
+        // reset to fresh form. This avoids wiping a running session when the
+        // user just wanted to close a modal or dismiss a rate-limit banner.
+        if (helpOpen) { setHelpOpen(false); return; }
+        if (sidebarOpen) { setSidebarOpen(false); return; }
+        if (state.formError?.field === "general") { clearFormError("general"); return; }
+        if (hasSession && !isRunning) reset();
+        return;
       }
-      if (e.key === "?" && (e.metaKey || e.ctrlKey)) {
+      if (!isTyping && e.key === "?" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        // Simple help: print the keyboard shortcuts
-        alert("Keyboard shortcuts:\n\nCtrl/⌘ + Enter — Start research\nEscape — Reset to landing page\nCtrl/⌘ + ? — Show this help");
+        setHelpOpen(true);
+      }
+      // Cycle locales with Cmd/Ctrl+Shift+L
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "l" || e.key === "L")) {
+        e.preventDefault();
+        const idx = SUPPORTED_LOCALES.indexOf(locale);
+        const nextIdx = (idx + 1) % SUPPORTED_LOCALES.length;
+        setLocale(SUPPORTED_LOCALES[nextIdx]);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasSession, isRunning, reset]);
+  }, [hasSession, isRunning, cooldownActive, reset, helpOpen, sidebarOpen, locale, setLocale, state.formError, clearFormError]);
 
   // Auto-switch tab to the first agent that completes
   useEffect(() => {
@@ -135,6 +200,12 @@ export default function Home() {
       return () => clearTimeout(t);
     }
   }, [state.agents, state.status, state.activeAgentTab, allAgentIds, setActiveAgentTab]);
+
+  const statusLabelKey =
+    state.status === "completed" ? "status.label.complete"
+    : state.status === "running" || state.status === "loading" ? "status.label.running"
+    : state.status === "error" ? "status.label.error"
+    : "status.label.idle";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
@@ -165,8 +236,16 @@ export default function Home() {
               </span>
             )}
             {hasSession && state.sessionId && state.status === "completed" && (
-              <ShareButton sessionId={state.sessionId} size="sm" label="Share" />
+              <ShareButton sessionId={state.sessionId} size="sm" label={t("header.share")} />
             )}
+            <button
+              onClick={() => setHelpOpen(true)}
+              className="hidden sm:inline-flex w-8 h-8 items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+              title={t("studio.help.title")}
+              aria-label={t("studio.help.title")}
+            >
+              ?
+            </button>
             <ProviderPill />
             <LanguageSwitcher />
             <ThemeToggle />
@@ -176,7 +255,7 @@ export default function Home() {
                 disabled={isRunning}
                 className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
               >
-                New Research
+                {t("header.newResearch")}
               </button>
             )}
           </div>
@@ -188,16 +267,29 @@ export default function Home() {
           <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3">
             <span className="text-rose-500 text-xl flex-shrink-0" aria-hidden>⚠️</span>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-rose-800">{t("errors.startFailed")}</p>
-              <p className="text-xs text-rose-600 mt-0.5 break-words">{state.error}</p>
+              <p className="text-sm font-medium text-rose-800">{errorTitle}</p>
+              <p className="text-xs text-rose-600 mt-0.5 break-words">{errorDetail}</p>
             </div>
             <button
               onClick={reset}
               className="text-xs text-rose-700 hover:text-rose-900 font-medium px-2 py-1 rounded hover:bg-rose-100 flex-shrink-0"
             >
-              Dismiss
+              {t("errors.dismiss")}
             </button>
           </div>
+        </div>
+      )}
+
+      {state.connectionStatus === "reconnecting" && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 px-4 py-2 text-xs flex items-center justify-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span>{t("connection.reconnecting", "Reconnecting to research stream...")}</span>
+        </div>
+      )}
+      {state.connectionStatus === "polling" && (
+        <div className="bg-sky-50 border-b border-sky-200 text-sky-800 px-4 py-2 text-xs flex items-center justify-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-sky-500" />
+          <span>{t("connection.polling", "Stream disconnected — using polling fallback")}</span>
         </div>
       )}
 
@@ -206,7 +298,11 @@ export default function Home() {
           {state.status === "loading" && t("status.loading")}
           {state.status === "running" && t("status.running")}
           {state.status === "completed" && t("status.completed")}
-          {state.status === "error" && (state.error || t("status.error"))}
+          {state.formError?.field === "general" &&
+            (cooldownActive
+              ? `${state.formError.message} ${fmt("errors.retryInSeconds", { n: state.retryAfterSeconds })}`
+              : state.formError.message)}
+          {state.status === "error" && !state.formError && (state.error || t("status.error"))}
         </div>
         {!hasSession ? (
           <div className="max-w-2xl mx-auto py-8">
@@ -218,7 +314,14 @@ export default function Home() {
                 {t("hero.subtitle")}
               </p>
             </div>
-            <QueryInput onSubmit={handleSubmit} isLoading={isRunning} />
+            <QueryInput
+              onSubmit={handleSubmit}
+              isLoading={isRunning}
+              serverError={state.formError}
+              retryAfterSeconds={state.retryAfterSeconds}
+              onFieldChange={handleFieldChange}
+              onDismissError={handleDismissFormError}
+            />
 
             <div className="mt-6 space-y-4">
               <RecentQueries onSelect={handleSubmit} isLoading={isRunning} />
@@ -239,8 +342,8 @@ export default function Home() {
                   return (
                     <div key={id} className="p-3 bg-white rounded-xl border border-slate-200 text-center">
                       <div className="text-2xl mb-1" aria-hidden>{meta.icon}</div>
-                      <p className="text-sm font-semibold text-slate-700">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".name") as any, meta.name)}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{t(("agent." + (Object.entries(AGENT_METADATA).find(([,m]) => m === meta) || ["", null])[0] + ".description") as any, meta.description)}</p>
+                      <p className="text-sm font-semibold text-slate-700">{t(`agent.${id}.name`, meta.name)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{t(`agent.${id}.description`, meta.description)}</p>
                     </div>
                   );
                 })}
@@ -259,6 +362,15 @@ export default function Home() {
                 <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Esc</kbd>
                 <span className="ml-1">{t("studio.tipReset")}</span>
               </span>
+              <span className="text-slate-300">·</span>
+              <button
+                onClick={() => setHelpOpen(true)}
+                className="underline hover:text-slate-600"
+              >
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">Ctrl/⌘</kbd>
+                <span className="mx-1">+</span>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-slate-600 font-mono">?</kbd>
+              </button>
             </div>
           </div>
         ) : (
@@ -272,9 +384,9 @@ export default function Home() {
             >
               <span className="flex items-center gap-2">
                 <span aria-hidden>🎛️</span>
-                <span>Research controls</span>
+                <span>{t("studio.controls")}</span>
                 <span className="text-xs text-slate-500">
-                  ({Object.values(state.agents).filter((a) => a.status === "done").length}/6 agents)
+                  ({fmt("studio.agentsProgress", { done: doneCount, total: allAgentIds.length })})
                 </span>
               </span>
               <span aria-hidden className={"transition-transform " + (sidebarOpen ? "rotate-180" : "")}>▾</span>
@@ -289,6 +401,10 @@ export default function Home() {
                 isLoading={isRunning}
                 defaultQuery={state.query}
                 defaultKeywords={state.keywords}
+                serverError={state.formError}
+                retryAfterSeconds={state.retryAfterSeconds}
+                onFieldChange={handleFieldChange}
+                onDismissError={handleDismissFormError}
               />
 
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
@@ -305,13 +421,7 @@ export default function Home() {
                         : "bg-slate-100 text-slate-600"
                     }`}
                   >
-                    {state.status === "completed"
-                      ? "Complete"
-                      : state.status === "running" || state.status === "loading"
-                      ? "Running"
-                      : state.status === "error"
-                      ? "Error"
-                      : "Idle"}
+                    {t(statusLabelKey)}
                   </span>
                 </div>
                 <div className="space-y-2">
@@ -357,6 +467,79 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {/* Keyboard shortcuts modal */}
+      {helpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => setHelpOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("studio.help.title")}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-800">{t("studio.help.title")}</h2>
+              <button
+                onClick={() => setHelpOpen(false)}
+                className="text-slate-400 hover:text-slate-700 text-xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <ul className="space-y-3 text-sm">
+              <li className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">{t("studio.help.start")}</span>
+                <span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">{modKey}</kbd>
+                  <span className="mx-1">+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">Enter</kbd>
+                </span>
+              </li>
+              <li className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">{t("studio.help.reset")}</span>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">Esc</kbd>
+              </li>
+              <li className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">{t("studio.help.shortcuts")}</span>
+                <span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">{modKey}</kbd>
+                  <span className="mx-1">+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">?</kbd>
+                </span>
+              </li>
+              <li className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">{t("studio.help.toggleLanguage", "Toggle language")}</span>
+                <span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">{modKey}</kbd>
+                  <span className="mx-1">+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">Shift</kbd>
+                  <span className="mx-1">+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">L</kbd>
+                </span>
+              </li>
+              <li className="flex items-center justify-between gap-4">
+                <span className="text-slate-600">{t("studio.help.focus", "Focus query input")}</span>
+                <span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">{modKey}</kbd>
+                  <span className="mx-1">+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-slate-300 bg-white font-mono text-xs">K</kbd>
+                </span>
+              </li>
+            </ul>
+            <button
+              onClick={() => setHelpOpen(false)}
+              className="mt-6 w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+            >
+              {t("errors.dismiss")}
+            </button>
+          </div>
+        </div>
+      )}
 
       <footer className="border-t border-slate-200 bg-white/50 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center">
