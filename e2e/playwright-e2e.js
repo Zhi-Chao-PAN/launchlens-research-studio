@@ -116,7 +116,9 @@ async function run() {
   try {
     // ====== Test 1: Landing page ======
     console.log("[1] Landing page");
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    // Readiness is a visible UI contract, not absence of analytics/SSE traffic.
+    await page.locator("textarea").first().waitFor({ state: "visible", timeout: 15000 });
     const title = await page.title();
     log("Has correct title", title.includes("LaunchLens"), "title: " + title);
 
@@ -162,7 +164,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-01-landing.png"), f
 
     // ====== Test 3: Accessibility - skip link ======
     console.log("\n[3] Skip link");
-    await page.goto(BASE_URL, { waitUntil: "networkidle" });
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await page.keyboard.press("Tab");
     const focused = await page.evaluate(() => document.activeElement?.textContent);
     log("First Tab focuses skip link", (focused || "").toLowerCase().includes("skip"), "focused: " + focused);
@@ -364,7 +366,7 @@ await page.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-06-dark-mode.png"),
       locale: "en-US",
     });
     const mobilePage = await mobileCtx.newPage();
-    await mobilePage.goto(BASE_URL, { waitUntil: "networkidle" });
+    await mobilePage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await settle(mobilePage, 300);
 await mobilePage.screenshot({ path: path.join(SCREENSHOT_DIR, "e2e-07-mobile.png"), fullPage: true });
 
