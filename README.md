@@ -13,6 +13,10 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 
 ---
 
+## First user trial
+
+Start with [the short trial guide](docs/TRIAL_GUIDE.md). The empty workspace also includes an English/Chinese task guide covering provider mode, evidence limits, export, restoration and private feedback. Use the exact version being tested; no production or real-user acceptance is implied by CI.
+
 ## ✨ Features
 
 ### Research Engine

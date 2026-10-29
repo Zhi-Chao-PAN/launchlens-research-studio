@@ -22,9 +22,13 @@ const STORAGE_KEY = "ll.locale";
 
 function detectInitialLocale(): Locale {
   if (typeof window === "undefined") return DEFAULT_LOCALE;
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored && (SUPPORTED_LOCALES as readonly string[]).includes(stored)) {
-    return stored as Locale;
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored && (SUPPORTED_LOCALES as readonly string[]).includes(stored)) {
+      return stored as Locale;
+    }
+  } catch {
+    // Browser language is still available when storage access is denied.
   }
   const nav = window.navigator.language;
   if (nav?.startsWith("zh")) return "zh-CN";
@@ -51,7 +55,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      try { window.localStorage.setItem(STORAGE_KEY, next); } catch {
+        // Keep the current tab's language usable without persistent storage.
+      }
     }
   }, []);
 

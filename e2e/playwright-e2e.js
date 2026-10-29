@@ -119,6 +119,10 @@ async function run() {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     // Readiness is a visible UI contract, not absence of analytics/SSE traffic.
     await page.locator("textarea").first().waitFor({ state: "visible", timeout: 15000 });
+    const trialGuide = page.getByText("First trial: complete one research question", {exact: true});
+    await trialGuide.click();
+    log("First trial explains provider and evidence limits", await page.getByText(/Standard does not guarantee verified citation URLs/).isVisible());
+    await trialGuide.click();
     const title = await page.title();
     log("Has correct title", title.includes("LaunchLens"), "title: " + title);
 
