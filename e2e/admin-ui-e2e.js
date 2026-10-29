@@ -322,7 +322,7 @@ async function run() {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     console.log("\n[1] Bilingual sign-in and secure session exchange");
-    await page.goto(`${BASE_URL}/admin`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/admin`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Administrator sign in" }).waitFor();
     check("English login renders", await page.locator("#admin-token").isVisible());
     check(
@@ -368,7 +368,7 @@ async function run() {
     );
     check("Admin token input is removed after exchange", (await page.locator("#admin-token").count()) === 0);
 
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#main-content h1").filter({ hasText: "Overview" }).waitFor();
     check("HttpOnly session survives a reload", (await page.locator("#admin-token").count()) === 0);
 
@@ -478,7 +478,7 @@ async function run() {
       ["Overview", "Overview"],
     ];
     for (const [navLabel, heading] of sections) {
-      await page.locator(".ops-nav button").filter({ hasText: navLabel }).click();
+      await page.locator(".ops-nav").getByRole("button", { name: new RegExp(`^${navLabel}(?:\\s|$)`) }).click();
       await page.locator("#main-content h1").filter({ hasText: heading }).waitFor();
       check(`${navLabel} section is reachable`, true);
     }

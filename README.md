@@ -13,13 +13,17 @@ Input a product idea → 6 specialized AI agents research in parallel → struct
 
 ---
 
+## First user trial
+
+Start with [the short trial guide](docs/TRIAL_GUIDE.md). The empty workspace also includes an English/Chinese task guide covering provider mode, evidence limits, export, restoration and private feedback. Use the exact version being tested; no production or real-user acceptance is implied by CI.
+
 ## ✨ Features
 
 ### Research Engine
 - **6 specialized AI agents** — Market Sizer, Competitor Analyst, Pain Detective, Pricing Scout, Channel Scout, and Synthesis
 - **Parallel execution** — 5 research agents run concurrently, then Synthesis validates across outputs
 - **Real-time progress** — SSE-powered live updates with per-agent progress bars and step indicators
-- **Evidence system** — Every claim has citations, source links, and confidence levels
+- **Evidence system** — Reports carry source links and confidence labels. A citation is not proof of support: Standard may leave URL/claim verification unperformed; inspect each report’s provenance and verification state. Deep remains Preview until its runtime capability gates pass.
 - **Cross-validated synthesis** — Synthesis agent cross-references findings, scores opportunity and risk
 - **Robust error handling** — Per-agent failure isolation, partial results, exponential reconnection
 
@@ -230,13 +234,13 @@ A `vercel.json` ships with this repo: the `/api/research/[sessionId]/stream` obs
 - **The local session map is a fast path, not production authority.** Standard sessions are reconciled through Redis mirrors. Deep lifecycle, leases, revisions, fencing, and due work are authoritative in `DeepRunRecordV1`.
 - **Disk writes remain local-only.** `LAUNCHLENS_STORAGE_DIR` is useful for local development; production History is mirrored into the Redis-backed run store.
 - **Standard is still request-bound.** Its SSE route has a 300-second ceiling. Deep avoids this limit by executing one durable work unit per worker invocation; SSE and polling only observe Redis state.
-- **In-process timers are not recovery.** Authenticated self-dispatch is a fast wake only. Deep additionally requires the scheduled GitHub recovery trigger and an observed delay of at most 360 seconds. GitHub scheduling is best-effort, so delayed or disabled Actions correctly return Deep to Preview.
+- **In-process timers are not recovery.** Authenticated self-dispatch is a fast wake only. Deep additionally requires the independent QStash recovery schedule and an observed delay of at most 360 seconds. Missing or stale cadence evidence returns Deep to Preview; GitHub Actions is not the production recovery authority.
 
 **Deep production gate**
 
 `GET /api/research/capabilities` checks eight Deep requirements: explicit opt-in, reachable Redis, a real generation provider, real retrieval, a strict semantic reviewer, authenticated worker wake, declared independent recovery, and a fresh multi-tick recovery cadence. With the managed keyring enabled, the model gates also verify that at least one enabled credential can actually be decrypted. The UI and `POST /api/research` keep Deep in Preview until every requirement passes.
 
-See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md), [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md), and [ADR-003](./docs/decisions/ADR-003-github-recovery-scheduler.md) for the protocol and deployment contract.
+See [the current Deep specification](./docs/SPEC-ui-and-deep-research.md), [ADR-001](./docs/decisions/ADR-001-durable-deep-research.md), and [ADR-005](./docs/decisions/ADR-005-qstash-recovery-scheduler.md) for the current recovery deployment contract (which supersedes ADR-003).
 
 ---
 
@@ -324,3 +328,5 @@ MIT License — feel free to use and build on this.
 ---
 
 Built with care as a companion to launchlens-ai · Zhi-Chao PAN
+
+Browser checks install Chromium through the lockfile-resolved `playwright-core` CLI. Page navigation waits for DOM content and visible controls rather than network idleness, since telemetry and streaming may remain active.

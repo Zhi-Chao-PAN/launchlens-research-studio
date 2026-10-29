@@ -11,6 +11,7 @@ import {
 import { useResearchHistory } from "@/lib/research/history";
 import { useSessionBridge } from "@/lib/research/use-session-bridge";
 import type { CachedSession } from "@/lib/research/session-cache";
+import { TrialGuide } from "@/components/studio/TrialGuide";
 import { QueryInput } from "@/components/studio/QueryInput";
 import { RecentQueries } from "@/components/studio/RecentQueries";
 import { CachedSessionsList } from "@/components/studio/CachedSessionsList";
@@ -547,6 +548,7 @@ export default function Home() {
       )}
 
       <main id="main-content" tabIndex={-1} className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5">
+        {!hasSession && <TrialGuide />}
         {/* R205: when the completed run has agents that degraded to demo data,
             surface a session-level banner so a reader of the report knows some
             sections are illustrative. Per-agent "demo" badges exist on the
